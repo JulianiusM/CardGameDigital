@@ -1,0 +1,36 @@
+//- views/dashboard.pug  – überarbeitetes User-Dashboard
+extends ../layout
+
+block meta
+    title My Dashboard | Surveyor
+
+block title
+    h1.card-header.text-center
+        if data.admin_flag
+            i.bi.bi-patch-check-fill.me-2
+                | Your managed entities
+        else
+            i.bi.bi-house-door-fill.me-2
+                | Welcome, #{profile.name}!
+
+block content
+    if data.participant
+        h2.text-center
+            i.bi.bi-clipboard-check.me-2
+            | Your participation
+        p.text-center Here are all entities that you participate in. Open the respective section to see and access them.
+        hr
+        .accordion.accordion-dark#participationLists
+            +entityOverview('sec-parts', 'Your participation', 'bi-clipboard-check', data.participant, "You are not participating anywhere", "participationLists", false)
+
+    if data.owner
+        h2.text-center
+            i.bi.bi-shield-check.me-2
+            | Administrable entities
+        p.text-center These are the entities that you either own or are an admin to. Open the respective section to see and access them.
+        hr
+        .accordion.accordion-dark#entityLists
+            +entityOverview('sec-own-parts', 'Administrable entities', 'bi-shield-check', data.owner, "You don't have any administrable entities yet", "entityLists", true)
+
+block scripts
+    script(type="module" src="/js/user-dashboard.gen.js")

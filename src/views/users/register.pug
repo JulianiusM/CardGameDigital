@@ -1,0 +1,94 @@
+//- views/auth/register.pug – Facelift
+extends ../layout
+
+block meta
+    title Register | Surveyor
+
+block scripts
+    script(type="module" src="/js/verify_password.gen.js")
+
+block title
+    h1.card-header.text-center
+        i.bi.bi-person-plus-fill.me-2
+        | Register
+
+block content
+    form#form.row.gy-3.justify-content-center(action=`/users/register?next=${nxtUrl}` method="post")
+        if settings.localLoginEnabled
+            //── Username ────────────────────────────────────────
+            .col-md-6
+                label.form-label.mb-1(for="username")
+                    i.bi.bi-person-circle.me-1
+                    | Username&nbsp;*
+                input#username.form-control.text-bg-dark(
+                    type="text"
+                    name="username"
+                    maxlength="100"
+                    value= (data && data.username) ? data.username : ''
+                    placeholder="choose a login name"
+                    required)
+
+            //── Username ────────────────────────────────────────
+            .col-md-6
+                label.form-label.mb-1(for="displayname")
+                    i.bi.bi-person-circle.me-1
+                    | Display name&nbsp;*
+                input#displayname.form-control.text-bg-dark(
+                    type="text"
+                    name="displayname"
+                    maxlength="100"
+                    value= (data && data.displayname) ? data.displayname : ''
+                    placeholder="choose a display name"
+                    required)
+
+            //── E-Mail ───────────────────────────────────────────
+            .col-md-6
+                label.form-label.mb-1(for="email")
+                    i.bi.bi-envelope.me-1
+                    | E-mail&nbsp;*
+                input#email.form-control.text-bg-dark(
+                    type="email"
+                    name="email"
+                    maxlength="100"
+                    placeholder="you@example.com"
+                    required)
+
+            //── Passwort ─────────────────────────────────────────
+            .col-md-6
+                label.form-label.mb-1(for="password")
+                    i.bi.bi-shield-lock.me-1
+                    | Password&nbsp;*
+                input#password.form-control.text-bg-dark(
+                    type="password"
+                    name="password"
+                    minlength="8"
+                    placeholder="min. 8 characters"
+                    required)
+                small#password-info.form-text
+
+            //── Wiederholen ──────────────────────────────────────
+            .col-md-6
+                label.form-label.mb-1(for="password_repeat")
+                    i.bi.bi-shield-lock.me-1
+                    | Repeat password&nbsp;*
+                input#password_repeat.form-control.text-bg-dark(
+                    type="password"
+                    name="password_repeat"
+                    minlength="8"
+                    required)
+                div#password_repeat-info.invalid-feedback Passwords do not match!
+
+            .col-md-6
+                // Placeholder
+
+            //── Submit ───────────────────────────────────────────
+            .col-6.d-grid.mt-2
+                button.btn.btn-success(type="submit")
+                    i.bi.bi-check-lg.me-1
+                    | Register
+
+        if settings.oidcEnabled
+            .col-6.d-grid.mt-2
+                a.btn.btn-primary(href="/users/oidc/login")
+                    i.bi.bi-person-vcard.me-1
+                    | Login using #{settings.oidcName}

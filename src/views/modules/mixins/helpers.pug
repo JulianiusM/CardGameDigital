@@ -1,0 +1,7 @@
+//- Shared helper functions for Pug templates
+//- These functions should remain pure (no side effects) and reusable across templates
+
+//- Format a numeric value as currency with two decimal places
+//- @param {number|string} val - The value to format
+//- @return {string} - Formatted currency string (e.g., "123.45")
+- const fmtMoney = (val) => Number(val ?? 0).toFixed(2)

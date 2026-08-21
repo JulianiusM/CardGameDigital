@@ -1,0 +1,22 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "outDir": "dist",
+    "lib": [
+      "ES2024"
+    ],
+    "types": [
+      "node"
+    ]
+  },
+  "exclude": [
+    "node_modules",
+    "dist",
+    "src/public/js"
+  ],
+  "ts-node": {
+    "files": true,
+    "project": "tsconfig.server.json"
+  }
+}

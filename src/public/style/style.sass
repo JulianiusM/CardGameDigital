@@ -1,0 +1,109 @@
+@import "accordion"
+@import "timezone-select"
+
+.table-responsive
+  .sticky-col
+    position: sticky
+    left: 0
+    z-index: 1
+    // Sicherstellen, dass die Spalte über anderen Zellen bleibt
+    //background-color: #fff; // Hintergrundfarbe festlegen, um überlappende Inhalte zu vermeiden
+    box-shadow: 2px 0 5px rgba(0, 0, 0, 0.1)
+    // Schatten hinzufügen, um den sticky Effekt hervorzuheben
+
+    // Optional: Hervorhebung für Benutzer
+    font-weight: bold
+    text-align: left
+
+/* pointer & tighter paddings */
+.activity-table
+  .slot
+    [data-edit]
+      user-select: text
+      cursor: text
+
+      &:empty::before
+        display: inline-block
+        content: "-"
+
+    [draggable]
+      user-select: none
+      cursor: move
+
+  input
+    user-select: text
+    cursor: text
+
+  .slot-container
+    min-width: 150px
+
+
+.select2-search__field
+  &::placeholder
+    color: white !important
+
+.select2-selection__choice
+  background-color: transparent !important
+
+/* mobile tweaks for activity tables */
+@media (max-width: 576px)
+  .activity-table
+    thead th
+      font-size: 0.75rem
+
+// Extra small button variant
+.btn-xs
+  padding: 0.125rem 0.375rem
+  font-size: 0.75rem
+  line-height: 1.2
+  border-radius: 0.15rem
+
+// Fix badge readability on colored backgrounds
+.bg-success-subtle
+  .badge
+    &.bg-success
+      background-color: #198754 !important
+      color: #fff !important
+
+.bg-warning-subtle
+  .badge
+    &.bg-warning
+      background-color: #ffc107 !important
+      color: #000 !important
+
+.bg-danger-subtle
+  .badge
+    &.bg-danger
+      background-color: #dc3545 !important
+      color: #fff !important
+
+// Ensure text color classes work properly
+.badge
+  &.text-dark
+    color: #000 !important
+  &.text-white
+    color: #fff !important
+
+.invoice-scroll
+  max-height: 260px
+  overflow-y: auto
+
+.assignments-list
+  max-height: 240px
+  overflow-y: auto
+
+.pool-totals
+  background: radial-gradient(circle at top left, rgba(255,255,255,0.05), transparent)
+
+/* Recommendations visual enhancements - parent background colors */
+
+#recommendations-schedule
+  .slot
+    position: relative
+
+  [data-slot-recommendations]
+    margin-top: 0.5rem
+
+  [data-slot-existing]
+    .bg-success-subtle
+      border-color: rgba(25, 135, 84, 0.3) !important

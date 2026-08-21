@@ -1,0 +1,41 @@
+extends ../../layout
+
+block meta
+    title Create new profile | Surveyor
+
+block title
+    h1.card-header.text-center
+        i.bi.bi-person-plus-fill.me-2
+        | Create new profile
+
+block content
+    p.lead.text-center.mb-4
+        i.bi.bi-exclamation-diamond-fill.me-1
+        | Create a new profile. This will allow you to participate multiple times (once per profile), while still only needing one account!
+
+    form#forgotForm.row.gy-3.justify-content-center(
+        action="/users/profile/create"
+        method="post")
+        //── Username ────────────────────────────────────────────
+        .col-md-6
+            label.form-label.mb-1(for="name")
+                i.bi.bi-person-circle.me-1
+                | Profile name *
+            input#name.form-control.text-bg-dark(
+                type="text"
+                name="name"
+                placeholder="Your profile name"
+                value = data ? data.name : ""
+                required)
+
+        //── Submit ──────────────────────────────────────────────
+        .col-12.d-grid.mt-2
+            button.btn.btn-primary(type="submit")
+                i.bi.bi-plus-circle.me-1
+                | Create new profile
+
+        //── Zurück zum Login ───────────────────────────────────
+        .col-12.text-center.mt-3
+            a.text-decoration-none(href="/users/profile/manage")
+                i.bi.bi-arrow-left-circle.me-1
+                | Back to home

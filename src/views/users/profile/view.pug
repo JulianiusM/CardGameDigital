@@ -1,0 +1,60 @@
+extends ../../layout
+
+block meta
+    title Profile '#{profile.name}' | Surveyor
+
+block title
+    h1.card-header.text-center
+        i.bi.bi-archive-fill.me-2
+        | Your profile '#{profile.name}'
+
+block content
+    p.lead.text-center.mb-4
+        i.bi.bi-exclamation-diamond-fill.me-1
+        | You can change your profile settings here.
+
+    form#forgotForm.row.gy-3.justify-content-center(
+        action="/users/profile"
+        method="post")
+        //── Username ────────────────────────────────────────────
+        .col-md-6
+            label.form-label.mb-1(for="name")
+                i.bi.bi-key.me-1
+                | Profile name *
+            input#name.form-control.text-bg-dark(
+                type="text"
+                name="name"
+                placeholder="Your profile name"
+                value = profile.name
+                required)
+        .col-md-6
+            i.bi.bi-info-square.me-2
+            | When this profile is set as default, it will be automatically selected upon login.
+            | If you have any other profile marked as default, setting this here will override the previous defaults.
+            .form-check.mt-2
+                input#isDefault.form-check-input.text-bg-dark(
+                    type="checkbox"
+                    name="isDefault"
+                    value='true'
+                    checked = !!profile.defaultForOwner)
+                label.form-check-label.mb-1(for="name") Default profile
+
+        //── Submit ──────────────────────────────────────────────
+        .col-12.d-grid.mt-2
+            button.btn.btn-primary(type="submit")
+                i.bi.bi-binoculars.me-1
+                | Submit changes
+
+        //── Zurück zum Login ───────────────────────────────────
+        .col-md-4.d-grid.text-center.mt-3
+            a.btn.btn-outline-primary(href="/users/dashboard")
+                i.bi.bi-arrow-left-circle.me-1
+                | Back to home
+        .col-md-4.d-grid.text-center.mt-3
+            a.btn.btn-outline-warning(href="/users/profile/migrate/request")
+                i.bi.bi-archive.me-1
+                | Show profile migration token
+        .col-md-4.d-grid.text-center.mt-3
+            a.btn.btn-outline-danger(href="/users/profile/delete")
+                i.bi.bi-trash.me-1
+                | Delete profile

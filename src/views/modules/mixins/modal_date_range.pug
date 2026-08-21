@@ -1,0 +1,25 @@
+//- Reusable date range modal
+//- opts: title, arrivalLabel, departureLabel, startDate, endDate, modalClass, formClass, note, submitLabel, cancelLabel
+mixin dateRangeModal(id, opts)
+    .modal.fade(class=opts.modalClass id=id tabindex="-1" aria-labelledby=`${id}-title` aria-hidden="true")
+        .modal-dialog
+            .modal-content.bg-dark.text-light.border.border-secondary
+                form(class=opts.formClass)
+                    .modal-header
+                        h5.modal-title(id=`${id}-title`) #{opts.title || 'Adjust dates'}
+                        button.btn-close.btn-close-white(type="button" data-bs-dismiss="modal" aria-label="Close")
+                    .modal-body
+                        input(type="hidden" name="registrationId")
+                        .mb-3
+                            label.form-label(for=`${id}-arrival`) #{opts.arrivalLabel || 'Arrival date'}
+                            input.form-control.text-bg-dark(id=`${id}-arrival` type="date" name="arrivalDate" required min=opts.startDate max=opts.endDate)
+                        .mb-0
+                            label.form-label(for=`${id}-departure`) #{opts.departureLabel || 'Departure date'}
+                            input.form-control.text-bg-dark(id=`${id}-departure` type="date" name="departureDate" required min=opts.startDate max=opts.endDate)
+                    .modal-footer.d-flex.justify-content-between
+                        small.text-secondary #{opts.note || ''}
+                        .d-flex.gap-2
+                            button.btn.btn-outline-secondary(type="button" data-bs-dismiss="modal") #{opts.cancelLabel || 'Cancel'}
+                            button.btn.btn-primary(type="submit")
+                                i.bi.bi-save.me-1
+                                | #{opts.submitLabel || 'Save'}

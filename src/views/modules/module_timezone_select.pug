@@ -1,0 +1,63 @@
+//- timezonePicker(name, opts?)
+//- opts: { id, label, value, required, class, help, common, refDateIso }
+//-   name          -> form field name to submit (hidden input)
+//-   value         -> preselected IANA zone (e.g. "Europe/Berlin")
+//-   common        -> array of IANA zones to show in "Common" select
+//-   refDateIso    -> ISO date (e.g. "2025-09-20T17:00") for offset labels; defaults to now
+mixin timezonePicker(name, opts)
+    -
+        if (!opts) opts = {}
+        const id = (opts.id || name);
+        opts.common ||= [
+            'UTC', 'Europe/Berlin', 'Europe/London', 'America/New_York', 'America/Chicago',
+            'America/Denver', 'America/Los_Angeles', 'America/Sao_Paulo', 'Africa/Johannesburg',
+            'Asia/Dubai', 'Asia/Kolkata', 'Asia/Singapore', 'Asia/Tokyo', 'Australia/Sydney', 'Pacific/Auckland'
+        ];
+
+    .timezone-picker(class=['tz-picker-compact', opts.class])
+        if opts.label
+            label.form-label(for=id + '-input')= opts.label
+
+        //- Hidden field that submits with the form
+        input(type='hidden', name=name, id=id, value=opts.value, required=opts.required)
+
+        //- Compact trigger button shows current selection; great for mobile
+        .d-flex.gap-2
+            a.btn.btn-outline-light.flex-grow-1.text-start(id=id + '-btn')
+                i.bi.bi-globe.me-2(aria-hidden="true")
+                span(id=id + '-btn-label') Select time zone
+            a.btn.btn-outline-light(id=id + '-guess' type='button' title='Use my time zone')
+                i.bi.bi-geo-alt(aria-hidden="true")
+
+        if opts.help
+            .form-text.mt-1= opts.help
+
+        //- Modal: searchable, large tap targets
+        .modal.fade(id=id + '-modal' tabindex='-1' aria-labelledby=id + '-modal-label' aria-hidden='true')
+            .modal-dialog.modal-dialog-scrollable
+                .modal-content.text-bg-dark
+                    .modal-header.text-bg-dark
+                        h5.modal-title(id=id + '-modal-label') Choose a time zone
+                        button.btn-close(type='button' data-bs-dismiss='modal' aria-label='Close')
+                    .modal-body
+                        //- Quick access chips
+                        .mb-2(id=id + '-chips')
+                            // chips injected by JS from opts.common
+
+                        //- Search box
+                        .input-group.mb-2
+                            span.input-group-text.text-bg-dark
+                                i.bi.bi-search(aria-hidden="true")
+                            input.form-control.text-bg-dark(id=id + '-search' type='search' placeholder='Search time zones…' autocomplete='off' inputmode='search')
+
+                        //- Results list
+                        ul.list-group.list-group-flush.text-bg-dark(id=id + '-list' role='listbox' aria-label='Time zones')
+                            // items injected by JS
+
+                    .modal-footer
+                        button.btn.btn-secondary(type='button' data-bs-dismiss='modal') Cancel
+
+    // Load the module
+    script(type="module").
+        import { initTimezoneSelect } from "/js/modules/timezone-select.gen.js";
+        initTimezoneSelect("#{id}", !{JSON.stringify(opts)});

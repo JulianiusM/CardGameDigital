@@ -1,0 +1,29 @@
+//- views/error.pug – überarbeitete Fehlerseite
+extends layout
+
+block meta
+    title Error | Surveyor
+
+block title
+    h1.card-header.text-center.bg-danger.text-light
+        i.bi.bi-exclamation-triangle-fill.me-2
+        | Oops! Something went wrong
+
+block content
+    //── Error Message ────────────────────────────────────
+    .alert.alert-danger.d-flex.align-items-center
+        i.bi.bi-x-circle-fill.me-2.fs-3
+        div
+            strong= message || 'An internal server error has occurred!'
+            if code
+                |  (Status #{code})
+
+    //── Stack Trace (nur in Entwicklung) ─────────────────
+    if error && error.stack
+        details.mb-0
+            summary.text-warning
+                i.bi.bi-code-slash.me-1
+                | View stack trace
+            pre.bg-black.text-light.p-2.rounded
+                code= error.stack
+

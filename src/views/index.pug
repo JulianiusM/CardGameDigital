@@ -1,0 +1,213 @@
+//- views/index.pug – Landing Page using register-guest design language + card columns
+extends layout
+
+block meta
+    title Surveyor – Organize and coordinate group activities
+    meta(
+        name="description"
+        content="Surveyor helps you organize and coordinate group activities with surveys, events, packing lists, activity plans and drivers lists."
+    )
+    meta(
+        name="keywords"
+        content="Surveyor, surveys, events, packing lists, activity plans, drivers lists, group activities"
+    )
+    meta(name="author" content="Surveyor")
+    meta(property="og:title" content="Surveyor – Organize and coordinate group activities")
+    meta(
+        property="og:description"
+        content="Create surveys, events, packing lists, activity plans and drivers lists in one place and keep an overview on your dashboard."
+    )
+    meta(property="og:image" content="/img/logo.png")
+    meta(property="og:url" content=settings.rootUrl)
+    meta(name="twitter:card" content="summary_large_image")
+
+block title
+    //- Card header (same pattern as register-guest)
+    h1.card-header.text-center.py-3.mb-0
+        i.bi.bi-diagram-3.me-2
+        | Surveyor
+
+block content
+    //- Intro block – signed-in focused, with random quick-create target
+    if profile
+        .text-center.mb-4
+            p.lead.mb-2
+                | Welcome back, #{profile.name}.
+            ul.list-unstyled.small.d-inline-block.text-start.mb-0
+                li.mb-1
+                    i.bi.bi-check-circle-fill.me-2
+                    | See all your surveys, events, packing lists, activity plans and drivers lists in one place.
+                li.mb-1
+                    i.bi.bi-check-circle-fill.me-2
+                    | Quickly create new plans and share links so others can respond or sign up.
+                li.mb-1
+                    i.bi.bi-check-circle-fill.me-2
+                    | Coordinate who brings what and who drives with whom.
+                li
+                    i.bi.bi-check-circle-fill.me-2
+                    | Keep track of participants, assignments and access rights from your dashboard.
+
+        -
+            const quickCreateTargets = [
+                {href: '/survey/create', icon: 'bi-bar-chart-steps', label: 'survey'},
+                {href: '/event/create', icon: 'bi-calendar-event', label: 'event'},
+                {href: '/activity/create', icon: 'bi-clock-history', label: 'activity plan'},
+                {href: '/packing/create', icon: 'bi-bag-fill', label: 'packing list'},
+                {href: '/drivers/create', icon: 'bi-car-front-fill', label: 'drivers list'}
+            ];
+            const quickCreate = quickCreateTargets[Math.floor(Math.random() * quickCreateTargets.length)];
+
+        .d-flex.flex-wrap.justify-content-center.gap-2.mb-4
+            a.btn.btn-primary.btn-lg.d-inline-flex.align-items-center.gap-2(href="/users/dashboard")
+                i.bi.bi-speedometer2
+                | Open your dashboard
+            a.btn.btn-outline-light.btn-lg.d-inline-flex.align-items-center.gap-2(href=quickCreate.href)
+                i(class=quickCreate.icon)
+                | Start a new #{quickCreate.label}
+
+    else
+        .text-center.mb-4
+            p.lead.mb-2 Organize and coordinate group activities in one place.
+            ul.list-unstyled.small.d-inline-block.text-start.mb-0
+                li.mb-1
+                    i.bi.bi-check-circle-fill.me-2
+                    | Plan surveys, events and activity schedules.
+                li.mb-1
+                    i.bi.bi-check-circle-fill.me-2
+                    | Share a single link so people can respond or sign up.
+                li.mb-1
+                    i.bi.bi-check-circle-fill.me-2
+                    | Keep packing lists and drivers lists together with your events.
+                li
+                    i.bi.bi-check-circle-fill.me-2
+                    | See everything you created on your personal dashboard.
+
+        .d-flex.flex-wrap.justify-content-center.gap-2.mb-3
+            a.btn.btn-primary.btn-lg.d-inline-flex.align-items-center.gap-2(href=`/users/register?next=${nxtUrl}`)
+                i.bi.bi-person-plus
+                | Create account
+            a.btn.btn-outline-light.btn-lg.d-inline-flex.align-items-center.gap-2(href=`/users/login?next=${nxtUrl}`)
+                i.bi.bi-box-arrow-in-right
+                | Log in
+
+        p.text-center.small.text-white-50.mb-4
+            | If you received an invitation link, you can also participate as a guest without creating an account.
+
+
+    //- Divider with pill – styled for dark background
+    .position-relative.text-center.my-4
+        hr
+        span.position-absolute.top-50.start-50.translate-middle.px-3.bg-dark.rounded-pill.border.border-secondary.text-white-50.small
+            | What you can create
+
+    //- Feature overview – entities from the documentation only
+    .row.row-cols-1.row-cols-md-2.row-cols-xl-3.g-4.mb-4
+        // Surveys
+        .col
+            .card.h-100.text-bg-dark.border-secondary
+                .card-body
+                    h2.h5.mb-1
+                        i.bi.bi-bar-chart-steps.me-2
+                        | Surveys
+                    p.mb-2.text-white-50
+                        | Find suitable dates and collect responses.
+                    ul.small.mb-0
+                        li Define date combinations such as specific weekdays and weeks of a month.
+                        li Let people answer with options like Yes, Maybe or No.
+                        li See everyone’s availability in a combined view.
+                        li Allow both registered users and guests to participate.
+
+        // Events
+        .col
+            .card.h-100.text-bg-dark.border-secondary
+                .card-body
+                    h2.h5.mb-1
+                        i.bi.bi-calendar-event.me-2
+                        | Events
+                    p.mb-2.text-white-50
+                        | Create events with participant registration and links to related plans.
+                    ul.small.mb-0
+                        li Store event details such as title, dates and location.
+                        li Manage participant registration and track who is attending.
+                        li Link related packing lists, activity plans and drivers lists.
+                        li Optionally collect information such as dietary notes.
+                        li Use invoice pools to assign costs, record payments and see balances.
+
+        // Packing Lists
+        .col
+            .card.h-100.text-bg-dark.border-secondary
+                .card-body
+                    h2.h5.mb-1
+                        i.bi.bi-bag-fill.me-2
+                        | Packing lists
+                    p.mb-2.text-white-50
+                        | Coordinate what needs to be brought for trips or events.
+                    ul.small.mb-0
+                        li Create items with descriptions and quantities.
+                        li Track how many of each item are still needed.
+                        li Assign items to people so everyone knows what they bring.
+                        li Support participation via shared links, including guests.
+
+    .row.row-cols-1.row-cols-md-2.g-4.mb-4
+        // Activity Plans
+        .col
+            .card.h-100.text-bg-dark.border-secondary
+                .card-body
+                    h2.h5.mb-1
+                        i.bi.bi-clock-history.me-2
+                        | Activity plans
+                    p.mb-2.text-white-50
+                        | Schedule activities with time slots and roles.
+                    ul.small.mb-0
+                        li Create time-based schedules organized by date and time.
+                        li Define roles for activities, such as helpers or facilitators.
+                        li Assign people to activity slots and see who is where.
+                        li Track how many assignments participants should take.
+                        li Link plans to events to reuse participant lists.
+                        li Allow guests to take part using shared plan links.
+
+        // Drivers Lists
+        .col
+            .card.h-100.text-bg-dark.border-secondary
+                .card-body
+                    h2.h5.mb-1
+                        i.bi.bi-car-front-fill.me-2
+                        | Drivers lists
+                    p.mb-2.text-white-50
+                        | Coordinate transportation by organizing drivers and passengers.
+                    ul.small.mb-0
+                        li Register drivers and specify the number of seats they offer.
+                        li Let participants sign up for available rides.
+                        li Track who is riding with whom.
+                        li Support participation via links so guests can join.
+
+    //- Second divider – access & permissions
+    .position-relative.text-center.my-4
+        hr
+        span.position-absolute.top-50.start-50.translate-middle.px-3.bg-dark.rounded-pill.border.border-secondary.text-white-50.small
+            | Access and permissions
+
+    .row.g-4
+        // Access & participation
+        .col-md-6
+            .card.h-100.text-bg-dark.border-secondary
+                .card-body
+                    h2.h5.mb-2
+                        i.bi.bi-door-open.me-2
+                        | Access and participation
+                    p.small.mb-2
+                        | People can take part either with a registered account or as guests using links shared by organizers.
+                    p.small.mb-0.text-white-50
+                        | Your dashboard works as your personal homepage and shows the surveys, events, packing lists, activity plans and drivers lists you have created.
+
+        // Permissions
+        .col-md-6
+            .card.h-100.text-bg-dark.border-secondary
+                .card-body
+                    h2.h5.mb-2
+                        i.bi.bi-shield-check.me-2
+                        | Permissions
+                    p.small.mb-2
+                        | Surveyor uses a permission system to control who can view and edit entities and their items.
+                    p.small.mb-0.text-white-50
+                        | Permissions can be assigned to audiences as group permissions and to individual users, while the creator of an entity always keeps full access.

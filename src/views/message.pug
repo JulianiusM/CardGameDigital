@@ -1,0 +1,33 @@
+//- views/status.pug
+extends layout
+
+block meta
+    //─ Status-Label berechnen ────────────────────────────────────────
+    - var statusLabel = status.charAt(0).toUpperCase() + status.slice(1)
+    title= statusLabel + ' | ControlPanel'
+
+block title
+    h1.card-header.text-center.bg-dark.text-light
+        if status === 'error'
+            i.bi.bi-exclamation-triangle-fill.me-2
+        else if status === 'warning'
+            i.bi.bi-exclamation-circle-fill.me-2
+        else if status === 'success'
+            i.bi.bi-check-circle-fill.me-2
+        else
+            i.bi.bi-info-circle-fill.me-2
+        | #{statusLabel}
+
+block alert
+    //- Moved alerts
+
+block content
+    include modules/module_alert
+    .d-flex.justify-content-center.gap-3.mt-4
+        a.btn.btn-primary(href="/")
+            i.bi.bi-house-door-fill.me-1
+            | Home
+        //-if status === 'error'
+            a.btn.btn-outline-danger(href="/support")
+                i.bi.bi-envelope-at-fill.me-1
+                | Contact Support

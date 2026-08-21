@@ -1,0 +1,16 @@
+//- Alert module
+if(status === "success")
+    div(class="alert alert-success") #{message}
+if(status === "info")
+    div(class="alert alert-info") #{message}
+if(status === "error")
+    div(class="alert alert-danger") #{message}
+if messages && messages.error
+    .alert.alert-danger #{messages.error}
+if messages && messages.success
+    .alert.alert-success #{messages.success}
+if messages && messages.info
+    .alert.alert-info #{messages.info}
+
+//- Platz für JS-eingespielte Meldungen
+#liveAlerts.sticky-top.mt-1

@@ -1,0 +1,19 @@
+extends ../../layout
+
+block meta
+    title Migration token | Surveyor
+
+block title
+    h1.card-header.text-center
+        i.bi.bi-archive-fill.me-2
+        | Migrate your profile
+
+block content
+    .text-center.mb-4
+        p.lead Below is your personal migration token for this profile (#{profile.name}). This will allow to migrate your profile to another user.
+        p Warning: If this is the last profile on your account you will permanently loose access to your account as it will be deleted upon migration!
+        p Do NOT share this token! It is valid for 24 hours. After that, you will need to request a new one.
+
+    hr
+    h2.text-center Token:
+    h3.text-center #{data.token}

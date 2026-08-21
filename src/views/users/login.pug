@@ -1,0 +1,78 @@
+//- views/auth/login.pug – Facelift
+extends ../layout
+
+block meta
+    title Login | Surveyor
+
+block title
+    h1.card-header.text-center
+        i.bi.bi-box-arrow-in-right.me-2
+        | Login
+
+block content
+    h2.text-center
+        | Already got a user account?
+    p.text-center Login here using your credentials or visit the external authentication provider if enabled.
+    form.row.gy-3.justify-content-center(action=`/users/login?next=${nxtUrl}` method="post")
+        if settings.localLoginEnabled
+            //── Username ────────────────────────────────────────
+            .col-md-6
+                label.form-label.mb-1(for="username")
+                    i.bi.bi-person-circle.me-1
+                    | Username&nbsp;*
+                input#username.form-control.text-bg-dark(
+                    type="text"
+                    name="username"
+                    maxlength="100"
+                    value= (data && data.username) ? data.username : ''
+                    placeholder="your login name"
+                    required)
+
+            //── Passwort ────────────────────────────────────────
+            .col-md-6
+                label.form-label.mb-1(for="password")
+                    i.bi.bi-shield-lock.me-1
+                    | Password&nbsp;*
+                input#password.form-control.text-bg-dark(
+                    type="password"
+                    name="password"
+                    minlength="8"
+                    required)
+
+            //── Submit ───────────────────────────────────────────
+            .col-6.d-grid.mt-2
+                button.btn.btn-success(type="submit")
+                    i.bi.bi-box-arrow-in-right.me-1
+                    | Login
+
+        if settings.oidcEnabled
+            .col-6.d-grid.mt-2
+                a.btn.btn-primary(href="/users/oidc/login")
+                    i.bi.bi-person-vcard.me-1
+                    | Login using #{settings.oidcName}
+
+        if settings.localLoginEnabled
+            // Forgot-pasword
+            .col-6.text-center.mt-3
+                a.text-decoration-none(href="/users/forgot-password")
+                    i.bi.bi-arrow-left-circle.me-1
+                    | Forgot password?
+
+    hr
+    h2.text-center
+        | Looking for your guest account?
+    p.text-center If you have added your email upon registration, you will be able to recover it here. We will send a link of all associated guest accounts to the provided email address.
+    form.row.gy-3.justify-content-center(action=`/guest/recovery?next=${nxtUrl}` method="post")
+        .col-md-6
+            label.form-label.mb-1(for="email")
+                i.bi.bi-envelope.me-1
+                | E-mail&nbsp;*
+            input#email.form-control.text-bg-dark(
+                type="email"
+                name="email"
+                required)
+        .col-md-6.mt-auto
+            .d-grid
+                button.btn.btn-outline-primary(type="submit")
+                    i.bi.bi-box-arrow-in-right.me-1
+                    | Request access

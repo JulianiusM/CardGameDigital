@@ -1,0 +1,38 @@
+extends layout
+
+block title
+    .card-header.d-flex.justify-content-between.align-items-center
+        h1.card-title.mb-0
+            i.bi.bi-question-circle.me-2
+            | #{title}
+        a.btn.btn-sm.btn-outline-light(href="/")
+            i.bi.bi-house.me-1
+            | Home
+
+block content
+    .row
+        //- Sidebar navigation for documentation
+        .col-md-3.mb-3
+            .card.bg-dark.text-white
+                .card-header
+                    h5.mb-0
+                        i.bi.bi-list-ul.me-2
+                        | Documentation
+                .list-group.list-group-flush
+                    each doc in docsList
+                        - const isActive = currentDoc === doc.path.toLowerCase() || (currentDoc === 'readme' && doc.path === 'readme')
+                        - const docUrl = doc.path === 'readme' || doc.path === 'README' ? '/help' : `/help/${doc.path.toLowerCase()}`
+                        a.list-group-item.list-group-item-action(
+                            href=docUrl,
+                            class=isActive ? 'active bg-primary' : 'bg-dark text-white border-secondary'
+                        )= doc.title
+
+        //- Main content area
+        .col-md-9
+            .card.bg-dark.text-white
+                .card-body.help-content
+                    //- Render the markdown content as HTML
+                    != content
+
+block link
+    link(rel="stylesheet" href="/style/help.css")

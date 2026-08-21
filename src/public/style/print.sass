@@ -1,0 +1,247 @@
+:root
+  --ink: #111
+  --muted: #666
+  --rule: #ddd
+  --chip: #f1f3f5
+  --chipText: #222
+
+
+@page
+  size: A4 landscape
+  margin: 12mm
+
+
+@media print
+  html, body
+    background: #fff !important
+
+
+  .no-print
+    display: none !important
+
+
+@media screen
+  body
+    background: #0b0d0f
+    padding: 24px
+
+
+  .sheet
+    margin: 0 auto 24px auto
+    max-width: 1123px
+    /* A4 landscape width at 96dpi approx */
+    box-shadow: 0 8px 30px rgba(0, 0, 0, .35)
+
+
+body, table
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, "Helvetica Neue", Arial, "Noto Sans", "Liberation Sans", sans-serif
+  color: var(--ink)
+
+
+.sheet
+  background: #fff
+  border-radius: 8px
+
+
+.wrap
+  padding: 18px 20px 24px
+
+
+h1, h2, h3
+  margin: 0 0 8px
+  line-height: 1.25
+
+
+.muted
+  color: var(--muted)
+
+
+.rule
+  border-top: 1px solid var(--rule)
+  margin: 12px 0
+
+
+.meta
+  display: flex
+  flex-wrap: wrap
+  gap: 10px 20px
+  font-size: 12px
+
+
+  div
+    white-space: nowrap
+
+
+.toolbar
+  display: flex
+  justify-content: space-between
+  align-items: center
+  gap: 12px
+
+
+.btn
+  background: #111
+  color: #fff
+  border: 0
+  border-radius: 6px
+  padding: 8px 12px
+  cursor: pointer
+
+
+.btn:active
+  transform: translateY(1px)
+
+
+.chips
+  display: flex
+  flex-wrap: wrap
+  gap: 6px
+
+
+.chip
+  background: var(--chip)
+  color: var(--chipText)
+  border-radius: 999px
+  padding: 2px 8px
+  font-size: 12px
+
+
+.week-block
+  margin-bottom: 2px
+  page-break-inside: avoid
+
+  &:not(:last-child)
+    page-break-after: always
+
+
+.schedule-grid
+  display: grid
+  grid-template-columns: repeat(7, minmax(0, 1fr))
+  gap: 2px
+  margin-top: 4px
+
+
+.day-card
+  background: #fff
+  border: 1px solid #b3b3b3
+  border-radius: 8px
+  min-height: 100px
+  padding: 6px
+  display: flex
+  flex-direction: column
+  gap: 4px
+
+
+.empty-day
+  background: #fcfcfc
+  color: var(--muted)
+
+
+.day-header
+  display: flex
+  align-items: baseline
+  justify-content: space-between
+  gap: 4px
+  padding-bottom: 4px
+  border-bottom: 1px solid var(--rule)
+  font-size: 9px
+
+
+.day-name
+  font-weight: 700
+
+
+.date
+  color: var(--muted)
+
+
+.slot-card
+  border: 1.25px solid #5b5b5b
+  border-radius: 6px
+  padding: 2px 4px
+  background: #fff
+  box-shadow: 0 1px 0 rgba(0, 0, 0, .08)
+  display: flex
+  flex-direction: column
+
+
+.slot-title
+  font-weight: 700
+  font-size: 9px
+  margin: 0
+
+.slot-time
+  font-size: 8px
+  font-weight: 600
+  line-height: 0.95
+  margin: 1px 0
+
+.slot-description
+  font-size: 8px
+  line-height: 0.9
+
+.slot-divider
+  border-top: 1px solid var(--rule)
+  margin: 1px 0
+
+
+.assignee-list
+  list-style: none
+  padding: 0
+  margin: 1px 0 0
+
+
+.assignee-list li
+  font-size: 8px
+
+
+table
+  width: 100%
+  border-collapse: collapse
+  margin-top: 8px
+
+
+th, td
+  border: 1px solid var(--rule)
+  padding: 6px 8px
+  vertical-align: top
+  font-size: 12px
+
+
+th
+  background: #f7f7f7
+  text-align: left
+
+
+tbody tr:nth-child(odd) td
+  background: #fafafa
+
+
+.right
+  text-align: right
+
+
+.nowrap
+  white-space: nowrap
+
+
+.small
+  font-size: 12px
+
+
+.allergies
+  white-space: pre-wrap
+  font-size: 12px
+
+
+.footer
+  display: flex
+  justify-content: space-between
+  align-items: center
+  margin-top: 10px
+  font-size: 11px
+  color: var(--muted)
+
+
+.pagebreak
+  page-break-after: always

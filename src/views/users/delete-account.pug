@@ -1,0 +1,41 @@
+extends ../layout
+
+block meta
+    title Delete Account | Surveyor
+
+block title
+    h1.card-header.text-center
+        i.bi.bi-trash-fill.me-2
+        | Delete your account?
+
+block content
+    p.lead.text-center.mb-4
+        i.bi.bi-exclamation-diamond-fill.me-1
+        | Enter your username to confirm deleting your account. This action is permanent and cannot be undone!
+
+    form#forgotForm.row.gy-3.justify-content-center(
+        action="/users/account/delete"
+        method="post")
+        //── Username ────────────────────────────────────────────
+        .col-md-6
+            label.form-label.mb-1(for="username")
+                i.bi.bi-person-circle.me-1
+                | Username *
+            input#username.form-control.text-bg-dark(
+                type="text"
+                name="username"
+                placeholder="Your username"
+                value = data ? data.username : ""
+                required)
+
+        //── Submit ──────────────────────────────────────────────
+        .col-12.d-grid.mt-2
+            button.btn.btn-danger(type="submit")
+                i.bi.bi-trash.me-1
+                | Permanently delete account
+
+        //── Zurück zum Login ───────────────────────────────────
+        .col-12.text-center.mt-3
+            a.text-decoration-none(href="/users/dashboard")
+                i.bi.bi-arrow-left-circle.me-1
+                | Back to home

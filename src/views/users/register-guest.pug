@@ -1,0 +1,150 @@
+//- views/users/register-guest.pug – refreshed Guest Register
+//- Expects in locals: data.entityType, data.entityId, data.title
+extends ../layout
+
+block meta
+    title Join «#{data.title}»
+
+block scripts
+    script(type="module" src="/js/register-guest.gen.js")
+
+block title
+    //- The page's card header (provided by your layout)
+    h1.card-header.text-center.py-3.mb-0
+        i.bi.bi-door-open-fill.me-2
+        | Join «#{data.title}»
+
+block content
+    if data.guestRegistrationNags && data.guestRegistrationNags.accountRecommendation
+        .alert.alert-info.text-center.border-info.mb-4(role="alert")
+            .d-flex
+                i.bi.bi-info-circle-fill.me-2
+                .flex-grow-1
+                div
+                    if data.guestRegistrationNags.accountRecommendationTitle
+                        strong #{data.guestRegistrationNags.accountRecommendationTitle}:&nbsp;
+                    | #{data.guestRegistrationNags.accountRecommendation}
+                .flex-grow-1
+
+    //- Intro
+    .text-center.mb-4
+        h3.mb-2 Get the full experience with your own user account!
+        ul.list-unstyled.small.d-inline-block.text-start.mb-0
+            li.mb-1
+                i.bi.bi-check-circle-fill.me-2
+                | Create your own events, plans, lists and more!
+            li.mb-1
+                i.bi.bi-check-circle-fill.me-2
+                | One login for all features - no need to keep track of links!
+            li.mb-1
+                i.bi.bi-check-circle-fill.me-2
+                | Create multiple profiles - Ideal for families!
+            li
+                i.bi.bi-check-circle-fill.me-2
+                | Jointly administrate events, plans and more!
+
+    //- Primary actions
+    .d-flex.flex-wrap.justify-content-center.gap-2.mb-4
+        a.btn.btn-primary.d-inline-flex.align-items-center.gap-2(href=`/users/login?next=${nxtUrl}`)
+            i.bi.bi-box-arrow-in-right
+            | Log in
+        a.btn.btn-outline-warning.d-inline-flex.align-items-center.gap-2(href=`/guest/recovery?next=${nxtUrl}`)
+            i.bi.bi-envelope
+            | Recover guest account
+        a.btn.btn-outline-primary.d-inline-flex.align-items-center.gap-2(href=`/users/register?next=${nxtUrl}`)
+            i.bi.bi-person-plus
+            | Create account
+
+    //- Divider
+    .position-relative.text-center.my-4
+        hr
+        span.position-absolute.top-50.start-50.translate-middle.px-3.bg-body-tertiary.rounded-pill.text-muted.small
+            | or continue as a guest
+
+    //- Guest note
+    .alert.alert-warning.text-center.border-warning.mb-4(role="alert")
+        .d-flex
+            i.bi.bi-exclamation-triangle-fill.me-2
+            .flex-grow-1
+            div
+                strong Heads up:&nbsp;
+                | #{data.guestRegistrationNags.linkWarning}
+            .flex-grow-1
+
+    //- Guest form
+    form#guestForm.row.gx-3.gy-3.justify-content-center(
+        method="post"
+        action=`/${data.entityType}/${data.entityId}/guest`
+        autocomplete="on"
+        data-confirm-message=data.guestRegistrationNags.submitConfirmation
+    )
+        //- Display name
+        .col-12.col-md-8
+            label.form-label.mb-1(for="username")
+                i.bi.bi-person-circle.me-1
+                | Display name *
+            .input-group.input-group-lg
+                span.input-group-text
+                    i.bi.bi-person
+                input#username.form-control(
+                    type="text"
+                    name="username"
+                    maxlength="100"
+                    placeholder="Your name"
+                    required
+                    autocomplete="nickname"
+                )
+            .form-text.text-bg-dark
+                | This name will be shown to others. You can use your real name or a nickname.
+
+        //- E-mail (optional)
+        .col-12.col-md-8
+            label.form-label.mb-1(for="email")
+                i.bi.bi-envelope-at.me-1
+                | E-mail (for your personal editing link as well as recovery)
+            .input-group.input-group-lg
+                span.input-group-text
+                    i.bi.bi-envelope
+                input#email.form-control(
+                    type="email"
+                    name="email"
+                    maxlength="100"
+                    placeholder="name@example.com"
+                    autocomplete="email"
+                    inputmode="email"
+                )
+            .form-text.text-bg-dark
+                | #{data.guestRegistrationNags.emailRecommendation}
+
+        //- Submit
+        .col-12.col-md-8.mt-2
+            .d-grid
+                button.btn.btn-success.btn-lg.d-inline-flex.align-items-center.justify-content-center.gap-2(type="submit")
+                    i.bi.bi-check-lg
+                    | Continue as guest
+
+    //- Recovery form used by the modal choice
+    form#guestRecoveryForm.d-none(method="post" action=`/guest/recovery?next=${nxtUrl}` autocomplete="on")
+        input(type="hidden" name="email")
+
+    //- Modal choice when an email already belongs to a guest account
+    .modal.fade#guestChoiceModal(tabindex="-1" aria-labelledby="guestChoiceModalLabel" aria-hidden="true")
+        .modal-dialog.modal-dialog-centered
+            .modal-content.text-bg-dark
+                .modal-header
+                    h2#guestChoiceModalLabel.modal-title Guest account found!
+                    button.btn-close(type="button" data-bs-dismiss="modal" aria-label="Close")
+                .modal-body
+                    p.mb-0 We have found a guest account linked to this email! Do you want to recover it instead?
+                .modal-footer
+                    button#guestChoiceContinue.btn.btn-outline-secondary(type="button") Continue as new guest
+                    button#guestChoiceRecover.btn.btn-warning(type="button") Recover guest account
+
+    //- Subtle footer links
+    .text-center.mt-4
+        a.text-decoration-none.me-3(href=`/users/login?next=${nxtUrl}`)
+            i.bi.bi-arrow-left-circle.me-1
+            | Back to login
+        a.text-decoration-none(href=`/users/register?next=${nxtUrl}`)
+            i.bi.bi-person-plus.me-1
+            | Create a full account

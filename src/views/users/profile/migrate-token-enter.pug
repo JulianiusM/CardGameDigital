@@ -1,0 +1,40 @@
+extends ../../layout
+
+block meta
+    title Migrate Profile | Surveyor
+
+block title
+    h1.card-header.text-center
+        i.bi.bi-archive-fill.me-2
+        | Migrate profile to your user
+
+block content
+    p.lead.text-center.mb-4
+        i.bi.bi-exclamation-diamond-fill.me-1
+        | Enter the migration token below. You will get a preview of the profile you are about to migrate.
+
+    form#forgotForm.row.gy-3.justify-content-center(
+        action="/users/profile/migrate/show"
+        method="post")
+        //── Username ────────────────────────────────────────────
+        .col-md-6
+            label.form-label.mb-1(for="token")
+                i.bi.bi-key.me-1
+                | Migration token *
+            input#token.form-control.text-bg-dark(
+                type="text"
+                name="token"
+                placeholder="Your migration token"
+                required)
+
+        //── Submit ──────────────────────────────────────────────
+        .col-12.d-grid.mt-2
+            button.btn.btn-primary(type="submit")
+                i.bi.bi-binoculars.me-1
+                | Show migration profile
+
+        //── Zurück zum Login ───────────────────────────────────
+        .col-12.text-center.mt-3
+            a.text-decoration-none(href="/users/profile/manage")
+                i.bi.bi-arrow-left-circle.me-1
+                | Back to home

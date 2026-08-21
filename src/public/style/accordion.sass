@@ -1,0 +1,154 @@
+@import "../../../node_modules/bootstrap/scss/bootstrap"
+
+// Palette helpers
+$dash-bg: $gray-900
+// card dark bg
+$dash-bg-2: mix($black, $gray-900, 8%)
+// slightly darker for active header
+$dash-border: rgba($white, .12)
+$dash-border-sub: rgba($white, .08)
+$dash-body: $gray-100
+$dash-muted: $gray-500
+$dash-input-bg: #1f2327
+$dash-input-text: $white
+$dash-input-ph: $gray-600
+$dash-input-addon: #2a2f34
+
+// Dark variant for accordion using Bootstrap’s CSS variables
+.accordion-dark
+  // Header/button + body colors via CSS vars (Bootstrap 5.3+)
+  --bs-accordion-color: #{$dash-body}
+  --bs-accordion-bg: #{$dash-bg}
+  --bs-accordion-border-color: #{$dash-border}
+  --bs-accordion-btn-color: #{$dash-body}
+  --bs-accordion-btn-bg: #{$dash-bg}
+  --bs-accordion-btn-focus-box-shadow: 0 0 0 .2rem rgba($primary, .15)
+  --bs-accordion-active-color: #{$dash-body}
+  --bs-accordion-active-bg: #{$dash-bg-2}
+  --bs-accordion-icon-color: #{$dash-muted}
+  --bs-accordion-icon-active-color: #{$dash-body}
+
+  .accordion-item
+    border: 1px solid var(--bs-accordion-border-color)
+    @include border-radius(.5rem)
+    overflow: hidden
+    margin-bottom: .75rem
+    background-color: var(--bs-accordion-bg)
+
+
+  .accordion-button
+    // Remove default shadow; use border line when collapsed
+    @include box-shadow(none)
+
+    &.collapsed
+      border-bottom: 1px solid $dash-border-sub
+
+    position: relative
+    // ensure pseudo-element placement
+
+    &::after
+      // remove Bootstrap's bg image if any
+      background-image: none !important
+
+      // size & transition remain consistent with Bootstrap defaults
+      width: var(--bs-accordion-btn-icon-width)
+      height: var(--bs-accordion-btn-icon-width)
+      transition: transform .2s ease-in-out
+
+      // color the icon here (collapsed & expanded)
+      background-color: var(--dash-accordion-icon-color, #{$dash-body})
+
+      // SVG chevron as a mask
+      $chevron-svg: "data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHZpZXdCb3g9JzAgMCAxNiAxNic+PHBhdGggZmlsbD0nd2hpdGUnIGZpbGwtcnVsZT0nZXZlbm9kZCcgZD0nTTEuNjQ2IDQuNjQ2YS41LjUgMCAwIDEgLjcwOCAwTDggMTAuMjkzbDUuNjQ2LTUuNjQ3YS41LjUgMCAwIDEgLjcwOC43MDhsLTYgNmEuNS41IDAgMCAxLS43MDggMGwtNi02YS41LjUgMCAwIDEgMC0uNzA4eicvPjwvc3ZnPg=="
+
+      -webkit-mask-image: url(#{$chevron-svg})
+      mask-image: url(#{$chevron-svg})
+      -webkit-mask-repeat: no-repeat
+      mask-repeat: no-repeat
+      -webkit-mask-position: center
+      mask-position: center
+      -webkit-mask-size: 100% 100%
+      mask-size: 100% 100%
+
+
+    // rotate on expand (mirrors Bootstrap’s behavior)
+    &:not(.collapsed)::after
+      transform: var(--bs-accordion-btn-icon-transform)
+      background-color: var(--dash-accordion-icon-active-color, var(--bs-primary))
+
+
+  .accordion-body
+    background-color: var(--bs-accordion-bg)
+    color: var(--bs-accordion-color)
+
+
+// Toolbar row at the top of each section
+.dashboard-toolbar
+  display: flex
+  flex-wrap: wrap
+  align-items: center
+  gap: .5rem
+  margin-bottom: 1rem
+
+  .dashboard-filter
+    min-width: 280px
+    flex: 1 1 auto
+
+    .input-group-text
+      background-color: $dash-input-addon
+      color: $dash-muted
+      border-color: $dash-border
+
+
+    .form-control
+      background-color: $dash-input-bg
+      color: $dash-input-text
+      border-color: $dash-border
+
+      &::placeholder
+        color: $dash-input-ph
+
+
+    // create button attached to the input group (right side)
+    .btn
+      // zero left radius to join the input seamlessly
+      @include border-start-radius(0)
+
+
+  .dashboard-count
+    color: $dash-muted
+    white-space: nowrap
+    display: inline-flex
+    align-items: center
+    gap: .25rem
+
+
+// List container with controlled growth
+.dashboard-list
+  max-height: 26rem
+  overflow: auto
+
+  .list-group-item
+    background-color: $dash-bg
+    color: $dash-body
+    border-color: $dash-border
+
+    a
+      color: $dash-body
+
+    &:hover
+      background-color: $dash-bg-2
+
+// Permission matrix
+.perm-matrix, .admin-matrix, .perm-mgmnt, .reg-links, .event-participants
+  .accordion-button.bg-dark
+    color: #fff
+
+  .accordion-button.bg-dark:not(.collapsed)
+    box-shadow: none
+
+  .accordion-button::after
+    filter: invert(1) opacity(0.85)
+
+  .accordion-item
+    border-color: rgba(255, 255, 255, .15)

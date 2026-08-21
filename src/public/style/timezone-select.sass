@@ -1,0 +1,59 @@
+.tz-picker
+  --tz-radius: 0.75rem
+  --tz-border: 1px solid #d0d7de
+  --tz-focus: #0d6efd
+
+  .form-label
+    font-weight: 600
+    margin-bottom: .4rem
+
+  .row
+    margin: 0
+
+  .btn, .form-select, .form-control
+    border-radius: var(--tz-radius)
+    border: var(--tz-border)
+
+
+  .btn
+    border-color: #cbd3da
+    background: #fff
+
+    &:hover
+      background: #f8f9fa
+
+
+  .input-group
+    display: flex
+    align-items: stretch
+    gap: .5rem
+
+    .input-group-text
+      border: var(--tz-border)
+      border-radius: var(--tz-radius)
+      padding: .5rem .75rem
+      background: #f6f8fa
+
+
+  .is-valid
+    border-color: #198754 !important
+    box-shadow: 0 0 0 .15rem rgba(25, 135, 84, .2)
+
+  .is-invalid
+    border-color: #dc3545 !important
+    box-shadow: 0 0 0 .15rem rgba(220, 53, 69, .2)
+
+  .form-text
+    color: #6c757d
+
+.tz-picker-compact
+  .list-group-item
+    border-left: 0
+    border-right: 0
+
+  .modal-body
+    padding-top: .5rem
+
+  .hover-background
+    &:hover
+      background-color: #495057 !important
