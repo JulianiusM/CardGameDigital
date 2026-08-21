@@ -1,0 +1,219 @@
+name: Manual Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version (e.g. 1.2.3, 1.2.3-alpha.1, 1.2.3-rc.2)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  # 1) Full CI verification on the selected branch/commit
+  ci:
+    name: Run full CI on selected branch
+    uses: ./.github/workflows/ci.yml
+    secrets: inherit
+
+  # 2) If CI passes, bump version, tag, build, and create release
+  release:
+    name: Bump version, tag, build & create release
+    needs: ci
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout selected branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.15.0
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Validate requested version and check tag availability
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: |
+          set -e
+
+          echo "Requested release version: ${RELEASE_VERSION}"
+
+          node << 'EOF'
+          const v = process.env.RELEASE_VERSION || '';
+
+          const semverLike = /^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?$/;
+
+          if (!semverLike.test(v)) {
+            console.error(`ERROR: Version '${v}' is not a valid semver (e.g. 1.2.3 or 1.2.3-alpha.1).`);
+            process.exit(1);
+          }
+
+          if (/dev/i.test(v)) {
+            console.error("ERROR: 'dev' is not allowed in release versions.");
+            process.exit(1);
+          }
+
+          const prereleaseIndex = v.indexOf('-');
+          if (prereleaseIndex !== -1) {
+            const pre = v.slice(prereleaseIndex + 1); // e.g. "alpha.1"
+            if (!/^(alpha|beta|rc)(\.|$)/.test(pre)) {
+              console.error(`ERROR: Pre-release identifier must start with alpha, beta, or rc (got: '${pre}')`);
+              process.exit(1);
+            }
+          }
+
+          console.log(`Version '${v}' is syntactically valid.`);
+          process.exit(0);
+          EOF
+
+          git fetch --tags --quiet
+          if git tag -l "v${RELEASE_VERSION}" | grep -q .; then
+            echo "ERROR: Tag v${RELEASE_VERSION} already exists."
+            exit 1
+          fi
+
+          echo "Tag 'v${RELEASE_VERSION}' is free."
+
+      - name: Update package.json to requested version (no tag yet)
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: |
+          set -e
+          npm version "${RELEASE_VERSION}" --no-git-tag-version
+          node -p "require('./package.json').version"
+
+      - name: Commit version bump and create tag
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: |
+          set -e
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          if [ -f package-lock.json ]; then
+            git add package.json package-lock.json
+          else
+            git add package.json
+          fi
+
+          if git diff --cached --quiet; then
+            echo "No changes detected after version bump; aborting."
+            exit 1
+          fi
+
+          git commit -m "chore: release v${RELEASE_VERSION}"
+          git tag -a "v${RELEASE_VERSION}" -m "Release v${RELEASE_VERSION}"
+
+          git push origin "HEAD:${GITHUB_REF_NAME}"
+          git push origin "v${RELEASE_VERSION}"
+
+      - name: Build application for release
+        run: npm run build
+
+      - name: Prepare production-safe release bundle
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: |
+          set -e
+
+          rm -rf release
+          mkdir -p release
+
+          # Copy build output
+          cp -R dist release/dist
+          cp -R docs release/docs
+          cp -R fonts release/fonts
+          cp package-lock.json release/package-lock.json
+
+          # Create a production-safe package.json for the release artifact:
+          # - remove devDependencies
+          # - remove install-time scripts that commonly pull dev tooling / break installs
+          node << 'EOF'
+          const fs = require('fs');
+
+          const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+
+          // Remove dev dependencies from the release artifact
+          delete pkg.devDependencies;
+
+          // Remove scripts that run during "npm install" and often depend on dev tooling
+          if (pkg.scripts && typeof pkg.scripts === 'object') {
+            const scriptsToRemove = [
+              'preinstall',
+              'install',
+              'postinstall',
+              'prepare',
+              'prepublish',
+              'prepublishOnly',
+              'postpublish'
+            ];
+            for (const k of scriptsToRemove) delete pkg.scripts[k];
+
+            if (Object.keys(pkg.scripts).length === 0) delete pkg.scripts;
+          }
+
+          // Write sanitized package.json into release bundle
+          fs.writeFileSync('release/package.json', JSON.stringify(pkg, null, 2) + '\n');
+
+          console.log('Wrote release/package.json (devDependencies removed; install scripts stripped).');
+          EOF
+
+          # Optional extra safety: make "npm install" omit dev deps by default in this bundle
+          cat > release/.npmrc <<'EOF'
+          omit=dev
+          EOF
+
+          echo "Release bundle contents:"
+          find release -maxdepth 2 -type f -print
+
+      - name: Create build archive
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: |
+          set -e
+          mkdir -p artifacts
+          tar -czf "artifacts/surveyor-v${RELEASE_VERSION}.tar.gz" -C release .
+          ls -R artifacts
+
+      - name: Create GitHub Release
+        id: create_release
+        uses: softprops/action-gh-release@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: v${{ inputs.version }}
+          name: v${{ inputs.version }}
+          prerelease: ${{ contains(inputs.version, '-') }}
+          draft: ${{ contains(inputs.version, '-') }}
+          make_latest: ${{ contains(inputs.version, '-') && 'false' || 'true' }}
+          files: |
+            artifacts/surveyor-v${{ inputs.version }}.tar.gz
+
+      - name: Publish prerelease after assets upload
+        if: ${{ contains(inputs.version, '-') }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_ID: ${{ steps.create_release.outputs.id }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${RELEASE_ID:-}" ]; then
+            echo "ERROR: release ID was not returned by the release creation step."
+            exit 1
+          fi
+
+          gh api -X PATCH "repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}" \
+            -f draft=false \
+            -f prerelease=true

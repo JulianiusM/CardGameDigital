@@ -1,0 +1,177 @@
+name: CI
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ master, dev, ts-migration ]
+  pull_request:
+    branches: [ master, dev, ts-migration ]
+  workflow_call: { }   # <--- this makes it reusable
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      mariadb:
+        image: mariadb:10.11
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: surveyor_test
+          MYSQL_USER: surveyor
+          MYSQL_PASSWORD: surveyor
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -proot"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+
+    env:
+      TZ: UTC
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Shallow clones should be disabled for a better relevancy of analysis
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.15.0
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Wait for MariaDB
+        run: |
+          for i in {1..60}; do
+            if mysqladmin ping -h 127.0.0.1 -uroot -proot --silent; then
+              echo "MariaDB is up"; break
+            fi
+            echo "Waiting for MariaDB... ($i)"
+            sleep 2
+          done
+
+      #- name: Set permissive SQL mode (match dev)
+      #  run: |
+      #    mysql -h 127.0.0.1 -uroot -proot -e "SET GLOBAL sql_mode='';"
+      #    # new sessions will inherit GLOBAL; also fix the current runner session:
+      #    mysql -h 127.0.0.1 -uroot -proot -e "SET SESSION sql_mode='';"
+      #    # sanity check:
+      #    mysql -h 127.0.0.1 -uroot -proot -e "SELECT @@GLOBAL.sql_mode AS global_sql_mode, @@SESSION.sql_mode AS session_sql_mode;"
+
+
+      - name: Create databases and grant privileges
+        run: |
+          mysql -h 127.0.0.1 -uroot -proot -e "CREATE DATABASE IF NOT EXISTS surveyor_test;"
+          mysql -h 127.0.0.1 -uroot -proot -e "CREATE DATABASE IF NOT EXISTS surveyor_e2e;"
+          mysql -h 127.0.0.1 -uroot -proot -e "GRANT ALL ON surveyor_test.* TO 'surveyor'@'%' IDENTIFIED BY 'surveyor';"
+          mysql -h 127.0.0.1 -uroot -proot -e "GRANT ALL ON surveyor_e2e.* TO 'surveyor'@'%' IDENTIFIED BY 'surveyor';"
+          mysql -h 127.0.0.1 -uroot -proot -e "FLUSH PRIVILEGES;"
+
+      - name: Create tests/.env.test
+        run: |
+          mkdir -p tests
+          cat > tests/.env.test <<'EOF'
+          TEST_DB_HOST=127.0.0.1
+          TEST_DB_PORT=3306
+          TEST_DB_USER=surveyor
+          TEST_DB_PASSWORD=surveyor
+          TEST_DB_NAME=surveyor_test
+          TEST_DB_LOGGING=false
+          EOF
+          echo "Wrote tests/.env.test"
+
+      - name: Create .env.e2e
+        run: |
+          cat > .env.e2e <<'EOF'
+          NODE_ENV=e2e
+          APP_PORT=3001
+          ROOT_URL=http://localhost:3001
+
+          # Make local login available for E2E
+          LOCAL_LOGIN_ENABLED=1
+          SESSION_SECRET=ci_e2e_secret
+          OIDC_ENABLED=0
+
+          # E2E DB (guard requires name to contain 'e2e')
+          E2E_DB_HOST=127.0.0.1
+          E2E_DB_PORT=3306
+          E2E_DB_USER=surveyor
+          E2E_DB_PASSWORD=surveyor
+          E2E_DB_NAME=surveyor_e2e
+
+          # Seeded admin for tests
+          E2E_ADMIN_USERNAME=tester
+          E2E_ADMIN_EMAIL=e2e@example.com
+          E2E_ADMIN_PASSWORD=passw0rd!
+          EOF
+          echo "Wrote .env.e2e"
+
+      - name: Run Vitest unit, frontend, and MariaDB integration suites with reports
+        run: |
+          mkdir -p artifacts
+          npm run test:ci
+
+      - name: Build application
+        run: npm run build
+
+      # =========================
+      # Playwright E2E
+      # =========================
+      - name: Cache Playwright browsers
+        id: playwright-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('package-lock.json') }}
+
+      - name: Install Playwright browsers
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        run: npx playwright install --with-deps chromium
+
+      - name: Run focused Playwright E2E suite with JUnit report
+        env:
+          CI: true
+          PLAYWRIGHT_JUNIT_OUTPUT: artifacts/junit-playwright.xml
+          PLAYWRIGHT_HTML_OUTPUT_DIR: artifacts/playwright-report
+        run: |
+          mkdir -p artifacts
+          npm run e2e
+
+      - name: Upload test reports (always)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports
+          path: |
+            artifacts/junit-vitest.xml
+            artifacts/junit-playwright.xml
+            artifacts/playwright-report/
+            coverage/lcov.info
+            coverage/coverage-final.json
+          retention-days: 7
+          compression-level: 9
+          if-no-files-found: warn
+
+      - name: Read package version
+        id: package
+        run: |
+          PACKAGE_VERSION=$(node -p "require('./package.json').version")
+          echo "version=${PACKAGE_VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: SonarQube Scan
+        uses: SonarSource/sonarqube-scan-action@master
+        with:
+          args: >
+            -Dsonar.projectVersion=${{ steps.package.outputs.version }}
+            -Dsonar.junit.reportPaths=artifacts/junit-vitest.xml,artifacts/junit-playwright.xml
+            -Dsonar.javascript.lcov.reportPaths=coverage/lcov.info
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}

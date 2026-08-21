@@ -1,0 +1,96 @@
+name: "Copilot Setup Steps"
+
+# Automatically run the setup steps when they are changed to allow for easy validation, and
+# allow manual testing through the repository's "Actions" tab
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - .github/workflows/copilot-setup-steps.yml
+  pull_request:
+    paths:
+      - .github/workflows/copilot-setup-steps.yml
+
+jobs:
+  # The job MUST be called `copilot-setup-steps` or it will not be picked up by Copilot.
+  copilot-setup-steps:
+    runs-on: ubuntu-latest
+
+    services:
+      mariadb:
+        image: mariadb:10.11
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: surveyor_test
+          MYSQL_USER: surveyor
+          MYSQL_PASSWORD: surveyor
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -proot"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+
+    # Set the permissions to the lowest permissions possible needed for your steps.
+    # Copilot will be given its own token for its operations.
+    permissions:
+      # If you want to clone the repository as part of your setup steps, for example to install dependencies, you'll need the `contents: read` permission. If you don't clone the repository in your setup steps, Copilot will do this for you automatically after the steps complete.
+      contents: read
+
+    # You can define any steps you want, and they will run before the agent starts.
+    # If you do not check out your code, Copilot will do this for you.
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24.15.0"
+          cache: "npm"
+
+      - name: Install JavaScript dependencies
+        run: npm ci
+
+      - name: Create tests/.env.test
+        run: |
+          mkdir -p tests
+          cat > tests/.env.test <<'EOF'
+          TEST_DB_HOST=127.0.0.1
+          TEST_DB_PORT=3306
+          TEST_DB_USER=surveyor
+          TEST_DB_PASSWORD=surveyor
+          TEST_DB_NAME=surveyor_test
+          TEST_DB_LOGGING=false
+          EOF
+          echo "Wrote tests/.env.test"
+
+      - name: Create .env.e2e
+        run: |
+          cat > .env.e2e <<'EOF'
+          NODE_ENV=e2e
+          APP_PORT=3001
+          ROOT_URL=http://localhost:3001
+
+          # Make local login available for E2E
+          LOCAL_LOGIN_ENABLED=1
+          SESSION_SECRET=ci_e2e_secret
+          OIDC_ENABLED=0
+
+          # E2E DB (guard requires name to contain 'e2e')
+          E2E_DB_HOST=127.0.0.1
+          E2E_DB_PORT=3306
+          E2E_DB_USER=surveyor
+          E2E_DB_PASSWORD=surveyor
+          E2E_DB_NAME=surveyor_e2e
+
+          # Seeded admin for tests
+          E2E_ADMIN_USERNAME=tester
+          E2E_ADMIN_EMAIL=e2e@example.com
+          E2E_ADMIN_PASSWORD=passw0rd!
+          EOF
+          echo "Wrote .env.e2e"
+
+      - name: Build application
+        run: npm run build
