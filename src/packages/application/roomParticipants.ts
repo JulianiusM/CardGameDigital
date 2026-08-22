@@ -4,7 +4,9 @@ import type { RoomParticipant } from "./realtimeRooms";
 /** Shared topology rules used by Personal, Party Screen, and hybrid device play. */
 export function sessionPlayers(participants: readonly RoomParticipant[]) {
     return participants
-        .filter(({ role }) => role !== "DISPLAY")
+        .filter(
+            ({ role, connectionStatus }) => role !== "DISPLAY" && connectionStatus === "CONNECTED",
+        )
         .flatMap((participant) => [
             { id: participant.id, name: participant.displayName },
             ...participant.devicePlayers,

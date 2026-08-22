@@ -13,6 +13,7 @@ import type {
     RoomParticipant,
 } from "../../src/packages/application/realtimeRooms";
 import type { CardRepository } from "../../src/packages/application/repositories";
+import { card } from "../support/game";
 
 class Repo implements RealtimeRoomRepository {
     room!: { id: string; code: string };
@@ -33,24 +34,47 @@ class Repo implements RealtimeRoomRepository {
         const p = this.participants.find(
             (x) => code === this.room.code && x.credentialHash === hash,
         );
-        return p
+        return p && p.connectionStatus !== "LEFT"
             ? {
                   id: p.id,
                   roomId: p.roomId,
                   role: p.role,
                   displayName: p.displayName,
                   devicePlayers: p.devicePlayers,
+                  connectionStatus: p.connectionStatus,
               }
             : null;
     }
     async listParticipants(roomId: string) {
-        return this.participants.map(({ id, role, displayName, devicePlayers }) => ({
-            id,
-            roomId,
-            role,
-            displayName,
-            devicePlayers,
-        }));
+        return this.participants
+            .filter(({ connectionStatus }) => connectionStatus !== "LEFT")
+            .map(({ id, role, displayName, devicePlayers, connectionStatus }) => ({
+                id,
+                roomId,
+                role,
+                displayName,
+                devicePlayers,
+                connectionStatus,
+            }));
+    }
+    async getParticipant(roomId: string, participantId: string) {
+        return (await this.listParticipants(roomId)).find(({ id }) => id === participantId) ?? null;
+    }
+    async setConnectionStatus(
+        participantId: string,
+        connectionStatus: RoomParticipant["connectionStatus"],
+    ) {
+        this.participants.find(({ id }) => id === participantId)!.connectionStatus =
+            connectionStatus;
+    }
+    async resetConnectedParticipants() {
+        const reset: RoomParticipant[] = [];
+        for (const participant of this.participants)
+            if (participant.connectionStatus === "CONNECTED") {
+                participant.connectionStatus = "TEMPORARILY_DISCONNECTED";
+                reset.push({ ...participant });
+            }
+        return reset;
     }
     async saveDevicePlayers(participantId: string, players: RoomParticipant["devicePlayers"]) {
         this.participants.find(({ id }) => id === participantId)!.devicePlayers = players;
@@ -89,7 +113,7 @@ class Repo implements RealtimeRoomRepository {
 }
 const cards: CardRepository = {
     async listActive() {
-        return [];
+        return [card({ id: "ws-question" as never })];
     },
     async getById() {
         return null;
@@ -227,6 +251,145 @@ describe("Room WebSocket protocol", () => {
         );
 
         playerClient.socket.terminate();
+        await new Promise<void>((resolve) => wss.close(() => resolve()));
+    });
+
+    it("expires participants left connected by a server restart", async () => {
+        const repository = new Repo();
+        const creatingService = new RoomService(repository, cards, new SequenceRandomSource([0]));
+        const host = await creatingService.createRoom("Host");
+        await repository.setConnectionStatus(host.participantId, "CONNECTED");
+
+        const restartedService = new RoomService(repository, cards, new SequenceRandomSource([0]));
+        server = http.createServer();
+        const wss = attachWebSocketServer(server, restartedService, {
+            hostDisconnectGraceMs: 20,
+        });
+        await new Promise<void>((resolve) => server!.listen(0, "127.0.0.1", resolve));
+
+        await waitFor(
+            () =>
+                repository.participants.find(({ id }) => id === host.participantId)
+                    ?.connectionStatus === "LEFT",
+        );
+        await expect(
+            restartedService.authenticate(host.roomCode, host.participantCredential),
+        ).resolves.toBeNull();
+        await new Promise<void>((resolve) => wss.close(() => resolve()));
+    });
+
+    it("transfers real host authorization between two connected clients", async () => {
+        const repository = new Repo();
+        const service = new RoomService(repository, cards, new SequenceRandomSource([0]));
+        const host = await service.createRoom("Old host");
+        const player = await service.joinRoom(host.roomCode, "New host", "PLAYER");
+        server = http.createServer();
+        const wss = attachWebSocketServer(server, service);
+        await new Promise<void>((resolve) => server!.listen(0, "127.0.0.1", resolve));
+        const port = (server.address() as { port: number }).port;
+        const oldHost = await hello(port, host.roomCode, host.participantCredential, host.role);
+        const newHost = await hello(
+            port,
+            player.roomCode,
+            player.participantCredential,
+            player.role,
+        );
+        oldHost.socket.send(
+            JSON.stringify({
+                protocol: 1,
+                type: "command.transferHost",
+                requestId: "transfer",
+                revision: null,
+                payload: { participantId: player.participantId },
+            }),
+        );
+        await waitFor(
+            () =>
+                oldHost.messages.some(
+                    (message) =>
+                        message.type === "room.roleChanged" && message.payload.role === "PLAYER",
+                ) &&
+                newHost.messages.some(
+                    (message) =>
+                        message.type === "room.roleChanged" && message.payload.role === "HOST",
+                ),
+        );
+        const start = (requestId: string) =>
+            JSON.stringify({
+                protocol: 1,
+                type: "command.startSession",
+                requestId,
+                revision: null,
+                payload: {
+                    mode: "CLASSIC_TRUTH_OR_DARE",
+                    maximumIntensity: 3,
+                    randomQuestionRatio: 0.5,
+                    letsTalkMetaInterval: 3,
+                    cardLocale: "en-GB",
+                },
+            });
+        oldHost.socket.send(start("old-host-start"));
+        await waitFor(() =>
+            oldHost.messages.some(
+                (message) =>
+                    message.requestId === "old-host-start" &&
+                    message.type === "error" &&
+                    message.payload.code === "NOT_AUTHORIZED",
+            ),
+        );
+        newHost.socket.send(start("new-host-start"));
+        await waitFor(() =>
+            newHost.messages.some(
+                (message) =>
+                    message.type === "room.snapshot" && message.payload.session?.revision === 0,
+            ),
+        );
+        oldHost.socket.terminate();
+        newHost.socket.terminate();
+        await new Promise<void>((resolve) => wss.close(() => resolve()));
+    });
+
+    it("removes an intentional leaver and rejects the cleared reconnect identity", async () => {
+        const repository = new Repo();
+        const service = new RoomService(repository, cards, new SequenceRandomSource([0]));
+        const host = await service.createRoom("Host");
+        const player = await service.joinRoom(host.roomCode, "Leaving player", "PLAYER");
+        server = http.createServer();
+        const wss = attachWebSocketServer(server, service);
+        await new Promise<void>((resolve) => server!.listen(0, "127.0.0.1", resolve));
+        const port = (server.address() as { port: number }).port;
+        const hostClient = await hello(port, host.roomCode, host.participantCredential, host.role);
+        const playerClient = await hello(
+            port,
+            player.roomCode,
+            player.participantCredential,
+            player.role,
+        );
+        playerClient.socket.send(
+            JSON.stringify({
+                protocol: 1,
+                type: "command.leaveRoom",
+                requestId: "leave",
+                revision: null,
+                payload: {},
+            }),
+        );
+        await waitFor(() =>
+            hostClient.messages.some(
+                (message) =>
+                    message.type === "room.snapshot" &&
+                    !message.payload.participants.some(
+                        ({ id }: { id: string }) => id === player.participantId,
+                    ),
+            ),
+        );
+        expect(
+            repository.participants.find(({ id }) => id === player.participantId)?.connectionStatus,
+        ).toBe("LEFT");
+        expect(
+            await service.authenticate(player.roomCode, player.participantCredential),
+        ).toBeNull();
+        hostClient.socket.terminate();
         await new Promise<void>((resolve) => wss.close(() => resolve()));
     });
 });

@@ -28,6 +28,7 @@ export const clientCapabilitySchema = z.enum([
     "MANAGE_DEVICE_PLAYERS",
     "TRANSFER_HOST",
     "END_SESSION",
+    "LEAVE_ROOM",
 ]);
 export const envelopeSchema = z
     .object({
@@ -124,6 +125,10 @@ export const roomCommandEnvelopeSchema = z.union([
         payload: z.object({ participantId: z.string().uuid() }).strict(),
     }),
     revisionedCommand("command.endSession", emptyPayloadSchema),
+    envelopeSchema.extend({
+        type: z.literal("command.leaveRoom"),
+        payload: emptyPayloadSchema,
+    }),
 ]);
 export const snapshotRequestEnvelopeSchema = envelopeSchema.extend({
     type: z.literal("room.snapshot.request"),

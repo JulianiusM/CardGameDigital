@@ -25,14 +25,14 @@ Successful bodies are JSON unless the status is `204`. Errors use:
 
 ## Discovery and operations
 
-| Method | Path             | Result                                                    |
-| ------ | ---------------- | --------------------------------------------------------- |
-| GET    | `/server-info`   | Deployment mode and supported protocol versions.          |
-| GET    | `/healthz`       | Liveness (`ok`), outside `/api/v1`.                       |
-| GET    | `/readyz`        | Database readiness (`ready`), outside `/api/v1`.          |
-| GET    | `/game-profiles` | Localized immutable built-in profile summaries.           |
-| GET    | `/help`          | Help document `{slug,title}` list for requested language. |
-| GET    | `/help/:slug`    | Rendered `{slug,title,html}` help document.               |
+| Method | Path             | Result                                                        |
+| ------ | ---------------- | ------------------------------------------------------------- |
+| GET    | `/server-info`   | Deployment/auth availability and supported protocol versions. |
+| GET    | `/healthz`       | Liveness (`ok`), outside `/api/v1`.                           |
+| GET    | `/readyz`        | Database readiness (`ready`), outside `/api/v1`.              |
+| GET    | `/game-profiles` | Localized immutable built-in profile summaries.               |
+| GET    | `/help`          | Help document `{slug,title}` list for requested language.     |
+| GET    | `/help/:slug`    | Rendered `{slug,title,html}` help document.                   |
 
 Help HTML is generated from trusted bundled Markdown; it is not user-authored content.
 
@@ -62,19 +62,21 @@ Realtime play continues over WebSocket.
 
 ## Couch sessions
 
-Couch sessions are process-memory, single-device, and ephemeral. The request language
-selects the card locale. Endpoints use a session UUID and optimistic `revision`.
+Couch sessions are single-device and server-authoritative. Runtime, shown-card history,
+and the final ended state are persisted; an optional owned `groupId` applies durable
+Group history. The request language selects the card locale. Endpoints use a session
+UUID and optimistic `revision`.
 
-| Method | Path                          | Body                                                                             |
-| ------ | ----------------------------- | -------------------------------------------------------------------------------- |
-| POST   | `/couch/sessions`             | Mode, 1–20 player names, intensity, ratios, optional profile/adult confirmation. |
-| GET    | `/couch/sessions/:id`         | none                                                                             |
-| POST   | `/couch/sessions/:id/start`   | `{revision}`                                                                     |
-| POST   | `/couch/sessions/:id/choose`  | `{revision,cardType}`                                                            |
-| POST   | `/couch/sessions/:id/skip`    | `{revision}`                                                                     |
-| POST   | `/couch/sessions/:id/advance` | `{revision}`                                                                     |
-| POST   | `/couch/sessions/:id/vote`    | `{revision,playerId,vote}`                                                       |
-| POST   | `/couch/sessions/:id/end`     | `{revision}`                                                                     |
+| Method | Path                          | Body                                                                                   |
+| ------ | ----------------------------- | -------------------------------------------------------------------------------------- |
+| POST   | `/couch/sessions`             | Mode, 2–20 player names, intensity, ratios, optional profile/group/adult confirmation. |
+| GET    | `/couch/sessions/:id`         | none                                                                                   |
+| POST   | `/couch/sessions/:id/start`   | `{revision}`                                                                           |
+| POST   | `/couch/sessions/:id/choose`  | `{revision,cardType}`                                                                  |
+| POST   | `/couch/sessions/:id/skip`    | `{revision}`                                                                           |
+| POST   | `/couch/sessions/:id/advance` | `{revision}`                                                                           |
+| POST   | `/couch/sessions/:id/vote`    | `{revision,playerId,vote}`                                                             |
+| POST   | `/couch/sessions/:id/end`     | `{revision}`                                                                           |
 
 Conflicts return `409` for stale revisions, invalid state, or an exhausted localized
 card pool. Missing sessions return `404`.
@@ -109,7 +111,9 @@ hashed; clients must not persist them after use.
 ## DataSpace resources
 
 `/groups` and `/game-settings` require an authenticated, owned current DataSpace.
-Groups support `GET`, `POST`, `PUT /:id`, and `DELETE /:id`. Game settings support
+Groups support `GET`, `POST`, `PUT /:id`, `DELETE /:id`, and confirmed
+`POST /:id/history-reset`. Resetting history advances the Group's history cutoff; it
+does not delete the Group or historical Session/CardAppearance records. Game settings support
 `GET` and `PUT` for preferred profile, intensity, question ratio, conversation interval,
 and optional default group. Resource IDs are UUIDs and are always authorization-scoped
 to the selected DataSpace.

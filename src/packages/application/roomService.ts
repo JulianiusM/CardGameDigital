@@ -45,6 +45,7 @@ const roleCapabilities: Record<RoomRole, ReadonlySet<string>> = {
         "SET_BOUNDARIES",
         "MANAGE_DEVICE_PLAYERS",
         "TRANSFER_HOST",
+        "LEAVE_ROOM",
     ]),
     PLAYER: new Set([
         "DISPLAY_SESSION",
@@ -54,8 +55,9 @@ const roleCapabilities: Record<RoomRole, ReadonlySet<string>> = {
         "ADVANCE_SESSION",
         "SET_BOUNDARIES",
         "MANAGE_DEVICE_PLAYERS",
+        "LEAVE_ROOM",
     ]),
-    DISPLAY: new Set(["DISPLAY_SESSION"]),
+    DISPLAY: new Set(["DISPLAY_SESSION", "LEAVE_ROOM"]),
 };
 export type RoomCommand =
     | {
@@ -105,7 +107,8 @@ export type RoomCommand =
               blockedOperationalFlags: string[];
           };
       }
-    | { type: "command.endSession"; revision: number; payload: Record<string, never> };
+    | { type: "command.endSession"; revision: number; payload: Record<string, never> }
+    | { type: "command.leaveRoom"; revision: number | null; payload: Record<string, never> };
 
 export type RoomSnapshot = {
     roomId: string;
@@ -152,6 +155,7 @@ export class RoomService {
                 role: "HOST",
                 displayName,
                 devicePlayers: [],
+                connectionStatus: "TEMPORARILY_DISCONNECTED",
                 credentialHash: this.hashCredential(credential),
             },
         });
@@ -178,6 +182,7 @@ export class RoomService {
             role,
             displayName,
             devicePlayers: [],
+            connectionStatus: "TEMPORARILY_DISCONNECTED",
             credentialHash: this.hashCredential(credential),
         });
         const participant = await this.repository.authenticate(
@@ -197,8 +202,36 @@ export class RoomService {
         };
     }
 
-    authenticate(roomCode: string, credential: string): Promise<RoomParticipant | null> {
-        return this.repository.authenticate(roomCode, this.hashCredential(credential));
+    async authenticate(roomCode: string, credential: string): Promise<RoomParticipant | null> {
+        const participant = await this.repository.authenticate(
+            roomCode,
+            this.hashCredential(credential),
+        );
+        if (!participant) return null;
+        await this.repository.setConnectionStatus(participant.id, "CONNECTED");
+        return { ...participant, connectionStatus: "CONNECTED" };
+    }
+
+    async markConnected(participant: RoomParticipant): Promise<void> {
+        await this.repository.setConnectionStatus(participant.id, "CONNECTED");
+    }
+
+    initializeConnectionLifecycle(): Promise<readonly RoomParticipant[]> {
+        return this.repository.resetConnectedParticipants();
+    }
+
+    async markTemporarilyDisconnected(participant: RoomParticipant): Promise<void> {
+        const current = await this.repository.getParticipant(participant.roomId, participant.id);
+        if (current?.connectionStatus === "CONNECTED")
+            await this.repository.setConnectionStatus(participant.id, "TEMPORARILY_DISCONNECTED");
+    }
+
+    async expireDisconnectedParticipant(roomId: string, participantId: string): Promise<boolean> {
+        const participant = await this.repository.getParticipant(roomId, participantId);
+        if (!participant || participant.connectionStatus !== "TEMPORARILY_DISCONNECTED")
+            return false;
+        await this.leaveParticipant(roomId, participant);
+        return true;
     }
 
     async snapshot(roomId: string, viewer?: RoomParticipant): Promise<RoomSnapshot> {
@@ -242,12 +275,42 @@ export class RoomService {
         connectedParticipantIds: ReadonlySet<string>,
     ): Promise<boolean> {
         const participants = await this.repository.listParticipants(roomId);
-        const currentHost = participants.find(({ role }) => role === "HOST");
-        if (currentHost?.id !== disconnectedHostId) return false;
         const fallback = fallbackHost(participants, connectedParticipantIds);
         if (!fallback) return false;
-        await this.repository.transferHost(roomId, disconnectedHostId, fallback.id);
-        return true;
+        try {
+            await this.repository.transferHost(roomId, disconnectedHostId, fallback.id);
+            return true;
+        } catch {
+            return false;
+        }
+    }
+
+    private async leaveParticipant(roomId: string, participant: RoomParticipant): Promise<void> {
+        const participants = await this.repository.listParticipants(roomId);
+        if (participant.role === "HOST") {
+            const connectedIds = new Set(
+                participants
+                    .filter(({ connectionStatus }) => connectionStatus === "CONNECTED")
+                    .map(({ id }) => id),
+            );
+            connectedIds.delete(participant.id);
+            await this.reassignDisconnectedHost(roomId, participant.id, connectedIds);
+        }
+        const current = await this.loadSession(roomId);
+        if (current && participant.role !== "DISPLAY") {
+            const controlledIds = controlledPlayerIds(participant, participants);
+            const proposed = GameSession.restore(current.toRuntimeState(), this.random);
+            proposed.removePlayers(current.revision, controlledIds);
+            if (proposed.revision !== current.revision) {
+                await this.repository.commitRuntime(
+                    roomId,
+                    current.revision,
+                    proposed.toRuntimeState(),
+                );
+                this.sessions.set(roomId, proposed);
+            }
+        }
+        await this.repository.setConnectionStatus(participant.id, "LEFT");
     }
 
     private async executeSerialized(
@@ -255,7 +318,20 @@ export class RoomService {
         participant: RoomParticipant,
         command: RoomCommand,
     ): Promise<RoomSnapshot> {
+        const authoritativeParticipant = await this.repository.getParticipant(
+            roomId,
+            participant.id,
+        );
+        if (!authoritativeParticipant)
+            throw Object.assign(new Error(MESSAGE_KEYS.ROOM_NOT_AUTHORIZED), {
+                code: "NOT_AUTHORIZED",
+            });
+        participant = authoritativeParticipant;
         this.authorize(participant, command.type);
+        if (command.type === "command.leaveRoom") {
+            await this.leaveParticipant(roomId, participant);
+            return this.snapshot(roomId);
+        }
         if (command.type === "command.setDevicePlayers") {
             if (await this.loadSession(roomId)) {
                 throw Object.assign(new Error(MESSAGE_KEYS.ROOM_DEVICE_PLAYERS_LOCKED), {
@@ -356,6 +432,15 @@ export class RoomService {
                 },
                 this.random,
             );
+            const cards = await this.cards.listActive({
+                locale: proposed.cardLocale,
+                ...this.cardTranslationPolicy,
+            });
+            if (!proposed.hasEligibleCards(cards)) {
+                throw Object.assign(new Error(MESSAGE_KEYS.GAME_CARD_POOL_EXHAUSTED), {
+                    code: "CARD_POOL_EXHAUSTED",
+                });
+            }
             // Publish to the runtime cache only after the database transaction commits.
             await this.repository.commitRuntime(roomId, null, proposed.toRuntimeState());
             this.sessions.set(roomId, proposed);
@@ -377,6 +462,7 @@ export class RoomService {
             });
         if (
             (command.type === "command.startTurn" || command.type === "command.advanceSession") &&
+            participant.role !== "HOST" &&
             (!current.activePlayer || !controllablePlayerIds.has(current.activePlayer.id))
         )
             throw Object.assign(new Error(MESSAGE_KEYS.ROOM_ACTIVE_PLAYER_OR_HOST_ONLY), {
@@ -437,6 +523,7 @@ export class RoomService {
                 "command.setDevicePlayers": "MANAGE_DEVICE_PLAYERS",
                 "command.transferHost": "TRANSFER_HOST",
                 "command.endSession": "END_SESSION",
+                "command.leaveRoom": "LEAVE_ROOM",
             } as Record<string, string>
         )[command];
         if (!roleCapabilities[participant.role].has(capability))

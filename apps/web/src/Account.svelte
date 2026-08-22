@@ -21,6 +21,10 @@
 
     onMount(async () => {
         configuration = await accountApi.configuration();
+        if (!configuration.localLoginEnabled && !configuration.oidcEnabled) {
+            location.replace("/play/");
+            return;
+        }
         const activation = query.get("activate");
         const reset = query.get("reset");
         try {
@@ -83,9 +87,7 @@
 
 <main class="account-shell">
     <nav class="account-nav">
-        <a href="/play/">{messages.account.backToGame}</a><a href="/play/help"
-            >{messages.account.help}</a
-        >
+        <a href="/play/">{messages.account.backToGame}</a>
     </nav>
     <section class="card-panel account-panel">
         <span class="eyebrow">{messages.account.title}</span>
@@ -126,7 +128,7 @@
                 <button class="secondary" disabled={busy}>{messages.account.create}</button>
             </form>
             <div class="account-actions">
-                <a class="primary button-link" href="/play/host"
+                <a class="primary button-link" href="/play/?setup=group"
                     >{messages.account.startSavedGame}</a
                 >
                 <a class="secondary button-link" href="/api/v1/account/export"

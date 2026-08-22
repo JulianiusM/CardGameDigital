@@ -6,19 +6,19 @@
     import { presentation } from "./presentation";
     import { atmosphereFor, effectForCommand, sceneFor } from "./presentationMapping";
     import { messages, gameModes } from "./i18n";
+    import { loadSetup, setupHref } from "./setup";
 
-    const queryMode = new URLSearchParams(location.search).get("mode");
-    const queryProfile = new URLSearchParams(location.search).get("profile") ?? undefined;
-    const adultContentConfirmed = new URLSearchParams(location.search).get("adult") === "1";
-    let mode = (gameModes.find((item) => item[0] === queryMode) ?? gameModes[0])[0];
-    let playerNames = ["Anna", "Ben"];
-    let intensity = 3;
+    const setup = loadSetup();
+    let mode = (gameModes.find((item) => item[0] === setup.mode) ?? gameModes[0])[0];
+    let playerNames = setup.groupMembers.length >= 2 ? [...setup.groupMembers] : ["Anna", "Ben"];
+    const intensity = setup.maximumIntensity;
     let session: Snapshot | null = null;
     let busy = false;
     let error = "";
     let settingsOpen = false;
     let lastCardId: string | undefined;
     let startedAt = Date.now();
+    let exhausted = false;
     $: unvotedPlayers =
         session?.players.filter((player) => !session?.votedPlayerIds.includes(player.id)) ?? [];
     $: cardAtmosphere = atmosphereFor(session?.currentCard);
@@ -40,17 +40,17 @@
         if (playerNames.length < 20) playerNames = [...playerNames, ""];
     }
     function removePlayer(index: number): void {
-        if (playerNames.length > 1)
+        if (playerNames.length > 2)
             playerNames = playerNames.filter((_, current) => current !== index);
     }
     async function run(action: () => Promise<Snapshot>): Promise<void> {
         busy = true;
         error = "";
+        exhausted = false;
         try {
             session = await action();
         } catch (cause) {
-            if (cause instanceof ApiError && cause.code === "CARD_POOL_EXHAUSTED")
-                error = messages.couch.exhausted;
+            if (cause instanceof ApiError && cause.code === "CARD_POOL_EXHAUSTED") exhausted = true;
             else if (cause instanceof ApiError && cause.code === "STALE_SESSION_REVISION")
                 error = messages.couch.stale;
             else error = cause instanceof Error ? cause.message : messages.couch.genericError;
@@ -62,8 +62,8 @@
         const players = playerNames
             .map((name) => ({ name: name.trim() }))
             .filter((player) => player.name);
-        if (!players.length) {
-            error = messages.couch.noPlayers;
+        if (players.length < 2) {
+            error = messages.couch.minimumPlayers;
             return;
         }
         startedAt = Date.now();
@@ -75,18 +75,15 @@
                 maximumIntensity: intensity,
                 randomQuestionRatio: 0.6,
                 letsTalkMetaInterval: 5,
-                profileId: queryProfile,
-                adultContentConfirmed,
+                profileId: setup.profileId,
+                adultContentConfirmed: setup.adultContentConfirmed,
+                groupId: setup.groupId,
             }),
         );
     }
     function command(name: string, payload: object = {}): void {
         presentation.playEffect(effectForCommand(name));
         if (session) void run(() => couchApi.command(session!, name, payload));
-    }
-    function restart(): void {
-        session = null;
-        location.href = "/play/";
     }
     $: elapsedMinutes = Math.max(1, Math.round((Date.now() - startedAt) / 60_000));
 </script>
@@ -104,8 +101,9 @@
     {#if !session}
         <section class="player-setup card-panel">
             <div class="setup-summary">
-                <span>{gameModes.find((item) => item[0] === mode)?.[1]}</span><a href="/play/"
-                    >{messages.common.change}</a
+                <span>{gameModes.find((item) => item[0] === mode)?.[1]}</span><a
+                    class="text-action"
+                    href={setupHref("mode")}>{messages.common.change}</a
                 >
             </div>
             <div class="players playful-list">
@@ -116,7 +114,7 @@
                             value={name}
                             on:input={(event) => setPlayer(index, event.currentTarget.value)}
                             maxlength="40"
-                        />{#if playerNames.length > 1}<button
+                        />{#if playerNames.length > 2}<button
                                 class="icon"
                                 aria-label={messages.common.removePerson}
                                 on:click={() => removePlayer(index)}>×</button
@@ -127,18 +125,10 @@
                     >{messages.common.addPerson}</button
                 >
             </div>
-            <details class="advanced">
-                <summary>{messages.settings.advanced}</summary><label class="intensity"
-                    ><span>{messages.common.intensity} <strong>{intensity}</strong></span><input
-                        type="range"
-                        min="1"
-                        max="5"
-                        bind:value={intensity}
-                    /></label
-                >
-            </details>
-            <button class="primary start" disabled={busy} on:click={createSession}
-                >{messages.common.startGame} <span>→</span></button
+            <button
+                class="primary start"
+                disabled={busy || playerNames.filter((name) => name.trim()).length < 2}
+                on:click={createSession}>{messages.common.startGame} <span>→</span></button
             >
         </section>
     {:else if session.state === "ENDED"}
@@ -156,7 +146,8 @@
             <button
                 class="settings-trigger in-game"
                 aria-label={messages.settings.title}
-                on:click={() => (settingsOpen = true)}>✦</button
+                on:click={() => (settingsOpen = true)}
+                ><span class="gear-icon" aria-hidden="true">⚙</span></button
             >
             <div class="status">
                 <span>{messages.common.round} {session.roundNumber}</span><span
@@ -166,7 +157,14 @@
             {#if session.activePlayer}<p class="active">
                     <span>{messages.common.nowPlaying}</span>{session.activePlayer.name}
                 </p>{/if}
-            {#if session.state === "CHOOSING_CARD_TYPE"}
+            {#if exhausted}
+                <div class="card-panel exhausted-state" role="status">
+                    <h2>{messages.couch.exhausted}</h2>
+                    <button class="danger" on:click={() => command("end")}
+                        >{messages.common.end}</button
+                    >
+                </div>
+            {:else if session.state === "CHOOSING_CARD_TYPE"}
                 <div class="choice card-panel">
                     <span class="choice-symbol">↝</span>
                     <h2>{messages.common.truthOrDare}</h2>

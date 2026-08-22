@@ -2,13 +2,17 @@
     import GameCard from "./GameCard.svelte";
     import SessionSummary from "./SessionSummary.svelte";
     import { messages } from "./i18n";
-    import type { Role, SessionView } from "./multiplayer";
+    import type { Participant, Presence, Role, SessionView } from "./multiplayer";
 
     export let session: SessionView;
     export let role: Role;
     export let startedAt: number;
     export let onCommand: (type: string, payload?: object) => void;
     export let onOpenSettings: () => void;
+    export let participants: Participant[];
+    export let presence: Presence[];
+    export let roomCode: string;
+    export let exhausted: boolean;
 
     $: actions = new Set(session.availableActions);
     $: elapsedMinutes = Math.max(1, Math.round((Date.now() - startedAt) / 60_000));
@@ -16,21 +20,41 @@
 </script>
 
 <section class="game-shell">
-    {#if role === "HOST"}
-        <button
-            class="settings-trigger in-game"
-            aria-label={messages.settings.title}
-            on:click={onOpenSettings}
-        >
-            ✦
-        </button>
-    {/if}
+    <button
+        class="settings-trigger in-game"
+        aria-label={messages.settings.title}
+        on:click={onOpenSettings}
+    >
+        <span class="gear-icon" aria-hidden="true">⚙</span>
+    </button>
 
     <div class="status">
         <span>{messages.common.round} {session.roundNumber}</span>
         <span>{session.cardsShown} {messages.common.cards}</span>
         <span class="live">{messages.room.live}</span>
     </div>
+
+    <details class="live-players">
+        <summary>{messages.settings.players} · {session.players.length}</summary>
+        <div class="participant-list">
+            {#each participants.filter((participant) => participant.role !== "DISPLAY") as participant}
+                <div class="participant">
+                    <span
+                        class:online={presence.some(
+                            ({ participantId }) => participantId === participant.id,
+                        )}
+                    ></span>
+                    <strong>{participant.displayName}</strong><small>{participant.role}</small>
+                </div>
+                {#each participant.devicePlayers as player}<div class="participant device-player">
+                        <span></span><strong>{player.name}</strong><small
+                            >{participant.displayName}</small
+                        >
+                    </div>{/each}
+            {/each}
+        </div>
+        <small>{messages.setup.roomCode}: {roomCode}</small>
+    </details>
 
     {#if session.activePlayer}
         <p class="active">
@@ -39,7 +63,16 @@
         </p>
     {/if}
 
-    {#if session.state === "ENDED"}
+    {#if exhausted}
+        <div class="card-panel exhausted-state" role="status">
+            <h2>{messages.couch.exhausted}</h2>
+            <button class="secondary" on:click={onOpenSettings}>{messages.settings.title}</button>
+            {#if role === "HOST"}<button
+                    class="danger"
+                    on:click={() => onCommand("command.endSession")}>{messages.common.end}</button
+                >{/if}
+        </div>
+    {:else if session.state === "ENDED"}
         <SessionSummary
             cardsShown={session.cardsShown}
             roundNumber={session.roundNumber}

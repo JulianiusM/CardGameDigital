@@ -1,5 +1,5 @@
 import { v5 as uuidv5 } from "uuid";
-import { IsNull, LessThan, type DataSource } from "typeorm";
+import { IsNull, LessThan, MoreThan, Not, type DataSource } from "typeorm";
 import type { CardId, GameSessionRuntimeState, PlayerBoundaries } from "../game-core";
 import type {
     DevicePlayer,
@@ -12,6 +12,7 @@ import { GameSessionEntity } from "../../modules/database/entities/game/GameSess
 import { CardAppearanceEntity } from "../../modules/database/entities/game/CardAppearanceEntity";
 import { RoomParticipantBoundaryEntity } from "../../modules/database/entities/game/RoomParticipantBoundaryEntity";
 import { GroupEntity } from "../../modules/database/entities/game/GroupEntity";
+import { CouchCardAppearanceEntity } from "../../modules/database/entities/game/CouchCardAppearanceEntity";
 
 const APPEARANCE_NAMESPACE = "d2dad6a5-b25c-570d-a102-9e8b9106a77b";
 
@@ -45,6 +46,8 @@ export class TypeOrmRealtimeRoomRepository implements RealtimeRoomRepository {
                 ...input.participant,
                 devicePlayersJson: JSON.stringify(input.participant.devicePlayers),
                 createdAt: new Date(),
+                lastSeenAt: new Date(),
+                leftAt: null,
             });
         });
     }
@@ -64,6 +67,8 @@ export class TypeOrmRealtimeRoomRepository implements RealtimeRoomRepository {
             credentialHash: input.credentialHash,
             devicePlayersJson: JSON.stringify(input.devicePlayers),
             createdAt: new Date(),
+            lastSeenAt: new Date(),
+            leftAt: null,
         });
     }
     async authenticate(roomCode: string, credentialHash: string): Promise<RoomParticipant | null> {
@@ -74,28 +79,52 @@ export class TypeOrmRealtimeRoomRepository implements RealtimeRoomRepository {
             .where("room.code = :roomCode", { roomCode })
             .andWhere("room.expiresAt > :now", { now: new Date() })
             .andWhere("participant.credentialHash = :credentialHash", { credentialHash })
+            .andWhere("participant.connectionStatus != :left", { left: "LEFT" })
             .getOne();
-        return participant
-            ? {
-                  id: participant.id,
-                  roomId: participant.roomId,
-                  role: participant.role,
-                  displayName: participant.displayName,
-                  devicePlayers: JSON.parse(participant.devicePlayersJson) as DevicePlayer[],
-              }
-            : null;
+        return participant ? this.projectParticipant(participant) : null;
+    }
+    async getParticipant(roomId: string, participantId: string): Promise<RoomParticipant | null> {
+        const participant = await this.source.getRepository(RoomParticipantEntity).findOneBy({
+            id: participantId,
+            roomId,
+            connectionStatus: Not("LEFT"),
+        });
+        return participant ? this.projectParticipant(participant) : null;
     }
     async listParticipants(roomId: string): Promise<readonly RoomParticipant[]> {
         return (
-            await this.source
-                .getRepository(RoomParticipantEntity)
-                .find({ where: { roomId }, order: { createdAt: "ASC" } })
-        ).map(({ id, role, displayName, devicePlayersJson }) => ({
-            id,
-            roomId,
-            role,
-            displayName,
-            devicePlayers: JSON.parse(devicePlayersJson) as DevicePlayer[],
+            await this.source.getRepository(RoomParticipantEntity).find({
+                where: { roomId, connectionStatus: Not("LEFT") },
+                order: { createdAt: "ASC" },
+            })
+        ).map((participant) => this.projectParticipant(participant));
+    }
+    async setConnectionStatus(
+        participantId: string,
+        connectionStatus: RoomParticipant["connectionStatus"],
+    ): Promise<void> {
+        const now = new Date();
+        await this.source.getRepository(RoomParticipantEntity).update(
+            { id: participantId },
+            {
+                connectionStatus,
+                lastSeenAt: now,
+                leftAt: connectionStatus === "LEFT" ? now : null,
+            },
+        );
+    }
+    async resetConnectedParticipants(): Promise<readonly RoomParticipant[]> {
+        const repository = this.source.getRepository(RoomParticipantEntity);
+        const connected = await repository.findBy({ connectionStatus: "CONNECTED" });
+        await this.source
+            .getRepository(RoomParticipantEntity)
+            .update(
+                { connectionStatus: "CONNECTED" },
+                { connectionStatus: "TEMPORARILY_DISCONNECTED" },
+            );
+        return connected.map((participant) => ({
+            ...this.projectParticipant(participant),
+            connectionStatus: "TEMPORARILY_DISCONNECTED",
         }));
     }
     async saveDevicePlayers(
@@ -189,11 +218,20 @@ export class TypeOrmRealtimeRoomRepository implements RealtimeRoomRepository {
             }
             await rooms.update({ id: roomId }, { groupId });
             if (!groupId) return new Set<CardId>();
-            const history = await manager.getRepository(CardAppearanceEntity).find({
-                where: { groupId },
-                select: { cardId: true },
-            });
-            return new Set(history.map(({ cardId }) => cardId as CardId));
+            const group = await manager.getRepository(GroupEntity).findOneByOrFail({ id: groupId });
+            const shownAt = group.historyResetAt ? MoreThan(group.historyResetAt) : undefined;
+            const where = { groupId, ...(shownAt ? { shownAt } : {}) };
+            const [roomHistory, couchHistory] = await Promise.all([
+                manager.getRepository(CardAppearanceEntity).find({
+                    where,
+                    select: { cardId: true },
+                }),
+                manager.getRepository(CouchCardAppearanceEntity).find({
+                    where,
+                    select: { cardId: true },
+                }),
+            ]);
+            return new Set([...roomHistory, ...couchHistory].map(({ cardId }) => cardId as CardId));
         });
     }
     async loadRuntime(roomId: string): Promise<GameSessionRuntimeState | null> {
@@ -264,5 +302,16 @@ export class TypeOrmRealtimeRoomRepository implements RealtimeRoomRepository {
                 );
             }
         });
+    }
+
+    private projectParticipant(participant: RoomParticipantEntity): RoomParticipant {
+        return {
+            id: participant.id,
+            roomId: participant.roomId,
+            role: participant.role,
+            displayName: participant.displayName,
+            devicePlayers: JSON.parse(participant.devicePlayersJson) as DevicePlayer[],
+            connectionStatus: participant.connectionStatus,
+        };
     }
 }

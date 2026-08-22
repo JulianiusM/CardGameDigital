@@ -5,6 +5,6 @@
 </script>
 
 <button class="settings-trigger" aria-label={messages.settings.title} on:click={() => (open = true)}
-    ><span aria-hidden="true">✦</span></button
+    ><span class="gear-icon" aria-hidden="true">⚙</span></button
 >
 <SettingsModal bind:open />

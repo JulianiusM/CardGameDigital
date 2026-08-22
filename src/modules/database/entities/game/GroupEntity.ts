@@ -9,4 +9,7 @@ export class GroupEntity {
     @Column("text", { name: "members_json", default: "[]" }) membersJson!: string;
     @Column("datetime", { name: "created_at" }) createdAt!: Date;
     @Column("datetime", { name: "updated_at" }) updatedAt!: Date;
+    @Column("datetime", { name: "history_reset_at", nullable: true }) historyResetAt!: Date | null;
+    @Column("varchar", { name: "preferred_profile_id", length: 80, nullable: true })
+    preferredProfileId!: string | null;
 }

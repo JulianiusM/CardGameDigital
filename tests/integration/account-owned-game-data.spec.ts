@@ -5,6 +5,7 @@ import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { AppDataSource, initDataSource } from "../../src/modules/database/dataSource";
 import { RoomEntity } from "../../src/modules/database/entities/game/RoomEntity";
+import { GroupEntity } from "../../src/modules/database/entities/game/GroupEntity";
 import settings from "../../src/modules/settings";
 import {
     registerUser,
@@ -61,6 +62,39 @@ describe("DataSpace-owned game data", () => {
             preferredProfileId: "PROFILE_BEST_FRIENDS",
             defaultGroupId: created.body.id,
         });
+    });
+
+    it("resets only Group card history after explicit confirmation", async () => {
+        const created = await request(app)
+            .post("/api/v1/groups")
+            .send({ name: "Resettable group", members: ["A", "B"] })
+            .expect(201);
+        await request(app)
+            .post(`/api/v1/groups/${created.body.id}/history-reset`)
+            .send({ confirmed: false })
+            .expect(400);
+        const reset = await request(app)
+            .post(`/api/v1/groups/${created.body.id}/history-reset`)
+            .send({ confirmed: true })
+            .expect(200);
+        expect(reset.body).toMatchObject({
+            id: created.body.id,
+            name: "Resettable group",
+            members: ["A", "B"],
+        });
+        expect(reset.body.historyResetAt).toBeTruthy();
+    });
+
+    it("keeps a saved Group after closing and reopening the database", async () => {
+        const created = await request(app)
+            .post("/api/v1/groups")
+            .send({ name: "Reload survivors", members: ["Ada", "Lin"] })
+            .expect(201);
+        await AppDataSource.destroy();
+        await initDataSource();
+        await expect(
+            AppDataSource.getRepository(GroupEntity).findOneByOrFail({ id: created.body.id }),
+        ).resolves.toMatchObject({ name: "Reload survivors", membersJson: '["Ada","Lin"]' });
     });
 
     it("binds newly hosted Rooms to the server-resolved DataSpace", async () => {

@@ -31,10 +31,17 @@ const input = (mode: (typeof GAME_MODES)[keyof typeof GAME_MODES]) => ({
 });
 
 describe("CouchSessionService", () => {
+    it("rejects a one-player Couch session in the application/domain path", async () => {
+        const service = new CouchSessionService(repository, new SequenceRandomSource([0]));
+        await expect(
+            service.create({ ...input(GAME_MODES.CLASSIC), players: [{ name: "Solo" }] }),
+        ).rejects.toThrow("game.minimumPlayers");
+    });
+
     it("keeps Couch Sessions authoritative on the server for every game mode", async () => {
         for (const mode of Object.values(GAME_MODES)) {
             const service = new CouchSessionService(repository, new SequenceRandomSource([0]));
-            let snapshot = service.create(input(mode));
+            let snapshot = await service.create(input(mode));
             expect(snapshot.revision).toBe(0);
             snapshot =
                 mode === GAME_MODES.CLASSIC
@@ -46,34 +53,34 @@ describe("CouchSessionService", () => {
                     : await service.startTurn(snapshot.id, snapshot.revision);
             expect(snapshot.revision).toBe(1);
             expect(snapshot.currentCard).not.toBeNull();
-            expect(service.get(snapshot.id)).toEqual(snapshot);
+            expect(await service.get(snapshot.id)).toEqual(snapshot);
         }
     });
 
     it("returns only aggregate vote results while retaining vote progress", async () => {
         const service = new CouchSessionService(repository, new SequenceRandomSource([0]));
-        let snapshot = service.create(input(GAME_MODES.NEVER_HAVE_I_EVER));
+        let snapshot = await service.create(input(GAME_MODES.NEVER_HAVE_I_EVER));
         snapshot = await service.startTurn(snapshot.id, 0);
-        snapshot = service.vote(snapshot.id, 1, snapshot.players[0].id, "YES");
+        snapshot = await service.vote(snapshot.id, 1, snapshot.players[0].id, "YES");
         expect(snapshot.voteResult).toEqual({ yes: 1, no: 0, total: 1 });
         expect(snapshot.votedPlayerIds).toEqual([snapshot.players[0].id]);
         expect(JSON.stringify(snapshot)).not.toContain('"YES"');
     });
 
-    it("applies the selected profile and requires confirmation for adult profiles", () => {
+    it("applies the selected profile and requires confirmation for adult profiles", async () => {
         const service = new CouchSessionService(repository, new SequenceRandomSource([0]));
-        expect(() =>
+        await expect(
             service.create({
                 ...input(GAME_MODES.CLASSIC),
                 profileId: "PROFILE_COUPLES_SPICY",
             }),
-        ).toThrow("game.adultConfirmationRequired");
+        ).rejects.toThrow("game.adultConfirmationRequired");
         expect(
-            service.create({
+            await service.create({
                 ...input(GAME_MODES.CLASSIC),
                 profileId: "PROFILE_COUPLES_SPICY",
                 adultContentConfirmed: true,
-            }).revision,
-        ).toBe(0);
+            }),
+        ).toMatchObject({ revision: 0 });
     });
 });

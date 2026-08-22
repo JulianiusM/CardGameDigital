@@ -50,6 +50,7 @@ export const de = {
         "game.sessionNotFound": "Das Couch-Spiel wurde nicht gefunden.",
         "game.adultConfirmationRequired": "Explizite Inhalte erfordern eine Bestätigung.",
         "game.playersRequired": "Mindestens eine Person wird benötigt.",
+        "game.minimumPlayers": "Mindestens zwei Personen werden benötigt.",
         "game.playerIdsUnique": "Personen-IDs müssen eindeutig sein.",
         "game.unknownPlayer": "Unbekannte Person.",
         "game.alreadyVoted": "Diese Person hat bereits abgestimmt.",

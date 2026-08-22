@@ -29,6 +29,11 @@ afterAll(async () => {
 });
 
 describe("Room HTTP API", () => {
+    it("reports that Account UI is unavailable for AUTH_MODE=none", async () => {
+        const response = await request(app).get("/api/v1/server-info").expect(200);
+        expect(response.body.authenticationAvailable).toBe(false);
+    });
+
     it("serves immutable, editorially reviewable built-in GameProfiles", async () => {
         const response = await request(app).get("/api/v1/game-profiles").expect(200);
         expect(response.body.profiles).toHaveLength(5);

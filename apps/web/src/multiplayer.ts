@@ -5,6 +5,7 @@ export type Participant = {
     role: Role;
     displayName: string;
     devicePlayers: { id: string; name: string }[];
+    connectionStatus: "CONNECTED" | "TEMPORARILY_DISCONNECTED";
 };
 export type Presence = Pick<Participant, "displayName" | "role"> & { participantId: string };
 export type SessionView = {
@@ -44,7 +45,13 @@ export type GameProfileSummary = {
     requiresAdultConfirmation: boolean;
     maximumIntensity: number;
 };
-export type GroupSummary = { id: string; name: string; members: string[] };
+export type GroupSummary = {
+    id: string;
+    name: string;
+    members: string[];
+    preferredProfileId: string | null;
+    historyResetAt?: string | null;
+};
 export type GameSettings = {
     preferredProfileId: string;
     maximumIntensity: number;
@@ -107,6 +114,35 @@ export async function saveGameSettings(settings: GameSettings): Promise<void> {
         body: JSON.stringify(settings),
     });
 }
+export async function createGroup(
+    name: string,
+    members: string[],
+    preferredProfileId: string,
+): Promise<GroupSummary> {
+    return json<GroupSummary>("/api/v1/groups", {
+        method: "POST",
+        body: JSON.stringify({ name, members, preferredProfileId }),
+    });
+}
+export async function updateGroup(group: GroupSummary): Promise<GroupSummary> {
+    return json<GroupSummary>(`/api/v1/groups/${group.id}`, {
+        method: "PUT",
+        body: JSON.stringify({
+            name: group.name,
+            members: group.members,
+            preferredProfileId: group.preferredProfileId,
+        }),
+    });
+}
+export async function resetGroupHistory(groupId: string): Promise<GroupSummary> {
+    return json<GroupSummary>(`/api/v1/groups/${groupId}/history-reset`, {
+        method: "POST",
+        body: JSON.stringify({ confirmed: true }),
+    });
+}
+export async function loadServerInfo(): Promise<{ authenticationAvailable: boolean }> {
+    return json<{ authenticationAvailable: boolean }>("/api/v1/server-info", { method: "GET" });
+}
 
 type ServerEnvelope = {
     type: "room.snapshot" | "room.presence" | "error" | string;
@@ -118,11 +154,14 @@ export class RoomSocket {
     snapshot: RoomSnapshot | null = null;
     presence: Presence[] = [];
     error = "";
+    errorCode = "";
     role: Role;
     private retry: number | undefined;
+    private leaving = false;
     constructor(
         private joined: Join,
         private changed: () => void,
+        private left: () => void = () => undefined,
     ) {
         this.role = joined.role;
         this.connect();
@@ -133,6 +172,7 @@ export class RoomSocket {
         this.socket = new WebSocket(`${scheme}://${location.host}/ws?locale=${locale}`);
         this.socket.onopen = () => {
             this.error = "";
+            this.errorCode = "";
             this.send("client.hello", null, {
                 supportedProtocolVersions: [1],
                 applicationVersion: "0.2.3",
@@ -144,7 +184,11 @@ export class RoomSocket {
         };
         this.socket.onmessage = (event) => {
             const message = JSON.parse(event.data) as ServerEnvelope;
-            if (message.type === "room.snapshot") this.snapshot = message.payload as RoomSnapshot;
+            if (message.type === "room.snapshot") {
+                this.snapshot = message.payload as RoomSnapshot;
+                this.error = "";
+                this.errorCode = "";
+            }
             if (message.type === "room.presence") {
                 this.presence = (message.payload as { connected: Presence[] }).connected;
             }
@@ -152,11 +196,17 @@ export class RoomSocket {
                 this.role = (message.payload as { role: Role }).role;
             }
             if (message.type === "error") {
-                this.error = (message.payload as { message: string }).message;
+                const payload = message.payload as { code: string; message: string };
+                this.errorCode = payload.code;
+                this.error = payload.message;
             }
             this.changed();
         };
         this.socket.onclose = () => {
+            if (this.leaving) {
+                this.left();
+                return;
+            }
             this.error = messages.common.reconnecting;
             this.changed();
             this.retry = window.setTimeout(() => this.connect(), 1000);
@@ -176,11 +226,19 @@ export class RoomSocket {
         }
     }
     command(type: string, payload: object = {}): void {
+        if (type === "command.leaveRoom") this.leaving = true;
         this.send(type, this.snapshot?.session?.revision ?? null, payload);
     }
 }
 export function saveJoin(join: Join) {
     sessionStorage.setItem(`room:${join.roomCode}:${join.role}`, JSON.stringify(join));
+    sessionStorage.setItem(
+        "party-game:last-room",
+        JSON.stringify({
+            roomCode: join.roomCode,
+            role: join.role,
+        }),
+    );
 }
 export function loadJoin(code: string, role: Role): Join | null {
     try {
@@ -188,5 +246,21 @@ export function loadJoin(code: string, role: Role): Join | null {
     } catch {
         return null;
     }
+}
+export function loadLastJoin(): Join | null {
+    try {
+        const last = JSON.parse(sessionStorage.getItem("party-game:last-room") ?? "null") as {
+            roomCode: string;
+            role: Role;
+        } | null;
+        return last ? loadJoin(last.roomCode, last.role) : null;
+    } catch {
+        return null;
+    }
+}
+export function clearJoin(join: Join): void {
+    sessionStorage.removeItem(`room:${join.roomCode}:${join.role}`);
+    const last = sessionStorage.getItem("party-game:last-room");
+    if (last?.includes(join.roomCode)) sessionStorage.removeItem("party-game:last-room");
 }
 import { locale, messages } from "./i18n";

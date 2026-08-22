@@ -47,6 +47,7 @@ export const MESSAGE_KEYS = {
     GAME_SESSION_NOT_FOUND: "game.sessionNotFound",
     GAME_ADULT_CONFIRMATION_REQUIRED: "game.adultConfirmationRequired",
     GAME_PLAYERS_REQUIRED: "game.playersRequired",
+    GAME_MINIMUM_PLAYERS: "game.minimumPlayers",
     GAME_PLAYER_IDS_UNIQUE: "game.playerIdsUnique",
     GAME_UNKNOWN_PLAYER: "game.unknownPlayer",
     GAME_ALREADY_VOTED: "game.alreadyVoted",

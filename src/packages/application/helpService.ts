@@ -22,7 +22,9 @@ function availableFiles(locale: Locale): string[] {
 }
 
 function titleOf(locale: Locale, markdown: string): string {
-    return /^#\s+([^\n]+)/m.exec(markdown)?.[1] ?? translate(locale, MESSAGE_KEYS.HELP_TITLE);
+    return (
+        /^#\s+([^\r\n]+)/m.exec(markdown)?.[1].trim() ?? translate(locale, MESSAGE_KEYS.HELP_TITLE)
+    );
 }
 
 export function listHelpDocuments(locale: Locale): Array<Pick<HelpDocument, "slug" | "title">> {

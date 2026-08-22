@@ -1,16 +1,35 @@
 <script lang="ts">
+    import { onMount } from "svelte";
     import BoundarySetup, { type BoundarySelection } from "./BoundarySetup.svelte";
     import { messages } from "./i18n";
     import { presentation } from "./presentation";
+    import { loadServerInfo } from "./multiplayer";
 
     export let open = false;
     export let showContent = false;
     export let showPlayers = false;
+    export let showGame = false;
+    export let showAdvanced = false;
     export let onBoundaries: ((value: BoundarySelection) => void) | undefined;
     export let onShowPlayers: (() => void) | undefined;
     export let onEnd: (() => void) | undefined;
+    export let onLeave: (() => void) | undefined;
+    export let roomCode = "";
+    export let qr = "";
     let preferences = presentation.preferences;
-    let tab: "audio" | "display" | "content" | "session" = "audio";
+    let tab: "game" | "audio" | "display" | "content" | "session" | "services" | "advanced" =
+        showGame ? "game" : "audio";
+    let authenticationAvailable = false;
+    $: if (!showGame && tab === "game") tab = "audio";
+    $: if (!showAdvanced && tab === "advanced") tab = "audio";
+
+    onMount(async () => {
+        try {
+            authenticationAvailable = (await loadServerInfo()).authenticationAvailable;
+        } catch {
+            authenticationAvailable = false;
+        }
+    });
 
     function update(key: keyof typeof preferences, value: boolean | number): void {
         preferences = presentation.update({ [key]: value });
@@ -41,6 +60,9 @@
                 >
             </header>
             <nav class="modal-tabs" aria-label={messages.settings.title}>
+                {#if showGame}<button class:active={tab === "game"} on:click={() => (tab = "game")}
+                        >♠ {messages.settings.game}</button
+                    >{/if}
                 <button class:active={tab === "audio"} on:click={() => (tab = "audio")}
                     >♫ {messages.settings.audio}</button
                 >
@@ -55,9 +77,18 @@
                         class:active={tab === "session"}
                         on:click={() => (tab = "session")}>••• {messages.settings.session}</button
                     >{/if}
+                <button class:active={tab === "services"} on:click={() => (tab = "services")}
+                    >? {messages.settings.services}</button
+                >
+                {#if showAdvanced}<button
+                        class:active={tab === "advanced"}
+                        on:click={() => (tab = "advanced")}>••• {messages.settings.advanced}</button
+                    >{/if}
             </nav>
             <div class="modal-content">
-                {#if tab === "audio"}
+                {#if tab === "game"}
+                    <slot name="game" />
+                {:else if tab === "audio"}
                     <label class="setting-row"
                         ><span
                             ><strong>{messages.presentation.music}</strong><small
@@ -126,6 +157,29 @@
                 {:else if tab === "session"}
                     <p>{messages.settings.endHint}</p>
                     <button class="danger wide" on:click={onEnd}>{messages.common.end}</button>
+                {:else if tab === "services"}
+                    {#if roomCode}<div class="settings-join-info">
+                            <strong>{messages.setup.roomCode}: {roomCode}</strong>
+                            {#if qr}<img
+                                    src={qr}
+                                    alt={messages.accessibility.roomQrCode(roomCode)}
+                                />{/if}
+                        </div>{/if}
+                    <div class="service-actions">
+                        <a class="secondary button-link" href="/play/help"
+                            >{messages.settings.help}</a
+                        >
+                        {#if authenticationAvailable}<a
+                                class="secondary button-link"
+                                href="/play/account">{messages.settings.account}</a
+                            >{/if}
+                    </div>
+                    {#if onLeave}<p>{messages.settings.leaveHint}</p>
+                        <button class="danger wide" on:click={onLeave}
+                            >{messages.settings.leave}</button
+                        >{/if}
+                {:else if tab === "advanced"}
+                    <slot name="advanced" />
                 {/if}
             </div>
         </div>

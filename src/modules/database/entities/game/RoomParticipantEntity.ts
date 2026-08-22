@@ -11,6 +11,10 @@ export class RoomParticipantEntity {
     @Column("varchar", { name: "credential_hash", length: 64 }) credentialHash!: string;
     @Column("varchar", { name: "device_players_json", length: 4096, default: "[]" })
     devicePlayersJson!: string;
+    @Column("varchar", { name: "connection_status", length: 32, default: "CONNECTED" })
+    connectionStatus!: "CONNECTED" | "TEMPORARILY_DISCONNECTED" | "LEFT";
+    @Column("datetime", { name: "last_seen_at" }) lastSeenAt!: Date;
+    @Column("datetime", { name: "left_at", nullable: true }) leftAt!: Date | null;
     @Column("datetime", { name: "created_at" }) createdAt!: Date;
     @ManyToOne(() => RoomEntity, (room) => room.participants, { onDelete: "CASCADE" })
     @JoinColumn({ name: "room_id" })

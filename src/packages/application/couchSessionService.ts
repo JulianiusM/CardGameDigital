@@ -9,11 +9,13 @@ import {
     CARD_TYPES,
     builtInGameProfile,
     validateGameProfile,
+    type DataSpaceId,
 } from "../game-core";
 import {
     DEFAULT_CARD_TRANSLATION_POLICY,
     type CardLocalizationPolicy,
     type CardRepository,
+    type CouchSessionRepository,
 } from "./repositories";
 import type { RandomSource } from "../game-core";
 
@@ -26,6 +28,8 @@ export type CreateCouchSession = {
     profileId?: string;
     adultContentConfirmed?: boolean;
     cardLocale: string;
+    groupId?: string | null;
+    dataSpaceId?: DataSpaceId;
 };
 
 export type CouchSessionSnapshot = {
@@ -65,9 +69,10 @@ export class CouchSessionService {
             CardLocalizationPolicy,
             "missingTranslation" | "fallbackLocale"
         > = DEFAULT_CARD_TRANSLATION_POLICY,
+        private readonly repository?: CouchSessionRepository,
     ) {}
 
-    create(input: CreateCouchSession): CouchSessionSnapshot {
+    async create(input: CreateCouchSession): Promise<CouchSessionSnapshot> {
         const selected = input.profileId ? builtInGameProfile(input.profileId) : null;
         if (selected?.requiresAdultConfirmation && !input.adultContentConfirmed) {
             throw Object.assign(new Error(MESSAGE_KEYS.GAME_ADULT_CONFIRMATION_REQUIRED), {
@@ -89,6 +94,10 @@ export class CouchSessionService {
             maximumTypeStreak: 3,
             letsTalkMetaInterval: input.letsTalkMetaInterval,
         });
+        const groupHistoryCardIds =
+            input.groupId && input.dataSpaceId && this.repository
+                ? await this.repository.groupHistory(input.dataSpaceId, input.groupId)
+                : new Set<never>();
         const session = new GameSession(
             {
                 id: randomUUID(),
@@ -99,19 +108,35 @@ export class CouchSessionService {
                     name: player.name.trim(),
                 })),
                 cardLocale: input.cardLocale,
+                groupHistoryCardIds,
             },
             this.random,
         );
+        const cards = await this.cards.listActive({
+            locale: session.cardLocale,
+            ...this.cardTranslationPolicy,
+        });
+        if (!session.hasEligibleCards(cards)) {
+            throw Object.assign(new Error(MESSAGE_KEYS.GAME_CARD_POOL_EXHAUSTED), {
+                code: "CARD_POOL_EXHAUSTED",
+            });
+        }
         this.sessions.set(session.id, session);
+        await this.repository?.save(
+            session.toRuntimeState(),
+            input.dataSpaceId
+                ? { dataSpaceId: input.dataSpaceId, groupId: input.groupId ?? null }
+                : undefined,
+        );
         return this.snapshot(session);
     }
 
-    get(id: string): CouchSessionSnapshot {
-        return this.snapshot(this.require(id));
+    async get(id: string): Promise<CouchSessionSnapshot> {
+        return this.snapshot(await this.require(id));
     }
 
     async startTurn(id: string, revision: number): Promise<CouchSessionSnapshot> {
-        const session = this.require(id);
+        const session = await this.require(id);
         session.startTurn(
             revision,
             await this.cards.listActive({
@@ -119,6 +144,7 @@ export class CouchSessionService {
                 ...this.cardTranslationPolicy,
             }),
         );
+        await this.persist(session);
         return this.snapshot(session);
     }
     async chooseCardType(
@@ -126,7 +152,7 @@ export class CouchSessionService {
         revision: number,
         cardType: typeof CARD_TYPES.QUESTION | typeof CARD_TYPES.DARE,
     ): Promise<CouchSessionSnapshot> {
-        const session = this.require(id);
+        const session = await this.require(id);
         session.chooseCardType(
             revision,
             cardType,
@@ -135,10 +161,11 @@ export class CouchSessionService {
                 ...this.cardTranslationPolicy,
             }),
         );
+        await this.persist(session);
         return this.snapshot(session);
     }
     async skip(id: string, revision: number): Promise<CouchSessionSnapshot> {
-        const session = this.require(id);
+        const session = await this.require(id);
         session.skipCard(
             revision,
             await this.cards.listActive({
@@ -146,28 +173,44 @@ export class CouchSessionService {
                 ...this.cardTranslationPolicy,
             }),
         );
+        await this.persist(session);
         return this.snapshot(session);
     }
-    advance(id: string, revision: number): CouchSessionSnapshot {
-        const session = this.require(id);
+    async advance(id: string, revision: number): Promise<CouchSessionSnapshot> {
+        const session = await this.require(id);
         session.advance(revision);
+        await this.persist(session);
         return this.snapshot(session);
     }
-    vote(id: string, revision: number, playerId: string, vote: "YES" | "NO"): CouchSessionSnapshot {
-        const session = this.require(id);
+    async vote(
+        id: string,
+        revision: number,
+        playerId: string,
+        vote: "YES" | "NO",
+    ): Promise<CouchSessionSnapshot> {
+        const session = await this.require(id);
         session.submitVote(revision, playerId, vote);
+        await this.persist(session);
         return this.snapshot(session);
     }
-    end(id: string, revision: number): CouchSessionSnapshot {
-        const session = this.require(id);
+    async end(id: string, revision: number): Promise<CouchSessionSnapshot> {
+        const session = await this.require(id);
         session.end(revision);
+        await this.persist(session);
         return this.snapshot(session);
     }
 
-    private require(id: string): GameSession {
+    private async require(id: string): Promise<GameSession> {
         const session = this.sessions.get(id);
-        if (!session) throw new CouchSessionNotFoundError();
-        return session;
+        if (session) return session;
+        const runtime = await this.repository?.load(id);
+        if (!runtime) throw new CouchSessionNotFoundError();
+        const restored = GameSession.restore(runtime, this.random);
+        this.sessions.set(id, restored);
+        return restored;
+    }
+    private async persist(session: GameSession): Promise<void> {
+        await this.repository?.save(session.toRuntimeState());
     }
     private snapshot(session: GameSession): CouchSessionSnapshot {
         return {

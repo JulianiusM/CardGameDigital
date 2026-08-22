@@ -47,6 +47,7 @@ class PresentationController {
     private scene: PresentationScene = "MENU";
     private activeChannel = 0;
     private fadeTimer?: number;
+    private audioUnlocked = false;
     private readonly ambient = [new Audio(), new Audio()];
     private readonly effects: Record<PresentationEffect, HTMLAudioElement> = {
         action: new Audio("/play/audio/action.wav"),
@@ -60,9 +61,16 @@ class PresentationController {
 
     constructor() {
         for (const channel of this.ambient) channel.loop = true;
-        for (const effect of Object.values(this.effects)) effect.volume = 0.42;
+        for (const channel of this.ambient) channel.preload = "auto";
+        for (const effect of Object.values(this.effects)) {
+            effect.volume = 0.42;
+            effect.preload = "auto";
+        }
         this.applyPreferences();
         this.loadScene(this.ambient[0], this.scene);
+        const unlock = () => this.unlockAudio();
+        document.addEventListener("pointerdown", unlock, { once: true });
+        document.addEventListener("keydown", unlock, { once: true });
     }
 
     update(next: Partial<PresentationPreferences>): PresentationPreferences {
@@ -96,6 +104,14 @@ class PresentationController {
         void effect.play().catch(() => undefined);
     }
 
+    unlockAudio(): void {
+        if (this.audioUnlocked) return;
+        this.audioUnlocked = true;
+        this.applyPreferences();
+        if (this.preferences.musicEnabled)
+            void this.ambient[this.activeChannel].play().catch(() => undefined);
+    }
+
     private loadScene(channel: HTMLAudioElement, scene: PresentationScene): void {
         channel.src = `/play/audio/ambient-${sceneTrack[scene]}.wav`;
     }
@@ -120,6 +136,7 @@ class PresentationController {
         document.documentElement.dataset.reducedMotion = String(this.preferences.reducedMotion);
         document.documentElement.dataset.largeText = String(this.preferences.largeText);
         this.ambient[this.activeChannel].volume = this.preferences.musicVolume;
+        for (const effect of Object.values(this.effects)) effect.volume = 0.42;
     }
 }
 export const presentation = new PresentationController();

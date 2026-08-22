@@ -17,6 +17,8 @@
         loadGameProfiles,
         loadHostConfiguration,
         loadJoin,
+        loadLastJoin,
+        clearJoin,
         rooms,
         RoomSocket,
         saveJoin,
@@ -26,6 +28,7 @@
         type Join,
         type Role,
     } from "./multiplayer";
+    import { loadSetup } from "./setup";
 
     const route = location.pathname.replace(/^\/play\/?/, "");
     const isHome = !route;
@@ -39,6 +42,7 @@
     }
 
     const role = roleForRoute(route);
+    const setup = loadSetup();
     const joinRole: Exclude<Role, "HOST"> = role === "DISPLAY" ? "DISPLAY" : "PLAYER";
     const modes = gameModes;
 
@@ -49,18 +53,17 @@
     let error = "";
     let qr = "";
     let mode: (typeof modes)[number][0] =
-        (new URLSearchParams(location.search).get("mode") as (typeof modes)[number][0]) ??
-        modes[0][0];
+        (modes.find(([id]) => id === setup.mode)?.[0] as (typeof modes)[number][0]) ?? modes[0][0];
     let profiles: GameProfileSummary[] = [];
-    let profileId = new URLSearchParams(location.search).get("profile") ?? "PROFILE_FRIENDS";
-    let adultContentConfirmed = false;
+    let profileId = setup.profileId;
+    let adultContentConfirmed = setup.adultContentConfirmed;
     let groups: GroupSummary[] = [];
-    let groupId = "";
-    let maximumIntensity = 3;
-    let randomQuestionRatio = 0.6;
-    let letsTalkMetaInterval = 5;
+    let groupId = setup.groupId ?? "";
+    let maximumIntensity = setup.maximumIntensity;
+    let randomQuestionRatio = setup.randomQuestionRatio;
+    let letsTalkMetaInterval = setup.letsTalkMetaInterval;
     let canPersist = false;
-    let persistRoom = false;
+    let persistRoom = Boolean(setup.groupId);
     let devicePlayerNames: string[] = [];
     let transferTarget = "";
     let updateCounter = 0;
@@ -92,7 +95,14 @@
     async function connect(value: Join): Promise<void> {
         joined = value;
         code = value.roomCode;
-        connection = new RoomSocket(value, () => updateCounter++);
+        connection = new RoomSocket(
+            value,
+            () => updateCounter++,
+            () => {
+                clearJoin(value);
+                location.href = "/play/";
+            },
+        );
 
         // The QR code contains only the public Room code, never the participant credential.
         qr = await QRCode.toDataURL(`${location.origin}/play/mobile?room=${code}`, {
@@ -108,18 +118,17 @@
             try {
                 const configuration = await loadHostConfiguration();
                 groups = configuration.groups;
-                profileId = configuration.settings.preferredProfileId;
-                groupId = configuration.settings.defaultGroupId ?? "";
-                maximumIntensity = configuration.settings.maximumIntensity;
-                randomQuestionRatio = configuration.settings.randomQuestionRatio;
-                letsTalkMetaInterval = configuration.settings.letsTalkMetaInterval;
+                if (!setup.profileId) profileId = configuration.settings.preferredProfileId;
                 canPersist = true;
             } catch {
                 // Public anonymous hosts intentionally have no DataSpace configuration.
                 canPersist = false;
             }
         }
-        const savedJoin = code ? loadJoin(code, role) : null;
+        const lastJoin = loadLastJoin();
+        let savedJoin: Join | null = null;
+        if (code) savedJoin = loadJoin(code, role);
+        else if (lastJoin?.role === role) savedJoin = lastJoin;
         if (savedJoin) void connect(savedJoin);
     });
 
@@ -186,9 +195,13 @@
             names: devicePlayerNames.map((entry) => entry.trim()).filter(Boolean),
         });
     }
+
+    function leaveRoom(): void {
+        connection?.command("command.leaveRoom");
+    }
 </script>
 
-{#if !session}<PresentationControls />{/if}
+{#if isHome || isAccount || isHelp}<PresentationControls />{/if}
 
 {#if isHome}
     <Home />
@@ -244,6 +257,12 @@
                 <p><a href="/play/couch">{messages.room.couchAlternative}</a></p>
             </section>
         {:else if !session}
+            <button
+                class="settings-trigger"
+                aria-label={messages.settings.title}
+                on:click={() => (settingsOpen = true)}
+                ><span class="gear-icon" aria-hidden="true">⚙</span></button
+            >
             <RoomLobby
                 {participants}
                 presence={connection?.presence ?? []}
@@ -252,16 +271,6 @@
                 {qr}
                 {code}
                 {devicePlayerNames}
-                {profiles}
-                {groups}
-                bind:profileId
-                bind:groupId
-                bind:mode
-                bind:maximumIntensity
-                bind:randomQuestionRatio
-                bind:persistRoom
-                bind:adultContentConfirmed
-                bind:transferTarget
                 onSetDevicePlayer={setDevicePlayer}
                 onAddDevicePlayer={() => (devicePlayerNames = [...devicePlayerNames, ""])}
                 onRemoveDevicePlayer={(index) =>
@@ -270,8 +279,6 @@
                     ))}
                 onSaveDevicePlayers={saveDevicePlayers}
                 onStart={startSession}
-                onTransferHost={(participantId) =>
-                    command("command.transferHost", { participantId })}
                 onSaveBoundaries={saveBoundaries}
             />
         {:else}
@@ -279,15 +286,89 @@
                 {session}
                 role={effectiveRole}
                 startedAt={sessionStartedAt}
+                {participants}
+                presence={connection?.presence ?? []}
+                roomCode={code}
+                exhausted={connection?.errorCode === "CARD_POOL_EXHAUSTED"}
                 onCommand={command}
                 onOpenSettings={() => (settingsOpen = true)}
             />
         {/if}
-        {#if session && effectiveRole === "HOST"}<SettingsModal
+        {#if joined}<SettingsModal
                 bind:open={settingsOpen}
-                showContent
-                onBoundaries={saveBoundaries}
-                onEnd={() => command("command.endSession")}
-            />{/if}
+                showGame={!session && effectiveRole === "HOST"}
+                showAdvanced={!session && effectiveRole === "HOST"}
+                showContent={!session && effectiveRole !== "DISPLAY"}
+                onBoundaries={!session && effectiveRole !== "DISPLAY" ? saveBoundaries : undefined}
+                onEnd={session && effectiveRole === "HOST"
+                    ? () => command("command.endSession")
+                    : undefined}
+                onLeave={leaveRoom}
+                roomCode={code}
+                {qr}
+            >
+                <div slot="game" class="section-grid">
+                    <label
+                        >{messages.room.gameMode}<select bind:value={mode}
+                            >{#each gameModes as item}<option value={item[0]}>{item[1]}</option
+                                >{/each}</select
+                        ></label
+                    >
+                    <label
+                        >{messages.room.profile}<select bind:value={profileId}
+                            >{#each profiles as profile}<option value={profile.id}
+                                    >{profile.name}</option
+                                >{/each}</select
+                        ></label
+                    >
+                    <label class="adult-confirmation"
+                        ><input type="checkbox" bind:checked={adultContentConfirmed} />{messages
+                            .room.adultConfirmation}</label
+                    >
+                    <label class:disabled={!persistRoom}
+                        >{messages.room.groupHistory}<select
+                            bind:value={groupId}
+                            disabled={!persistRoom}
+                            ><option value="">{messages.room.noGroup}</option
+                            >{#each groups as group}<option value={group.id}>{group.name}</option
+                                >{/each}</select
+                        ></label
+                    >
+                    <label
+                        >{messages.room.maximumIntensity}<input
+                            type="range"
+                            min="1"
+                            max="5"
+                            bind:value={maximumIntensity}
+                        /></label
+                    >
+                </div>
+                <div slot="advanced" class="section-grid">
+                    <label
+                        >{messages.room.questionRatio}<input
+                            type="number"
+                            min="0"
+                            max="1"
+                            step="0.05"
+                            bind:value={randomQuestionRatio}
+                        /></label
+                    >
+                    <label
+                        >{messages.room.transfer}<select bind:value={transferTarget}
+                            ><option value="">{messages.room.selectDevice}</option
+                            >{#each participants.filter((participant) => participant.role === "PLAYER") as candidate}<option
+                                    value={candidate.id}>{candidate.displayName}</option
+                                >{/each}</select
+                        ></label
+                    >
+                    <button
+                        class="secondary"
+                        disabled={!transferTarget}
+                        on:click={() =>
+                            command("command.transferHost", { participantId: transferTarget })}
+                        >{messages.room.transferAction}</button
+                    >
+                </div>
+            </SettingsModal>{/if}
     </main>
 {/if}

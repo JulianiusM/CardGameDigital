@@ -132,7 +132,7 @@ export class GameSession {
         options: GameSessionOptions,
         private readonly random: RandomSource,
     ) {
-        if (!options.players.length) throw new Error(MESSAGE_KEYS.GAME_PLAYERS_REQUIRED);
+        if (options.players.length < 2) throw new Error(MESSAGE_KEYS.GAME_MINIMUM_PLAYERS);
         if (new Set(options.players.map((player) => player.id)).size !== options.players.length)
             throw new Error(MESSAGE_KEYS.GAME_PLAYER_IDS_UNIQUE);
         this.id = options.id;
@@ -244,6 +244,59 @@ export class GameSession {
         return this.mode === GAME_MODES.NEVER_HAVE_I_EVER
             ? null
             : (this.players[this.activePlayerIndex] ?? null);
+    }
+
+    /** Checks the initial authoritative pool without selecting or relaxing any rule. */
+    hasEligibleCards(cards: readonly PlayableCard[]): boolean {
+        if (this.mode === GAME_MODES.NEVER_HAVE_I_EVER)
+            return this.pool(cards, CARD_TYPES.QUESTION, true).length > 0;
+        if (this.mode === GAME_MODES.LETS_TALK)
+            return this.pool(cards, CARD_TYPES.QUESTION, false).length > 0;
+        return (
+            this.pool(cards, CARD_TYPES.QUESTION, false).length > 0 ||
+            this.pool(cards, CARD_TYPES.DARE, false).length > 0
+        );
+    }
+
+    /** Removes players after an intentional leave or an expired reconnect grace period. */
+    removePlayers(expectedRevision: number, playerIds: ReadonlySet<string>): void {
+        this.assertRevision(expectedRevision);
+        if (this.state === SESSION_STATES.ENDED) return;
+        const previousPlayers = [...this.players];
+        const previousActiveId = this.activePlayer?.id ?? null;
+        this.players = this.players.filter(({ id }) => !playerIds.has(id));
+        if (this.players.length === previousPlayers.length) return;
+        for (const playerId of playerIds) this.votes.delete(playerId);
+        if (!this.players.length) {
+            this.state = SESSION_STATES.ENDED;
+            this.currentCard = null;
+            this.revision++;
+            return;
+        }
+        const activeStillPresent = previousActiveId
+            ? this.players.findIndex(({ id }) => id === previousActiveId)
+            : -1;
+        if (activeStillPresent >= 0) this.activePlayerIndex = activeStillPresent;
+        else {
+            const previousActiveIndex = Math.max(
+                0,
+                previousPlayers.findIndex(({ id }) => id === previousActiveId),
+            );
+            const next = previousPlayers
+                .slice(previousActiveIndex + 1)
+                .concat(previousPlayers.slice(0, previousActiveIndex + 1))
+                .find(({ id }) => this.players.some((player) => player.id === id));
+            this.activePlayerIndex = Math.max(
+                0,
+                this.players.findIndex(({ id }) => id === next?.id),
+            );
+        }
+        if (
+            this.state === SESSION_STATES.COLLECTING_ANSWERS &&
+            this.votes.size === this.players.length
+        )
+            this.state = SESSION_STATES.SHOWING_RESULTS;
+        this.revision++;
     }
 
     chooseCardType(

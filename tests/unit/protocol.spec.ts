@@ -55,4 +55,16 @@ describe("protocol v1 boundary", () => {
         });
         expect(result.success).toBe(true);
     });
+
+    it("accepts an intentional leave command without participant identity", () => {
+        expect(
+            roomCommandEnvelopeSchema.safeParse({
+                protocol: 1,
+                type: "command.leaveRoom",
+                requestId: "leave",
+                revision: null,
+                payload: {},
+            }).success,
+        ).toBe(true);
+    });
 });

@@ -32,6 +32,7 @@ router.get("/v1/server-info", (_req, res) =>
     res.json({
         version: 1,
         deploymentMode: settings.value.deploymentMode,
+        authenticationAvailable: settings.value.authMode === "account",
         protocolVersions: [1],
     }),
 );

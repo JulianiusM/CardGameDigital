@@ -63,6 +63,7 @@ presence updates. Unsupported versions fail with `PROTOCOL_VERSION_UNSUPPORTED`.
 | `command.setDevicePlayers` | `null`          | `{names:[...]}`; pre-game only.                                                                       |
 | `command.transferHost`     | current or null | `{participantId}`; current host only.                                                                 |
 | `command.endSession`       | current         | `{}`; host only.                                                                                      |
+| `command.leaveRoom`        | current or null | `{}`; intentionally leave and clear reconnect eligibility.                                            |
 
 The authoritative service serializes commands per Room. A stale revision returns
 `STALE_SESSION_REVISION`; clients should discard speculative state, request/use the
@@ -88,6 +89,11 @@ with the same credential cancels reassignment. After the grace period, the oldes
 connected eligible player device becomes host. If nobody is connected, reassignment
 occurs when an eligible player reconnects. Explicit `command.transferHost` does not
 wait for this timer.
+
+Participant snapshots include `connectionStatus`. A closed socket first becomes
+`TEMPORARILY_DISCONNECTED`; reconnecting with the same credential restores `CONNECTED`.
+After grace expiry the participant becomes `LEFT`, is removed from active projections,
+and the credential is no longer accepted.
 
 ## Close/error behavior
 

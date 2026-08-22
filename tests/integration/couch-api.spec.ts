@@ -8,6 +8,8 @@ import { GAME_MODES } from "../../src/packages/game-core";
 import { AppDataSource, initDataSource } from "../../src/modules/database/dataSource";
 import settings from "../../src/modules/settings";
 import { normalizeCards } from "../../src/tooling/card-import/normalize";
+import { CouchGameSessionEntity } from "../../src/modules/database/entities/game/CouchGameSessionEntity";
+import { CouchCardAppearanceEntity } from "../../src/modules/database/entities/game/CouchCardAppearanceEntity";
 
 let app: import("express").Express;
 let directory: string;
@@ -105,22 +107,112 @@ describe("Couch HTTP application adapter", () => {
     it("validates payloads and rejects stale commands with stable errors", async () => {
         await request(app)
             .post("/api/v1/couch/sessions")
+            .set("accept-language", "de-DE")
             .send({ mode: "INVALID", players: [] })
             .expect(400)
             .expect(({ body }) => expect(body.error.code).toBe("VALIDATION_ERROR"));
-        const created = await request(app)
+        await request(app)
             .post("/api/v1/couch/sessions")
+            .set("accept-language", "de-DE")
             .send({
                 mode: GAME_MODES.CLASSIC,
                 players: [{ name: "Anna" }],
                 maximumIntensity: 3,
                 randomQuestionRatio: 0.6,
                 letsTalkMetaInterval: 2,
-            });
+            })
+            .expect(400);
+        const created = await request(app)
+            .post("/api/v1/couch/sessions")
+            .set("accept-language", "de-DE")
+            .send({
+                mode: GAME_MODES.CLASSIC,
+                players: [{ name: "Anna" }, { name: "Ben" }],
+                maximumIntensity: 3,
+                randomQuestionRatio: 0.6,
+                letsTalkMetaInterval: 2,
+            })
+            .expect(201);
         await request(app)
             .post(`/api/v1/couch/sessions/${created.body.id}/choose`)
             .send({ revision: 1, cardType: "QUESTION" })
             .expect(409)
             .expect(({ body }) => expect(body.error.code).toBe("STALE_SESSION_REVISION"));
+    });
+
+    it("persists Couch history and the final EndSession state", async () => {
+        const created = await request(app)
+            .post("/api/v1/couch/sessions")
+            .set("accept-language", "de-DE")
+            .send({
+                mode: GAME_MODES.CLASSIC,
+                players: [{ name: "Anna" }, { name: "Ben" }],
+                maximumIntensity: 3,
+                randomQuestionRatio: 0.6,
+                letsTalkMetaInterval: 2,
+            })
+            .expect(201);
+        const shown = await request(app)
+            .post(`/api/v1/couch/sessions/${created.body.id}/choose`)
+            .send({ revision: 0, cardType: "QUESTION" })
+            .expect(200);
+        await request(app)
+            .post(`/api/v1/couch/sessions/${created.body.id}/end`)
+            .send({ revision: shown.body.revision })
+            .expect(200)
+            .expect(({ body }) => expect(body.state).toBe("ENDED"));
+        await expect(
+            AppDataSource.getRepository(CouchGameSessionEntity).findOneByOrFail({
+                id: created.body.id,
+            }),
+        ).resolves.toMatchObject({ endedAt: expect.any(Date), revision: 2 });
+        expect(
+            await AppDataSource.getRepository(CouchCardAppearanceEntity).countBy({
+                sessionId: created.body.id,
+            }),
+        ).toBe(1);
+    });
+
+    it("applies persistent Group history and re-enables it only after reset", async () => {
+        const group = await request(app)
+            .post("/api/v1/groups")
+            .send({ name: "Couch history", members: ["Anna", "Ben"] })
+            .expect(201);
+        const payload = {
+            mode: GAME_MODES.NEVER_HAVE_I_EVER,
+            players: [{ name: "Anna" }, { name: "Ben" }],
+            maximumIntensity: 3,
+            randomQuestionRatio: 0.6,
+            letsTalkMetaInterval: 2,
+            groupId: group.body.id,
+        };
+        const first = await request(app)
+            .post("/api/v1/couch/sessions")
+            .set("accept-language", "de-DE")
+            .send(payload)
+            .expect(201);
+        const shown = await request(app)
+            .post(`/api/v1/couch/sessions/${first.body.id}/start`)
+            .send({ revision: 0 })
+            .expect(200);
+        await request(app)
+            .post(`/api/v1/couch/sessions/${first.body.id}/end`)
+            .send({ revision: shown.body.revision })
+            .expect(200);
+        await request(app)
+            .post("/api/v1/couch/sessions")
+            .set("accept-language", "de-DE")
+            .send(payload)
+            .expect(409)
+            .expect(({ body }) => expect(body.error.code).toBe("CARD_POOL_EXHAUSTED"));
+        await request(app)
+            .post(`/api/v1/groups/${group.body.id}/history-reset`)
+            .send({ confirmed: true })
+            .expect(200);
+        await request(app)
+            .post("/api/v1/couch/sessions")
+            .set("accept-language", "de-DE")
+            .send(payload)
+            .expect(201);
     });
 });

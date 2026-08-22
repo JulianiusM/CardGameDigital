@@ -6,6 +6,7 @@ import type {
     DataSpaceId,
     GameSessionId,
     GameSessionSnapshot,
+    GameSessionRuntimeState,
     QuestionCategoryId,
     RoomId,
 } from "../game-core";
@@ -36,6 +37,14 @@ export interface CardRepository {
 export interface SessionRepository {
     get(id: GameSessionId): Promise<GameSessionSnapshot | null>;
     save(snapshot: GameSessionSnapshot): Promise<void>;
+}
+export interface CouchSessionRepository {
+    load(id: string): Promise<GameSessionRuntimeState | null>;
+    groupHistory(dataSpaceId: DataSpaceId, groupId: string): Promise<ReadonlySet<CardId>>;
+    save(
+        snapshot: GameSessionRuntimeState,
+        ownership?: { dataSpaceId: DataSpaceId; groupId: string | null },
+    ): Promise<void>;
 }
 export interface RoomRepository {
     exists(id: RoomId): Promise<boolean>;
