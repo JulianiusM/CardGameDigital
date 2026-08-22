@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="SonarLintProjectSettings">
+    <option name="bindingEnabled" value="true" />
+    <option name="projectKey" value="JulianiusM_CardGameDigital_58cf5480-59d1-4f41-a444-de6ac7fcc9cb" />
+    <option name="serverId" value="SonarQube CE" />
+  </component>
+</project>

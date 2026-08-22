@@ -20,9 +20,9 @@ topology, while accounts and persistence remain optional for quick rounds.
   lifecycle, source reconciliation, and soft retirement.
 
 The detailed product definition is in the
-[Game Design Document](./Multiplayer%20Party%20Card%20Game%20%E2%80%94%20Game%20Design%20Document%281%29.md).
+[Game Design Document](./docs/GAME_DESIGN.md).
 Architecture decisions are grounded in the
-[Technical Architecture Document](./Multiplayer%20Party%20Card%20Game%20%E2%80%94%20Technical%20Architecture%20Document.md).
+[Technical Architecture Document](./docs/TECHNICAL_ARCHITECTURE.md).
 
 ## Technology
 

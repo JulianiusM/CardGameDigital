@@ -95,8 +95,7 @@ jobs:
           ROOT_URL=http://localhost:3001
 
           # Make local login available for E2E
-          LOCAL_LOGIN_ENABLED=1
-          SESSION_SECRET=ci_e2e_secret
+          LOCAL_LOGIN_ENABLED=0
           OIDC_ENABLED=0
 
           # E2E DB (guard requires name to contain 'e2e')
