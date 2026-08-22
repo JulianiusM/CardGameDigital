@@ -48,6 +48,7 @@ export const de = {
         "room.notAuthorized": "Nicht berechtigt.",
         "game.staleRevision": "Der Spielstand hat sich geändert.",
         "game.cardPoolExhausted": "Keine Karte erfüllt alle aktiven Regeln.",
+        "catalog.localeUnavailable": "Diese Kartensprache ist nicht verfügbar.",
         "game.sessionNotFound": "Das Couch-Spiel wurde nicht gefunden.",
         "game.adultConfirmationRequired": "Explizite Inhalte erfordern eine Bestätigung.",
         "game.playersRequired": "Mindestens eine Person wird benötigt.",

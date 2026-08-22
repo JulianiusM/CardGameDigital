@@ -1,15 +1,15 @@
 import type { PlayableCard } from "../game-core";
 import type { CardEntity } from "../../modules/database/entities/card/CardEntity";
-import type { CardTranslationEntity } from "../../modules/database/entities/card/CardTranslationEntity";
+import type { CardLocalizationEntity } from "../../modules/database/entities/card/CardLocalizationEntity";
 
 export function cardEntityToDomain(
     entity: CardEntity,
-    translation: CardTranslationEntity,
+    localization: CardLocalizationEntity,
 ): PlayableCard {
     return {
         id: entity.id as PlayableCard["id"],
-        cardText: translation.text,
-        locale: translation.locale,
+        cardText: localization.text,
+        locale: localization.locale,
         cardType: entity.cardType as PlayableCard["cardType"],
         yesNoAnswerPossible: entity.yesNoAnswerPossible,
         questionCategoryId: entity.questionCategoryId as PlayableCard["questionCategoryId"],

@@ -149,6 +149,12 @@ class MemoryRooms implements RealtimeRoomRepository {
     }
 }
 const cards: CardRepository = {
+    async isLocaleActive() {
+        return true;
+    },
+    async defaultLocale() {
+        return "en-GB";
+    },
     async listActive() {
         return [card({ id: "room-question" as never })];
     },

@@ -13,7 +13,7 @@
 - [External interface contracts](contracts/README.md)
 - [HTTP API v1](contracts/http-api.md)
 - [WebSocket protocol v1](contracts/websocket-v1.md)
-- [Card catalog importer](contracts/card-catalog-import.md)
+- [Bundled Card catalog](contracts/card-catalog-v1.md)
 - [Infrastructure integrations](contracts/infrastructure.md)
 
 ## Players

@@ -18,6 +18,8 @@ const cards = [
     card({ id: "meta" as never, cardType: CARD_TYPES.CONVERSATION, questionCategoryId: null }),
 ];
 const repository: CardRepository = {
+    isLocaleActive: async () => true,
+    defaultLocale: async () => "en-GB",
     getById: async (id) => cards.find((entry) => entry.id === id) ?? null,
     listActive: async () => cards,
     findEligibleCandidates: async () => cards,

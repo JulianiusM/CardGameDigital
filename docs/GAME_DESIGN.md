@@ -680,13 +680,13 @@ Cards may have an Intensity value.
 
 Recommended scale:
 
-| Intensity | Meaning |
-|---|---|
-| 1 | mild |
-| 2 | personal / somewhat challenging |
-| 3 | intimate / strong |
-| 4 | very intimate / spicy |
-| 5 | explicit / extreme within allowed content |
+| Intensity | Meaning                                   |
+| --------- | ----------------------------------------- |
+| 1         | mild                                      |
+| 2         | personal / somewhat challenging           |
+| 3         | intimate / strong                         |
+| 4         | very intimate / spicy                     |
+| 5         | explicit / extreme within allowed content |
 
 For questions, intensity describes personal or emotional intensity.
 
@@ -1273,12 +1273,12 @@ If enabled:
 
 # 48. Repeat Matrix
 
-| AlwaysEligible | RepeatableInSession | Behavior |
-|---|---|---|
-| No | No | Ordinary Card |
-| Yes | No | May return in later Sessions, once per current Session |
-| No | Yes | Subject to Group history, may recur within current Session |
-| Yes | Yes | Evergreen Card that may also recur within the Session |
+| AlwaysEligible | RepeatableInSession | Behavior                                                   |
+| -------------- | ------------------- | ---------------------------------------------------------- |
+| No             | No                  | Ordinary Card                                              |
+| Yes            | No                  | May return in later Sessions, once per current Session     |
+| No             | Yes                 | Subject to Group history, may recur within current Session |
+| Yes            | Yes                 | Evergreen Card that may also recur within the Session      |
 
 ---
 
@@ -1695,36 +1695,22 @@ They simply reduce the eligible content pool.
 
 # 74. Content Administration
 
-The future content editor should support:
-
-- logical Card identity;
-- source identity;
-- Card Type;
-- Question Category;
-- DareType;
-- Dare Affinity;
-- Intensity;
-- flags;
-- repeat settings;
-- active/retired state;
-- translations by locale;
-- translation status;
-- source revision;
-- stale-translation review;
-- Origin;
-- OriginCategory.
+Card administration belongs to the external Card management system, not the game.
+That system owns permanent UUID assignment, gameplay metadata, lifecycle, localization
+review, localized taxonomy copy, and release assembly. The game only consumes a
+release-ready immutable catalog snapshot.
 
 ---
 
 # 75. Translation Administration
 
-Editors should be able to:
+The external Card management system should let its editors:
 
 - filter untranslated Cards;
 - filter stale translations;
 - compare source revision with translation;
 - publish reviewed translations;
-- retire a locale;
+- retire a locale or Card localization;
 - report coverage.
 
 Example coverage:

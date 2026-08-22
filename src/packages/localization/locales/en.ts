@@ -48,6 +48,7 @@ export const en = {
         "room.notAuthorized": "Not authorized.",
         "game.staleRevision": "The game state has changed.",
         "game.cardPoolExhausted": "No card satisfies all active rules.",
+        "catalog.localeUnavailable": "That Card language is not available.",
         "game.sessionNotFound": "The Couch game was not found.",
         "game.adultConfirmationRequired": "Explicit content requires confirmation.",
         "game.playersRequired": "At least one player is required.",

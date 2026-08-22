@@ -29,6 +29,8 @@ export const DEFAULT_CARD_TRANSLATION_POLICY: Pick<
 export interface CardRepository {
     getById(id: CardId, localization: CardLocalizationPolicy): Promise<PlayableCard | null>;
     listActive(localization: CardLocalizationPolicy): Promise<readonly PlayableCard[]>;
+    isLocaleActive(locale: string): Promise<boolean>;
+    defaultLocale(): Promise<string>;
     findEligibleCandidates(
         request: CardCandidateRequest,
         localization: CardLocalizationPolicy,

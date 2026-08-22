@@ -22,6 +22,7 @@ export type GameSetupState = {
     enabledQuestionCategoryIds: string[];
     enabledDareTypeIds: string[];
     blockedOperationalFlags: string[];
+    cardLocale: string;
     deviceMode: DeviceMode;
 };
 
@@ -51,6 +52,7 @@ const defaults: GameSetupState = {
     ],
     enabledDareTypeIds: ["DARE_SILLY", "DARE_OTHER", "DARE_TOUCH", "DARE_KISS", "DARE_CLOTHING"],
     blockedOperationalFlags: [],
+    cardLocale: "de-DE",
     deviceMode: "couch",
 };
 
@@ -79,13 +81,13 @@ export function setupHref(step: SetupStep): string {
     return `/play/?setup=${step}`;
 }
 
-export function setupRoomSettings(state: GameSetupState, cardLocale: string): RoomGameSettings {
+export function setupRoomSettings(state: GameSetupState): RoomGameSettings {
     return {
         mode: state.mode,
         profileId: state.profileId,
         groupId: state.groupChoice === "SELECT" ? state.groupId : null,
         adultContentConfirmed: state.adultContentConfirmed,
-        cardLocale,
+        cardLocale: state.cardLocale,
         configuration: {
             enabledQuestionCategoryIds: state.enabledQuestionCategoryIds,
             enabledDareTypeIds: state.enabledDareTypeIds,

@@ -10,12 +10,6 @@ export const DEFAULT_LOCALE = "en" as const;
 export const localeCatalogs = { de, en } as const;
 export type Locale = keyof typeof localeCatalogs;
 export type EmailKind = Exclude<keyof (typeof en)["email"], "signature">;
-const cardLocales: Record<Locale, string> = { de: "de-DE", en: "en-GB" };
-
-export function cardLocaleFor(locale: Locale): string {
-    return cardLocales[locale];
-}
-
 function supportedLocale(candidate: string | undefined): Locale | undefined {
     if (!candidate) return undefined;
     const normalized = candidate.toLowerCase();

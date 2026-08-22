@@ -6,7 +6,7 @@
 | -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
 | `apps/web`                 | The single Svelte presentation for home, Couch, Room, account, DataSpace and help flows. It talks only to versioned HTTP/WebSocket APIs. |
 | `src/packages/game-core`   | Framework-independent rules, eligibility, selection, history and Session state transitions.                                              |
-| `src/packages/application` | Use cases for Couch sessions, Rooms, accounts, help and catalog imports. Express and TypeORM details do not cross into the game domain.  |
+| `src/packages/application` | Use cases for Couch sessions, Rooms, accounts, and help. Express and TypeORM details do not cross into the game domain.                  |
 | `src/packages/protocol`    | Versioned, validated realtime messages shared by transport and clients.                                                                  |
 | `src/packages/persistence` | TypeORM implementations of application repository ports.                                                                                 |
 | `src/routes/api`           | Thin Express adapters that validate input, call application services and serialize JSON responses.                                       |

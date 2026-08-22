@@ -29,6 +29,48 @@ afterAll(async () => {
 });
 
 describe("Room HTTP API", () => {
+    it("lists database-backed Card locales and localized taxonomies", async () => {
+        const locales = await request(app).get("/api/v1/catalog/locales").expect(200);
+        expect(locales.body).toMatchObject({
+            defaultLocale: "de-DE",
+            locales: expect.arrayContaining([
+                { id: "en-GB", nativeName: "English (United Kingdom)", coverage: 1 },
+            ]),
+        });
+        const taxonomies = await request(app)
+            .get("/api/v1/catalog/taxonomies?locale=en-GB")
+            .expect(200);
+        expect(taxonomies.body.questionCategories).toContainEqual({
+            id: "CAT_EVERYDAY",
+            label: "Everyday life",
+            description: null,
+        });
+    });
+
+    it("rejects a Room Card locale that is not active in the catalog", async () => {
+        const settings = {
+            mode: "CLASSIC_TRUTH_OR_DARE",
+            profileId: "PROFILE_FRIENDS",
+            groupId: null,
+            adultContentConfirmed: false,
+            cardLocale: "fr-FR",
+            configuration: {
+                enabledQuestionCategoryIds: ["CAT_EVERYDAY"],
+                enabledDareTypeIds: ["DARE_SILLY"],
+                blockedOperationalFlags: [],
+                maximumIntensity: 3,
+                randomQuestionRatio: 0.5,
+                maximumTypeStreak: 3,
+                letsTalkMetaInterval: 5,
+            },
+        };
+        const response = await request(app)
+            .post("/api/v1/rooms")
+            .send({ displayName: "Host", settings })
+            .expect(400);
+        expect(response.body.error.code).toBe("CARD_LOCALE_UNAVAILABLE");
+    });
+
     it("reports that Account UI is unavailable for AUTH_MODE=none", async () => {
         const response = await request(app).get("/api/v1/server-info").expect(200);
         expect(response.body.authenticationAvailable).toBe(false);

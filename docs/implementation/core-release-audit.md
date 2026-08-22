@@ -39,11 +39,12 @@ required service/platform is unavailable in this repository environment.
 
 The GDD identifies an existing German source database of roughly 2,000 cards as
 canonical product content. That source database is not present in this repository.
-The normalization/import pipeline and traceable catalog persistence are complete,
+The bundled catalog contract and transactional runtime reconciliation are complete,
 but a production catalog cannot be fabricated without violating the GDD's content
 lineage and editorial requirements. Consequently the repository must not label the
-entire Core Release **VERIFIED** until the canonical source is supplied, normalized,
-editorially validated and packaged. Test fixtures remain test-only content.
+entire Core Release **VERIFIED** until the producer publishes, editorially validates,
+and supplies the canonical `game-card-catalog/v1` artifact. Development fixtures remain
+non-production content.
 
 ## Phase 10 cleanup decision
 

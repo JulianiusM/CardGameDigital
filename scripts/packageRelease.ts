@@ -29,10 +29,16 @@ fs.copyFileSync(path.join(target, "package.json"), path.join(target, "app", "pac
 
 // npm already resolved the locked production graph. Copy exactly those packages,
 // including the platform-specific Argon2 and better-sqlite3 native bindings.
-const productionPaths = execFileSync("npm", ["ls", "--omit=dev", "--parseable", "--all"], {
-    cwd: root,
-    encoding: "utf8",
-})
+const npmCli = process.env.npm_execpath;
+if (!npmCli) throw new Error("Release packaging must run through an npm script");
+const productionPaths = execFileSync(
+    process.execPath,
+    [npmCli, "ls", "--omit=dev", "--parseable", "--all"],
+    {
+        cwd: root,
+        encoding: "utf8",
+    },
+)
     .trim()
     .split(/\r?\n/)
     .filter((entry) => entry && entry !== root);

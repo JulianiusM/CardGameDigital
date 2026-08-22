@@ -90,6 +90,7 @@ export type GameSettings = {
     letsTalkMetaInterval: number;
     defaultGroupId: string | null;
 };
+export type CardLocaleSummary = { id: string; nativeName: string; coverage: number };
 export type Join = {
     roomId: string;
     roomCode: string;
@@ -132,6 +133,12 @@ export async function loadGameProfiles(): Promise<GameProfileSummary[]> {
         method: "GET",
     });
     return result.profiles;
+}
+export async function loadCardLocales(): Promise<{
+    defaultLocale: string;
+    locales: CardLocaleSummary[];
+}> {
+    return json("/api/v1/catalog/locales", { method: "GET" });
 }
 export async function loadHostConfiguration(): Promise<{
     groups: GroupSummary[];

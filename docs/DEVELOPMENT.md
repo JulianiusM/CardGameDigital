@@ -58,12 +58,12 @@ npm run e2e              # requires Playwright browsers
 - Update `docs/contracts/websocket-v1.md` and WebSocket integration tests.
 - A breaking change requires protocol version 2; do not silently redefine version 1.
 
-## Changing cards or imports
+## Changing the bundled Card catalog
 
-Never add player text to `CardEntity` or derive UUIDs from text. Extend normalized
-metadata and source rendering separately. Preserve source reconciliation, translation
-status/revision, and soft retirement. Update the importer contract and catalog
-persistence tests.
+Never add player text to `CardEntity` or derive UUIDs from text. The external producer
+owns UUIDs, gameplay metadata, locale data, and release-approved localizations. Preserve
+active localization state, immutable release ordering, transactional FULL reconciliation,
+and soft retirement. Update the catalog contract and persistence tests together.
 
 ## Localization
 

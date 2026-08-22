@@ -22,7 +22,6 @@ function detectLocale(): Locale {
 
 export const locale = detectLocale();
 export const messages: Messages = localeCatalogs[locale];
-export const cardLocale = localeDefinitions[locale].cardLocale;
 export const gameModes = Object.values(messages.modes);
 
 /** Persists a new locale. Reloading keeps every non-Svelte consumer consistent too. */

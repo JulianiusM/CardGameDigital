@@ -129,8 +129,13 @@ export class RoomService {
     async createRoom(
         displayName: string,
         dataSpaceId: string | null = null,
-        initialSettings: RoomGameSettings = defaultRoomGameSettings(),
+        initialSettings?: RoomGameSettings,
     ): Promise<RoomJoinResult> {
+        const settings = initialSettings ?? {
+            ...defaultRoomGameSettings(),
+            cardLocale: await this.cards.defaultLocale(),
+        };
+        await this.validateRoomSettings(settings);
         let code = "";
         do {
             code = Array.from(
@@ -146,7 +151,7 @@ export class RoomService {
             code,
             dataSpaceId,
             expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
-            settings: initialSettings,
+            settings,
             participant: {
                 id: participantId,
                 roomId,
@@ -363,7 +368,7 @@ export class RoomService {
                     code: "INVALID_GAME_STATE",
                 });
             }
-            this.validateRoomSettings(command.payload.settings);
+            await this.validateRoomSettings(command.payload.settings);
             await this.repository.saveSettings(
                 roomId,
                 participant.id,
@@ -396,7 +401,7 @@ export class RoomService {
                     code: "INVALID_GAME_STATE",
                 });
             const settings = await this.repository.loadSettings(roomId);
-            this.validateRoomSettings(settings);
+            await this.validateRoomSettings(settings);
             if (
                 profileRequiresAdultConfirmation(settings.profileId) &&
                 !settings.adultContentConfirmed
@@ -530,7 +535,12 @@ export class RoomService {
                 code: "NOT_AUTHORIZED",
             });
     }
-    private validateRoomSettings(settings: RoomGameSettings): void {
+    private async validateRoomSettings(settings: RoomGameSettings): Promise<void> {
+        if (!(await this.cards.isLocaleActive(settings.cardLocale))) {
+            throw Object.assign(new Error(MESSAGE_KEYS.CARD_LOCALE_UNAVAILABLE), {
+                code: "CARD_LOCALE_UNAVAILABLE",
+            });
+        }
         try {
             roomSettingsGameProfile(settings);
         } catch {

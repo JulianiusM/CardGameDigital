@@ -16,8 +16,8 @@ topology, while accounts and persistence remain optional for quick rounds.
   disclosed to the room.
 - **Optional accounts:** anonymous ephemeral rounds or account-owned DataSpaces,
   groups, preferences, sessions, and exports.
-- **Localized catalog:** stable card UUIDs, locale-specific renderings, translation
-  lifecycle, source reconciliation, and soft retirement.
+- **Bundled global catalog:** producer-owned Card UUIDs, database Card locales,
+  release-approved localizations, immutable releases, and non-destructive FULL apply.
 
 The detailed product definition is in the
 [Game Design Document](./docs/GAME_DESIGN.md).
@@ -100,18 +100,16 @@ Migrations run automatically during server startup. To run them explicitly:
 npm run typeorm:migrate
 ```
 
-Import a JSON export from a stable source namespace:
+Validate the producer-approved release artifact without rewriting it:
 
 ```bash
-npm run card:import -- \
-  raw-cards.json catalog/cards-2026.08.json 2026.08 legacy-access-v1 de-DE
+npm run card:catalog:validate -- catalog/card-catalog.json
 ```
 
-This produces a validated interchange catalog. Applying that catalog is an
-application-layer operation: source identity is reconciled to a permanent random UUID,
-source-language text is upserted as a rendering, outdated adaptations become stale,
-and missing source rows are retired rather than deleted. See the
-[card importer contract](./docs/contracts/card-catalog-import.md).
+Builds package the exact validated bytes. Startup validates them again and applies a
+newer immutable FULL snapshot transactionally before readiness. Producer UUIDs are
+stored unchanged; missing Cards, locales, and localizations are soft-disabled. See the
+[bundled Card catalog contract](./docs/contracts/card-catalog-v1.md).
 
 ## Testing and quality checks
 
@@ -153,7 +151,7 @@ tests/                       Unit, integration, simulation, E2E, architecture te
 - [External contract index](./docs/contracts/README.md)
 - [HTTP API v1](./docs/contracts/http-api.md)
 - [WebSocket protocol v1](./docs/contracts/websocket-v1.md)
-- [Card catalog importer](./docs/contracts/card-catalog-import.md)
+- [Bundled Card catalog](./docs/contracts/card-catalog-v1.md)
 - [Infrastructure integrations](./docs/contracts/infrastructure.md)
 
 ## Contributing

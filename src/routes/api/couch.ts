@@ -9,12 +9,7 @@ import { AppDataSource } from "../../modules/database/dataSource";
 import settings from "../../modules/settings";
 import { CardEntity } from "../../modules/database/entities/card/CardEntity";
 import { asyncHandler } from "../../modules/lib/asyncHandler";
-import {
-    cardLocaleFor,
-    detectLocale,
-    translate,
-    translateError,
-} from "../../packages/localization/messages";
+import { detectLocale, translate, translateError } from "../../packages/localization/messages";
 import { requireCurrentDataSpace } from "./dataSpaceAccess";
 import { effectiveGameSettingsSchema } from "../../packages/protocol";
 
@@ -46,6 +41,7 @@ const createSchema = z
         profileId: z.string().min(1),
         adultContentConfirmed: z.boolean(),
         groupId: z.string().uuid().nullable().optional(),
+        cardLocale: z.string().min(2).max(35).optional(),
     })
     .strict();
 const revisionBody = z.object({ revision: revisionSchema }).strict();
@@ -53,14 +49,14 @@ const revisionBody = z.object({ revision: revisionSchema }).strict();
 router.post(
     "/sessions",
     asyncHandler(async (req, res) => {
-        const locale = detectLocale(req.get("accept-language"));
         const input = createSchema.parse(req.body);
         const dataSpace = input.groupId ? await requireCurrentDataSpace(req) : null;
+        const cardLocale = input.cardLocale ?? (await service.defaultCardLocale());
         res.status(201).json(
             await service.create({
                 ...input,
                 dataSpaceId: dataSpace?.id as DataSpaceId | undefined,
-                cardLocale: cardLocaleFor(locale),
+                cardLocale,
             }),
         );
     }),
@@ -136,6 +132,8 @@ router.use((error: unknown, req: Request, res: Response, next: NextFunction) => 
         });
     const code = (error as { code?: string }).code;
     if (code === "VALIDATION_ERROR") return res.status(400).json({ error: { code, message } });
+    if (code === "CARD_LOCALE_UNAVAILABLE")
+        return res.status(400).json({ error: { code, message } });
     if (code === "SESSION_NOT_FOUND") return res.status(404).json({ error: { code, message } });
     if (
         code === "STALE_SESSION_REVISION" ||

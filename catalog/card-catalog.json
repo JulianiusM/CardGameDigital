@@ -1,0 +1,108 @@
+{
+    "contract": "game-card-catalog/v1",
+    "catalogId": "development",
+    "sequence": 1,
+    "catalogVersion": "development-fixture-1",
+    "generatedAt": "2026-08-22T00:00:00.000Z",
+    "defaultLocale": "de-DE",
+    "locales": [
+        { "id": "de-DE", "nativeName": "Deutsch (Deutschland)", "active": true },
+        { "id": "en-GB", "nativeName": "English (United Kingdom)", "active": true }
+    ],
+    "questionCategories": [
+        {
+            "id": "CAT_EVERYDAY",
+            "localizations": [
+                { "locale": "de-DE", "label": "Alltag", "description": null },
+                { "locale": "en-GB", "label": "Everyday life", "description": null }
+            ]
+        }
+    ],
+    "dareTypes": [
+        {
+            "id": "DARE_SILLY",
+            "localizations": [
+                { "locale": "de-DE", "label": "Blödsinn", "description": null },
+                { "locale": "en-GB", "label": "Silly", "description": null }
+            ]
+        }
+    ],
+    "cards": [
+        {
+            "id": "00000000-0000-4000-8000-000000000001",
+            "lifecycle": "ACTIVE",
+            "cardType": "QUESTION",
+            "yesNoAnswerPossible": false,
+            "questionCategoryId": "CAT_EVERYDAY",
+            "dareTypeId": null,
+            "dareAffinityCategoryId": null,
+            "intensity": 2,
+            "alwaysEligible": false,
+            "repeatableInSession": true,
+            "repeatCooldown": 0,
+            "weight": 1,
+            "operationalFlags": [],
+            "localizations": [
+                { "locale": "de-DE", "text": "Was bringt dich immer zum Lachen?" },
+                { "locale": "en-GB", "text": "What always makes you laugh?" }
+            ]
+        },
+        {
+            "id": "00000000-0000-4000-8000-000000000002",
+            "lifecycle": "ACTIVE",
+            "cardType": "QUESTION",
+            "yesNoAnswerPossible": true,
+            "questionCategoryId": "CAT_EVERYDAY",
+            "dareTypeId": null,
+            "dareAffinityCategoryId": null,
+            "intensity": 2,
+            "alwaysEligible": false,
+            "repeatableInSession": true,
+            "repeatCooldown": 0,
+            "weight": 1,
+            "operationalFlags": [],
+            "localizations": [
+                { "locale": "de-DE", "text": "Hast du schon einmal die Nacht durchgemacht?" },
+                { "locale": "en-GB", "text": "Have you ever stayed up all night?" }
+            ]
+        },
+        {
+            "id": "00000000-0000-4000-8000-000000000003",
+            "lifecycle": "ACTIVE",
+            "cardType": "DARE",
+            "yesNoAnswerPossible": false,
+            "questionCategoryId": null,
+            "dareTypeId": "DARE_SILLY",
+            "dareAffinityCategoryId": "CAT_EVERYDAY",
+            "intensity": 2,
+            "alwaysEligible": false,
+            "repeatableInSession": true,
+            "repeatCooldown": 0,
+            "weight": 1,
+            "operationalFlags": [],
+            "localizations": [
+                { "locale": "de-DE", "text": "Erfinde einen kurzen Siegestanz." },
+                { "locale": "en-GB", "text": "Invent a short victory dance." }
+            ]
+        },
+        {
+            "id": "00000000-0000-4000-8000-000000000004",
+            "lifecycle": "ACTIVE",
+            "cardType": "CONVERSATION",
+            "yesNoAnswerPossible": false,
+            "questionCategoryId": null,
+            "dareTypeId": null,
+            "dareAffinityCategoryId": null,
+            "intensity": 1,
+            "alwaysEligible": false,
+            "repeatableInSession": true,
+            "repeatCooldown": 0,
+            "weight": 1,
+            "operationalFlags": [],
+            "localizations": [
+                { "locale": "de-DE", "text": "Alle dürfen eine Rückfrage stellen." },
+                { "locale": "en-GB", "text": "Everyone may ask one follow-up question." }
+            ]
+        }
+    ]
+}

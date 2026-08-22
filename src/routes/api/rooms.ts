@@ -76,6 +76,15 @@ function respondOrNext(
         });
         return;
     }
+    if ((error as { code?: string }).code === "CARD_LOCALE_UNAVAILABLE") {
+        res.status(400).json({
+            error: {
+                code: "CARD_LOCALE_UNAVAILABLE",
+                message: translate(locale, MESSAGE_KEYS.CARD_LOCALE_UNAVAILABLE),
+            },
+        });
+        return;
+    }
     next(error);
 }
 export default router;

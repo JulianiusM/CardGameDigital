@@ -65,7 +65,16 @@ export class CouchSessionService {
         private readonly repository?: CouchSessionRepository,
     ) {}
 
+    defaultCardLocale(): Promise<string> {
+        return this.cards.defaultLocale();
+    }
+
     async create(input: CreateCouchSession): Promise<CouchSessionSnapshot> {
+        if (!(await this.cards.isLocaleActive(input.cardLocale))) {
+            throw Object.assign(new Error(MESSAGE_KEYS.CARD_LOCALE_UNAVAILABLE), {
+                code: "CARD_LOCALE_UNAVAILABLE",
+            });
+        }
         if (profileRequiresAdultConfirmation(input.profileId) && !input.adultContentConfirmed) {
             throw Object.assign(new Error(MESSAGE_KEYS.GAME_ADULT_CONFIRMATION_REQUIRED), {
                 code: "VALIDATION_ERROR",

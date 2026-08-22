@@ -1,7 +1,4 @@
 import { MigrationInterface, QueryRunner, Table, TableIndex } from "typeorm";
-import { DARE_TYPE_LABELS, QUESTION_CATEGORY_LABELS } from "../packages/game-core";
-
-const SOURCE_LOCALE = "de-DE";
 
 export class NormalizeCardCatalog1787331000000 implements MigrationInterface {
     name = "NormalizeCardCatalog1787331000000";
@@ -14,6 +11,7 @@ export class NormalizeCardCatalog1787331000000 implements MigrationInterface {
                     { name: "id", type: "varchar", length: "35", isPrimary: true },
                     { name: "display_name", type: "varchar", length: "80" },
                     { name: "active", type: "boolean", default: true },
+                    { name: "is_default", type: "boolean", default: false },
                 ],
             }),
             true,
@@ -95,39 +93,6 @@ export class NormalizeCardCatalog1787331000000 implements MigrationInterface {
             }),
             true,
         );
-        for (const [id, label] of Object.entries(QUESTION_CATEGORY_LABELS)) {
-            await queryRunner.manager
-                .createQueryBuilder()
-                .insert()
-                .into("question_categories")
-                .values({ id })
-                .orIgnore()
-                .execute();
-            await queryRunner.manager
-                .createQueryBuilder()
-                .insert()
-                .into("question_category_translations")
-                .values({ categoryId: id, locale: SOURCE_LOCALE, label, description: null })
-                .orIgnore()
-                .execute();
-        }
-        for (const [id, label] of Object.entries(DARE_TYPE_LABELS)) {
-            await queryRunner.manager
-                .createQueryBuilder()
-                .insert()
-                .into("dare_types")
-                .values({ id })
-                .orIgnore()
-                .execute();
-            await queryRunner.manager
-                .createQueryBuilder()
-                .insert()
-                .into("dare_type_translations")
-                .values({ dareTypeId: id, locale: SOURCE_LOCALE, label, description: null })
-                .orIgnore()
-                .execute();
-        }
-
         await queryRunner.createTable(
             new Table({
                 name: "cards",

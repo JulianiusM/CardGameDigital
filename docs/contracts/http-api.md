@@ -25,14 +25,16 @@ Successful bodies are JSON unless the status is `204`. Errors use:
 
 ## Discovery and operations
 
-| Method | Path             | Result                                                        |
-| ------ | ---------------- | ------------------------------------------------------------- |
-| GET    | `/server-info`   | Deployment/auth availability and supported protocol versions. |
-| GET    | `/healthz`       | Liveness (`ok`), outside `/api/v1`.                           |
-| GET    | `/readyz`        | Database readiness (`ready`), outside `/api/v1`.              |
-| GET    | `/game-profiles` | Localized immutable built-in profile summaries.               |
-| GET    | `/help`          | Help document `{slug,title}` list for requested language.     |
-| GET    | `/help/:slug`    | Rendered `{slug,title,html}` help document.                   |
+| Method | Path                           | Result                                                        |
+| ------ | ------------------------------ | ------------------------------------------------------------- |
+| GET    | `/server-info`                 | Deployment/auth availability and supported protocol versions. |
+| GET    | `/healthz`                     | Liveness (`ok`), outside `/api/v1`.                           |
+| GET    | `/readyz`                      | Database readiness (`ready`), outside `/api/v1`.              |
+| GET    | `/game-profiles`               | Localized immutable built-in profile summaries.               |
+| GET    | `/help`                        | Help document `{slug,title}` list for requested language.     |
+| GET    | `/help/:slug`                  | Rendered `{slug,title,html}` help document.                   |
+| GET    | `/catalog/locales`             | Active database Card locales, default locale, and coverage.   |
+| GET    | `/catalog/taxonomies?locale=L` | Database taxonomy labels for Card locale `L`.                 |
 
 Help HTML is generated from trusted bundled Markdown; it is not user-authored content.
 
@@ -85,7 +87,8 @@ Realtime play continues over WebSocket.
 
 Couch sessions are single-device and server-authoritative. Runtime, shown-card history,
 and the final ended state are persisted; an optional owned `groupId` applies durable
-Group history. The request language selects the card locale. Endpoints use a session
+Group history. An optional `cardLocale` selects an active database Card locale; omission
+uses the catalog default and never derives Card language from UI language. Endpoints use a session
 UUID and optimistic `revision`.
 
 | Method | Path                          | Body                                                                                |

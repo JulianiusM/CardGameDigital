@@ -50,6 +50,7 @@ export const MESSAGE_KEYS = {
     GAME_PLAYERS_REQUIRED: "game.playersRequired",
     GAME_MINIMUM_PLAYERS: "game.minimumPlayers",
     GAME_PLAYER_IDS_UNIQUE: "game.playerIdsUnique",
+    CARD_LOCALE_UNAVAILABLE: "catalog.localeUnavailable",
     GAME_UNKNOWN_PLAYER: "game.unknownPlayer",
     GAME_ALREADY_VOTED: "game.alreadyVoted",
     PROFILE_COLLEAGUES_NAME: "profile.colleagues.name",

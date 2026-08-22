@@ -23,7 +23,7 @@ npm test
 npm run test:unit
 npm run test:integration
 npm run test:quick
-npx vitest run tests/unit/card-import.spec.ts
+npx vitest run tests/unit/card-catalog-contract.spec.ts tests/integration/card-catalog-persistence.spec.ts
 npm run e2e:couch
 npm run e2e
 npm run test:ci
@@ -53,7 +53,8 @@ fixtures in unit tests.
 
 When applicable, cover success plus invalid input, unauthorized access, stale revision,
 empty localized pool, transaction failure, reconnect, and cross-Room isolation. Card
-changes must demonstrate stable UUID, translation status, and no hard deletion.
+changes must demonstrate producer UUID stability, localization soft-disable, immutable
+release ordering, and no hard deletion.
 Account changes must demonstrate ownership scoping and avoid revealing account
 existence through reset responses.
 

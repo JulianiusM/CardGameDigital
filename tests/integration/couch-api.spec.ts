@@ -3,11 +3,9 @@ import os from "node:os";
 import path from "node:path";
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { applyCardCatalog } from "../../src/packages/application/applyCardCatalog";
 import { GAME_MODES } from "../../src/packages/game-core";
 import { AppDataSource, initDataSource } from "../../src/modules/database/dataSource";
 import settings from "../../src/modules/settings";
-import { normalizeCards } from "../../src/tooling/card-import/normalize";
 import { CouchGameSessionEntity } from "../../src/modules/database/entities/game/CouchGameSessionEntity";
 import { CouchCardAppearanceEntity } from "../../src/modules/database/entities/game/CouchCardAppearanceEntity";
 import { effectiveSettingsFromProfile } from "../../src/packages/application/roomGameSettings";
@@ -32,49 +30,6 @@ beforeAll(async () => {
     });
     await settings.read("/dev/null");
     await initDataSource();
-    const common = {
-        Origin: "test",
-        Intensity: 1,
-        AlwaysEligible: false,
-        RepeatableInSession: true,
-        RepeatCooldown: 0,
-        Weight: 1,
-        Active: true,
-        OperationalFlags: [],
-    };
-    await applyCardCatalog(
-        AppDataSource,
-        normalizeCards(
-            [
-                {
-                    ...common,
-                    ID: 1,
-                    CardText: "Question",
-                    Type: "Fragen",
-                    YesNoAnswerPossible: true,
-                    Category: "Alltag",
-                },
-                {
-                    ...common,
-                    ID: 2,
-                    CardText: "Dare",
-                    Type: "Pflicht",
-                    YesNoAnswerPossible: false,
-                    Category: "Alltag",
-                    DareType: "Blödsinn",
-                },
-                {
-                    ...common,
-                    ID: 3,
-                    CardText: "Meta",
-                    Type: "Gespräch",
-                    YesNoAnswerPossible: false,
-                },
-            ],
-            "api-test",
-            "v1",
-        ),
-    );
     app = (await import("../../src/app")).default;
 });
 afterAll(async () => {
@@ -170,6 +125,37 @@ describe("Couch HTTP application adapter", () => {
                 sessionId: created.body.id,
             }),
         ).toBe(1);
+    });
+
+    it("selects an active Card locale independently of Accept-Language", async () => {
+        const created = await request(app)
+            .post("/api/v1/couch/sessions")
+            .set("accept-language", "de-DE")
+            .send({
+                mode: GAME_MODES.CLASSIC,
+                players: [{ name: "Anna" }, { name: "Ben" }],
+                cardLocale: "en-GB",
+                ...canonicalSettings,
+            })
+            .expect(201);
+        await request(app)
+            .post(`/api/v1/couch/sessions/${created.body.id}/choose`)
+            .send({ revision: 0, cardType: "QUESTION" })
+            .expect(200)
+            .expect(({ body }) => expect(body.currentCard.cardText).toMatch(/laugh|night/i));
+    });
+
+    it("rejects a Card locale not present in the runtime catalog", async () => {
+        await request(app)
+            .post("/api/v1/couch/sessions")
+            .send({
+                mode: GAME_MODES.CLASSIC,
+                players: [{ name: "Anna" }, { name: "Ben" }],
+                cardLocale: "fr-FR",
+                ...canonicalSettings,
+            })
+            .expect(400)
+            .expect(({ body }) => expect(body.error.code).toBe("CARD_LOCALE_UNAVAILABLE"));
     });
 
     it("applies persistent Group history and re-enables it only after reset", async () => {

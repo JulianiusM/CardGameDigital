@@ -1,10 +1,11 @@
 <script lang="ts">
     import { onMount } from "svelte";
     import GameSettingsEditor from "./GameSettingsEditor.svelte";
-    import { cardLocale, gameModes, messages } from "./i18n";
+    import { gameModes, messages } from "./i18n";
     import {
         createGroup,
         loadGameProfiles,
+        loadCardLocales,
         loadHostConfiguration,
         resetGroupHistory,
         rooms,
@@ -50,7 +51,7 @@
         messages.setup.screen,
     ];
     $: presentation.setScene(screen === "menu" ? "MENU" : "LOBBY");
-    $: editorSettings = setupRoomSettings(setup, cardLocale);
+    $: editorSettings = setupRoomSettings(setup);
 
     onMount(async () => {
         const requestedStep = query.get("setup") as SetupStep | null;
@@ -68,7 +69,14 @@
         }
         if (roomCode && !setup.intent) persist({ intent: "JOIN", step: "intent" });
         try {
-            profiles = await loadGameProfiles();
+            const [loadedProfiles, catalogLocales] = await Promise.all([
+                loadGameProfiles(),
+                loadCardLocales(),
+            ]);
+            profiles = loadedProfiles;
+            if (!catalogLocales.locales.some(({ id }) => id === setup.cardLocale)) {
+                persist({ cardLocale: catalogLocales.defaultLocale });
+            }
             const configuration = await loadHostConfiguration();
             groups = configuration.groups;
             groupsAvailable = true;
@@ -200,7 +208,7 @@
             const join = await rooms.create(
                 setup.hostName.trim(),
                 persistence,
-                setupRoomSettings(setup, cardLocale),
+                setupRoomSettings(setup),
             );
             saveJoin(join);
             navigate("/play/room", { force: true });

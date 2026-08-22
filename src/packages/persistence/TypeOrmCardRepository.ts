@@ -6,6 +6,7 @@ import type {
     CardRepository,
 } from "../application/repositories";
 import { CardEntity } from "../../modules/database/entities/card/CardEntity";
+import { LocaleEntity } from "../../modules/database/entities/card/LocaleEntity";
 import { cardEntityToDomain } from "./cardMapper";
 
 export class TypeOrmCardRepository implements CardRepository {
@@ -55,23 +56,35 @@ export class TypeOrmCardRepository implements CardRepository {
             .createQueryBuilder("card")
             .leftJoinAndSelect("card.flags", "flag")
             .innerJoinAndSelect(
-                "card.translations",
-                "translation",
-                "translation.locale IN (:...locales) AND translation.status = :published",
-                { locales, published: "PUBLISHED" },
+                "card.localizations",
+                "localization",
+                "localization.locale IN (:...locales) AND localization.active = :localizationActive",
+                { locales, localizationActive: true },
             )
             .where("card.active = :active", { active: true });
     }
 
     private toDomain(entity: CardEntity, localization: CardLocalizationPolicy): PlayableCard {
-        const exact = entity.translations.find(
-            (translation) => translation.locale === localization.locale,
+        const exact = entity.localizations.find((entry) => entry.locale === localization.locale);
+        const fallback = entity.localizations.find(
+            (entry) => entry.locale === localization.fallbackLocale,
         );
-        const fallback = entity.translations.find(
-            (translation) => translation.locale === localization.fallbackLocale,
-        );
-        const translation = exact ?? fallback;
-        if (!translation) throw new Error("Localized card query returned no usable translation");
-        return cardEntityToDomain(entity, translation);
+        const localized = exact ?? fallback;
+        if (!localized) throw new Error("Localized card query returned no usable localization");
+        return cardEntityToDomain(entity, localized);
+    }
+
+    async isLocaleActive(locale: string): Promise<boolean> {
+        return this.cards.manager
+            .getRepository(LocaleEntity)
+            .existsBy({ id: locale, active: true });
+    }
+
+    async defaultLocale(): Promise<string> {
+        const locale = await this.cards.manager
+            .getRepository(LocaleEntity)
+            .findOneBy({ active: true, isDefault: true });
+        if (!locale) throw new Error("No active default Card locale is installed");
+        return locale.id;
     }
 }

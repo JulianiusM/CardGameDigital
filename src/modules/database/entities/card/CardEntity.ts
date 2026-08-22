@@ -1,6 +1,5 @@
 import { Column, Entity, Index, OneToMany, PrimaryColumn } from "typeorm";
-import { CardSourceEntity } from "./CardSourceEntity";
-import { CardTranslationEntity } from "./CardTranslationEntity";
+import { CardLocalizationEntity } from "./CardLocalizationEntity";
 import { CardOperationalFlagEntity } from "./CardOperationalFlagEntity";
 
 @Index("IDX_cards_type_active", ["cardType", "active"])
@@ -25,8 +24,6 @@ export class CardEntity {
     @Column("boolean", { name: "active", default: true }) active!: boolean;
     @OneToMany(() => CardOperationalFlagEntity, (flag) => flag.card, { cascade: true })
     flags!: CardOperationalFlagEntity[];
-    @OneToMany(() => CardSourceEntity, (source) => source.card, { cascade: true })
-    sources!: CardSourceEntity[];
-    @OneToMany(() => CardTranslationEntity, (translation) => translation.card, { cascade: true })
-    translations!: CardTranslationEntity[];
+    @OneToMany(() => CardLocalizationEntity, (localization) => localization.card, { cascade: true })
+    localizations!: CardLocalizationEntity[];
 }

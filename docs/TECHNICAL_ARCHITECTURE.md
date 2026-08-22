@@ -562,43 +562,17 @@ System Card UUIDs MUST remain identical across:
 
 Card UUIDs MUST NOT be derived from localized text.
 
-Initial Card UUID assignment occurs once during canonicalization.
-
-The resulting mapping becomes part of the canonical catalog identity.
-
-It may initially use deterministic generation from a trustworthy stable source identity, but once assigned it must be persisted and never recomputed from text.
-
-Canonical source mapping:
-
-```text id="xs0sgf"
-CardSource
-----------
-card_id
-source_namespace
-source_record_id
-```
+The third-party Card management system assigns each UUID permanently and publishes it
+in `game-card-catalog/v1`. The game persists that UUID unchanged and has no source-ID
+mapping layer.
 
 ---
 
-# 22. Source Namespace
+# 22. Catalog Producer Boundary
 
-Each ingest source has a stable namespace.
-
-Example:
-
-```text id="mb4du0"
-legacy-access
-```
-
-A source record is identified by:
-
-```text id="pj9ryq"
-source_namespace
-+
-source_record_id
-```
-
-This pair resolves to one canonical Card ID.
+The external producer owns source integration, editorial workflow, localization review,
+and immutable release assembly. The game consumes one normalized FULL snapshot and does
+not retain producer-source identifiers or authoring state.
 
 ---
 
@@ -621,7 +595,6 @@ repeatable_in_session
 repeat_cooldown
 weight
 lifecycle_state
-source_revision
 created_at
 updated_at
 ```
@@ -640,9 +613,7 @@ CardLocalization
 card_id
 locale_id
 text
-status
-based_on_source_revision
-created_at
+active
 updated_at
 ```
 
@@ -652,16 +623,8 @@ Unique constraint:
 (card_id, locale_id)
 ```
 
-Canonical status values:
-
-```text id="1186tq"
-DRAFT
-REVIEW
-PUBLISHED
-STALE
-```
-
-Only `PUBLISHED` localizations are eligible by default.
+Only producer-approved localizations occur in the incoming snapshot. `active=true`
+means present in the current snapshot; missing entries are soft-disabled.
 
 ---
 
@@ -673,10 +636,9 @@ Conceptual:
 Locale
 ------
 id
-code
 native_name
-enabled
-is_source_locale
+active
+is_default
 ```
 
 `code` uses canonical BCP 47 style identifiers such as:
@@ -688,7 +650,9 @@ en-US
 fr-FR
 ```
 
-The initial source locale is:
+Exactly one active locale is the catalog default. This is not necessarily the UI locale.
+
+The initial bundled default is:
 
 ```text id="qne1cd"
 de-DE
@@ -764,7 +728,7 @@ Examples:
 - Card text;
 - Question Category labels;
 - DareType labels;
-- built-in GameProfile names/descriptions.
+- catalog-defined labels.
 
 Clients must never infer Card translations from UI resource bundles.
 
@@ -796,10 +760,10 @@ Canonical card-content resolution:
 
 1. obtain selected Session `card_locale`;
 2. find CardLocalization for that locale;
-3. require `PUBLISHED`;
+3. require `active=true`;
 4. if unavailable:
-   - exclude Card by default;
-   - or apply explicit configured Card fallback policy.
+    - exclude Card by default;
+    - or apply explicit configured Card fallback policy.
 
 Silent fallback is not the default.
 
@@ -828,7 +792,7 @@ The server should expose taxonomy/catalog metadata for a requested locale.
 Example:
 
 ```text id="mgai4z"
-GET /api/v1/catalog/taxonomy?locale=en-GB
+GET /api/v1/catalog/taxonomies?locale=en-GB
 ```
 
 The returned objects contain:
@@ -849,10 +813,10 @@ Conceptual:
 
 ```json id="wvroog"
 {
-  "id": "8fc2...",
-  "type": "DARE",
-  "dareType": "DARE_KISS_SPICY",
-  "text": "..."
+    "id": "8fc2...",
+    "type": "DARE",
+    "dareType": "DARE_KISS_SPICY",
+    "text": "..."
 }
 ```
 
@@ -860,57 +824,26 @@ Clients do not need to own the complete Card translation database.
 
 ---
 
-# 34. Source Revision
+# 34. Producer Release Approval
 
-Every Card has a:
-
-```text id="qfekhj"
-source_revision
-```
-
-This represents the canonical source-content revision relevant to translation compatibility.
-
-A localization stores:
-
-```text id="r2voco"
-based_on_source_revision
-```
+Translation revision, review, and staleness are producer concerns. Runtime persistence
+contains no draft/review/stale fields. An approved localization is present; an
+unapproved localization is absent and therefore soft-disabled during FULL apply.
 
 ---
 
-# 35. Stale Translation Rule
+# 35. Artifact Immutability
 
-When a source revision changes:
-
-```text id="3kebwr"
-translation.based_on_source_revision
-<
-card.source_revision
-```
-
-the translation is considered stale.
-
-The ingest/content workflow marks it:
-
-```text id="uwmrxv"
-STALE
-```
-
-It is no longer eligible until reviewed and republished.
+The receiver computes SHA-256 over exact artifact bytes. A `(catalog_id, sequence)` may
+not be reused with different bytes, and an installed newer sequence is never replaced
+by an older bundled FULL snapshot.
 
 ---
 
-# 36. Non-Semantic Source Changes
+# 36. Producer Content Changes
 
-Some changes such as punctuation or typo corrections may not require translation work.
-
-Content administration must allow an editor to approve:
-
-> source change does not invalidate translations.
-
-Such approval preserves translation publication without changing logical Card identity.
-
-Automated ingest must not assume this silently when uncertain.
+The producer decides whether wording changes require new localizations or a new logical
+Card. The game applies final release-ready text without interpreting editorial intent.
 
 ---
 
@@ -955,125 +888,71 @@ If content changes enough to become a new gameplay concept:
 1. old Card becomes RETIRED;
 2. new Card gets new UUID;
 3. editorial relation may record:
-   - replaced_by;
-   - derived_from.
+    - replaced_by;
+    - derived_from.
 
 History remains attached to the old Card.
 
 ---
 
-# 40. Raw Ingest Layer
+# 40. One External Artifact
 
-Source data should be imported into a raw/staging representation before modifying the canonical catalog.
-
-Conceptually:
-
-```text id="28l3ta"
-Source
-  ↓
-Raw Import
-  ↓
-Validation
-  ↓
-Reconciliation
-  ↓
-Canonical Catalog
-```
-
-This allows auditing and repeatable imports.
+The producer delivers only `catalog/card-catalog.json`. The game validates and packages
+those exact bytes; it has no raw/staging, Access, translation-pack, or intermediate
+production format.
 
 ---
 
-# 41. Canonical Ingest Pipeline
+# 41. Build and Startup Pipeline
 
-For each source ingest:
-
-1. read source records;
-2. preserve raw record;
-3. normalize source fields;
-4. resolve `CardSource`;
-5. reuse existing Card ID if known;
-6. create new Card ID if genuinely new;
-7. update gameplay metadata;
-8. update source-language localization;
-9. detect wording/metadata changes;
-10. update source revision where appropriate;
-11. mark dependent localizations stale;
-12. identify source records absent from the new ingest;
-13. retire corresponding Cards;
-14. validate catalog consistency;
-15. assign catalog version;
-16. produce migration/catalog bundle.
+1. strict-parse and validate `game-card-catalog/v1`;
+2. run semantic and coverage checks;
+3. compute SHA-256 over exact bytes;
+4. package those bytes unchanged;
+5. at startup validate and hash again;
+6. acquire the catalog-application lock;
+7. re-read installed sequence/digest;
+8. skip, apply, or reject according to immutable ordering;
+9. reconcile the FULL snapshot in one transaction;
+10. run post-apply consistency checks before readiness.
 
 ---
 
-# 42. Source Record Removal
+# 42. FULL Snapshot Removal
 
-A record missing from a newer source import does not cause database deletion.
-
-The reconciliation layer marks the Card retired.
-
-If the source record reappears later and resolves to the same mapping, the Card may be reactivated.
+A stored Card missing from a newer FULL snapshot becomes inactive. Its UUID,
+localizations, flags, appearances, and history remain. Reappearance of that UUID updates
+and reactivates the same logical Card.
 
 ---
 
-# 43. Source ID Remapping
+# 43. Producer UUID Stability
 
-If an external source changes identifiers:
-
-- automatic similarity detection may suggest a match;
-- an editor confirms mapping;
-- canonical Card ID remains unchanged.
-
-Text similarity MUST NOT automatically redefine identity.
+The producer is responsible for keeping UUIDs stable across its source-system changes.
+The game never uses text similarity or external source IDs to redefine identity.
 
 ---
 
-# 44. Translation Ingest
+# 44. Localization Reconciliation
 
-Additional languages may be imported independently from the source-language Card ingest.
-
-Translation import identifies Cards through:
-
-- canonical Card ID;
-- or stable source identity mapped to Card ID.
-
-It must never create new logical Cards because translated wording differs.
+All release-approved languages arrive in the same snapshot. Incoming `(card_id, locale)`
+rows are upserted and activated. A previously stored localization absent from an
+incoming Card is soft-disabled; it is never treated as a new Card.
 
 ---
 
-# 45. Language Pack Concept
+# 45. Locale Registry
 
-The architecture should support optional versioned language bundles.
-
-Conceptually:
-
-```text id="jsxq0i"
-LanguagePack
-------------
-locale
-catalog_version
-translations
-taxonomy labels
-metadata
-```
-
-A portable installation may ship:
-
-- source language only;
-- or multiple language packs.
-
-Installing another language must not alter Card identity or history.
+The same FULL snapshot contains the runtime Card locale registry, Card localizations,
+and taxonomy localizations. Adding a Card locale requires a catalog release, not an
+application/UI translation build.
 
 ---
 
 # 46. Catalog Versioning
 
-The database tracks:
-
-```text id="xvx814"
-catalog_version
-```
+The database tracks catalog ID, monotonic sequence, version label, exact artifact
+digest, generation/application timestamps, default locale, and counts.
 
 Catalog releases may:
 
@@ -1096,9 +975,8 @@ Examples:
 
 ```text id="bw38s7"
 total active Cards
-published Cards for locale
-stale translations
-missing translations
+active localized Cards for locale
+missing localizations
 ```
 
 These metrics support:
@@ -1117,7 +995,7 @@ Questions:
 
 ```text id="xxlqcu"
 Card type
-→ locale/PUBLISHED translation
+→ active exact-locale localization
 → QuestionCategory
 → GameProfile
 → boundaries
@@ -1131,7 +1009,7 @@ Dares:
 
 ```text id="mx2x06"
 Card type
-→ locale/PUBLISHED translation
+→ active exact-locale localization
 → DareType
 → GameProfile
 → boundaries
@@ -1262,11 +1140,11 @@ Example:
 
 ```json id="qsd16b"
 {
-  "protocol": 1,
-  "type": "session.cardShown",
-  "requestId": null,
-  "revision": 184,
-  "payload": {}
+    "protocol": 1,
+    "type": "session.cardShown",
+    "requestId": null,
+    "revision": 184,
+    "payload": {}
 }
 ```
 

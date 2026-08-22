@@ -53,15 +53,15 @@ Multiple Rooms remain isolated by Room ID, credential, command queue, and broadc
 
 ## Card content model
 
-A Card UUID identifies language-independent gameplay metadata. `CardSource` maps an
-external namespace/ID to that UUID. `CardTranslation` stores BCP 47 localized text,
-status, revision, source revision, and hash. Taxonomy codes are stable and have separate
-translation tables.
+A producer-owned Card UUID identifies language-independent gameplay metadata.
+`CardLocalization` stores only release-approved BCP 47 localized runtime text and active
+state. Catalog locales and localized taxonomy labels are database content and do not
+come from UI i18n resources.
 
-Catalog application reconciles rather than replaces: edits retain UUIDs, source edits
-stale older adaptations, and absent source rows set `active=false`. Gameplay requests an
-exact locale and excludes missing/unpublished translations unless deployment explicitly
-enables a fallback.
+The exact bundled `game-card-catalog/v1` FULL snapshot is validated and hashed at build
+and startup, then reconciled transactionally before readiness. Missing Cards, locales,
+or localizations are soft-disabled. Gameplay requests an active database locale and
+excludes missing localizations unless deployment explicitly enables fallback.
 
 ## Persistence and ownership
 
@@ -83,5 +83,5 @@ available actions come from authenticated server state, not client claims.
 ## Interfaces
 
 External semantics are versioned and documented under [`docs/contracts`](contracts/):
-HTTP API v1, WebSocket protocol v1, catalog import, and infrastructure integrations.
+HTTP API v1, WebSocket protocol v2, bundled catalog, and infrastructure integrations.
 The TAD and implementation ADRs explain the decisions behind these contracts.

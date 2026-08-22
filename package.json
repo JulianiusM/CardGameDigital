@@ -17,9 +17,9 @@
         "typeorm:reset-db": "npm run generate:db-index && npm run typeorm:drop && npm run typeorm:sync && npm run typeorm:migrate",
         "generate:db-index": "ts-node --project tsconfig.server.json scripts/genTypeormIdx.ts",
         "generate": "npm run generate:db-index",
-        "card:import": "ts-node --project tsconfig.server.json src/tooling/card-import/cli.ts",
-        "copy": "npm run copy:docs",
-        "build:server": "npm run generate && tsc --project tsconfig.server.json",
+        "card:catalog:validate": "ts-node --project tsconfig.server.json src/tooling/card-catalog/cli.ts",
+        "copy": "npm run copy:docs && npm run copy:catalog",
+        "build:server": "npm run card:catalog:validate && npm run generate && tsc --project tsconfig.server.json",
         "build:web": "vite build",
         "build": "npm run build:server && npm run build:web && npm run copy",
         "package:portable": "npm run build && ts-node --project tsconfig.server.json scripts/packageRelease.ts portable",
@@ -39,7 +39,8 @@
         "test:ci": "vitest run --coverage --reporter=default --reporter=junit --outputFile.junit=artifacts/junit-vitest.xml",
         "format": "prettier --write \"apps/web/**/*.{ts,js,svelte,css,json,html}\" \"packages/**/*.ts\" \"src/packages/**/*.ts\" \"src/migrations/**/*.ts\" \"src/tooling/**/*.ts\" \"tests/**/*.ts\" \"scripts/**/*.ts\" \"docs/**/*.md\" \"README.md\" \"AGENTS.md\" \"src/modules/{settings,realtime,websocket,requestSecurity,passwordHash}.ts\" \"src/modules/database/**/*.ts\" \"src/routes/api/**/*.ts\" \"migrationDataSource.ts\" \"vite.config.mts\" \"vitest.config.mts\" \"playwright.couch.config.ts\" \"package.json\" \".prettierrc.json\"",
         "format:check": "prettier --check \"apps/web/**/*.{ts,js,svelte,css,json,html}\" \"packages/**/*.ts\" \"src/packages/**/*.ts\" \"src/migrations/**/*.ts\" \"src/tooling/**/*.ts\" \"tests/**/*.ts\" \"scripts/**/*.ts\" \"docs/**/*.md\" \"README.md\" \"AGENTS.md\" \"src/modules/{settings,realtime,websocket,requestSecurity,passwordHash}.ts\" \"src/modules/database/**/*.ts\" \"src/routes/api/**/*.ts\" \"migrationDataSource.ts\" \"vite.config.mts\" \"vitest.config.mts\" \"playwright.couch.config.ts\" \"package.json\" \".prettierrc.json\"",
-        "copy:docs": "cpx \"docs/user-guide/**/*\" dist/docs/user-guide"
+        "copy:docs": "cpx \"docs/user-guide/**/*\" dist/docs/user-guide",
+        "copy:catalog": "cpx \"catalog/card-catalog.json\" dist/catalog"
     },
     "overrides": {
         "connect-typeorm": {

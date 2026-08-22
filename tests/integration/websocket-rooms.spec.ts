@@ -142,6 +142,12 @@ class Repo implements RealtimeRoomRepository {
     }
 }
 const cards: CardRepository = {
+    async isLocaleActive() {
+        return true;
+    },
+    async defaultLocale() {
+        return "en-GB";
+    },
     async listActive() {
         return [card({ id: "ws-question" as never })];
     },
