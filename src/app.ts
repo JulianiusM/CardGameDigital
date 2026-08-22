@@ -14,50 +14,38 @@
  * limitations under the License.
  */
 
-import {TypeormStore} from "connect-typeorm";
-import cookieParser from 'cookie-parser';
-import express, {NextFunction, Request, Response} from 'express';
-import flash from 'express-flash';
-import session from 'express-session';
-import createError from 'http-errors';
-import logger from 'morgan';
-import path from 'node:path';
-import {version} from '../package.json';
-import {logoutUserOidc, validateSession} from "./controller/userController";
-import {handleGenericError} from './middleware/genericErrorHandler';
-import {AppDataSource} from "./modules/database/dataSource";
-import {Session} from "./modules/database/entities/session/Session";
-import {asyncHandler} from "./modules/lib/asyncHandler";
-import settings from './modules/settings';
-import indexRouter from './routes';
-import activityRouter from './routes/activity';
-import apiRouter from './routes/api';
-import driversRouter from './routes/drivers';
-import eventRouter from './routes/event';
-import guestsRouter from './routes/guests';
-import helpRouter from './routes/help';
-import packingRouter from './routes/packing';
-import surveyRouter from './routes/survey';
-import usersRouter from './routes/users';
+import { MESSAGE_KEYS } from "./packages/localization/keys";
+import { TypeormStore } from "connect-typeorm";
+import express, { NextFunction, Request, Response } from "express";
+import { rateLimit } from "express-rate-limit";
+import session from "express-session";
+import logger from "morgan";
+import path from "node:path";
+import { logout, validateSession } from "./packages/application/accountService";
+import { handleGenericError } from "./middleware/genericErrorHandler";
+import { AppDataSource } from "./modules/database/dataSource";
+import { AccountSession } from "./modules/database/entities/session/AccountSession";
+import { asyncHandler } from "./modules/lib/asyncHandler";
+import settings from "./modules/settings";
+import { isTrustedOrigin } from "./modules/requestSecurity";
+import { detectLocale, translate } from "./packages/localization/messages";
+import apiRouter from "./routes/api";
 
 const app = express();
 app.disable("x-powered-by");
 
-// view engine setup
-app.set('views', path.join(__dirname, 'views'));
-app.set('view engine', 'pug');
-
-app.use(logger('dev'));
+app.use(logger("dev"));
 app.use(express.json());
-app.use(express.urlencoded({extended: true}));
-app.use(cookieParser());
-app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.urlencoded({ extended: true }));
+app.use("/play", express.static(path.join(__dirname, "web")));
+app.get("/play", (_req, res) => res.sendFile(path.join(__dirname, "web", "index.html")));
+app.get("/play/*splat", (_req, res) => res.sendFile(path.join(__dirname, "web", "index.html")));
 
 // ensure dataSource is initialized before this
-const sessionRepository = AppDataSource.getRepository(Session);
+const sessionRepository = AppDataSource.getRepository(AccountSession);
 
 // If behind a proxy (Heroku/NGINX), enable this so secure cookies work:
-app.set("trust proxy", 1);
+app.set("trust proxy", settings.value.trustProxy);
 
 app.use(
     session({
@@ -67,62 +55,82 @@ app.use(
         cookie: {
             // 1 day (match store TTL below)
             maxAge: 1000 * 60 * 60 * 24,
-            secure: process.env.NODE_ENV === "production", // HTTPS only in prod
+            secure: settings.value.deploymentMode === "public",
             sameSite: "lax",
         },
         store: new TypeormStore({
-            cleanupLimit: 2,          // prune expired sessions periodically
+            cleanupLimit: 2, // prune expired sessions periodically
             limitSubquery: false,
-            ttl: 60 * 60 * 24,        // seconds (1 day)
+            ttl: 60 * 60 * 24, // seconds (1 day)
         }).connect(sessionRepository),
-    })
+    }),
 );
 
-app.use(flash());
-
-// Validate session on each request
-app.use(asyncHandler(async (req: Request, res: Response, next: NextFunction) => {
-    if (!await validateSession(req.session)) {
-        // Session is not valid anymore --> force logout
-        req.flash("error", "Session has expired");
-        res.redirect(await logoutUserOidc(req.session));
-        return;
+// Public deployments use same-origin checks as the CSRF boundary for all
+// state-changing browser requests. Local LAN gameplay remains account-free.
+app.use((req: Request, res: Response, next: NextFunction) => {
+    if (
+        settings.value.deploymentMode === "public" &&
+        ["POST", "PUT", "PATCH", "DELETE"].includes(req.method)
+    ) {
+        const source = req.get("origin") ?? req.get("referer");
+        if (!isTrustedOrigin(source, settings.value.publicUrl)) {
+            res.status(403).json({
+                error: {
+                    code: "NOT_AUTHORIZED",
+                    message: translate(
+                        detectLocale(req.get("accept-language")),
+                        MESSAGE_KEYS.REQUEST_INVALID_ORIGIN,
+                    ),
+                },
+            });
+            return;
+        }
     }
-    next();
-}));
-
-app.use(function (req: Request, res: Response, next: NextFunction) {
-    res.locals.profile = req.session.profile;
-    res.locals.auth = req.session.auth;
-    res.locals.version = version;
-    res.locals.settings = {
-        localLoginEnabled: settings.value.localLoginEnabled,
-        oidcEnabled: settings.value.oidcEnabled,
-        oidcName: settings.value.oidcName,
-        rootUrl: settings.value.rootUrl,
-        imprintUrl: settings.value.imprintUrl,
-        privacyPolicyUrl: settings.value.privacyPolicyUrl,
-    };
-    res.locals.nxtUrl = req.query.next ?? req.baseUrl + req.path;
     next();
 });
 
-app.use('/', indexRouter);
-app.use('/api', apiRouter);
-app.use('/users', usersRouter);
-app.use('/survey', surveyRouter);
-app.use('/packing', packingRouter);
-app.use('/activity', activityRouter);
-app.use('/drivers', driversRouter);
-app.use('/event', eventRouter);
-app.use('/help', helpRouter);
-app.use('/guest', guestsRouter);
+const accountLimiter = rateLimit({ windowMs: 15 * 60_000, limit: 20, standardHeaders: true });
+app.use(
+    [
+        "/api/v1/account/login",
+        "/api/v1/account/register",
+        "/api/v1/account/password-reset-requests",
+        "/api/v1/account/password-resets",
+    ],
+    accountLimiter,
+);
 
-app.get('/healthz', (_req, res) => res.status(200).send('ok'));
+// Validate session on each request
+app.use(
+    asyncHandler(async (req: Request, res: Response, next: NextFunction) => {
+        if (!(await validateSession(req.session))) {
+            // Session is not valid anymore --> force logout
+            await logout(req.session);
+            res.status(401).json({
+                error: { code: "SESSION_EXPIRED", message: "Session expired" },
+            });
+            return;
+        }
+        next();
+    }),
+);
+
+app.get("/", (_req, res) => res.redirect("/play/"));
+app.use("/api", apiRouter);
+
+app.get("/healthz", (_req, res) => res.status(200).send("ok"));
+app.get(
+    "/readyz",
+    asyncHandler(async (_req, res) => {
+        await AppDataSource.query("SELECT 1");
+        res.status(200).send("ready");
+    }),
+);
 
 // catch 404 and forward to error handler
 app.use(function (req: Request, res: Response, next: NextFunction) {
-    next(createError(404));
+    next(Object.assign(new Error("Not found"), { status: 404 }));
 });
 
 // error handler

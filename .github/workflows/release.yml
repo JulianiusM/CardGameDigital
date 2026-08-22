@@ -122,70 +122,31 @@ jobs:
       - name: Build application for release
         run: npm run build
 
-      - name: Prepare production-safe release bundle
+      - name: Build portable and public distributions
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: |
+          npx ts-node --project tsconfig.server.json scripts/packageRelease.ts portable
+          npx ts-node --project tsconfig.server.json scripts/packageRelease.ts public
+
+      - name: Smoke-test release layouts
+        run: |
+          PORTABLE=$(find artifacts -maxdepth 1 -type d -name '*-portable-*' | head -1)
+          PUBLIC=$(find artifacts -maxdepth 1 -type d -name '*-public-*' | head -1)
+          npm run package:smoke -- "$PORTABLE"
+          npm run package:smoke -- "$PUBLIC"
+
+      - name: Create release archives
         env:
           RELEASE_VERSION: ${{ inputs.version }}
         run: |
           set -e
-
-          rm -rf release
-          mkdir -p release
-
-          # Copy build output
-          cp -R dist release/dist
-          cp -R docs release/docs
-          cp -R fonts release/fonts
-          cp package-lock.json release/package-lock.json
-
-          # Create a production-safe package.json for the release artifact:
-          # - remove devDependencies
-          # - remove install-time scripts that commonly pull dev tooling / break installs
-          node << 'EOF'
-          const fs = require('fs');
-
-          const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
-
-          // Remove dev dependencies from the release artifact
-          delete pkg.devDependencies;
-
-          // Remove scripts that run during "npm install" and often depend on dev tooling
-          if (pkg.scripts && typeof pkg.scripts === 'object') {
-            const scriptsToRemove = [
-              'preinstall',
-              'install',
-              'postinstall',
-              'prepare',
-              'prepublish',
-              'prepublishOnly',
-              'postpublish'
-            ];
-            for (const k of scriptsToRemove) delete pkg.scripts[k];
-
-            if (Object.keys(pkg.scripts).length === 0) delete pkg.scripts;
-          }
-
-          // Write sanitized package.json into release bundle
-          fs.writeFileSync('release/package.json', JSON.stringify(pkg, null, 2) + '\n');
-
-          console.log('Wrote release/package.json (devDependencies removed; install scripts stripped).');
-          EOF
-
-          # Optional extra safety: make "npm install" omit dev deps by default in this bundle
-          cat > release/.npmrc <<'EOF'
-          omit=dev
-          EOF
-
-          echo "Release bundle contents:"
-          find release -maxdepth 2 -type f -print
-
-      - name: Create build archive
-        env:
-          RELEASE_VERSION: ${{ inputs.version }}
-        run: |
-          set -e
-          mkdir -p artifacts
-          tar -czf "artifacts/surveyor-v${RELEASE_VERSION}.tar.gz" -C release .
-          ls -R artifacts
+          for directory in artifacts/party-game-*; do
+            [ -d "$directory" ] || continue
+            name=$(basename "$directory")
+            tar -czf "artifacts/${name}.tar.gz" -C "$directory" .
+          done
+          find artifacts -maxdepth 1 -type f -name '*.tar.gz' -print
 
       - name: Create GitHub Release
         id: create_release
@@ -199,7 +160,7 @@ jobs:
           draft: ${{ contains(inputs.version, '-') }}
           make_latest: ${{ contains(inputs.version, '-') && 'false' || 'true' }}
           files: |
-            artifacts/surveyor-v${{ inputs.version }}.tar.gz
+            artifacts/*.tar.gz
 
       - name: Publish prerelease after assets upload
         if: ${{ contains(inputs.version, '-') }}

@@ -1,54 +1,56 @@
-/*
- * Copyright 2026 Julian Malovanij
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+/* Copyright 2026 Julian Malovanij, Apache-2.0 */
 
-import {DataSource} from 'typeorm';
-import settings from '../settings';
-import {entities, migrations, subscribers} from "./__index__";
+import fs from "node:fs";
+import path from "node:path";
+import { DataSource, DataSourceOptions } from "typeorm";
+import settings, { Settings } from "../settings";
+import { entities, migrations, subscribers } from "./__index__";
+import { DataSpace } from "./entities/user/DataSpace";
+
+export function dataSourceOptions(config: Settings): DataSourceOptions {
+    const common = {
+        entities,
+        migrations,
+        subscribers,
+        synchronize: false,
+        migrationsRun: false,
+        invalidWhereValuesBehavior: { null: "sql-null" as const, undefined: "ignore" as const },
+    };
+    if (config.dbType === "sqlite") {
+        fs.mkdirSync(path.dirname(path.resolve(config.dbFile)), { recursive: true });
+        return { type: "better-sqlite3", database: config.dbFile, ...common };
+    }
+    return {
+        type: config.dbType,
+        host: config.dbHost,
+        port: config.dbPort,
+        username: config.dbUser,
+        password: config.dbPassword,
+        database: config.dbName,
+        timezone: "Z",
+        dateStrings: ["DATE"],
+        ...common,
+    };
+}
 
 export let AppDataSource: DataSource;
-let initialized: boolean = false;
 
-export async function initDataSource() {
-    if (initialized) {
-        return;
-    }
-
-    if (!settings.value.initialized) {
-        await settings.read();
-    }
-
-    AppDataSource = new DataSource({
-        type: settings.value.dbType,
-        host: settings.value.dbHost,
-        port: settings.value.dbPort,
-        username: settings.value.dbUser,
-        password: settings.value.dbPassword,
-        database: settings.value.dbName,
-        timezone: 'Z',              // treat TIMESTAMP / DATETIME as UTC
-        dateStrings: ['DATE'],       // A & B: return DATE as **string**
-        entities: entities,
-        migrations: migrations,
-        subscribers: subscribers,
-        synchronize: false,
-        invalidWhereValuesBehavior: {
-            null: "sql-null",
-            undefined: "ignore",
-        },
-    });
-
+export async function initDataSource(): Promise<DataSource> {
+    if (AppDataSource?.isInitialized) return AppDataSource;
+    if (!settings.value.initialized) await settings.read();
+    AppDataSource = new DataSource(dataSourceOptions(settings.value));
     await AppDataSource.initialize();
-    initialized = true;
+    await AppDataSource.runMigrations({ transaction: "all" });
+    if (settings.value.dbType === "sqlite") {
+        await AppDataSource.query("PRAGMA journal_mode = WAL");
+        await AppDataSource.query("PRAGMA foreign_keys = ON");
+        const repository = AppDataSource.getRepository(DataSpace);
+        const count = await repository.count();
+        if (count === 0) {
+            await repository.save(repository.create({ name: "Local", defaultForOwner: true }));
+        } else if (count !== 1) {
+            throw new Error(`Local deployment requires exactly one DataSpace; found ${count}`);
+        }
+    }
+    return AppDataSource;
 }

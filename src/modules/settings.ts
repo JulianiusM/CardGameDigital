@@ -1,262 +1,218 @@
-/*
- * Copyright 2026 Julian Malovanij
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+/* Copyright 2026 Julian Malovanij, Apache-2.0 */
 
-// src/settings-csv.ts
 import * as dotenv from "dotenv";
 import crypto from "node:crypto";
 import fs from "node:fs";
+import { z } from "zod";
 
-// Load env before anything else.
-// Priority: E2E_DOTENV_FILE > .env.e2e (when NODE_ENV=e2e) > .env
 const envPath =
-    process.env.E2E_DOTENV_FILE ??
-    (process.env.NODE_ENV === "e2e" ? ".env.e2e" : ".env");
-dotenv.config({path: envPath});
+    process.env.E2E_DOTENV_FILE ?? (process.env.NODE_ENV === "e2e" ? ".env.e2e" : ".env");
+dotenv.config({ path: envPath });
 
-export type Settings = {
-    appPort: number;
-    file: string;
-    dbType: "mariadb" | "mysql";
-    dbName: string;
-    dbHost: string;
-    dbPassword: string;
-    dbPort: number;
-    dbUser: string;
-    rootUrl: string;
-    sessionSecret: string;
-    smtpEmail: string;
-    smtpHost: string;
-    smtpPassword: string;
-    smtpPool: boolean;
-    smtpPort: number;
-    smtpSecure: boolean;
-    smtpUser: string;
-    localLoginEnabled: boolean;
-    oidcEnabled: boolean;
-    oidcName: string;
-    oidcIssuerBaseUrl: string;
-    oidcClientId: string;
-    oidcClientSecret: string;
-    oidcRedirectUrl: string;
-    invoiceDir: string;
-    headerImgDir: string;
-    imprintUrl: string;
-    privacyPolicyUrl: string;
+const booleanValue = z
+    .union([z.boolean(), z.enum(["1", "0", "true", "false", "yes", "no", "on", "off"])])
+    .transform((value) => (typeof value === "boolean" ? value : /^(1|true|yes|on)$/i.test(value)));
+const numberValue = z.union([z.number(), z.string()]).transform(Number).pipe(z.number().finite());
+
+export const settingsSchema = z
+    .object({
+        deploymentMode: z.enum(["local", "public"]),
+        authMode: z.enum(["none", "account"]),
+        httpBind: z.string().min(1),
+        httpPort: numberValue.pipe(z.number().int().min(1).max(65_535)),
+        publicUrl: z.string().url(),
+        dbType: z.enum(["sqlite", "mariadb", "mysql"]),
+        dbFile: z.string().min(1),
+        dbHost: z.string().min(1),
+        dbPort: numberValue.pipe(z.number().int().min(1).max(65_535)),
+        dbName: z.string().min(1),
+        dbUser: z.string(),
+        dbPassword: z.string(),
+        smtpHost: z.string(),
+        smtpPort: numberValue.pipe(z.number().int().min(1).max(65_535)),
+        smtpUser: z.string(),
+        smtpPassword: z.string(),
+        smtpEmail: z.string(),
+        smtpPool: booleanValue,
+        smtpSecure: booleanValue,
+        oidcEnabled: booleanValue,
+        oidcIssuer: z.string(),
+        oidcClientId: z.string(),
+        oidcClientSecret: z.string(),
+        oidcRedirectUrl: z.string(),
+        oidcName: z.string(),
+        trustProxy: z.union([booleanValue, numberValue.pipe(z.number().int().nonnegative())]),
+        logLevel: z.enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"]),
+        sessionSecret: z.string().min(16),
+        imprintUrl: z.string(),
+        privacyPolicyUrl: z.string(),
+        cardMissingTranslation: z.enum(["EXCLUDE", "FALLBACK"]),
+        cardFallbackLocale: z.string().min(2).max(35),
+        file: z.string(),
+    })
+    .superRefine((value, context) => {
+        if (value.deploymentMode === "local" && value.dbType !== "sqlite") {
+            context.addIssue({
+                code: "custom",
+                path: ["dbType"],
+                message: "local deployment requires DB_TYPE=sqlite",
+            });
+        }
+        if (value.deploymentMode === "public" && value.dbType === "sqlite") {
+            context.addIssue({
+                code: "custom",
+                path: ["dbType"],
+                message: "public deployment requires MariaDB/MySQL",
+            });
+        }
+        if (value.deploymentMode === "public" && value.authMode !== "account") {
+            context.addIssue({
+                code: "custom",
+                path: ["authMode"],
+                message: "public deployment requires account authentication",
+            });
+        }
+        if (value.oidcEnabled && value.authMode !== "account") {
+            context.addIssue({
+                code: "custom",
+                path: ["oidcEnabled"],
+                message: "OIDC requires account authentication",
+            });
+        }
+    });
+
+export type Settings = z.infer<typeof settingsSchema> & {
     initialized: boolean;
-    activityAvailabilityWeight: number;
-    activitySwapOptimizationIterations: number;
-    activityArrivalDeparturePenalty: number;
+    // Compatibility names retained while account/UI callers migrate.
+    appPort: number;
+    rootUrl: string;
+    localLoginEnabled: boolean;
+    oidcIssuerBaseUrl: string;
 };
 
-const defaults: Settings = {
-    initialized: false,
-    rootUrl: "http://localhost:3000",
-
-    dbType: "mariadb",
+const defaults = {
+    deploymentMode: "local",
+    authMode: "none",
+    httpBind: "127.0.0.1",
+    httpPort: 3000,
+    publicUrl: "http://localhost:3000",
+    dbType: "sqlite",
+    dbFile: "./data/card-game.sqlite",
     dbHost: "localhost",
     dbPort: 3306,
-    dbUser: "user",
-    dbPassword: "password",
-    dbName: "database",
-
-    smtpPool: true,
-    smtpHost: "smtp.example.com",
+    dbName: "card_game",
+    dbUser: "",
+    dbPassword: "",
+    smtpHost: "",
     smtpPort: 465,
+    smtpUser: "",
+    smtpPassword: "",
+    smtpEmail: "",
+    smtpPool: true,
     smtpSecure: true,
-    smtpEmail: "test@example.com",
-    smtpUser: "username",
-    smtpPassword: "password",
-
     oidcEnabled: false,
+    oidcIssuer: "",
+    oidcClientId: "",
+    oidcClientSecret: "",
+    oidcRedirectUrl: "http://localhost:3000/api/v1/account/oidc/callback",
     oidcName: "OIDC Provider",
-    oidcClientId: "CLIENT_ID",
-    oidcClientSecret: "CLIENT_SECRET",
-    oidcIssuerBaseUrl: "http://example.com",
-    oidcRedirectUrl: "http://localhost:3000/user/oidc/callback",
-
-    localLoginEnabled: true,
-
-    sessionSecret:
-        "CHANGE__" + crypto.randomBytes(32).toString("base64url").slice(0, 20),
-    appPort: 3000,
-
+    trustProxy: false,
+    logLevel: "info",
+    sessionSecret: `local-${crypto.randomBytes(24).toString("base64url")}`,
+    imprintUrl: "",
+    privacyPolicyUrl: "",
+    cardMissingTranslation: "EXCLUDE",
+    cardFallbackLocale: "de-DE",
     file: "./settings.csv",
+} satisfies z.input<typeof settingsSchema>;
 
-    invoiceDir: "uploads/invoices/",
-    headerImgDir: "uploads/headerImgs/",
-
-    imprintUrl: "http://example.com/imprint",
-    privacyPolicyUrl: "http://example.com/privacy",
-
-    activityAvailabilityWeight: 0.30,
-    activitySwapOptimizationIterations: 10,
-    activityArrivalDeparturePenalty: 0.2,
-};
-
-// CSV_KEY -> settings key
-const keyMap: Record<string, keyof Settings> = {
-    ROOT_URL: "rootUrl",
+const keyMap: Record<string, keyof typeof defaults> = {
+    DEPLOYMENT_MODE: "deploymentMode",
+    AUTH_MODE: "authMode",
+    HTTP_BIND: "httpBind",
+    HTTP_PORT: "httpPort",
+    APP_PORT: "httpPort",
+    PUBLIC_URL: "publicUrl",
+    ROOT_URL: "publicUrl",
     DB_TYPE: "dbType",
+    DB_FILE: "dbFile",
     DB_HOST: "dbHost",
     DB_PORT: "dbPort",
     DB_NAME: "dbName",
     DB_USER: "dbUser",
     DB_PASSWORD: "dbPassword",
-    SMTP_POOL: "smtpPool",
     SMTP_HOST: "smtpHost",
     SMTP_PORT: "smtpPort",
-    SMTP_SECURE: "smtpSecure",
-    SMTP_EMAIL: "smtpEmail",
     SMTP_USER: "smtpUser",
     SMTP_PASSWORD: "smtpPassword",
+    SMTP_EMAIL: "smtpEmail",
+    SMTP_POOL: "smtpPool",
+    SMTP_SECURE: "smtpSecure",
     OIDC_ENABLED: "oidcEnabled",
-    OIDC_NAME: "oidcName",
+    OIDC_ISSUER: "oidcIssuer",
+    OIDC_ISSUER_BASE_URL: "oidcIssuer",
     OIDC_CLIENT_ID: "oidcClientId",
     OIDC_CLIENT_SECRET: "oidcClientSecret",
-    OIDC_ISSUER_BASE_URL: "oidcIssuerBaseUrl",
     OIDC_REDIRECT_URL: "oidcRedirectUrl",
-    LOCAL_LOGIN_ENABLED: "localLoginEnabled",
+    OIDC_NAME: "oidcName",
+    TRUST_PROXY: "trustProxy",
+    LOG_LEVEL: "logLevel",
     SESSION_SECRET: "sessionSecret",
-    APP_PORT: "appPort",
-    INVOICE_DIR: "invoiceDir",
-    HEADER_IMG_DIR: "headerImgDir",
     IMPRINT_URL: "imprintUrl",
     PRIVACY_POLICY_URL: "privacyPolicyUrl",
-    ACTIVITY_AVAILABILITY_WEIGHT: "activityAvailabilityWeight",
-    ACTIVITY_SWAP_OPTIMIZATION_ITERATIONS: "activitySwapOptimizationIterations",
-    ACTIVITY_ARRIVAL_DEPARTURE_PENALTY: "activityArrivalDeparturePenalty",
+    CARD_MISSING_TRANSLATION: "cardMissingTranslation",
+    CARD_FALLBACK_LOCALE: "cardFallbackLocale",
 };
 
-// per-field coercion
-const coerce: Partial<Record<keyof Settings, (v: string) => any>> = {
-    dbPort: Number,
-    smtpPort: Number,
-    appPort: Number,
-    smtpPool: (v) => /^(1|true|yes|on)$/i.test(v),
-    smtpSecure: (v) => /^(1|true|yes|on)$/i.test(v),
-    localLoginEnabled: (v) => /^(1|true|yes|on)$/i.test(v),
-    oidcEnabled: (v) => /^(1|true|yes|on)$/i.test(v),
-    activityAvailabilityWeight: Number,
-    activitySwapOptimizationIterations: Number,
-    activityArrivalDeparturePenalty: Number,
-};
-
-// Apply environment variable overrides AFTER reading CSV.
-// In E2E: E2E_* vars override; otherwise plain vars override.
-// Example: E2E_DB_HOST > DB_HOST > CSV value.
-function applyEnvOverrides(target: Settings): void {
-    const entries = Object.entries(keyMap) as [string, keyof Settings][];
-
-    for (const [csvKey, settingsKey] of entries) {
-        // Prefer E2E_ prefixed variables when running in E2E mode
-        let raw;
-        if (process.env.NODE_ENV === 'e2e') {
-            raw = process.env[`E2E_${csvKey}` as keyof NodeJS.ProcessEnv]
-        }
-        raw = raw ?? process.env[csvKey as keyof NodeJS.ProcessEnv];
-
-        if (raw === undefined || raw === "") continue;
-
-        const conv = coerce[settingsKey];
-        const v = conv ? conv(String(raw)) : String(raw);
-        (target as any)[settingsKey] = v;
+function loadCsv(file: string): Record<string, unknown> {
+    if (!fs.existsSync(file)) return {};
+    const result: Record<string, unknown> = {};
+    for (const line of fs.readFileSync(file, "utf8").split(/\r?\n/)) {
+        if (!line.trim() || line.trimStart().startsWith("#")) continue;
+        const [rawKey, ...rest] = line.split(",");
+        const key = keyMap[rawKey.trim()];
+        if (key) result[key] = rest.join(",").trim();
     }
+    return result;
+}
 
-    // Allow overriding the settings file location itself.
-    if (process.env.SETTINGS_FILE) {
-        target.file = process.env.SETTINGS_FILE;
+export function resolveSettings(
+    environment: NodeJS.ProcessEnv = process.env,
+    file?: string,
+): Settings {
+    const configFile = file ?? environment.SETTINGS_FILE ?? defaults.file;
+    const fromFile = loadCsv(configFile);
+    const fromEnvironment: Record<string, unknown> = {};
+    for (const [external, internal] of Object.entries(keyMap)) {
+        const e2eValue =
+            environment.NODE_ENV === "e2e" ? environment[`E2E_${external}`] : undefined;
+        const value = e2eValue ?? environment[external];
+        if (value !== undefined && value !== "") fromEnvironment[internal] = value;
     }
-
-    // Safety: when in E2E, nudge to use a dedicated database.
-    if (
-        process.env.NODE_ENV === "e2e" &&
-        target.dbName &&
-        !/e2e/i.test(target.dbName)
-    ) {
-        console.warn(
-            `[settings] E2E mode: database name "${target.dbName}" does not contain "e2e". ` +
-            `Consider setting E2E_DB_NAME for safety.`
-        );
-    }
+    const parsed = settingsSchema.parse({
+        ...defaults,
+        ...fromFile,
+        ...fromEnvironment,
+        file: configFile,
+    });
+    return {
+        ...parsed,
+        initialized: true,
+        appPort: parsed.httpPort,
+        rootUrl: parsed.publicUrl,
+        localLoginEnabled: parsed.authMode === "account",
+        oidcIssuerBaseUrl: parsed.oidcIssuer,
+    };
 }
 
 export class SettingsStore {
-    private readonly _settings: Settings = {...defaults};
-
+    private settings: Settings = { ...resolveSettings({}, "/dev/null"), initialized: false };
     get value(): Settings {
-        return this._settings;
+        return this.settings;
     }
-
-    async read(file = this._settings.file, forceCsv: boolean = false): Promise<void> {
-        // If an env override for the file is present, prefer it.
-        if (!forceCsv && process.env.SETTINGS_FILE) {
-            file = process.env.SETTINGS_FILE;
-            this._settings.file = file;
-        }
-
-        const isE2E = process.env.NODE_ENV === "e2e";
-
-        // If the CSV doesn't exist:
-        // - in normal modes, create it from defaults (original behavior)
-        // - in E2E, SKIP writing (we rely on env-only for secrets)
-        if (!fs.existsSync(file)) {
-            if (!isE2E) {
-                await this.write(file);
-            }
-            applyEnvOverrides(this._settings);
-            this._settings.initialized = true;
-            return;
-        }
-
-        // Parse CSV
-        const text = fs.readFileSync(file, "utf8");
-        for (const line of text.split(/\r?\n/)) {
-            if (!line.trim()) continue;
-            const [kRaw, ...rest] = line.split(",");
-            const k = kRaw.trim();
-            const vRaw = rest.join(","); // allow commas in values
-            const mapKey = keyMap[k];
-            if (!mapKey) {
-                console.warn("Unknown setting:", k);
-                continue;
-            }
-            const conv = coerce[mapKey];
-            const v = (conv ? conv(vRaw) : vRaw) as any;
-            (this._settings as any)[mapKey] = v;
-        }
-
-        // Finally, apply env overrides on top.
-        if (!forceCsv) applyEnvOverrides(this._settings);
-        this._settings.initialized = true;
-    }
-
-    async write(file = this._settings.file): Promise<void> {
-        const reverse = Object.fromEntries(
-            Object.entries(keyMap).map(([csv, key]) => [key, csv])
-        );
-        const lines: string[] = [];
-        for (const [key, value] of Object.entries(this._settings)) {
-            const csvKey = (reverse as any)[key];
-            if (!csvKey) continue; // skip fields not in CSV
-            lines.push(`${csvKey},${String(value)}`);
-        }
-        fs.writeFileSync(file, lines.join("\n") + "\n", "utf8");
-        console.log("Settings file written!");
+    async read(file?: string): Promise<void> {
+        this.settings = resolveSettings(process.env, file);
     }
 }
 
-const settingsStore = new SettingsStore();
-export default settingsStore;
+export default new SettingsStore();

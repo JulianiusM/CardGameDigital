@@ -1,0 +1,81 @@
+export const CARD_TYPES = {
+    QUESTION: "QUESTION",
+    DARE: "DARE",
+    CONVERSATION: "CONVERSATION",
+} as const;
+export type CardType = (typeof CARD_TYPES)[keyof typeof CARD_TYPES];
+
+export const QUESTION_CATEGORIES = {
+    EVERYDAY: "CAT_EVERYDAY",
+    CHILDHOOD: "CAT_CHILDHOOD",
+    PERSONALITY: "CAT_PERSONALITY",
+    SCENARIO: "CAT_SCENARIO",
+    INTOXICATION: "CAT_INTOXICATION",
+    FRIENDSHIP: "CAT_FRIENDSHIP",
+    RELATIONSHIP: "CAT_RELATIONSHIP",
+    BODY: "CAT_BODY",
+    SEXUALITY: "CAT_SEXUALITY",
+    SEX_OPENNESS: "CAT_SEX_OPENNESS",
+    SEX_TENSION: "CAT_SEX_TENSION",
+    SEX_EXPERIENCE: "CAT_SEX_EXPERIENCE",
+} as const;
+export type QuestionCategoryId = (typeof QUESTION_CATEGORIES)[keyof typeof QUESTION_CATEGORIES];
+
+export const DARE_TYPES = {
+    SILLY: "DARE_SILLY",
+    THIRD_PARTY: "DARE_THIRD_PARTY",
+    KISS: "DARE_KISS",
+    KISS_SPICY: "DARE_KISS_SPICY",
+    TOUCH: "DARE_TOUCH",
+    TOUCH_SPICY: "DARE_TOUCH_SPICY",
+    TOUCH_SEXY: "DARE_TOUCH_SEXY",
+    CLOTHING: "DARE_CLOTHING",
+    NUDITY: "DARE_NUDITY",
+    SEXUAL_TENSION: "DARE_SEXUAL_TENSION",
+    BORDERLINE_SEX: "DARE_BORDERLINE_SEX",
+    SEX: "DARE_SEX",
+    OTHER: "DARE_OTHER",
+} as const;
+export type DareTypeId = (typeof DARE_TYPES)[keyof typeof DARE_TYPES];
+
+export const OPERATIONAL_FLAGS = {
+    REQUIRES_TARGET_PLAYER: "REQUIRES_TARGET_PLAYER",
+    INVOLVES_THIRD_PARTY: "INVOLVES_THIRD_PARTY",
+    REQUIRES_PHYSICAL_CONTACT: "REQUIRES_PHYSICAL_CONTACT",
+    REQUIRES_PRIVATE_SPACE: "REQUIRES_PRIVATE_SPACE",
+    REMOVES_CLOTHING: "REMOVES_CLOTHING",
+    REQUIRES_NUDITY: "REQUIRES_NUDITY",
+    INVOLVES_ALCOHOL: "INVOLVES_ALCOHOL",
+    INVOLVES_RECREATIONAL_DRUGS: "INVOLVES_RECREATIONAL_DRUGS",
+} as const;
+export type OperationalFlag = (typeof OPERATIONAL_FLAGS)[keyof typeof OPERATIONAL_FLAGS];
+
+export const QUESTION_CATEGORY_LABELS: Record<QuestionCategoryId, string> = {
+    CAT_EVERYDAY: "Alltag",
+    CAT_CHILDHOOD: "Kindheit",
+    CAT_PERSONALITY: "Persönlichkeit",
+    CAT_SCENARIO: "Szenario",
+    CAT_INTOXICATION: "Trunkenheit",
+    CAT_FRIENDSHIP: "Freundschaft",
+    CAT_RELATIONSHIP: "Beziehung",
+    CAT_BODY: "Körper",
+    CAT_SEXUALITY: "Sexualität",
+    CAT_SEX_OPENNESS: "Sex-Offenheit",
+    CAT_SEX_TENSION: "Sex-Spannung",
+    CAT_SEX_EXPERIENCE: "Sex-Erfahrung",
+};
+export const DARE_TYPE_LABELS: Record<DareTypeId, string> = {
+    DARE_SILLY: "Blödsinn",
+    DARE_THIRD_PARTY: "Unbeteiligte Dritte",
+    DARE_KISS: "Kuss",
+    DARE_KISS_SPICY: "Kuss-Spicy",
+    DARE_TOUCH: "Berührung",
+    DARE_TOUCH_SPICY: "Berührung-Spicy",
+    DARE_TOUCH_SEXY: "Berührung-Sexy",
+    DARE_CLOTHING: "Kleidung",
+    DARE_NUDITY: "Nacktheit",
+    DARE_SEXUAL_TENSION: "Sexuelle Spannung",
+    DARE_BORDERLINE_SEX: "Borderline Sex",
+    DARE_SEX: "Sex",
+    DARE_OTHER: "Sonstiges",
+};

@@ -14,30 +14,38 @@
  * limitations under the License.
  */
 
-import express, {NextFunction} from 'express';
-import createError from "http-errors";
-import {handleValidationError, wrapErrorApi} from '../middleware/validationErrorHandler';
+import express, { NextFunction } from "express";
+import { wrapErrorApi } from "../middleware/validationErrorHandler";
 
-import activityApiRouter from './api/activity';
-import driverApiRouter from './api/drivers';
-import eventApiRouter from './api/event';
-import packingApiRouter from './api/packing';
-import surveyApiRouter from './api/survey';
-import userApiRouter from './api/users';
+import settings from "../modules/settings";
+import couchRouter from "./api/couch";
+import roomsRouter from "./api/rooms";
+import gameProfilesRouter from "./api/gameProfiles";
+import accountRouter from "./api/account";
+import groupsRouter from "./api/groups";
+import gameSettingsRouter from "./api/gameSettings";
+import helpRouter from "./api/help";
 
 const router = express.Router();
 
-router.use('/activity', activityApiRouter);
-router.use('/packing', packingApiRouter);
-router.use('/drivers', driverApiRouter);
-router.use('/event', eventApiRouter);
-router.use('/users', userApiRouter);
-router.use('/survey', surveyApiRouter);
+router.get("/v1/server-info", (_req, res) =>
+    res.json({
+        version: 1,
+        deploymentMode: settings.value.deploymentMode,
+        protocolVersions: [1],
+    }),
+);
+router.use("/v1/couch", couchRouter);
+router.use("/v1/rooms", roomsRouter);
+router.use("/v1/game-profiles", gameProfilesRouter);
+router.use("/v1/account", accountRouter);
+router.use("/v1/groups", groupsRouter);
+router.use("/v1/game-settings", gameSettingsRouter);
+router.use("/v1/help", helpRouter);
 
-router.use(handleValidationError);
 // catch 404 and forward to error handler
 router.use(function (req: express.Request, res: express.Response, next: NextFunction) {
-    next(createError(404));
+    next(Object.assign(new Error("API endpoint not found"), { status: 404 }));
 });
 router.use(wrapErrorApi);
 

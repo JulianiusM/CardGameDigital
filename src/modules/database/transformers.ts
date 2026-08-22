@@ -18,7 +18,7 @@
  * Shared TypeORM transformers for common data type conversions.
  */
 
-import {formatAmount, toAmount} from "../lib/util";
+import { formatAmount, toAmount } from "../lib/util";
 
 /**
  * Currency transformer for decimal columns.

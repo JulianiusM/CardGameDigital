@@ -267,6 +267,7 @@ $RECYCLE.BIN/
 /playwright/.cache/
 /.local-browsers
 /allure-results/
+/artifacts/
 /.allure/
 /tests/.auth/
 
@@ -284,3 +285,4 @@ src.zip
 /src/modules/database/__index__.ts
 /uploads/
 test_output.txt
+/.tmp/

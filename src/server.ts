@@ -14,23 +14,26 @@
  * limitations under the License.
  */
 
-import http from 'node:http';
-import {initDataSource} from "./modules/database/dataSource";
-import settings from './modules/settings';
+import http from "node:http";
+import { initDataSource } from "./modules/database/dataSource";
+import settings from "./modules/settings";
 
 async function bootstrap() {
     try {
-        console.log('🔧 Initializing database connection...');
+        console.log("🔧 Initializing database connection...");
         await settings.read();
         await initDataSource();
 
-        const {default: app} = await require('./app');
+        const { default: app } = await require("./app");
         const server = http.createServer(app);
-        server.listen(settings.value.appPort, () => {
+        const { attachWebSocketServer } = await require("./modules/websocket");
+        const { getRoomService } = await require("./modules/realtime");
+        attachWebSocketServer(server, getRoomService());
+        server.listen(settings.value.httpPort, settings.value.httpBind, () => {
             console.log(`🚀 Server listening on ${settings.value.rootUrl}`);
         });
     } catch (err) {
-        console.error('❌ Failed to initialize app:', err);
+        console.error("❌ Failed to initialize app:", err);
         process.exit(1);
     }
 }

@@ -1,0 +1,546 @@
+:root {
+    --color-canvas: #17132d;
+    --color-surface: #211a3b;
+    --color-accent: #ffbd76;
+    --color-success: #65d1c5;
+    --motion-fast: 160ms;
+    --motion-normal: 320ms;
+    font-family: Inter, ui-rounded, "Segoe UI", system-ui, sans-serif;
+    color: #fbf8ff;
+    background: #17132d;
+    font-synthesis: none;
+}
+* {
+    box-sizing: border-box;
+}
+body {
+    margin: 0;
+    min-width: 320px;
+    min-height: 100vh;
+    background:
+        radial-gradient(circle at 15% 15%, #643a8e 0, transparent 35%),
+        radial-gradient(circle at 85% 5%, #be4e69 0, transparent 32%),
+        linear-gradient(145deg, #17132d, #20183d 55%, #112d3d);
+    background-attachment: fixed;
+}
+body:before {
+    content: "";
+    position: fixed;
+    inset: -30%;
+    background: conic-gradient(
+        from 90deg,
+        transparent,
+        #ed6f771c,
+        transparent,
+        #65d1c51c,
+        transparent
+    );
+    animation: drift 18s linear infinite;
+    pointer-events: none;
+}
+@keyframes drift {
+    to {
+        transform: rotate(360deg);
+    }
+}
+button,
+input {
+    font: inherit;
+}
+button {
+    cursor: pointer;
+}
+button:disabled {
+    cursor: wait;
+    opacity: 0.55;
+}
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+a:focus-visible {
+    outline: 3px solid var(--color-accent);
+    outline-offset: 3px;
+}
+main {
+    position: relative;
+    width: min(1120px, 100%);
+    margin: auto;
+    padding: clamp(1.25rem, 4vw, 3.5rem);
+}
+header {
+    text-align: center;
+    margin-bottom: 2rem;
+}
+.eyebrow {
+    font-size: 0.72rem;
+    letter-spacing: 0.24em;
+    color: #d8c8ff;
+}
+h1 {
+    font-size: clamp(2.25rem, 7vw, 5rem);
+    line-height: 0.95;
+    margin: 0.5rem 0;
+    text-wrap: balance;
+}
+h2 {
+    margin-top: 0;
+}
+.card-panel,
+.game-card {
+    background: #211a3bd9;
+    border: 1px solid #ffffff24;
+    border-radius: 28px;
+    box-shadow: 0 28px 80px #05020d66;
+    backdrop-filter: blur(18px);
+}
+.setup {
+    padding: clamp(1.25rem, 4vw, 2.5rem);
+    display: grid;
+    gap: 2rem;
+}
+.mode-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0.8rem;
+}
+.mode {
+    color: inherit;
+    text-align: left;
+    padding: 1.1rem;
+    border-radius: 18px;
+    border: 1px solid #ffffff20;
+    background: #ffffff09;
+}
+.mode strong,
+.mode span {
+    display: block;
+}
+.mode span {
+    color: #bdb5cf;
+    font-size: 0.88rem;
+    margin-top: 0.3rem;
+}
+.mode.selected {
+    border-color: #ffbd76;
+    background: linear-gradient(135deg, #ff8b6650, #8d68e940);
+    box-shadow: inset 0 0 0 1px #ffbd76;
+}
+.players {
+    display: grid;
+    gap: 0.7rem;
+}
+.players label {
+    position: relative;
+    display: grid;
+    grid-template-columns: 6rem 1fr auto;
+    align-items: center;
+    gap: 0.5rem;
+}
+.players label span {
+    color: #c9c0d8;
+}
+.players input {
+    width: 100%;
+    color: #fff;
+    background: #100c22;
+    border: 1px solid #ffffff29;
+    border-radius: 12px;
+    padding: 0.8rem;
+}
+.icon {
+    color: #fff;
+    background: transparent;
+    border: 0;
+    font-size: 1.5rem;
+}
+.intensity {
+    display: grid;
+    gap: 0.7rem;
+}
+.intensity input {
+    accent-color: #ff8b66;
+}
+.primary,
+.secondary,
+.choice button,
+.voting button {
+    border: 0;
+    border-radius: 999px;
+    padding: 0.85rem 1.35rem;
+    color: #17132d;
+    background: #ffbd76;
+    font-weight: 750;
+}
+.secondary {
+    background: #ffffff18;
+    color: #fff;
+    border: 1px solid #ffffff2e;
+}
+.start {
+    font-size: 1.1rem;
+    justify-self: stretch;
+}
+.start span {
+    float: right;
+}
+.error {
+    background: #541f37;
+    border: 1px solid #ff7295;
+    border-radius: 14px;
+    padding: 1rem;
+    margin: 0 auto 1.3rem;
+    max-width: 760px;
+}
+.game-shell {
+    display: grid;
+    gap: 1.25rem;
+    justify-items: center;
+}
+.status {
+    display: flex;
+    gap: 1.5rem;
+    color: #d8d1e2;
+    font-size: 0.84rem;
+}
+.active {
+    text-align: center;
+    font-size: clamp(1.7rem, 5vw, 3.3rem);
+    font-weight: 800;
+    margin: 0.5rem;
+}
+.active span {
+    display: block;
+    font-size: 0.68rem;
+    letter-spacing: 0.25em;
+    color: #ffbd76;
+}
+.choice,
+.center {
+    padding: 2rem;
+    text-align: center;
+    width: min(700px, 100%);
+}
+.choice div {
+    display: flex;
+    gap: 1rem;
+    justify-content: center;
+}
+.choice button {
+    font-size: clamp(1.1rem, 3vw, 1.5rem);
+    min-width: 9rem;
+}
+.game-card {
+    width: min(760px, 100%);
+    min-height: 320px;
+    padding: clamp(1.5rem, 6vw, 4rem);
+    display: grid;
+    align-content: space-between;
+    text-align: center;
+    position: relative;
+    overflow: hidden;
+    animation: card-enter var(--motion-normal) cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+@keyframes card-enter {
+    from {
+        opacity: 0;
+        transform: translateY(22px) scale(0.97);
+    }
+}
+.game-card:after {
+    content: "";
+    position: absolute;
+    width: 240px;
+    height: 240px;
+    border-radius: 50%;
+    filter: blur(60px);
+    background: #b16ee5;
+    right: -80px;
+    bottom: -100px;
+    opacity: 0.45;
+}
+.game-card[data-type="DARE"]:after {
+    background: #ff705f;
+}
+.game-card[data-type="CONVERSATION"]:after {
+    background: #55d7c2;
+}
+.card-type {
+    font-size: 0.72rem;
+    letter-spacing: 0.28em;
+    color: #ffbd76;
+}
+.game-card p {
+    font-size: clamp(1.65rem, 5vw, 3.2rem);
+    line-height: 1.16;
+    margin: 2rem 0;
+    position: relative;
+    z-index: 1;
+}
+.dots {
+    letter-spacing: 0.25rem;
+    color: #ffbd76;
+}
+.actions {
+    display: flex;
+    gap: 0.8rem;
+}
+.voting {
+    width: min(760px, 100%);
+    display: grid;
+    gap: 0.7rem;
+}
+.voting > div {
+    display: grid;
+    grid-template-columns: 1fr auto auto;
+    gap: 0.6rem;
+    align-items: center;
+    background: #ffffff0d;
+    border-radius: 16px;
+    padding: 0.7rem;
+}
+.voting button {
+    padding: 0.6rem 0.9rem;
+}
+.result {
+    font-size: 1.3rem;
+    background: #ffffff12;
+    border-radius: 18px;
+    padding: 1rem 1.4rem;
+}
+.result strong {
+    font-size: 2rem;
+    color: #ffbd76;
+}
+.end {
+    border: 0;
+    background: transparent;
+    color: #c9c0d8;
+    text-decoration: underline;
+    padding: 1rem;
+}
+@media (max-width: 650px) {
+    .mode-grid {
+        grid-template-columns: 1fr;
+    }
+    .players label {
+        grid-template-columns: 1fr auto;
+    }
+    .players label span {
+        grid-column: 1/-1;
+    }
+    .voting > div {
+        grid-template-columns: 1fr 1fr;
+    }
+    .voting strong {
+        grid-column: 1/-1;
+    }
+    .status {
+        gap: 0.7rem;
+        flex-wrap: wrap;
+        justify-content: center;
+    }
+}
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *:before,
+    *:after {
+        animation: none !important;
+        scroll-behavior: auto !important;
+    }
+}
+:root[data-reduced-motion="true"] *,
+:root[data-reduced-motion="true"] *:before,
+:root[data-reduced-motion="true"] *:after {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+}
+.connect {
+    width: min(560px, 100%);
+    margin: auto;
+    padding: 2rem;
+    display: grid;
+    gap: 1rem;
+}
+.connect label,
+.lobby label {
+    display: grid;
+    gap: 0.45rem;
+    color: #d8d1e2;
+}
+.connect input,
+.lobby select {
+    color: #fff;
+    background: #100c22;
+    border: 1px solid #ffffff29;
+    border-radius: 12px;
+    padding: 0.85rem;
+}
+.connect a {
+    color: #ffbd76;
+}
+.lobby-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(260px, 0.7fr);
+    gap: 1.25rem;
+}
+.lobby,
+.join-card {
+    padding: 2rem;
+}
+.participant {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    gap: 0.7rem;
+    align-items: center;
+    padding: 0.7rem;
+    border-bottom: 1px solid #ffffff12;
+}
+.participant > span {
+    width: 0.65rem;
+    height: 0.65rem;
+    border-radius: 50%;
+    background: #6e687a;
+}
+.participant > span.online {
+    background: #65d1c5;
+}
+.participant small {
+    color: #aaa1bb;
+}
+.lobby label {
+    margin: 1.4rem 0;
+}
+.join-card {
+    text-align: center;
+}
+.join-card img {
+    display: block;
+    width: min(260px, 100%);
+    margin: 1rem auto;
+    border-radius: 18px;
+}
+.join-card > strong {
+    font-size: 2.2rem;
+    letter-spacing: 0.2em;
+}
+.live {
+    color: #65d1c5;
+}
+@media (max-width: 760px) {
+    .lobby-grid {
+        grid-template-columns: 1fr;
+    }
+    .join-card {
+        order: -1;
+    }
+}
+
+.boundary-panel {
+    margin-top: 1.5rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid #ffffff1f;
+}
+
+.boundary-panel > p,
+.boundary-saved {
+    color: #c9c0d8;
+}
+
+.boundary-panel fieldset {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.5rem 1rem;
+    margin: 1rem 0;
+    padding: 1rem;
+    border: 1px solid #ffffff24;
+    border-radius: 14px;
+}
+
+.boundary-panel legend {
+    padding: 0 0.4rem;
+    color: #ffbd76;
+    font-weight: 700;
+}
+
+.boundary-panel label {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    color: #eee8f5;
+}
+
+.boundary-panel input {
+    accent-color: #ff8b66;
+}
+
+.boundary-saved {
+    padding: 0.8rem;
+    border: 1px solid #65d1c555;
+    border-radius: 12px;
+    background: #65d1c512;
+}
+
+@media (max-width: 650px) {
+    .boundary-panel fieldset {
+        grid-template-columns: 1fr;
+    }
+}
+
+.lobby .adult-confirmation {
+    display: flex;
+    grid-template-columns: none;
+    flex-direction: row;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.8rem;
+    border: 1px solid #ffbd7640;
+    border-radius: 12px;
+    font-size: 0.9rem;
+}
+
+.presentation-controls {
+    position: fixed;
+    z-index: 20;
+    top: 0.75rem;
+    right: 0.75rem;
+    display: grid;
+    justify-items: end;
+    gap: 0.45rem;
+}
+.presentation-toggle {
+    border: 1px solid #ffffff35;
+    border-radius: 999px;
+    padding: 0.55rem 0.9rem;
+    color: #fff;
+    background: #17132de8;
+    backdrop-filter: blur(12px);
+}
+.presentation-controls > div {
+    display: grid;
+    gap: 0.65rem;
+    min-width: 13rem;
+    padding: 0.9rem;
+    border: 1px solid #ffffff2e;
+    border-radius: 16px;
+    background: #17132df2;
+    box-shadow: 0 14px 40px #05020d77;
+}
+.presentation-controls label {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+}
+.presentation-controls input {
+    accent-color: var(--color-accent);
+}
+
+@media (forced-colors: active) {
+    .card-panel,
+    .game-card,
+    button,
+    input,
+    select {
+        border: 1px solid CanvasText;
+    }
+}

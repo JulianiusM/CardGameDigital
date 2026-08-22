@@ -14,12 +14,12 @@
  * limitations under the License.
  */
 
-import type {Request} from 'express';
-import * as oidc from 'openid-client';
-import {getDefaultProfile} from "../controller/userController";
-import {findOrCreateUserFromOidc} from "./database/services/UserService";
-import {ExpectedError} from "./lib/errors";
-import {persistSession} from "./lib/session";
+import { MESSAGE_KEYS } from "../packages/localization/keys";
+import type { Request } from "express";
+import * as oidc from "openid-client";
+import { findOrCreateUserFromOidc } from "./database/services/UserService";
+import { ExpectedError } from "./lib/errors";
+import { persistSession } from "./lib/session";
 import settings from "./settings";
 
 let config: oidc.Configuration;
@@ -36,16 +36,16 @@ export async function initOIDC() {
 
 function getCurrentUrlFromRequest(req: Request) {
     // Builds the full callback URL exactly as received
-    const proto = (req.headers['x-forwarded-proto'] as string) || req.protocol;
-    const host = (req.headers['x-forwarded-host'] as string) || req.get('host');
+    const proto = (req.headers["x-forwarded-proto"] as string) || req.protocol;
+    const host = (req.headers["x-forwarded-host"] as string) || req.get("host");
     return new URL(`${proto}://${host}${req.originalUrl || req.url}`);
 }
 
-export async function startLogin(session: Request['session']) {
+export async function startLogin(session: Request["session"]) {
     if (!config) await initOIDC();
 
     const redirect_uri = settings.value.oidcRedirectUrl;
-    const code_challenge_method = 'S256';
+    const code_challenge_method = "S256";
 
     // Per v6 example: generate a new verifier (+ maybe nonce) for each auth request
     const code_verifier = oidc.randomPKCECodeVerifier();
@@ -55,11 +55,11 @@ export async function startLogin(session: Request['session']) {
     const state = oidc.randomState();
 
     // Store in session for callback verification
-    session.oidc = {code_verifier, state};
+    session.oidc = { code_verifier, state };
 
     const parameters: Record<string, string> = {
         redirect_uri,
-        scope: 'openid email profile',
+        scope: "openid email profile",
         code_challenge,
         code_challenge_method,
         state,
@@ -82,7 +82,7 @@ export async function callback(req: Request) {
     const sess = req.session.oidc;
 
     if (!sess?.code_verifier) {
-        throw new ExpectedError('Invalid or expired login session.');
+        throw new ExpectedError(MESSAGE_KEYS.ACCOUNT_INVALID_OIDC_SESSION);
     }
 
     const currentUrl = getCurrentUrlFromRequest(req);
@@ -111,15 +111,18 @@ export async function callback(req: Request) {
     }
 
     // Prefer userInfo claims if present, otherwise ID Token claims
-    const identityClaims = (userInfo ?? claims) as any;
+    // UserInfo can omit email_verified. Merge it over the verified ID-token claims
+    // so an absent UserInfo field never downgrades the linking decision.
+    const identityClaims = { ...claims, ...(userInfo ?? {}) } as any;
 
     // JIT-provision or load your local user
     // Persist your standard session identity (same model as manual login)
     const user = await findOrCreateUserFromOidc(issuer, identityClaims, {
-        linkByEmail: true,
+        linkByEmail: identityClaims.email_verified === true,
     });
-    req.session.auth = {user};
-    req.session.profile = getDefaultProfile(user.profiles);
+    req.session.auth = { user };
+    req.session.dataSpace =
+        user.dataSpaces.find((space) => space.defaultForOwner) ?? user.dataSpaces[0];
 
     // Optionally keep tokens for logout/API calls
     req.session.tokens = {
@@ -136,13 +139,13 @@ export async function callback(req: Request) {
     await persistSession(req.session);
 }
 
-export async function logout(session: Request['session']) {
+export async function logout(session: Request["session"]) {
     const id_token_hint = session.tokens?.id_token;
     const isOidc = !!session.tokens;
 
     // Clear local session first
     session.auth = undefined;
-    session.profile = undefined;
+    session.dataSpace = undefined;
     session.tokens = undefined;
 
     await persistSession(session);
@@ -157,8 +160,8 @@ export async function logout(session: Request['session']) {
 
         if (endSession) {
             const url = new URL(endSession);
-            if (id_token_hint) url.searchParams.set('id_token_hint', id_token_hint);
-            url.searchParams.set('post_logout_redirect_uri', postLogoutRedirectUri);
+            if (id_token_hint) url.searchParams.set("id_token_hint", id_token_hint);
+            url.searchParams.set("post_logout_redirect_uri", postLogoutRedirectUri);
             return url.toString();
         }
     }

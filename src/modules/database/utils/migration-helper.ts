@@ -14,12 +14,12 @@
  * limitations under the License.
  */
 
-import {QueryRunner} from "typeorm";
+import { QueryRunner } from "typeorm";
 
 export async function columnExists(
     queryRunner: QueryRunner,
     table: string,
-    column: string
+    column: string,
 ): Promise<boolean> {
     const result = await queryRunner.query(
         `
@@ -29,7 +29,7 @@ export async function columnExists(
               AND TABLE_NAME = ?
               AND COLUMN_NAME = ?
         `,
-        [table, column]
+        [table, column],
     );
 
     return result[0].count > 0;
@@ -38,7 +38,7 @@ export async function columnExists(
 export async function constraintExists(
     queryRunner: QueryRunner,
     table: string,
-    constraint: string
+    constraint: string,
 ): Promise<boolean> {
     const result = await queryRunner.query(
         `
@@ -48,16 +48,13 @@ export async function constraintExists(
               AND TABLE_NAME = ?
               AND CONSTRAINT_NAME = ?
         `,
-        [table, constraint]
+        [table, constraint],
     );
 
     return result[0].count > 0;
 }
 
-export async function tableExists(
-    queryRunner: QueryRunner,
-    table: string
-): Promise<boolean> {
+export async function tableExists(queryRunner: QueryRunner, table: string): Promise<boolean> {
     const result = await queryRunner.query(
         `
             SELECT COUNT(*) as count
@@ -65,7 +62,7 @@ export async function tableExists(
             WHERE TABLE_SCHEMA = DATABASE()
               AND TABLE_NAME = ?
         `,
-        [table]
+        [table],
     );
 
     return result[0].count > 0;
@@ -74,7 +71,7 @@ export async function tableExists(
 export async function indexExists(
     queryRunner: QueryRunner,
     table: string,
-    index: string
+    index: string,
 ): Promise<boolean> {
     const result = await queryRunner.query(
         `
@@ -84,19 +81,31 @@ export async function indexExists(
               AND TABLE_NAME = ?
               AND INDEX_NAME = ?
         `,
-        [table, index]
+        [table, index],
     );
 
     return result[0].count > 0;
 }
 
-export async function addColumn(queryRunner: QueryRunner, table: string, column: string, type: string, params: string = '') {
+export async function addColumn(
+    queryRunner: QueryRunner,
+    table: string,
+    column: string,
+    type: string,
+    params: string = "",
+) {
     return await queryRunner.query(`ALTER TABLE \`${table}\`
         ADD \`${column}\` ${type} ${params}`);
 }
 
-export async function addColumnIfNotExists(queryRunner: QueryRunner, table: string, column: string, type: string, params?: string) {
-    if (!await columnExists(queryRunner, table, column)) {
+export async function addColumnIfNotExists(
+    queryRunner: QueryRunner,
+    table: string,
+    column: string,
+    type: string,
+    params?: string,
+) {
+    if (!(await columnExists(queryRunner, table, column))) {
         return await addColumn(queryRunner, table, column, type, params);
     }
 }
@@ -112,37 +121,67 @@ export async function dropColumnIfExists(queryRunner: QueryRunner, table: string
     }
 }
 
-export async function createConstraint(queryRunner: QueryRunner, table: string, constraint: string, definition: string) {
+export async function createConstraint(
+    queryRunner: QueryRunner,
+    table: string,
+    constraint: string,
+    definition: string,
+) {
     return await queryRunner.query(`ALTER TABLE \`${table}\`
         ADD CONSTRAINT \`${constraint}\` ${definition}`);
 }
 
-export async function createConstraintIfNotExists(queryRunner: QueryRunner, table: string, constraint: string, definition: string) {
-    if (!await constraintExists(queryRunner, table, constraint)) {
+export async function createConstraintIfNotExists(
+    queryRunner: QueryRunner,
+    table: string,
+    constraint: string,
+    definition: string,
+) {
+    if (!(await constraintExists(queryRunner, table, constraint))) {
         return await createConstraint(queryRunner, table, constraint, definition);
     }
 }
 
-export async function dropFkConstraint(queryRunner: QueryRunner, table: string, constraint: string) {
+export async function dropFkConstraint(
+    queryRunner: QueryRunner,
+    table: string,
+    constraint: string,
+) {
     return await queryRunner.query(`ALTER TABLE \`${table}\`
         DROP FOREIGN KEY \`${constraint}\``);
 }
 
-export async function dropFkConstraintIfExists(queryRunner: QueryRunner, table: string, constraint: string) {
+export async function dropFkConstraintIfExists(
+    queryRunner: QueryRunner,
+    table: string,
+    constraint: string,
+) {
     if (await constraintExists(queryRunner, table, constraint)) {
         return await dropFkConstraint(queryRunner, table, constraint);
     }
 }
 
-export async function createIndexIfNotExists(queryRunner: QueryRunner, table: string, index: string, columns: string) {
-    if (!await indexExists(queryRunner, table, index)) {
+export async function createIndexIfNotExists(
+    queryRunner: QueryRunner,
+    table: string,
+    index: string,
+    columns: string,
+) {
+    if (!(await indexExists(queryRunner, table, index))) {
         return await queryRunner.query(`CREATE INDEX \`${index}\` ON \`${table}\` (${columns})`);
     }
 }
 
-export async function createUniqueIndexIfNotExists(queryRunner: QueryRunner, table: string, index: string, columns: string) {
-    if (!await indexExists(queryRunner, table, index)) {
-        return await queryRunner.query(`CREATE UNIQUE INDEX \`${index}\` ON \`${table}\` (${columns})`);
+export async function createUniqueIndexIfNotExists(
+    queryRunner: QueryRunner,
+    table: string,
+    index: string,
+    columns: string,
+) {
+    if (!(await indexExists(queryRunner, table, index))) {
+        return await queryRunner.query(
+            `CREATE UNIQUE INDEX \`${index}\` ON \`${table}\` (${columns})`,
+        );
     }
 }
 

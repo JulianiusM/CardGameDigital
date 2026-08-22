@@ -13,14 +13,18 @@ import path from "node:path";
 
 type SectionConfig = {
     key: "entities" | "migrations" | "subscribers" | (string & {});
-    dir: string;                 // directory to scan
-    filePattern?: RegExp;        // files to include
-    exclude?: string[];          // filenames to skip
+    dir: string; // directory to scan
+    filePattern?: RegExp; // files to include
+    exclude?: string[]; // filenames to skip
     // Heuristic for which classes to collect from a file:
     //   - "decorator:Entity" => class with @Entity decorator
     //   - "interface:MigrationInterface" => class implements MigrationInterface
     //   - "decorator:EventSubscriber" or "interface:EntitySubscriberInterface"
-    matchStrategy: "decorator:Entity" | "interface:MigrationInterface" | "decorator:EventSubscriber" | "interface:EntitySubscriberInterface";
+    matchStrategy:
+        | "decorator:Entity"
+        | "interface:MigrationInterface"
+        | "decorator:EventSubscriber"
+        | "interface:EntitySubscriberInterface";
     // Optional: keep a stable order (e.g. for migrations by filename)
     sortBy?: "filenameAsc";
 };
@@ -71,11 +75,15 @@ function collectFiles(dir: string, filePattern: RegExp, exclude: string[] = []):
     const result: string[] = [];
     if (!fs.existsSync(dir)) return result;
 
-    for (const entry of fs.readdirSync(dir, {withFileTypes: true})) {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
         const full = path.join(dir, entry.name);
         if (entry.isDirectory()) {
             result.push(...collectFiles(full, filePattern, exclude));
-        } else if (entry.isFile() && filePattern.test(entry.name) && !exclude.includes(entry.name)) {
+        } else if (
+            entry.isFile() &&
+            filePattern.test(entry.name) &&
+            !exclude.includes(entry.name)
+        ) {
             result.push(full);
         }
     }
@@ -89,9 +97,12 @@ function collectFiles(dir: string, filePattern: RegExp, exclude: string[] = []):
  *   export default class Bar implements MigrationInterface { ... }
  *   export class User { @Column() ... } // and has @Entity
  */
-function extractExportsByStrategy(tsCode: string, strategy: SectionConfig["matchStrategy"]): {
+function extractExportsByStrategy(
+    tsCode: string,
+    strategy: SectionConfig["matchStrategy"],
+): {
     name: string;
-    isDefault: boolean
+    isDefault: boolean;
 }[] {
     const results: { name: string; isDefault: boolean }[] = [];
 
@@ -99,7 +110,7 @@ function extractExportsByStrategy(tsCode: string, strategy: SectionConfig["match
     const code = tsCode.replace(/\r\n/g, "\n");
 
     const add = (name: string, isDefault = false) => {
-        if (name) results.push({name, isDefault});
+        if (name) results.push({ name, isDefault });
     };
 
     switch (strategy) {
@@ -107,7 +118,8 @@ function extractExportsByStrategy(tsCode: string, strategy: SectionConfig["match
             // Named export: export class Foo implements MigrationInterface
             const reNamed = /export\s+class\s+([A-Za-z0-9_]+)\s+implements\s+MigrationInterface\b/g;
             // Default export: export default class Foo implements MigrationInterface
-            const reDefault = /export\s+default\s+class\s+([A-Za-z0-9_]+)\s+implements\s+MigrationInterface\b/g;
+            const reDefault =
+                /export\s+default\s+class\s+([A-Za-z0-9_]+)\s+implements\s+MigrationInterface\b/g;
 
             let m: RegExpExecArray | null;
             while ((m = reNamed.exec(code))) add(m[1], false);
@@ -123,7 +135,8 @@ function extractExportsByStrategy(tsCode: string, strategy: SectionConfig["match
             // Two passes: default and named
             const reDefault = /@Entity\s*\([^)]*\)\s*export\s+default\s+class\s+([A-Za-z0-9_]+)/g;
             const reNamed = /@Entity\s*\([^)]*\)\s*export\s+class\s+([A-Za-z0-9_]+)/g;
-            const reDefaultNoArg = /@Entity\s*\(\s*\)\s*export\s+default\s+class\s+([A-Za-z0-9_]+)/g;
+            const reDefaultNoArg =
+                /@Entity\s*\(\s*\)\s*export\s+default\s+class\s+([A-Za-z0-9_]+)/g;
             const reNamedNoArg = /@Entity\s*\(\s*\)\s*export\s+class\s+([A-Za-z0-9_]+)/g;
 
             let m: RegExpExecArray | null;
@@ -133,19 +146,26 @@ function extractExportsByStrategy(tsCode: string, strategy: SectionConfig["match
             while ((m = reNamedNoArg.exec(code))) add(m[1], false);
 
             // Fallback: if file imports Entity and has export class X { ... }, accept it
-            if (results.length === 0 && /\bfrom\s+["']typeorm["']/.test(code) && /\bEntity\b/.test(code)) {
+            if (
+                results.length === 0 &&
+                /\bfrom\s+["']typeorm["']/.test(code) &&
+                /\bEntity\b/.test(code)
+            ) {
                 const reAnyExport = /export\s+(?:default\s+)?class\s+([A-Za-z0-9_]+)/g;
                 let n: RegExpExecArray | null;
-                while ((n = reAnyExport.exec(code))) add(n[1], /export\s+default\s+class/.test(n[0]));
+                while ((n = reAnyExport.exec(code)))
+                    add(n[1], /export\s+default\s+class/.test(n[0]));
             }
 
             break;
         }
 
         case "decorator:EventSubscriber": {
-            const reDefault = /@EventSubscriber\s*\([^)]*\)\s*export\s+default\s+class\s+([A-Za-z0-9_]+)/g;
+            const reDefault =
+                /@EventSubscriber\s*\([^)]*\)\s*export\s+default\s+class\s+([A-Za-z0-9_]+)/g;
             const reNamed = /@EventSubscriber\s*\([^)]*\)\s*export\s+class\s+([A-Za-z0-9_]+)/g;
-            const reDefaultNoArg = /@EventSubscriber\s*\(\s*\)\s*export\s+default\s+class\s+([A-Za-z0-9_]+)/g;
+            const reDefaultNoArg =
+                /@EventSubscriber\s*\(\s*\)\s*export\s+default\s+class\s+([A-Za-z0-9_]+)/g;
             const reNamedNoArg = /@EventSubscriber\s*\(\s*\)\s*export\s+class\s+([A-Za-z0-9_]+)/g;
 
             let m: RegExpExecArray | null;
@@ -157,8 +177,10 @@ function extractExportsByStrategy(tsCode: string, strategy: SectionConfig["match
         }
 
         case "interface:EntitySubscriberInterface": {
-            const reNamed = /export\s+class\s+([A-Za-z0-9_]+)\s+implements\s+EntitySubscriberInterface\b/g;
-            const reDefault = /export\s+default\s+class\s+([A-Za-z0-9_]+)\s+implements\s+EntitySubscriberInterface\b/g;
+            const reNamed =
+                /export\s+class\s+([A-Za-z0-9_]+)\s+implements\s+EntitySubscriberInterface\b/g;
+            const reDefault =
+                /export\s+default\s+class\s+([A-Za-z0-9_]+)\s+implements\s+EntitySubscriberInterface\b/g;
             let m: RegExpExecArray | null;
             while ((m = reNamed.exec(code))) add(m[1], false);
             while ((m = reDefault.exec(code))) add(m[1], true);
@@ -166,7 +188,8 @@ function extractExportsByStrategy(tsCode: string, strategy: SectionConfig["match
             // Fallback to decorator form:
             if (results.length === 0) {
                 const reEventSubNamed = /@EventSubscriber[\s\S]*?export\s+class\s+([A-Za-z0-9_]+)/g;
-                const reEventSubDefault = /@EventSubscriber[\s\S]*?export\s+default\s+class\s+([A-Za-z0-9_]+)/g;
+                const reEventSubDefault =
+                    /@EventSubscriber[\s\S]*?export\s+default\s+class\s+([A-Za-z0-9_]+)/g;
                 while ((m = reEventSubNamed.exec(code))) add(m[1], false);
                 while ((m = reEventSubDefault.exec(code))) add(m[1], true);
             }
@@ -186,12 +209,14 @@ function toImportPath(fromFile: string, targetFile: string): string {
 }
 
 function processSection(section: SectionConfig): ExportSymbol[] {
-    const {dir, filePattern = /\.ts$/, exclude = [], sortBy} = section;
+    const { dir, filePattern = /\.ts$/, exclude = [], sortBy } = section;
     const absDir = path.resolve(dir);
     let files = collectFiles(absDir, filePattern, exclude);
 
     if (sortBy === "filenameAsc") {
-        files = files.sort((a, b) => a.localeCompare(b, undefined, {numeric: true, sensitivity: "base"}));
+        files = files.sort((a, b) =>
+            a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" }),
+        );
     }
 
     const symbols: ExportSymbol[] = [];
@@ -229,7 +254,7 @@ function generate() {
         const importLines = filtered.map((s) =>
             s.isDefault
                 ? `import ${s.name} from "${s.importPath}";`
-                : `import { ${s.name} } from "${s.importPath}";`
+                : `import { ${s.name} } from "${s.importPath}";`,
         );
 
         allImports.push(...importLines);
@@ -242,7 +267,7 @@ function generate() {
 
     const header = `// ⚠️ AUTO-GENERATED FILE — do not edit manually.\n`;
     const output = `${header}${allImports.join("\n")}\n\n${sectionExports.join("\n\n")}\n`;
-    fs.mkdirSync(path.dirname(OUTPUT_FILE), {recursive: true});
+    fs.mkdirSync(path.dirname(OUTPUT_FILE), { recursive: true });
     fs.writeFileSync(OUTPUT_FILE, output, "utf8");
 
     console.log(`\n✅ Wrote combined index to ${OUTPUT_FILE}`);
