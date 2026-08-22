@@ -2,17 +2,12 @@ import { MESSAGE_KEYS } from "../localization/keys";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import {
     CARD_TYPES,
-    BUILT_IN_PROFILE_IDS,
     GameSession,
-    type GameMode,
-    type GameProfile,
     type DareTypeId,
     type OperationalFlag,
     type QuestionCategoryId,
     type RandomSource,
-    builtInGameProfile,
     type PlayerBoundaries,
-    validateGameProfile,
 } from "../game-core";
 import {
     DEFAULT_CARD_TRANSLATION_POLICY,
@@ -31,6 +26,13 @@ import {
     fallbackHost,
     sessionPlayers,
 } from "./roomParticipants";
+import {
+    defaultRoomGameSettings,
+    profileRequiresAdultConfirmation,
+    roomSettingsGameProfile,
+    type RoomGameSettings,
+    type VersionedRoomGameSettings,
+} from "./roomGameSettings";
 
 const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const roleCapabilities: Record<RoomRole, ReadonlySet<string>> = {
@@ -45,6 +47,7 @@ const roleCapabilities: Record<RoomRole, ReadonlySet<string>> = {
         "SET_BOUNDARIES",
         "MANAGE_DEVICE_PLAYERS",
         "TRANSFER_HOST",
+        "CHANGE_ROOM_SETTINGS",
         "LEAVE_ROOM",
     ]),
     PLAYER: new Set([
@@ -60,19 +63,11 @@ const roleCapabilities: Record<RoomRole, ReadonlySet<string>> = {
     DISPLAY: new Set(["DISPLAY_SESSION", "LEAVE_ROOM"]),
 };
 export type RoomCommand =
+    | { type: "command.startSession"; revision: null; payload: Record<string, never> }
     | {
-          type: "command.startSession";
+          type: "command.updateRoomSettings";
           revision: null;
-          payload: {
-              mode: GameMode;
-              profileId?: string;
-              groupId?: string | null;
-              adultContentConfirmed?: boolean;
-              maximumIntensity: 1 | 2 | 3 | 4 | 5;
-              randomQuestionRatio: number;
-              letsTalkMetaInterval: number;
-              cardLocale: string;
-          };
+          payload: { expectedRevision: number; settings: RoomGameSettings };
       }
     | {
           type: "command.setDevicePlayers";
@@ -114,6 +109,7 @@ export type RoomSnapshot = {
     roomId: string;
     participants: readonly RoomParticipant[];
     boundaryConfigured: boolean;
+    settings: VersionedRoomGameSettings;
     session: ReturnType<RoomService["project"]> | null;
 };
 
@@ -133,6 +129,7 @@ export class RoomService {
     async createRoom(
         displayName: string,
         dataSpaceId: string | null = null,
+        initialSettings: RoomGameSettings = defaultRoomGameSettings(),
     ): Promise<RoomJoinResult> {
         let code = "";
         do {
@@ -149,6 +146,7 @@ export class RoomService {
             code,
             dataSpaceId,
             expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+            settings: initialSettings,
             participant: {
                 id: participantId,
                 roomId,
@@ -235,15 +233,17 @@ export class RoomService {
     }
 
     async snapshot(roomId: string, viewer?: RoomParticipant): Promise<RoomSnapshot> {
-        const [session, participants, boundaries] = await Promise.all([
+        const [session, participants, boundaries, roomSettings] = await Promise.all([
             this.loadSession(roomId),
             this.repository.listParticipants(roomId),
             this.repository.listBoundaries(roomId),
+            this.repository.loadSettings(roomId),
         ]);
         return {
             roomId,
             participants,
             boundaryConfigured: viewer ? boundaries.has(viewer.id) : false,
+            settings: roomSettings,
             session: session ? this.project(session, viewer, participants) : null,
         };
     }
@@ -357,6 +357,21 @@ export class RoomService {
             );
             return this.snapshot(roomId);
         }
+        if (command.type === "command.updateRoomSettings") {
+            if (await this.loadSession(roomId)) {
+                throw Object.assign(new Error(MESSAGE_KEYS.ROOM_SETTINGS_LOCKED), {
+                    code: "INVALID_GAME_STATE",
+                });
+            }
+            this.validateRoomSettings(command.payload.settings);
+            await this.repository.saveSettings(
+                roomId,
+                participant.id,
+                command.payload.expectedRevision,
+                command.payload.settings,
+            );
+            return this.snapshot(roomId, participant);
+        }
         if (command.type === "command.setBoundaries") {
             if (await this.loadSession(roomId)) {
                 throw Object.assign(new Error(MESSAGE_KEYS.ROOM_BOUNDARIES_LOCKED), {
@@ -380,31 +395,17 @@ export class RoomService {
                 throw Object.assign(new Error(MESSAGE_KEYS.ROOM_SESSION_ALREADY_STARTED), {
                     code: "INVALID_GAME_STATE",
                 });
-            const selectedProfile = builtInGameProfile(
-                command.payload.profileId ?? BUILT_IN_PROFILE_IDS.FRIENDS,
-            );
-            if (!selectedProfile) {
-                throw Object.assign(new Error(MESSAGE_KEYS.ROOM_UNKNOWN_PROFILE), {
-                    code: "VALIDATION_ERROR",
-                });
-            }
+            const settings = await this.repository.loadSettings(roomId);
+            this.validateRoomSettings(settings);
             if (
-                selectedProfile.requiresAdultConfirmation &&
-                command.payload.adultContentConfirmed !== true
+                profileRequiresAdultConfirmation(settings.profileId) &&
+                !settings.adultContentConfirmed
             ) {
                 throw Object.assign(new Error(MESSAGE_KEYS.ROOM_ADULT_CONFIRMATION_REQUIRED), {
                     code: "NOT_AUTHORIZED",
                 });
             }
-            const profile: GameProfile = validateGameProfile({
-                ...selectedProfile,
-                maximumIntensity: Math.min(
-                    selectedProfile.maximumIntensity,
-                    command.payload.maximumIntensity,
-                ) as GameProfile["maximumIntensity"],
-                randomQuestionRatio: command.payload.randomQuestionRatio,
-                letsTalkMetaInterval: command.payload.letsTalkMetaInterval,
-            });
+            const profile = roomSettingsGameProfile(settings);
             const participants = await this.repository.listParticipants(roomId);
             const players = sessionPlayers(participants);
             if (players.length < 2) {
@@ -416,19 +417,16 @@ export class RoomService {
                 participants,
                 await this.repository.listBoundaries(roomId),
             );
-            const groupHistoryCardIds = await this.repository.selectGroup(
-                roomId,
-                command.payload.groupId ?? null,
-            );
+            const groupHistoryCardIds = await this.repository.selectGroup(roomId, settings.groupId);
             const proposed = new GameSession(
                 {
                     id: randomUUID(),
-                    mode: command.payload.mode,
+                    mode: settings.mode,
                     profile,
                     players,
                     boundariesByPlayer,
                     groupHistoryCardIds,
-                    cardLocale: command.payload.cardLocale,
+                    cardLocale: settings.cardLocale,
                 },
                 this.random,
             );
@@ -522,6 +520,7 @@ export class RoomService {
                 "command.setBoundaries": "SET_BOUNDARIES",
                 "command.setDevicePlayers": "MANAGE_DEVICE_PLAYERS",
                 "command.transferHost": "TRANSFER_HOST",
+                "command.updateRoomSettings": "CHANGE_ROOM_SETTINGS",
                 "command.endSession": "END_SESSION",
                 "command.leaveRoom": "LEAVE_ROOM",
             } as Record<string, string>
@@ -530,6 +529,15 @@ export class RoomService {
             throw Object.assign(new Error(MESSAGE_KEYS.ROOM_NOT_AUTHORIZED), {
                 code: "NOT_AUTHORIZED",
             });
+    }
+    private validateRoomSettings(settings: RoomGameSettings): void {
+        try {
+            roomSettingsGameProfile(settings);
+        } catch {
+            throw Object.assign(new Error(MESSAGE_KEYS.ROOM_UNKNOWN_PROFILE), {
+                code: "VALIDATION_ERROR",
+            });
+        }
     }
     private hashCredential(credential: string): string {
         return createHash("sha256").update(credential).digest("hex");

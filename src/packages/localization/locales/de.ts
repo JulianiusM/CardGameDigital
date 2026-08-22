@@ -36,6 +36,7 @@ export const de = {
         "room.devicePlayersLocked": "Lokale Personen sind nach Spielstart gesperrt.",
         "room.hostOnlyTransfer": "Nur der Host kann die Host-Aufgabe übertragen.",
         "room.boundariesLocked": "Grenzen sind nach Spielstart gesperrt.",
+        "room.settingsLocked": "Raumeinstellungen sind nach Spielstart gesperrt.",
         "room.sessionAlreadyStarted": "Das Spiel wurde bereits gestartet.",
         "room.unknownProfile": "Unbekanntes Spielprofil.",
         "room.adultConfirmationRequired": "Explizite Inhalte erfordern eine Bestätigung.",
@@ -65,6 +66,8 @@ export const de = {
         "profile.couplesSpicy.name": "Paare – Spicy",
         "profile.couplesSpicy.description":
             "Explizite Inhalte für einwilligende Erwachsene; zusätzliche Freigabe erforderlich.",
+        "profile.custom.name": "Custom",
+        "profile.custom.description": "Neutral starten und alle Optionen selbst festlegen.",
     },
     email: {
         signature: "Dein Multiplayer Party Card Game Team",

@@ -3,6 +3,7 @@ import { CouchSessionService } from "../../src/packages/application/couchSession
 import type { CardRepository } from "../../src/packages/application/repositories";
 import { CARD_TYPES, GAME_MODES, SequenceRandomSource } from "../../src/packages/game-core";
 import { card } from "../support/game";
+import { effectiveSettingsFromProfile } from "../../src/packages/application/roomGameSettings";
 
 const cards = [
     card({ id: "q" as never, repeatableInSession: true }),
@@ -24,9 +25,12 @@ const repository: CardRepository = {
 const input = (mode: (typeof GAME_MODES)[keyof typeof GAME_MODES]) => ({
     mode,
     players: [{ name: "Anna" }, { name: "Ben" }],
-    maximumIntensity: 3 as const,
-    randomQuestionRatio: 0.6,
-    letsTalkMetaInterval: 2,
+    configuration: {
+        ...effectiveSettingsFromProfile("PROFILE_FRIENDS"),
+        letsTalkMetaInterval: 2,
+    },
+    profileId: "PROFILE_FRIENDS",
+    adultContentConfirmed: false,
     cardLocale: "en-GB",
 });
 

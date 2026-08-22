@@ -3,7 +3,7 @@ import { defineConfig, devices } from "@playwright/test";
 const port = 3011;
 export default defineConfig({
     testDir: "tests/e2e",
-    testMatch: "couch-mode.spec.ts",
+    testMatch: ["couch-mode.spec.ts", "party-screen.spec.ts"],
     timeout: 30_000,
     use: {
         baseURL: `http://127.0.0.1:${port}`,

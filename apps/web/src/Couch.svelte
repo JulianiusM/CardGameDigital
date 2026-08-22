@@ -11,7 +11,6 @@
     const setup = loadSetup();
     let mode = (gameModes.find((item) => item[0] === setup.mode) ?? gameModes[0])[0];
     let playerNames = setup.groupMembers.length >= 2 ? [...setup.groupMembers] : ["Anna", "Ben"];
-    const intensity = setup.maximumIntensity;
     let session: Snapshot | null = null;
     let busy = false;
     let error = "";
@@ -72,12 +71,18 @@
             couchApi.create({
                 mode,
                 players,
-                maximumIntensity: intensity,
-                randomQuestionRatio: 0.6,
-                letsTalkMetaInterval: 5,
+                configuration: {
+                    enabledQuestionCategoryIds: setup.enabledQuestionCategoryIds,
+                    enabledDareTypeIds: setup.enabledDareTypeIds,
+                    blockedOperationalFlags: setup.blockedOperationalFlags,
+                    maximumIntensity: setup.maximumIntensity,
+                    randomQuestionRatio: setup.randomQuestionRatio,
+                    maximumTypeStreak: setup.maximumTypeStreak,
+                    letsTalkMetaInterval: setup.letsTalkMetaInterval,
+                },
                 profileId: setup.profileId,
                 adultContentConfirmed: setup.adultContentConfirmed,
-                groupId: setup.groupId,
+                groupId: setup.groupChoice === "SELECT" ? setup.groupId : null,
             }),
         );
     }
@@ -126,7 +131,7 @@
                 >
             </div>
             <button
-                class="primary start"
+                class="primary primary-action"
                 disabled={busy || playerNames.filter((name) => name.trim()).length < 2}
                 on:click={createSession}>{messages.common.startGame} <span>→</span></button
             >
@@ -154,7 +159,7 @@
                     >{session.cardsShown} {messages.common.cards}</span
                 >
             </div>
-            {#if session.activePlayer}<p class="active">
+            {#if session.activePlayer}<p class="active-player">
                     <span>{messages.common.nowPlaying}</span>{session.activePlayer.name}
                 </p>{/if}
             {#if exhausted}

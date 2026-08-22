@@ -7,6 +7,7 @@ import { AppDataSource, initDataSource } from "../../src/modules/database/dataSo
 import settings from "../../src/modules/settings";
 import { TypeOrmRealtimeRoomRepository } from "../../src/packages/persistence";
 import { DARE_TYPES, OPERATIONAL_FLAGS, QUESTION_CATEGORIES } from "../../src/packages/game-core";
+import { defaultRoomGameSettings } from "../../src/packages/application/roomGameSettings";
 
 let directory: string;
 let repository: TypeOrmRealtimeRoomRepository;
@@ -33,11 +34,14 @@ beforeAll(async () => {
         code: "SAFE23",
         dataSpaceId: null,
         expiresAt: new Date(Date.now() + 60_000),
+        settings: defaultRoomGameSettings(),
         participant: {
             id: participantId,
             roomId,
             role: "HOST",
             displayName: "Host",
+            devicePlayers: [],
+            connectionStatus: "TEMPORARILY_DISCONNECTED",
             credentialHash: "a".repeat(64),
         },
     });

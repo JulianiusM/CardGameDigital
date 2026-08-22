@@ -34,9 +34,9 @@ describe("Room HTTP API", () => {
         expect(response.body.authenticationAvailable).toBe(false);
     });
 
-    it("serves immutable, editorially reviewable built-in GameProfiles", async () => {
+    it("serves built-in GameProfiles plus an explicit neutral Custom option", async () => {
         const response = await request(app).get("/api/v1/game-profiles").expect(200);
-        expect(response.body.profiles).toHaveLength(5);
+        expect(response.body.profiles).toHaveLength(6);
         expect(response.body.profiles[0]).toMatchObject({
             immutable: true,
             editorialStatus: "PUBLISHED",
@@ -44,6 +44,14 @@ describe("Room HTTP API", () => {
         expect(
             response.body.profiles.find(({ id }: { id: string }) => id === "PROFILE_COUPLES_SPICY"),
         ).toMatchObject({ requiresAdultConfirmation: true });
+        expect(
+            response.body.profiles.find(({ id }: { id: string }) => id === "PROFILE_CUSTOM"),
+        ).toMatchObject({
+            immutable: false,
+            maximumIntensity: 1,
+            enabledQuestionCategoryIds: [],
+            enabledDareTypeIds: [],
+        });
     });
 
     it("creates and joins a Room without persisting reusable credentials", async () => {

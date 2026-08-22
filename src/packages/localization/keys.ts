@@ -33,6 +33,7 @@ export const MESSAGE_KEYS = {
     ROOM_DEVICE_PLAYERS_LOCKED: "room.devicePlayersLocked",
     ROOM_HOST_ONLY_TRANSFER: "room.hostOnlyTransfer",
     ROOM_BOUNDARIES_LOCKED: "room.boundariesLocked",
+    ROOM_SETTINGS_LOCKED: "room.settingsLocked",
     ROOM_SESSION_ALREADY_STARTED: "room.sessionAlreadyStarted",
     ROOM_UNKNOWN_PROFILE: "room.unknownProfile",
     ROOM_ADULT_CONFIRMATION_REQUIRED: "room.adultConfirmationRequired",
@@ -61,6 +62,8 @@ export const MESSAGE_KEYS = {
     PROFILE_COUPLES_DESCRIPTION: "profile.couples.description",
     PROFILE_COUPLES_SPICY_NAME: "profile.couplesSpicy.name",
     PROFILE_COUPLES_SPICY_DESCRIPTION: "profile.couplesSpicy.description",
+    PROFILE_CUSTOM_NAME: "profile.custom.name",
+    PROFILE_CUSTOM_DESCRIPTION: "profile.custom.description",
 } as const;
 
 export type MessageKey = (typeof MESSAGE_KEYS)[keyof typeof MESSAGE_KEYS];

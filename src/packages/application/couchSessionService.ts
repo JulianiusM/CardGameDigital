@@ -1,16 +1,6 @@
 import { MESSAGE_KEYS } from "../localization/keys";
 import { randomUUID } from "node:crypto";
-import {
-    DARE_TYPES,
-    GameSession,
-    type GameMode,
-    type GameProfile,
-    QUESTION_CATEGORIES,
-    CARD_TYPES,
-    builtInGameProfile,
-    validateGameProfile,
-    type DataSpaceId,
-} from "../game-core";
+import { GameSession, type GameMode, CARD_TYPES, type DataSpaceId } from "../game-core";
 import {
     DEFAULT_CARD_TRANSLATION_POLICY,
     type CardLocalizationPolicy,
@@ -18,15 +8,18 @@ import {
     type CouchSessionRepository,
 } from "./repositories";
 import type { RandomSource } from "../game-core";
+import {
+    profileRequiresAdultConfirmation,
+    roomSettingsGameProfile,
+    type EffectiveGameSettings,
+} from "./roomGameSettings";
 
 export type CreateCouchSession = {
     mode: GameMode;
     players: readonly { name: string }[];
-    maximumIntensity: 1 | 2 | 3 | 4 | 5;
-    randomQuestionRatio: number;
-    letsTalkMetaInterval: number;
-    profileId?: string;
-    adultContentConfirmed?: boolean;
+    configuration: EffectiveGameSettings;
+    profileId: string;
+    adultContentConfirmed: boolean;
     cardLocale: string;
     groupId?: string | null;
     dataSpaceId?: DataSpaceId;
@@ -73,26 +66,18 @@ export class CouchSessionService {
     ) {}
 
     async create(input: CreateCouchSession): Promise<CouchSessionSnapshot> {
-        const selected = input.profileId ? builtInGameProfile(input.profileId) : null;
-        if (selected?.requiresAdultConfirmation && !input.adultContentConfirmed) {
+        if (profileRequiresAdultConfirmation(input.profileId) && !input.adultContentConfirmed) {
             throw Object.assign(new Error(MESSAGE_KEYS.GAME_ADULT_CONFIRMATION_REQUIRED), {
                 code: "VALIDATION_ERROR",
             });
         }
-        const gameProfile: GameProfile = validateGameProfile({
-            id: selected?.id ?? "CUSTOM_COUCH",
-            name: selected?.name ?? "CUSTOM_COUCH",
-            enabledQuestionCategoryIds:
-                selected?.enabledQuestionCategoryIds ?? new Set(Object.values(QUESTION_CATEGORIES)),
-            enabledDareTypeIds: selected?.enabledDareTypeIds ?? new Set(Object.values(DARE_TYPES)),
-            blockedOperationalFlags: selected?.blockedOperationalFlags ?? new Set(),
-            maximumIntensity: Math.min(
-                input.maximumIntensity,
-                selected?.maximumIntensity ?? input.maximumIntensity,
-            ) as 1 | 2 | 3 | 4 | 5,
-            randomQuestionRatio: selected?.randomQuestionRatio ?? input.randomQuestionRatio,
-            maximumTypeStreak: 3,
-            letsTalkMetaInterval: input.letsTalkMetaInterval,
+        const gameProfile = roomSettingsGameProfile({
+            mode: input.mode,
+            profileId: input.profileId,
+            groupId: input.groupId ?? null,
+            adultContentConfirmed: input.adultContentConfirmed,
+            cardLocale: input.cardLocale,
+            configuration: input.configuration,
         });
         const groupHistoryCardIds =
             input.groupId && input.dataSpaceId && this.repository

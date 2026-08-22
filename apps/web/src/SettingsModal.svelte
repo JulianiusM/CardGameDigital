@@ -4,6 +4,7 @@
     import { messages } from "./i18n";
     import { presentation } from "./presentation";
     import { loadServerInfo } from "./multiplayer";
+    import ResponsiveTabs from "./ResponsiveTabs.svelte";
 
     export let open = false;
     export let showContent = false;
@@ -22,6 +23,17 @@
     let authenticationAvailable = false;
     $: if (!showGame && tab === "game") tab = "audio";
     $: if (!showAdvanced && tab === "advanced") tab = "audio";
+    $: availableTabs = [
+        ...(showGame ? [{ id: "game", label: messages.settings.game, icon: "♠" }] : []),
+        { id: "audio", label: messages.settings.audio, icon: "♫" },
+        { id: "display", label: messages.settings.display, icon: "✦" },
+        ...(showContent ? [{ id: "content", label: messages.settings.content, icon: "◇" }] : []),
+        ...(onEnd ? [{ id: "session", label: messages.settings.session, icon: "•••" }] : []),
+        { id: "services", label: messages.settings.services, icon: "?" },
+        ...(showAdvanced
+            ? [{ id: "advanced", label: messages.settings.advanced, icon: "•••" }]
+            : []),
+    ];
 
     onMount(async () => {
         try {
@@ -59,32 +71,12 @@
                     on:click={() => (open = false)}>×</button
                 >
             </header>
-            <nav class="modal-tabs" aria-label={messages.settings.title}>
-                {#if showGame}<button class:active={tab === "game"} on:click={() => (tab = "game")}
-                        >♠ {messages.settings.game}</button
-                    >{/if}
-                <button class:active={tab === "audio"} on:click={() => (tab = "audio")}
-                    >♫ {messages.settings.audio}</button
-                >
-                <button class:active={tab === "display"} on:click={() => (tab = "display")}
-                    >✦ {messages.settings.display}</button
-                >
-                {#if showContent}<button
-                        class:active={tab === "content"}
-                        on:click={() => (tab = "content")}>◇ {messages.settings.content}</button
-                    >{/if}
-                {#if onEnd}<button
-                        class:active={tab === "session"}
-                        on:click={() => (tab = "session")}>••• {messages.settings.session}</button
-                    >{/if}
-                <button class:active={tab === "services"} on:click={() => (tab = "services")}
-                    >? {messages.settings.services}</button
-                >
-                {#if showAdvanced}<button
-                        class:active={tab === "advanced"}
-                        on:click={() => (tab = "advanced")}>••• {messages.settings.advanced}</button
-                    >{/if}
-            </nav>
+            <ResponsiveTabs
+                tabs={availableTabs}
+                selected={tab}
+                label={messages.settings.title}
+                onSelect={(value) => (tab = value as typeof tab)}
+            />
             <div class="modal-content">
                 {#if tab === "game"}
                     <slot name="game" />
@@ -166,8 +158,11 @@
                                 />{/if}
                         </div>{/if}
                     <div class="service-actions">
-                        <a class="secondary button-link" href="/play/help"
-                            >{messages.settings.help}</a
+                        <a
+                            class="secondary button-link action-link"
+                            href="/play/help"
+                            target="_blank"
+                            rel="noopener noreferrer">{messages.settings.help}</a
                         >
                         {#if authenticationAvailable}<a
                                 class="secondary button-link"

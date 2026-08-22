@@ -4,12 +4,14 @@ import { z, ZodError } from "zod";
 import { getRoomService } from "../../modules/realtime";
 import { requireCurrentDataSpace } from "./dataSpaceAccess";
 import { detectLocale, translate } from "../../packages/localization/messages";
+import { roomGameSettingsSchema } from "../../packages/protocol";
 
 const router = express.Router();
 const createSchema = z
     .object({
         displayName: z.string().trim().min(1).max(40),
         persistence: z.enum(["EPHEMERAL", "DATASPACE"]).default("EPHEMERAL"),
+        settings: roomGameSettingsSchema.optional(),
     })
     .strict();
 const joinSchema = z
@@ -24,7 +26,11 @@ router.post("/", async (req, res, next) => {
         const dataSpace =
             input.persistence === "DATASPACE" ? await requireCurrentDataSpace(req) : null;
         res.status(201).json(
-            await getRoomService().createRoom(input.displayName, dataSpace?.id ?? null),
+            await getRoomService().createRoom(
+                input.displayName,
+                dataSpace?.id ?? null,
+                input.settings,
+            ),
         );
     } catch (error) {
         respondOrNext(error, req, res, next);

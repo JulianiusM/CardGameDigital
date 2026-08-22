@@ -57,7 +57,7 @@
     </details>
 
     {#if session.activePlayer}
-        <p class="active">
+        <p class="active-player">
             <span>{messages.common.nowPlaying}</span>
             {session.activePlayer.name}
         </p>

@@ -8,12 +8,17 @@ import type { GameSessionRuntimeState, PlayerBoundaries } from "../../src/packag
 import type { CardRepository } from "../../src/packages/application/repositories";
 import { SequenceRandomSource } from "../../src/packages/game-core";
 import { card } from "../support/game";
+import {
+    defaultRoomGameSettings,
+    type VersionedRoomGameSettings,
+} from "../../src/packages/application/roomGameSettings";
 
 class MemoryRooms implements RealtimeRoomRepository {
     rooms = new Map<string, { id: string; code: string }>();
     participants: Array<RoomParticipant & { credentialHash: string }> = [];
     runtimes = new Map<string, GameSessionRuntimeState>();
     boundaries = new Map<string, PlayerBoundaries>();
+    settings = new Map<string, VersionedRoomGameSettings>();
     commits = 0;
     async roomCodeExists(code: string) {
         return [...this.rooms.values()].some((room) => room.code === code);
@@ -21,6 +26,11 @@ class MemoryRooms implements RealtimeRoomRepository {
     async createRoom(input: Parameters<RealtimeRoomRepository["createRoom"]>[0]) {
         this.rooms.set(input.roomId, { id: input.roomId, code: input.code });
         this.participants.push(input.participant);
+        this.settings.set(input.roomId, {
+            ...input.settings,
+            revision: 0,
+            updatedByParticipantId: input.participant.id,
+        });
     }
     async joinRoom(input: Parameters<RealtimeRoomRepository["joinRoom"]>[0]) {
         const room = [...this.rooms.values()].find(
@@ -93,6 +103,26 @@ class MemoryRooms implements RealtimeRoomRepository {
         current.role = "PLAYER";
         next.role = "HOST";
     }
+    async loadSettings(roomId: string) {
+        return this.settings.get(roomId)!;
+    }
+    async saveSettings(
+        roomId: string,
+        participantId: string,
+        expectedRevision: number,
+        settings: ReturnType<typeof defaultRoomGameSettings>,
+    ) {
+        const current = this.settings.get(roomId)!;
+        if (current.revision !== expectedRevision)
+            throw Object.assign(new Error("stale"), { code: "STALE_SESSION_REVISION" });
+        const saved = {
+            ...settings,
+            revision: expectedRevision + 1,
+            updatedByParticipantId: participantId,
+        };
+        this.settings.set(roomId, saved);
+        return saved;
+    }
     async saveBoundaries(participantId: string, boundaries: PlayerBoundaries) {
         this.boundaries.set(participantId, boundaries);
     }
@@ -143,13 +173,7 @@ describe("RoomService", () => {
             service.execute(joined.roomId, host, {
                 type: "command.startSession",
                 revision: null,
-                payload: {
-                    mode: "CLASSIC_TRUTH_OR_DARE",
-                    maximumIntensity: 3,
-                    randomQuestionRatio: 0.5,
-                    letsTalkMetaInterval: 3,
-                    cardLocale: "en-GB",
-                },
+                payload: {},
             }),
         ).rejects.toMatchObject({ code: "CARD_POOL_EXHAUSTED" });
         expect(repository.runtimes.size).toBe(0);
@@ -201,13 +225,7 @@ describe("RoomService", () => {
         const started = await service.execute(joined.roomId, host, {
             type: "command.startSession",
             revision: null,
-            payload: {
-                mode: "CLASSIC_TRUTH_OR_DARE",
-                maximumIntensity: 3,
-                randomQuestionRatio: 0.5,
-                letsTalkMetaInterval: 3,
-                cardLocale: "en-GB",
-            },
+            payload: {},
         });
         const revision = started.session!.revision;
         const results = await Promise.allSettled([
@@ -239,13 +257,7 @@ describe("RoomService", () => {
         await service.execute(joined.roomId, host, {
             type: "command.startSession",
             revision: null,
-            payload: {
-                mode: "CLASSIC_TRUTH_OR_DARE",
-                maximumIntensity: 3,
-                randomQuestionRatio: 0.5,
-                letsTalkMetaInterval: 3,
-                cardLocale: "en-GB",
-            },
+            payload: {},
         });
         expect((await service.snapshot(joined.roomId, host)).session?.availableActions).toContain(
             "CHOOSE_CARD_TYPE",
@@ -285,13 +297,7 @@ describe("RoomService", () => {
         const start = {
             type: "command.startSession" as const,
             revision: null,
-            payload: {
-                mode: "CLASSIC_TRUTH_OR_DARE" as const,
-                maximumIntensity: 3 as const,
-                randomQuestionRatio: 0.5,
-                letsTalkMetaInterval: 3,
-                cardLocale: "en-GB",
-            },
+            payload: {},
         };
         await expect(service.execute(joined.roomId, player, start)).rejects.toMatchObject({
             code: "NOT_AUTHORIZED",
@@ -306,6 +312,48 @@ describe("RoomService", () => {
                 ({ name }) => name,
             ),
         ).toEqual(["Player", "Player's sibling"]);
+    });
+
+    it("persists public Room settings authoritatively and rejects player or stale updates", async () => {
+        const repository = new MemoryRooms();
+        const service = new RoomService(repository, cards, new SequenceRandomSource([0]));
+        const joined = await service.createRoom("Host");
+        const playerJoin = await service.joinRoom(joined.roomCode, "Player", "PLAYER");
+        const host = (await service.authenticate(joined.roomCode, joined.participantCredential))!;
+        const player = (await service.authenticate(
+            joined.roomCode,
+            playerJoin.participantCredential,
+        ))!;
+        const settings = {
+            ...defaultRoomGameSettings(),
+            profileId: "PROFILE_CUSTOM",
+            configuration: {
+                ...defaultRoomGameSettings().configuration,
+                maximumIntensity: 2 as const,
+                enabledDareTypeIds: [],
+            },
+        };
+        const command = {
+            type: "command.updateRoomSettings" as const,
+            revision: null,
+            payload: { expectedRevision: 0, settings },
+        };
+
+        await expect(service.execute(joined.roomId, player, command)).rejects.toMatchObject({
+            code: "NOT_AUTHORIZED",
+        });
+        const updated = await service.execute(joined.roomId, host, command);
+        expect(updated.settings).toMatchObject({
+            revision: 1,
+            profileId: "PROFILE_CUSTOM",
+            updatedByParticipantId: host.id,
+            configuration: { maximumIntensity: 2, enabledDareTypeIds: [] },
+        });
+        expect((await service.snapshot(joined.roomId, player)).settings).toEqual(updated.settings);
+        expect(JSON.stringify(updated.settings)).not.toContain("disabledDareTypeIds");
+        await expect(service.execute(joined.roomId, host, command)).rejects.toMatchObject({
+            code: "STALE_SESSION_REVISION",
+        });
     });
 
     it("stores private boundaries without including their values in snapshots", async () => {
@@ -370,13 +418,7 @@ describe("RoomService", () => {
         const start = {
             type: "command.startSession" as const,
             revision: null,
-            payload: {
-                mode: "CLASSIC_TRUTH_OR_DARE" as const,
-                maximumIntensity: 3 as const,
-                randomQuestionRatio: 0.5,
-                letsTalkMetaInterval: 3,
-                cardLocale: "en-GB",
-            },
+            payload: {},
         };
         await expect(service.execute(joined.roomId, host, start)).rejects.toMatchObject({
             code: "NOT_AUTHORIZED",

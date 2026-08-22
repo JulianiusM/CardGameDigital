@@ -267,7 +267,7 @@ button:not(:disabled):not(.text-action):not(.text-button):not(.icon):active,
 }
 .wizard-progress {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(5, minmax(0, 1fr));
     gap: 0.5rem;
     margin-bottom: 1.5rem;
 }
@@ -278,6 +278,12 @@ button:not(:disabled):not(.text-action):not(.text-button):not(.icon):active,
     font-size: 0.72rem;
     text-transform: uppercase;
     letter-spacing: 0.08em;
+}
+.wizard-progress b {
+    overflow: hidden;
+    font: inherit;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 .wizard-progress i {
     height: 4px;
@@ -471,14 +477,22 @@ button:not(:disabled):not(.text-action):not(.text-button):not(.icon):active,
 .close {
     font-size: 2rem;
 }
-.modal-tabs {
+.responsive-tabs {
     display: flex;
     gap: 0.35rem;
     padding: 0.8rem 1.2rem;
+    max-width: 100%;
     overflow-x: auto;
+    overscroll-behavior-inline: contain;
+    scrollbar-width: none;
+    scroll-snap-type: x proximity;
     border-bottom: 1px solid #ffffff18;
 }
-.modal-tabs button {
+.responsive-tabs::-webkit-scrollbar {
+    display: none;
+}
+.responsive-tabs button {
+    flex: 0 0 auto;
     min-height: 44px;
     padding: 0.65rem 0.9rem;
     color: #c9c0d8;
@@ -486,15 +500,18 @@ button:not(:disabled):not(.text-action):not(.text-button):not(.icon):active,
     border: 0;
     border-radius: 999px;
     background: transparent;
+    box-shadow: none;
+    scroll-snap-align: start;
+    transform: none !important;
 }
-.modal-tabs button.active {
+.responsive-tabs button.active {
     color: #17132d;
     background: var(--scene-c);
     box-shadow: none;
     transform: none;
 }
-.modal-tabs button:hover,
-.modal-tabs button:active {
+.responsive-tabs button:hover,
+.responsive-tabs button:active {
     transform: none;
     box-shadow: none;
 }
@@ -644,11 +661,12 @@ button:not(:disabled):not(.text-action):not(.text-button):not(.icon):active,
         grid-row: auto;
         min-height: 160px;
     }
-    .wizard-progress span {
-        font-size: 0;
+    .wizard-progress {
+        gap: 0.3rem;
     }
-    .wizard-progress span::after {
-        content: attr(aria-label);
+    .wizard-progress span {
+        font-size: 0.62rem;
+        letter-spacing: 0;
     }
     .game-shell {
         padding-top: 3rem;
@@ -714,6 +732,9 @@ button:not(:disabled):not(.text-action):not(.text-button):not(.icon):active,
     align-content: start;
     gap: 1.5rem;
 }
+.account-unavailable {
+    display: none;
+}
 .account-nav {
     display: flex;
     justify-content: space-between;
@@ -725,37 +746,6 @@ button:not(:disabled):not(.text-action):not(.text-button):not(.icon):active,
 .article-panel {
     width: min(100%, 52rem);
     margin: auto;
-}
-.help-topics {
-    display: flex;
-    gap: 0.65rem;
-    margin: 1rem 0 1.5rem;
-    padding-bottom: 0.4rem;
-    overflow-x: auto;
-    scrollbar-width: none;
-    scroll-snap-type: x proximity;
-}
-.help-topics::-webkit-scrollbar {
-    display: none;
-}
-.help-topics button {
-    flex: 0 0 auto;
-    padding: 0.65rem 0.9rem;
-    font-size: 0.85rem;
-    min-height: 44px;
-    color: #d9d1e5;
-    white-space: nowrap;
-    border: 1px solid #ffffff24;
-    border-radius: 12px;
-    background: #ffffff08;
-    scroll-snap-align: start;
-}
-.help-topics button.active {
-    color: #17132d;
-    border-color: var(--scene-c);
-    background: var(--scene-c);
-    box-shadow: none;
-    transform: none;
 }
 .account-panel form {
     display: grid;
@@ -908,6 +898,110 @@ button:not(:disabled):not(.text-action):not(.text-button):not(.icon):active,
 .group-option.selected {
     border-color: var(--scene-c);
 }
+.choice-chip-grid,
+.toggle-chip-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(13rem, 100%), 1fr));
+    gap: 0.65rem;
+    min-width: 0;
+}
+.choice-chip-grid button,
+.toggle-chip-grid button {
+    min-height: 48px;
+    padding: 0.7rem 0.85rem;
+    color: #eee8f5;
+    text-align: left;
+    border: 1px solid #ffffff24;
+    border-radius: 14px;
+    background: #ffffff08;
+    box-shadow: none;
+    transform: none !important;
+}
+.choice-chip-grid button.selected,
+.toggle-chip-grid button.selected {
+    color: #17132d;
+    border-color: var(--scene-c);
+    background: var(--scene-c);
+}
+.choice-chip-grid button strong,
+.choice-chip-grid button small {
+    display: block;
+}
+.choice-chip-grid button small {
+    margin-top: 0.25rem;
+    color: inherit;
+    opacity: 0.76;
+}
+.game-settings-editor {
+    display: grid;
+    gap: 1rem;
+}
+.settings-section-card {
+    min-width: 0;
+    padding: clamp(0.85rem, 3vw, 1.25rem);
+    border: 1px solid #ffffff1f;
+    border-radius: 18px;
+    background: #ffffff08;
+}
+.settings-section-card h3 {
+    margin: 0 0 0.85rem;
+}
+.device-player-editor {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 44px;
+    align-items: end;
+    gap: 0.5rem;
+}
+.device-player-editor label {
+    display: grid;
+    grid-template-columns: minmax(5rem, auto) minmax(0, 1fr);
+    align-items: center;
+    gap: 0.5rem;
+    min-width: 0;
+}
+.device-player-editor .icon {
+    width: 44px;
+    height: 44px;
+    padding: 0;
+}
+.room-settings-summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 1rem;
+    padding: 1rem;
+    border: 1px solid #ffffff1f;
+    border-radius: 16px;
+    background: #ffffff08;
+}
+.room-settings-summary h3,
+.room-settings-summary p {
+    margin: 0 0 0.35rem;
+}
+.lobby-actions {
+    display: flex;
+    justify-content: center;
+    margin-top: 0.75rem;
+}
+.primary-action {
+    min-height: 48px;
+    padding: 0.85rem 1.35rem;
+    font-weight: 750;
+}
+.host-name-field {
+    display: grid;
+    gap: 0.45rem;
+    margin-top: 1rem;
+}
+.host-name-field input {
+    width: 100%;
+    padding: 0.85rem;
+    color: #fff;
+    border: 1px solid #ffffff29;
+    border-radius: 12px;
+    background: #100c22;
+}
 .section-grid {
     display: grid;
     gap: 0.8rem;
@@ -956,5 +1050,16 @@ button:not(:disabled):not(.text-action):not(.text-button):not(.icon):active,
     }
     .article-panel {
         border-radius: 20px;
+    }
+    .responsive-tabs {
+        padding-inline: 0.75rem;
+    }
+    .room-settings-summary {
+        align-items: stretch;
+        flex-direction: column;
+    }
+    .device-player-editor label {
+        grid-template-columns: 1fr;
+        gap: 0.25rem;
     }
 }

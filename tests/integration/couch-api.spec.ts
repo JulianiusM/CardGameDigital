@@ -10,6 +10,13 @@ import settings from "../../src/modules/settings";
 import { normalizeCards } from "../../src/tooling/card-import/normalize";
 import { CouchGameSessionEntity } from "../../src/modules/database/entities/game/CouchGameSessionEntity";
 import { CouchCardAppearanceEntity } from "../../src/modules/database/entities/game/CouchCardAppearanceEntity";
+import { effectiveSettingsFromProfile } from "../../src/packages/application/roomGameSettings";
+
+const canonicalSettings = {
+    profileId: "PROFILE_FRIENDS",
+    adultContentConfirmed: false,
+    configuration: effectiveSettingsFromProfile("PROFILE_FRIENDS"),
+};
 
 let app: import("express").Express;
 let directory: string;
@@ -84,9 +91,7 @@ describe("Couch HTTP application adapter", () => {
                 .send({
                     mode,
                     players: [{ name: "Anna" }, { name: "Ben" }],
-                    maximumIntensity: 3,
-                    randomQuestionRatio: 0.6,
-                    letsTalkMetaInterval: 2,
+                    ...canonicalSettings,
                 })
                 .expect(201);
             const command = mode === GAME_MODES.CLASSIC ? "choose" : "start";
@@ -117,9 +122,7 @@ describe("Couch HTTP application adapter", () => {
             .send({
                 mode: GAME_MODES.CLASSIC,
                 players: [{ name: "Anna" }],
-                maximumIntensity: 3,
-                randomQuestionRatio: 0.6,
-                letsTalkMetaInterval: 2,
+                ...canonicalSettings,
             })
             .expect(400);
         const created = await request(app)
@@ -128,9 +131,7 @@ describe("Couch HTTP application adapter", () => {
             .send({
                 mode: GAME_MODES.CLASSIC,
                 players: [{ name: "Anna" }, { name: "Ben" }],
-                maximumIntensity: 3,
-                randomQuestionRatio: 0.6,
-                letsTalkMetaInterval: 2,
+                ...canonicalSettings,
             })
             .expect(201);
         await request(app)
@@ -147,9 +148,7 @@ describe("Couch HTTP application adapter", () => {
             .send({
                 mode: GAME_MODES.CLASSIC,
                 players: [{ name: "Anna" }, { name: "Ben" }],
-                maximumIntensity: 3,
-                randomQuestionRatio: 0.6,
-                letsTalkMetaInterval: 2,
+                ...canonicalSettings,
             })
             .expect(201);
         const shown = await request(app)
@@ -181,9 +180,7 @@ describe("Couch HTTP application adapter", () => {
         const payload = {
             mode: GAME_MODES.NEVER_HAVE_I_EVER,
             players: [{ name: "Anna" }, { name: "Ben" }],
-            maximumIntensity: 3,
-            randomQuestionRatio: 0.6,
-            letsTalkMetaInterval: 2,
+            ...canonicalSettings,
             groupId: group.body.id,
         };
         const first = await request(app)

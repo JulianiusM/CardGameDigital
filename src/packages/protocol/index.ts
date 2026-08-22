@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { DARE_TYPES, OPERATIONAL_FLAGS, QUESTION_CATEGORIES } from "../game-core";
 
-export const PROTOCOL_VERSION = 1 as const;
+export const PROTOCOL_VERSION = 2 as const;
 export const protocolErrorCodeSchema = z.enum([
     "VALIDATION_ERROR",
     "AUTHENTICATION_ERROR",
@@ -56,6 +56,40 @@ export const clientHelloEnvelopeSchema = envelopeSchema.extend({
 });
 export type Envelope = z.infer<typeof envelopeSchema>;
 
+export const effectiveGameSettingsSchema = z
+    .object({
+        enabledQuestionCategoryIds: z.array(z.enum(QUESTION_CATEGORIES)),
+        enabledDareTypeIds: z.array(z.enum(DARE_TYPES)),
+        blockedOperationalFlags: z.array(z.enum(OPERATIONAL_FLAGS)),
+        maximumIntensity: z.union([
+            z.literal(1),
+            z.literal(2),
+            z.literal(3),
+            z.literal(4),
+            z.literal(5),
+        ]),
+        randomQuestionRatio: z.number().min(0).max(1),
+        maximumTypeStreak: z.number().int().min(1).max(10),
+        letsTalkMetaInterval: z.number().int().min(1).max(100),
+    })
+    .strict();
+export const roomGameSettingsSchema = z
+    .object({
+        mode: z.enum([
+            "CLASSIC_TRUTH_OR_DARE",
+            "RANDOM_TRUTH_OR_DARE",
+            "NEVER_HAVE_I_EVER",
+            "LETS_TALK",
+        ]),
+        profileId: z.string().min(1).max(80),
+        groupId: z.string().uuid().nullable(),
+        adultContentConfirmed: z.boolean(),
+        cardLocale: z.string().min(2).max(35),
+        configuration: effectiveGameSettingsSchema,
+    })
+    .strict();
+export type RoomGameSettingsPayload = z.infer<typeof roomGameSettingsSchema>;
+
 const emptyPayloadSchema = z.object({}).strict();
 const revisionedCommand = <T extends z.ZodType>(type: string, payload: T) =>
     envelopeSchema.extend({
@@ -66,29 +100,7 @@ const revisionedCommand = <T extends z.ZodType>(type: string, payload: T) =>
 export const startSessionCommandSchema = envelopeSchema.extend({
     type: z.literal("command.startSession"),
     revision: z.null(),
-    payload: z
-        .object({
-            mode: z.enum([
-                "CLASSIC_TRUTH_OR_DARE",
-                "RANDOM_TRUTH_OR_DARE",
-                "NEVER_HAVE_I_EVER",
-                "LETS_TALK",
-            ]),
-            profileId: z.string().min(1).optional(),
-            groupId: z.string().uuid().nullable().optional(),
-            adultContentConfirmed: z.boolean().optional(),
-            maximumIntensity: z.union([
-                z.literal(1),
-                z.literal(2),
-                z.literal(3),
-                z.literal(4),
-                z.literal(5),
-            ]),
-            randomQuestionRatio: z.number().min(0).max(1),
-            letsTalkMetaInterval: z.number().int().positive(),
-            cardLocale: z.string().min(2).max(35),
-        })
-        .strict(),
+    payload: z.object({}).strict(),
 });
 export const roomCommandEnvelopeSchema = z.union([
     startSessionCommandSchema,
@@ -104,6 +116,16 @@ export const roomCommandEnvelopeSchema = z.union([
         z.object({ vote: z.enum(["YES", "NO"]), playerId: z.string().uuid().optional() }).strict(),
     ),
     revisionedCommand("command.vetoCard", emptyPayloadSchema),
+    envelopeSchema.extend({
+        type: z.literal("command.updateRoomSettings"),
+        revision: z.null(),
+        payload: z
+            .object({
+                expectedRevision: z.number().int().nonnegative(),
+                settings: roomGameSettingsSchema,
+            })
+            .strict(),
+    }),
     envelopeSchema.extend({
         type: z.literal("command.setBoundaries"),
         revision: z.null(),

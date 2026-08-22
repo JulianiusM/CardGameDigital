@@ -33,7 +33,7 @@ router.get("/v1/server-info", (_req, res) =>
         version: 1,
         deploymentMode: settings.value.deploymentMode,
         authenticationAvailable: settings.value.authMode === "account",
-        protocolVersions: [1],
+        protocolVersions: [2],
     }),
 );
 router.use("/v1/couch", couchRouter);

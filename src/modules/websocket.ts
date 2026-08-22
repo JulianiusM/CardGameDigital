@@ -113,6 +113,15 @@ export function attachWebSocketServer(
             try {
                 await lifecycleReady;
                 const value: unknown = JSON.parse(raw.toString());
+                const receivedProtocol =
+                    typeof value === "object" && value !== null && "protocol" in value
+                        ? (value as { protocol?: unknown }).protocol
+                        : undefined;
+                if (typeof receivedProtocol === "number" && receivedProtocol !== PROTOCOL_VERSION)
+                    throw coded(
+                        "PROTOCOL_VERSION_UNSUPPORTED",
+                        MESSAGE_KEYS.REALTIME_PROTOCOL_UNSUPPORTED,
+                    );
                 if (Date.now() - commandWindowStarted > 10_000) {
                     commandWindowStarted = Date.now();
                     commandsInWindow = 0;

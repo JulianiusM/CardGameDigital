@@ -2,6 +2,7 @@
     import { onMount } from "svelte";
     import { locale, messages } from "./i18n";
     import ArticleLayout from "./ArticleLayout.svelte";
+    import ResponsiveTabs from "./ResponsiveTabs.svelte";
     let title = messages.help.title;
     let html = "";
     let error = "";
@@ -46,18 +47,12 @@
 <ArticleLayout {title}>
     <div slot="navigation">
         <nav class="article-back"><a href="/play/">{messages.help.backToGame}</a></nav>
-        <div class="help-topics" aria-label={messages.help.topics} role="tablist">
-            {#each documents as document}
-                <button
-                    class:active={currentSlug === document.slug}
-                    role="tab"
-                    aria-selected={currentSlug === document.slug}
-                    on:click={() => selectDocument(document.slug)}
-                >
-                    {document.title}
-                </button>
-            {/each}
-        </div>
+        <ResponsiveTabs
+            tabs={documents.map((document) => ({ id: document.slug, label: document.title }))}
+            selected={currentSlug}
+            label={messages.help.topics}
+            onSelect={selectDocument}
+        />
     </div>
     {#if error}<p class="error">{error}</p>{:else}<div class="help-content">{@html html}</div>{/if}
 </ArticleLayout>

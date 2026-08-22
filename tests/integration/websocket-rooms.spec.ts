@@ -14,18 +14,30 @@ import type {
 } from "../../src/packages/application/realtimeRooms";
 import type { CardRepository } from "../../src/packages/application/repositories";
 import { card } from "../support/game";
+import {
+    defaultRoomGameSettings,
+    type RoomGameSettings,
+    type VersionedRoomGameSettings,
+} from "../../src/packages/application/roomGameSettings";
+import { PROTOCOL_VERSION } from "../../src/packages/protocol";
 
 class Repo implements RealtimeRoomRepository {
     room!: { id: string; code: string };
     participants: Array<RoomParticipant & { credentialHash: string }> = [];
     runtime: GameSessionRuntimeState | null = null;
     boundaries = new Map<string, PlayerBoundaries>();
+    settings!: VersionedRoomGameSettings;
     async roomCodeExists() {
         return false;
     }
     async createRoom(i: Parameters<RealtimeRoomRepository["createRoom"]>[0]) {
         this.room = { id: i.roomId, code: i.code };
         this.participants.push(i.participant);
+        this.settings = {
+            ...i.settings,
+            revision: 0,
+            updatedByParticipantId: i.participant.id,
+        };
     }
     async joinRoom(i: Parameters<RealtimeRoomRepository["joinRoom"]>[0]) {
         this.participants.push({ ...i, roomId: this.room.id });
@@ -93,6 +105,24 @@ class Repo implements RealtimeRoomRepository {
         current.role = "PLAYER";
         next.role = "HOST";
     }
+    async loadSettings() {
+        return this.settings;
+    }
+    async saveSettings(
+        _roomId: string,
+        participantId: string,
+        expectedRevision: number,
+        settings: RoomGameSettings,
+    ) {
+        if (this.settings.revision !== expectedRevision)
+            throw Object.assign(new Error("stale"), { code: "STALE_SESSION_REVISION" });
+        this.settings = {
+            ...settings,
+            revision: expectedRevision + 1,
+            updatedByParticipantId: participantId,
+        };
+        return this.settings;
+    }
     async saveBoundaries(participantId: string, boundaries: PlayerBoundaries) {
         this.boundaries.set(participantId, boundaries);
     }
@@ -126,6 +156,39 @@ let server: http.Server | undefined;
 afterEach(() => new Promise<void>((resolve) => server?.close(() => resolve()) ?? resolve()));
 
 describe("Room WebSocket protocol", () => {
+    it("rejects retired protocol versions with the stable negotiation error", async () => {
+        const service = new RoomService(new Repo(), cards, new SequenceRandomSource([0]));
+        server = http.createServer();
+        const wss = attachWebSocketServer(server, service);
+        await new Promise<void>((resolve) => server!.listen(0, "127.0.0.1", resolve));
+        const port = (server.address() as { port: number }).port;
+        const socket = new WebSocket(`ws://127.0.0.1:${port}/ws`);
+        const messages: any[] = [];
+        socket.on("message", (raw) => messages.push(JSON.parse(raw.toString())));
+        await new Promise<void>((resolve, reject) => {
+            socket.once("open", resolve);
+            socket.once("error", reject);
+        });
+        socket.send(
+            JSON.stringify({
+                protocol: 1,
+                type: "client.hello",
+                requestId: "retired",
+                revision: null,
+                payload: {},
+            }),
+        );
+        await waitFor(() =>
+            messages.some(
+                (message) =>
+                    message.type === "error" &&
+                    message.payload.code === "PROTOCOL_VERSION_UNSUPPORTED",
+            ),
+        );
+        socket.terminate();
+        await new Promise<void>((resolve) => wss.close(() => resolve()));
+    });
+
     it("authenticates host, two players, and display and resynchronizes snapshots", async () => {
         const service = new RoomService(new Repo(), cards, new SequenceRandomSource([0]));
         const host = await service.createRoom("Host"),
@@ -154,17 +217,11 @@ describe("Room WebSocket protocol", () => {
         ]);
         clients[0].socket.send(
             JSON.stringify({
-                protocol: 1,
+                protocol: PROTOCOL_VERSION,
                 type: "command.startSession",
                 requestId: "start",
                 revision: null,
-                payload: {
-                    mode: "CLASSIC_TRUTH_OR_DARE",
-                    maximumIntensity: 3,
-                    randomQuestionRatio: 0.5,
-                    letsTalkMetaInterval: 3,
-                    cardLocale: "en-GB",
-                },
+                payload: {},
             }),
         );
         await waitFor(
@@ -188,7 +245,7 @@ describe("Room WebSocket protocol", () => {
         expect(displayView).not.toHaveProperty("votedPlayerIds");
         clients[3].socket.send(
             JSON.stringify({
-                protocol: 1,
+                protocol: PROTOCOL_VERSION,
                 type: "room.snapshot.request",
                 requestId: "sync",
                 revision: null,
@@ -296,7 +353,7 @@ describe("Room WebSocket protocol", () => {
         );
         oldHost.socket.send(
             JSON.stringify({
-                protocol: 1,
+                protocol: PROTOCOL_VERSION,
                 type: "command.transferHost",
                 requestId: "transfer",
                 revision: null,
@@ -316,17 +373,11 @@ describe("Room WebSocket protocol", () => {
         );
         const start = (requestId: string) =>
             JSON.stringify({
-                protocol: 1,
+                protocol: PROTOCOL_VERSION,
                 type: "command.startSession",
                 requestId,
                 revision: null,
-                payload: {
-                    mode: "CLASSIC_TRUTH_OR_DARE",
-                    maximumIntensity: 3,
-                    randomQuestionRatio: 0.5,
-                    letsTalkMetaInterval: 3,
-                    cardLocale: "en-GB",
-                },
+                payload: {},
             });
         oldHost.socket.send(start("old-host-start"));
         await waitFor(() =>
@@ -349,6 +400,167 @@ describe("Room WebSocket protocol", () => {
         await new Promise<void>((resolve) => wss.close(() => resolve()));
     });
 
+    it("broadcasts authoritative settings and preserves transferred Host identity on reload", async () => {
+        const repository = new Repo();
+        const service = new RoomService(repository, cards, new SequenceRandomSource([0]));
+        const host = await service.createRoom("Original host");
+        const player = await service.joinRoom(host.roomCode, "Transferred host", "PLAYER");
+        server = http.createServer();
+        const wss = attachWebSocketServer(server, service, { hostDisconnectGraceMs: 500 });
+        await new Promise<void>((resolve) => server!.listen(0, "127.0.0.1", resolve));
+        const port = (server.address() as { port: number }).port;
+        const oldHost = await hello(port, host.roomCode, host.participantCredential, host.role);
+        const futureHost = await hello(
+            port,
+            player.roomCode,
+            player.participantCredential,
+            player.role,
+        );
+        const settings = {
+            ...defaultRoomGameSettings(),
+            profileId: "PROFILE_CUSTOM",
+            configuration: {
+                ...defaultRoomGameSettings().configuration,
+                maximumIntensity: 2,
+                enabledDareTypeIds: [],
+            },
+        };
+        oldHost.socket.send(
+            JSON.stringify({
+                protocol: PROTOCOL_VERSION,
+                type: "command.updateRoomSettings",
+                requestId: "settings",
+                revision: null,
+                payload: { expectedRevision: 0, settings },
+            }),
+        );
+        await waitFor(() =>
+            [oldHost, futureHost].every((client) =>
+                client.messages.some(
+                    (message) =>
+                        message.type === "room.snapshot" &&
+                        message.payload.settings.revision === 1 &&
+                        message.payload.settings.configuration.maximumIntensity === 2,
+                ),
+            ),
+        );
+        expect(
+            JSON.stringify(
+                futureHost.messages.findLast((message) => message.type === "room.snapshot").payload
+                    .settings,
+            ),
+        ).not.toContain("disabledDareTypeIds");
+
+        oldHost.socket.send(
+            JSON.stringify({
+                protocol: PROTOCOL_VERSION,
+                type: "command.transferHost",
+                requestId: "transfer-settings-host",
+                revision: null,
+                payload: { participantId: player.participantId },
+            }),
+        );
+        await waitFor(() =>
+            futureHost.messages.some(
+                (message) => message.type === "room.roleChanged" && message.payload.role === "HOST",
+            ),
+        );
+        futureHost.socket.terminate();
+        const reloadedHost = await hello(
+            port,
+            player.roomCode,
+            player.participantCredential,
+            "PLAYER",
+        );
+        expect(reloadedHost.messages[0].payload).toMatchObject({
+            participantId: player.participantId,
+            role: "HOST",
+        });
+        expect(repository.participants).toHaveLength(2);
+
+        const changedAgain = {
+            ...settings,
+            configuration: { ...settings.configuration, maximumIntensity: 4 },
+        };
+        oldHost.socket.send(
+            JSON.stringify({
+                protocol: PROTOCOL_VERSION,
+                type: "command.updateRoomSettings",
+                requestId: "old-host-settings",
+                revision: null,
+                payload: { expectedRevision: 1, settings: changedAgain },
+            }),
+        );
+        await waitFor(() =>
+            oldHost.messages.some(
+                (message) =>
+                    message.requestId === "old-host-settings" &&
+                    message.type === "error" &&
+                    message.payload.code === "NOT_AUTHORIZED",
+            ),
+        );
+        reloadedHost.socket.send(
+            JSON.stringify({
+                protocol: PROTOCOL_VERSION,
+                type: "command.updateRoomSettings",
+                requestId: "new-host-settings",
+                revision: null,
+                payload: { expectedRevision: 1, settings: changedAgain },
+            }),
+        );
+        await waitFor(() =>
+            oldHost.messages.some(
+                (message) =>
+                    message.type === "room.snapshot" && message.payload.settings.revision === 2,
+            ),
+        );
+        oldHost.socket.terminate();
+        reloadedHost.socket.terminate();
+        await new Promise<void>((resolve) => wss.close(() => resolve()));
+    });
+
+    it("does not grant Host to a joiner while the Host is inside reconnect grace", async () => {
+        const repository = new Repo();
+        const service = new RoomService(repository, cards, new SequenceRandomSource([0]));
+        const host = await service.createRoom("Host");
+        server = http.createServer();
+        const wss = attachWebSocketServer(server, service, { hostDisconnectGraceMs: 500 });
+        await new Promise<void>((resolve) => server!.listen(0, "127.0.0.1", resolve));
+        const port = (server.address() as { port: number }).port;
+        const hostClient = await hello(port, host.roomCode, host.participantCredential, host.role);
+        hostClient.socket.terminate();
+        await waitFor(
+            () =>
+                repository.participants.find(({ id }) => id === host.participantId)
+                    ?.connectionStatus === "TEMPORARILY_DISCONNECTED",
+        );
+        const joiner = await service.joinRoom(host.roomCode, "Joiner", "PLAYER");
+        const joinerClient = await hello(
+            port,
+            joiner.roomCode,
+            joiner.participantCredential,
+            joiner.role,
+        );
+        expect(joinerClient.messages[0].payload.role).toBe("PLAYER");
+        expect(repository.participants.find(({ id }) => id === host.participantId)?.role).toBe(
+            "HOST",
+        );
+        const reloadedHost = await hello(
+            port,
+            host.roomCode,
+            host.participantCredential,
+            host.role,
+        );
+        expect(reloadedHost.messages[0].payload).toMatchObject({
+            participantId: host.participantId,
+            role: "HOST",
+        });
+        expect(repository.participants).toHaveLength(2);
+        joinerClient.socket.terminate();
+        reloadedHost.socket.terminate();
+        await new Promise<void>((resolve) => wss.close(() => resolve()));
+    });
+
     it("removes an intentional leaver and rejects the cleared reconnect identity", async () => {
         const repository = new Repo();
         const service = new RoomService(repository, cards, new SequenceRandomSource([0]));
@@ -367,7 +579,7 @@ describe("Room WebSocket protocol", () => {
         );
         playerClient.socket.send(
             JSON.stringify({
-                protocol: 1,
+                protocol: PROTOCOL_VERSION,
                 type: "command.leaveRoom",
                 requestId: "leave",
                 revision: null,
@@ -403,12 +615,12 @@ async function hello(port: number, roomCode: string, credential: string, role: s
     });
     socket.send(
         JSON.stringify({
-            protocol: 1,
+            protocol: PROTOCOL_VERSION,
             type: "client.hello",
             requestId: "hello",
             revision: null,
             payload: {
-                supportedProtocolVersions: [1],
+                supportedProtocolVersions: [PROTOCOL_VERSION],
                 applicationVersion: "test",
                 role,
                 capabilities: [],

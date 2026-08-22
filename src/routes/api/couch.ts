@@ -16,6 +16,7 @@ import {
     translateError,
 } from "../../packages/localization/messages";
 import { requireCurrentDataSpace } from "./dataSpaceAccess";
+import { effectiveGameSettingsSchema } from "../../packages/protocol";
 
 const router = express.Router();
 const service = new CouchSessionService(
@@ -41,13 +42,9 @@ const createSchema = z
             .array(z.object({ name: z.string().trim().min(1).max(40) }).strict())
             .min(2)
             .max(20),
-        maximumIntensity: z
-            .union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5)])
-            .default(3),
-        randomQuestionRatio: z.number().min(0).max(1).default(0.6),
-        letsTalkMetaInterval: z.number().int().min(1).max(50).default(5),
-        profileId: z.string().min(1).optional(),
-        adultContentConfirmed: z.boolean().optional(),
+        configuration: effectiveGameSettingsSchema,
+        profileId: z.string().min(1),
+        adultContentConfirmed: z.boolean(),
         groupId: z.string().uuid().nullable().optional(),
     })
     .strict();

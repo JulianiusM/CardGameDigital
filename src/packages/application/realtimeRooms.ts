@@ -1,4 +1,5 @@
 import type { CardId, GameSessionRuntimeState, PlayerBoundaries } from "../game-core";
+import type { RoomGameSettings, VersionedRoomGameSettings } from "./roomGameSettings";
 
 export type RoomRole = "HOST" | "PLAYER" | "DISPLAY";
 export type ParticipantConnectionStatus = "CONNECTED" | "TEMPORARILY_DISCONNECTED" | "LEFT";
@@ -25,6 +26,7 @@ export interface RealtimeRoomRepository {
         code: string;
         dataSpaceId: string | null;
         expiresAt: Date;
+        settings: RoomGameSettings;
         participant: RoomParticipant & { credentialHash: string };
     }): Promise<void>;
     joinRoom(
@@ -37,6 +39,13 @@ export interface RealtimeRoomRepository {
     resetConnectedParticipants(): Promise<readonly RoomParticipant[]>;
     saveDevicePlayers(participantId: string, players: readonly DevicePlayer[]): Promise<void>;
     transferHost(roomId: string, currentHostId: string, nextHostId: string): Promise<void>;
+    loadSettings(roomId: string): Promise<VersionedRoomGameSettings>;
+    saveSettings(
+        roomId: string,
+        participantId: string,
+        expectedRevision: number,
+        settings: RoomGameSettings,
+    ): Promise<VersionedRoomGameSettings>;
     saveBoundaries(participantId: string, boundaries: PlayerBoundaries): Promise<void>;
     listBoundaries(roomId: string): Promise<ReadonlyMap<string, PlayerBoundaries>>;
     selectGroup(roomId: string, groupId: string | null): Promise<ReadonlySet<CardId>>;

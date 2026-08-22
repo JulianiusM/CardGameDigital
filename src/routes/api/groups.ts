@@ -5,6 +5,7 @@ import { AppDataSource } from "../../modules/database/dataSource";
 import { GroupEntity } from "../../modules/database/entities/game/GroupEntity";
 import { requireCurrentDataSpace } from "./dataSpaceAccess";
 import { builtInGameProfile } from "../../packages/game-core";
+import { CUSTOM_GAME_PROFILE_ID } from "../../packages/application/roomGameSettings";
 
 const router = express.Router();
 const inputSchema = z
@@ -14,7 +15,7 @@ const inputSchema = z
         preferredProfileId: z
             .string()
             .min(1)
-            .refine((id) => Boolean(builtInGameProfile(id)))
+            .refine((id) => id === CUSTOM_GAME_PROFILE_ID || Boolean(builtInGameProfile(id)))
             .nullable()
             .optional(),
     })

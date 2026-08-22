@@ -41,11 +41,32 @@ Help HTML is generated from trusted bundled Markdown; it is not user-authored co
 ### `POST /rooms`
 
 ```json
-{ "displayName": "Alex", "persistence": "EPHEMERAL" }
+{
+    "displayName": "Alex",
+    "persistence": "EPHEMERAL",
+    "settings": {
+        "mode": "CLASSIC_TRUTH_OR_DARE",
+        "profileId": "PROFILE_FRIENDS",
+        "groupId": null,
+        "adultContentConfirmed": false,
+        "cardLocale": "de-DE",
+        "configuration": {
+            "enabledQuestionCategoryIds": ["CAT_EVERYDAY"],
+            "enabledDareTypeIds": ["DARE_SILLY"],
+            "blockedOperationalFlags": [],
+            "maximumIntensity": 3,
+            "randomQuestionRatio": 0.6,
+            "maximumTypeStreak": 3,
+            "letsTalkMetaInterval": 5
+        }
+    }
+}
 ```
 
 `persistence` is `EPHEMERAL` or `DATASPACE`. Ephemeral Rooms allow anonymous use.
 DataSpace Rooms require an authenticated session and owned current DataSpace.
+`settings` is optional only to support callers that deliberately accept the documented
+server default; when supplied, its Group must belong to the selected DataSpace.
 Returns `201` with `roomId`, six-character `roomCode`, `participantId`,
 `participantCredential`, and role `HOST`.
 
@@ -67,16 +88,16 @@ and the final ended state are persisted; an optional owned `groupId` applies dur
 Group history. The request language selects the card locale. Endpoints use a session
 UUID and optimistic `revision`.
 
-| Method | Path                          | Body                                                                                   |
-| ------ | ----------------------------- | -------------------------------------------------------------------------------------- |
-| POST   | `/couch/sessions`             | Mode, 2–20 player names, intensity, ratios, optional profile/group/adult confirmation. |
-| GET    | `/couch/sessions/:id`         | none                                                                                   |
-| POST   | `/couch/sessions/:id/start`   | `{revision}`                                                                           |
-| POST   | `/couch/sessions/:id/choose`  | `{revision,cardType}`                                                                  |
-| POST   | `/couch/sessions/:id/skip`    | `{revision}`                                                                           |
-| POST   | `/couch/sessions/:id/advance` | `{revision}`                                                                           |
-| POST   | `/couch/sessions/:id/vote`    | `{revision,playerId,vote}`                                                             |
-| POST   | `/couch/sessions/:id/end`     | `{revision}`                                                                           |
+| Method | Path                          | Body                                                                                |
+| ------ | ----------------------------- | ----------------------------------------------------------------------------------- |
+| POST   | `/couch/sessions`             | Mode, 2–20 player names, canonical configuration, profile/group/adult confirmation. |
+| GET    | `/couch/sessions/:id`         | none                                                                                |
+| POST   | `/couch/sessions/:id/start`   | `{revision}`                                                                        |
+| POST   | `/couch/sessions/:id/choose`  | `{revision,cardType}`                                                               |
+| POST   | `/couch/sessions/:id/skip`    | `{revision}`                                                                        |
+| POST   | `/couch/sessions/:id/advance` | `{revision}`                                                                        |
+| POST   | `/couch/sessions/:id/vote`    | `{revision,playerId,vote}`                                                          |
+| POST   | `/couch/sessions/:id/end`     | `{revision}`                                                                        |
 
 Conflicts return `409` for stale revisions, invalid state, or an exhausted localized
 card pool. Missing sessions return `404`.

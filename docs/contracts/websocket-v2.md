@@ -1,0 +1,60 @@
+# WebSocket protocol v2 contract
+
+## Connection and identity
+
+Connect to `/ws`. Every strict envelope contains `protocol: 2`, `type`, `requestId`,
+`revision`, and `payload`. The first message is `client.hello` with
+`supportedProtocolVersions: [2]`, Room code, and the participant reconnect credential.
+The server authenticates the credential and ignores claimed role/capability authority.
+It returns `server.hello` with the authoritative participant ID and role, followed by a
+viewer-specific `room.snapshot` and presence.
+
+Participant credentials are bearer secrets. They are never valid in URLs or QR codes.
+A reload reconnects the same RoomParticipant; it does not create another participant.
+
+## Commands
+
+| Type                         | Revision        | Payload/meaning                                                                |
+| ---------------------------- | --------------- | ------------------------------------------------------------------------------ |
+| `room.snapshot.request`      | current or null | `{}`                                                                           |
+| `command.updateRoomSettings` | `null`          | `{expectedRevision,settings}`; Host-only, pre-session optimistic update.       |
+| `command.startSession`       | `null`          | `{}`; Host-only. Uses persisted authoritative Room settings.                   |
+| `command.startTurn`          | current         | `{}`                                                                           |
+| `command.chooseCardType`     | current         | `{cardType:"QUESTION"                                                          | "DARE"}`                                                      |
+| `command.skipCard`           | current         | `{}`                                                                           |
+| `command.vetoCard`           | current         | `{}`                                                                           |
+| `command.advanceSession`     | current         | `{}`                                                                           |
+| `command.submitVote`         | current         | `{vote:"YES"                                                                   | "NO",playerId?}` for a player controlled by this participant. |
+| `command.setBoundaries`      | `null`          | Private category, DareType, and operational-flag exclusions; pre-session only. |
+| `command.setDevicePlayers`   | `null`          | `{names:[...]}`; pre-session only.                                             |
+| `command.transferHost`       | current or null | `{participantId}`; current Host only.                                          |
+| `command.endSession`         | current         | `{}`; Host only.                                                               |
+| `command.leaveRoom`          | current or null | `{}`; authoritative leave and reconnect-credential invalidation.               |
+
+Room settings use the canonical engine configuration: mode, profile ID, optional Group,
+adult confirmation, card locale, enabled Question Categories, enabled DareTypes, blocked
+operational flags, maximum intensity, random question ratio, maximum type streak, and
+Let's Talk meta interval. Room snapshots expose versioned public settings to every
+participant. They never expose private participant boundaries.
+
+## Synchronization and lifecycle
+
+Every successful Room command commits before the server broadcasts viewer-specific
+snapshots. Settings use their own optimistic `expectedRevision`; game commands use the
+Session revision. Stable failures include `STALE_SESSION_REVISION`, `NOT_AUTHORIZED`,
+`INVALID_GAME_STATE`, and `CARD_POOL_EXHAUSTED`.
+
+Socket loss changes the participant to `TEMPORARILY_DISCONNECTED`. Reauthentication
+during the grace period restores `CONNECTED` and preserves role. After expiry the
+participant becomes `LEFT`; a disconnected Host may then be reassigned to an eligible
+connected Player. Explicit Host transfer updates server authorization immediately and
+broadcasts `room.roleChanged` plus fresh snapshots.
+
+Server messages are `server.hello`, `room.snapshot`, `room.presence`,
+`room.roleChanged`, and `error`. Error `code` is stable; localized `message` is not a
+programmatic contract. Clients must ignore additive response fields.
+
+## Compatibility impact
+
+Protocol v2 replaces v1 because Session start no longer accepts client-authoritative
+settings. A v1 client is rejected with `PROTOCOL_VERSION_UNSUPPORTED` and must upgrade.

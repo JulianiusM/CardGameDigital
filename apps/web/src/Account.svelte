@@ -2,6 +2,7 @@
     import { onMount } from "svelte";
     import { messages } from "./i18n";
     import { accountApi, type AccountConfiguration, type AccountSnapshot } from "./accountApi";
+    import { navigate } from "./router";
 
     type Screen = "login" | "register" | "forgot" | "reset" | "dashboard";
     let screen: Screen = "login";
@@ -22,7 +23,7 @@
     onMount(async () => {
         configuration = await accountApi.configuration();
         if (!configuration.localLoginEnabled && !configuration.oidcEnabled) {
-            location.replace("/play/");
+            navigate("/play/", { replace: true, force: true });
             return;
         }
         const activation = query.get("activate");
@@ -85,7 +86,7 @@
     }
 </script>
 
-<main class="account-shell">
+<main class:account-unavailable={!configuration} class="account-shell">
     <nav class="account-nav">
         <a href="/play/">{messages.account.backToGame}</a>
     </nav>

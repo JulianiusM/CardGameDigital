@@ -202,13 +202,13 @@ h2 {
     color: #d8d1e2;
     font-size: 0.84rem;
 }
-.active {
+.active-player {
     text-align: center;
     font-size: clamp(1.7rem, 5vw, 3.3rem);
     font-weight: 800;
     margin: 0.5rem;
 }
-.active span {
+.active-player span {
     display: block;
     font-size: 0.68rem;
     letter-spacing: 0.25em;

@@ -1,3 +1,5 @@
+import { locale, messages } from "./i18n";
+
 export type Role = "HOST" | "PLAYER" | "DISPLAY";
 export type Participant = {
     id: string;
@@ -35,7 +37,29 @@ export type RoomSnapshot = {
     roomId: string;
     participants: Participant[];
     boundaryConfigured: boolean;
+    settings: VersionedRoomGameSettings;
     session: SessionView | null;
+};
+export type EffectiveGameSettings = {
+    enabledQuestionCategoryIds: string[];
+    enabledDareTypeIds: string[];
+    blockedOperationalFlags: string[];
+    maximumIntensity: 1 | 2 | 3 | 4 | 5;
+    randomQuestionRatio: number;
+    maximumTypeStreak: number;
+    letsTalkMetaInterval: number;
+};
+export type RoomGameSettings = {
+    mode: string;
+    profileId: string;
+    groupId: string | null;
+    adultContentConfirmed: boolean;
+    cardLocale: string;
+    configuration: EffectiveGameSettings;
+};
+export type VersionedRoomGameSettings = RoomGameSettings & {
+    revision: number;
+    updatedByParticipantId: string | null;
 };
 export type GameProfileSummary = {
     id: string;
@@ -44,6 +68,13 @@ export type GameProfileSummary = {
     editorialStatus: "PUBLISHED";
     requiresAdultConfirmation: boolean;
     maximumIntensity: number;
+    enabledQuestionCategoryIds: string[];
+    enabledDareTypeIds: string[];
+    blockedOperationalFlags: string[];
+    randomQuestionRatio: number;
+    maximumTypeStreak: number;
+    letsTalkMetaInterval: number;
+    immutable: boolean;
 };
 export type GroupSummary = {
     id: string;
@@ -81,10 +112,14 @@ async function json<T>(path: string, init: RequestInit): Promise<T> {
     return body as T;
 }
 export const rooms = {
-    create: (displayName: string, persistence: "EPHEMERAL" | "DATASPACE") =>
+    create: (
+        displayName: string,
+        persistence: "EPHEMERAL" | "DATASPACE",
+        settings: RoomGameSettings,
+    ) =>
         json<Join>("/api/v1/rooms", {
             method: "POST",
-            body: JSON.stringify({ displayName, persistence }),
+            body: JSON.stringify({ displayName, persistence, settings }),
         }),
     join: (roomCode: string, displayName: string, role: Exclude<Role, "HOST">) =>
         json<Join>(`/api/v1/rooms/${roomCode}/participants`, {
@@ -155,6 +190,8 @@ export class RoomSocket {
     presence: Presence[] = [];
     error = "";
     errorCode = "";
+    authenticated = false;
+    settingsNotice = "";
     role: Role;
     private retry: number | undefined;
     private leaving = false;
@@ -174,7 +211,7 @@ export class RoomSocket {
             this.error = "";
             this.errorCode = "";
             this.send("client.hello", null, {
-                supportedProtocolVersions: [1],
+                supportedProtocolVersions: [2],
                 applicationVersion: "0.2.3",
                 role: this.joined.role,
                 capabilities: [],
@@ -185,7 +222,16 @@ export class RoomSocket {
         this.socket.onmessage = (event) => {
             const message = JSON.parse(event.data) as ServerEnvelope;
             if (message.type === "room.snapshot") {
-                this.snapshot = message.payload as RoomSnapshot;
+                const next = message.payload as RoomSnapshot;
+                const previousRevision = this.snapshot?.settings.revision;
+                if (
+                    previousRevision !== undefined &&
+                    next.settings.revision > previousRevision &&
+                    next.settings.updatedByParticipantId !== this.joined.participantId
+                ) {
+                    this.settingsNotice = messages.room.settingsChanged;
+                }
+                this.snapshot = next;
                 this.error = "";
                 this.errorCode = "";
             }
@@ -195,10 +241,22 @@ export class RoomSocket {
             if (message.type === "room.roleChanged") {
                 this.role = (message.payload as { role: Role }).role;
             }
+            if (message.type === "server.hello") {
+                const payload = message.payload as { participantId: string; role: Role };
+                this.authenticated = payload.participantId === this.joined.participantId;
+                this.role = payload.role;
+            }
             if (message.type === "error") {
                 const payload = message.payload as { code: string; message: string };
                 this.errorCode = payload.code;
                 this.error = payload.message;
+                if (
+                    !this.authenticated &&
+                    ["ROOM_NOT_FOUND", "NOT_AUTHORIZED"].includes(payload.code)
+                ) {
+                    this.leaving = true;
+                    this.socket.close();
+                }
             }
             this.changed();
         };
@@ -216,7 +274,7 @@ export class RoomSocket {
         if (this.socket.readyState === WebSocket.OPEN) {
             this.socket.send(
                 JSON.stringify({
-                    protocol: 1,
+                    protocol: 2,
                     type,
                     requestId: crypto.randomUUID(),
                     revision,
@@ -228,6 +286,15 @@ export class RoomSocket {
     command(type: string, payload: object = {}): void {
         if (type === "command.leaveRoom") this.leaving = true;
         this.send(type, this.snapshot?.session?.revision ?? null, payload);
+    }
+    clearSettingsNotice(): void {
+        this.settingsNotice = "";
+        this.changed();
+    }
+    dispose(): void {
+        if (this.retry) window.clearTimeout(this.retry);
+        this.leaving = true;
+        this.socket?.close();
     }
 }
 export function saveJoin(join: Join) {
@@ -263,4 +330,3 @@ export function clearJoin(join: Join): void {
     const last = sessionStorage.getItem("party-game:last-room");
     if (last?.includes(join.roomCode)) sessionStorage.removeItem("party-game:last-room");
 }
-import { locale, messages } from "./i18n";

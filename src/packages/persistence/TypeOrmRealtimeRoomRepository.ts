@@ -6,6 +6,7 @@ import type {
     RealtimeRoomRepository,
     RoomParticipant,
 } from "../application/realtimeRooms";
+import type { RoomGameSettings, VersionedRoomGameSettings } from "../application/roomGameSettings";
 import { RoomEntity } from "../../modules/database/entities/game/RoomEntity";
 import { RoomParticipantEntity } from "../../modules/database/entities/game/RoomParticipantEntity";
 import { GameSessionEntity } from "../../modules/database/entities/game/GameSessionEntity";
@@ -26,9 +27,23 @@ export class TypeOrmRealtimeRoomRepository implements RealtimeRoomRepository {
         code: string;
         dataSpaceId: string | null;
         expiresAt: Date;
+        settings: RoomGameSettings;
         participant: RoomParticipant & { credentialHash: string };
     }): Promise<void> {
         await this.source.transaction(async (manager) => {
+            if (input.settings.groupId) {
+                const ownsGroup = input.dataSpaceId
+                    ? await manager.getRepository(GroupEntity).existsBy({
+                          id: input.settings.groupId,
+                          dataSpaceId: input.dataSpaceId,
+                      })
+                    : false;
+                if (!ownsGroup) {
+                    throw Object.assign(new Error("Room Group is outside the DataSpace"), {
+                        code: "NOT_AUTHORIZED",
+                    });
+                }
+            }
             // Ephemeral runtime exists only for reconnect during the Room lifetime. It is
             // cascade-deleted opportunistically and never becomes account history.
             await manager.getRepository(RoomEntity).delete({
@@ -39,6 +54,10 @@ export class TypeOrmRealtimeRoomRepository implements RealtimeRoomRepository {
                 id: input.roomId,
                 code: input.code,
                 dataSpaceId: input.dataSpaceId,
+                groupId: input.settings.groupId,
+                settingsRevision: 0,
+                gameSettingsJson: JSON.stringify(input.settings),
+                settingsUpdatedByParticipantId: input.participant.id,
                 createdAt: new Date(),
                 expiresAt: input.expiresAt,
             });
@@ -151,6 +170,57 @@ export class TypeOrmRealtimeRoomRepository implements RealtimeRoomRepository {
             current.role = "PLAYER";
             next.role = "HOST";
             await repository.save([current, next]);
+        });
+    }
+    async loadSettings(roomId: string): Promise<VersionedRoomGameSettings> {
+        const room = await this.source.getRepository(RoomEntity).findOneByOrFail({ id: roomId });
+        return {
+            ...(JSON.parse(room.gameSettingsJson) as RoomGameSettings),
+            revision: room.settingsRevision,
+            updatedByParticipantId: room.settingsUpdatedByParticipantId,
+        };
+    }
+    async saveSettings(
+        roomId: string,
+        participantId: string,
+        expectedRevision: number,
+        settings: RoomGameSettings,
+    ): Promise<VersionedRoomGameSettings> {
+        return this.source.transaction(async (manager) => {
+            const rooms = manager.getRepository(RoomEntity);
+            const room = await rooms.findOneByOrFail({ id: roomId });
+            if (settings.groupId) {
+                if (!room.dataSpaceId) {
+                    throw Object.assign(new Error("Ephemeral Rooms cannot select a Group"), {
+                        code: "NOT_AUTHORIZED",
+                    });
+                }
+                const owned = await manager.getRepository(GroupEntity).existsBy({
+                    id: settings.groupId,
+                    dataSpaceId: room.dataSpaceId,
+                });
+                if (!owned) {
+                    throw Object.assign(new Error("Group is outside the Room DataSpace"), {
+                        code: "NOT_AUTHORIZED",
+                    });
+                }
+            }
+            const revision = expectedRevision + 1;
+            const updated = await rooms.update(
+                { id: roomId, settingsRevision: expectedRevision },
+                {
+                    groupId: settings.groupId,
+                    settingsRevision: revision,
+                    gameSettingsJson: JSON.stringify(settings),
+                    settingsUpdatedByParticipantId: participantId,
+                },
+            );
+            if (updated.affected !== 1) {
+                throw Object.assign(new Error("Stale Room settings revision"), {
+                    code: "STALE_SESSION_REVISION",
+                });
+            }
+            return { ...settings, revision, updatedByParticipantId: participantId };
         });
     }
     async saveBoundaries(participantId: string, boundaries: PlayerBoundaries): Promise<void> {
