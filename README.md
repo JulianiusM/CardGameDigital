@@ -23,6 +23,8 @@ The detailed product definition is in the
 [Game Design Document](./docs/GAME_DESIGN.md).
 Architecture decisions are grounded in the
 [Technical Architecture Document](./docs/TECHNICAL_ARCHITECTURE.md).
+The look and feel is defined by
+[Visual & Interaction Design Document](./docs/VISUAL_INTERACTION_DESIGN.md).
 
 ## Technology
 
