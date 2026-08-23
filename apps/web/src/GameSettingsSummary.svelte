@@ -54,8 +54,23 @@
             <dd>{profile?.name ?? settings.profileId}</dd>
         </div>
         <div>
-            <dt>{messages.room.maximumIntensity}</dt>
+            <dt>{messages.room.startingIntensity}</dt>
+            <dd>{settings.configuration.startingIntensity} / 5</dd>
+        </div>
+        <div>
+            <dt>{messages.room.endingIntensity}</dt>
             <dd>{settings.configuration.maximumIntensity} / 5</dd>
+        </div>
+        <div>
+            <dt>{messages.room.intensityPacing}</dt>
+            <dd>
+                {messages.room.progressionEvery}
+                {settings.configuration.intensityProgressionInterval}
+                {settings.configuration.intensityProgressionUnit === "ROUNDS"
+                    ? messages.common.rounds
+                    : messages.common.cards}
+                · +{settings.configuration.intensityProgressionIncrement}
+            </dd>
         </div>
         {#if settings.mode === "RANDOM_TRUTH_OR_DARE"}
             <div>

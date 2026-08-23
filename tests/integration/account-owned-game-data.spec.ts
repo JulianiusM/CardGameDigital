@@ -47,7 +47,11 @@ describe("DataSpace-owned game data", () => {
             .put("/api/v1/game-settings")
             .send({
                 preferredProfileId: "PROFILE_BEST_FRIENDS",
+                startingIntensity: 2,
                 maximumIntensity: 4,
+                intensityProgressionUnit: "CARDS",
+                intensityProgressionInterval: 6,
+                intensityProgressionIncrement: 0.5,
                 randomQuestionRatio: 0.55,
                 letsTalkMetaInterval: 6,
                 defaultGroupId: created.body.id,
@@ -60,6 +64,11 @@ describe("DataSpace-owned game data", () => {
         ]);
         expect(settingsResponse.body.settings).toMatchObject({
             preferredProfileId: "PROFILE_BEST_FRIENDS",
+            startingIntensity: 2,
+            maximumIntensity: 4,
+            intensityProgressionUnit: "CARDS",
+            intensityProgressionInterval: 6,
+            intensityProgressionIncrement: 0.5,
             defaultGroupId: created.body.id,
         });
     });

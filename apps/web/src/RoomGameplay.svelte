@@ -27,7 +27,11 @@
     $: showingVotingResults = Boolean(session.neverHaveIEverVoting?.result);
 </script>
 
-<section class:public-stage={role === "DISPLAY"} class="game-shell">
+<section
+    class:public-stage={role === "DISPLAY"}
+    class:ended-stage={role === "DISPLAY" && session.state === "ENDED"}
+    class="game-shell"
+>
     <div class="stage-status">
         <div class="status">
             <span>{messages.common.round} {session.roundNumber}</span>
@@ -52,7 +56,7 @@
     {/if}
 
     {#if exhausted}
-        <div class="card-panel exhausted-state" role="status">
+        <div class="card-panel exhausted-state game-phase" role="status">
             <h2>{messages.couch.exhausted}</h2>
             <button class="secondary" on:click={onOpenSettings}>{messages.settings.title}</button>
             {#if role === "HOST"}<button
@@ -61,17 +65,19 @@
                 >{/if}
         </div>
     {:else if session.state === "ENDED"}
-        <SessionSummary
-            cardsShown={session.cardsShown}
-            roundNumber={session.roundNumber}
-            {elapsedMinutes}
-            {onNewGame}
-            onExit={onSummaryExit}
-            exitLabel={summaryExitLabel}
-            exitDanger={summaryExitDanger}
-        />
+        <div class="summary-phase game-phase">
+            <SessionSummary
+                cardsShown={session.cardsShown}
+                roundNumber={session.roundNumber}
+                {elapsedMinutes}
+                {onNewGame}
+                onExit={onSummaryExit}
+                exitLabel={summaryExitLabel}
+                exitDanger={summaryExitDanger}
+            />
+        </div>
     {:else if session.state === "CHOOSING_CARD_TYPE"}
-        <div class="choice card-panel">
+        <div class="choice card-panel game-phase">
             <h2>
                 {actions.has("CHOOSE_CARD_TYPE")
                     ? messages.room.privateChoice
@@ -96,7 +102,7 @@
             {/if}
         </div>
     {:else if session.state === "WAITING_FOR_PLAYER"}
-        <div class="card-panel center">
+        <div class="card-panel center game-phase">
             <h2>{messages.common.ready}</h2>
             {#if actions.has("ADVANCE_SESSION")}
                 <button class="primary" on:click={() => onCommand("command.startTurn")}>
@@ -108,13 +114,16 @@
         <div
             class:with-public-voting={session.neverHaveIEverVoting}
             class:voting-results={showingVotingResults}
+            class:anonymous-voting-results={showingVotingResults &&
+                session.neverHaveIEverVoting?.revealMode === "ANONYMOUS_AGGREGATE"}
             class:voting-collection={session.neverHaveIEverVoting && !showingVotingResults}
-            class="gameplay-focus"
+            class="gameplay-focus game-phase"
         >
             {#key `${session.currentCard.id}:${cardReplacementSequence}`}
                 <GameCard
                     card={session.currentCard}
-                    showIntensity={role === "DISPLAY"}
+                    showIntensity
+                    compact={role === "DISPLAY" && showingVotingResults}
                     replacementDraw={Boolean(cardReplacementReason)}
                 />
             {/key}

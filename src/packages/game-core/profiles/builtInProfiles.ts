@@ -8,6 +8,7 @@ import {
     type OperationalFlag,
     type QuestionCategoryId,
 } from "../cards/taxonomy";
+import { INTENSITY_PROGRESSION_UNITS, type Intensity } from "../cards/intensity";
 import { validateGameProfile, type GameProfile } from "./gameProfile";
 
 export const BUILT_IN_PROFILE_IDS = {
@@ -32,7 +33,7 @@ type ProfileInput = {
     questions: readonly QuestionCategoryId[];
     dares: readonly DareTypeId[];
     blockedFlags?: readonly OperationalFlag[];
-    maximumIntensity: 1 | 2 | 3 | 4 | 5;
+    maximumIntensity: Intensity;
     randomQuestionRatio?: number;
     requiresAdultConfirmation?: boolean;
 };
@@ -45,7 +46,11 @@ function profile(input: ProfileInput): BuiltInGameProfile {
             enabledQuestionCategoryIds: new Set(input.questions),
             enabledDareTypeIds: new Set(input.dares),
             blockedOperationalFlags: new Set(input.blockedFlags ?? []),
+            startingIntensity: 1,
             maximumIntensity: input.maximumIntensity,
+            intensityProgressionUnit: INTENSITY_PROGRESSION_UNITS.CARDS,
+            intensityProgressionInterval: 2,
+            intensityProgressionIncrement: 1,
             randomQuestionRatio: input.randomQuestionRatio ?? 0.6,
             maximumTypeStreak: 3,
             letsTalkMetaInterval: 5,

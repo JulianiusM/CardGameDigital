@@ -270,6 +270,24 @@ describe("Room WebSocket protocol", () => {
         expect(hostView.availableActions).toContain("CHOOSE_CARD_TYPE");
         expect(displayView.availableActions).toEqual([]);
         expect(displayView).not.toHaveProperty("votedPlayerIds");
+        clients[1].socket.send(
+            JSON.stringify({
+                protocol: PROTOCOL_VERSION,
+                type: "client.ping",
+                requestId: "heartbeat",
+                revision: null,
+                payload: {},
+            }),
+        );
+        await waitFor(() =>
+            clients[1].messages.some(
+                (message) => message.requestId === "heartbeat" && message.type === "server.pong",
+            ),
+        );
+        expect(
+            clients[1].messages.find((message) => message.requestId === "heartbeat").payload
+                .serverTime,
+        ).toEqual(expect.any(Number));
         clients[3].socket.send(
             JSON.stringify({
                 protocol: PROTOCOL_VERSION,
@@ -551,7 +569,10 @@ describe("Room WebSocket protocol", () => {
             profileId: "PROFILE_CUSTOM",
             configuration: {
                 ...defaultRoomGameSettings().configuration,
+                startingIntensity: 2,
                 maximumIntensity: 2,
+                intensityProgressionUnit: "CARDS",
+                intensityProgressionInterval: 3,
                 enabledDareTypeIds: [],
             },
         };
@@ -570,7 +591,8 @@ describe("Room WebSocket protocol", () => {
                     (message) =>
                         message.type === "room.snapshot" &&
                         message.payload.settings.revision === 1 &&
-                        message.payload.settings.configuration.maximumIntensity === 2,
+                        message.payload.settings.configuration.maximumIntensity === 2 &&
+                        message.payload.settings.configuration.intensityProgressionUnit === "CARDS",
                 ),
             ),
         );

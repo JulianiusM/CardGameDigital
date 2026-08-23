@@ -65,7 +65,11 @@ export type EffectiveGameSettings = {
     enabledQuestionCategoryIds: string[];
     enabledDareTypeIds: string[];
     blockedOperationalFlags: string[];
+    startingIntensity: 1 | 2 | 3 | 4 | 5;
     maximumIntensity: 1 | 2 | 3 | 4 | 5;
+    intensityProgressionUnit: "ROUNDS" | "CARDS";
+    intensityProgressionInterval: number;
+    intensityProgressionIncrement: number;
     randomQuestionRatio: number;
     maximumTypeStreak: number;
     letsTalkMetaInterval: number;
@@ -93,7 +97,11 @@ export type GameProfileSummary = {
     description: string;
     editorialStatus: "PUBLISHED";
     requiresAdultConfirmation: boolean;
+    startingIntensity: number;
     maximumIntensity: number;
+    intensityProgressionUnit: "ROUNDS" | "CARDS";
+    intensityProgressionInterval: number;
+    intensityProgressionIncrement: number;
     enabledQuestionCategoryIds: string[];
     enabledDareTypeIds: string[];
     blockedOperationalFlags: string[];
@@ -111,7 +119,11 @@ export type GroupSummary = {
 };
 export type GameSettings = {
     preferredProfileId: string;
+    startingIntensity: number;
     maximumIntensity: number;
+    intensityProgressionUnit: "ROUNDS" | "CARDS";
+    intensityProgressionInterval: number;
+    intensityProgressionIncrement: number;
     randomQuestionRatio: number;
     letsTalkMetaInterval: number;
     defaultGroupId: string | null;
@@ -232,21 +244,41 @@ export class RoomSocket {
     cardReplacementReason: "SKIPPED" | "VETOED" | "" = "";
     role: Role;
     private retry: number | undefined;
+    private heartbeat: number | undefined;
+    private lastServerActivity = 0;
     private leaving = false;
+    private disposed = false;
+    private terminalReason: "LEFT" | "RECONNECT_EXPIRED" = "LEFT";
     private pendingCardReplacement: "SKIPPED" | "VETOED" | null = null;
     constructor(
         private joined: Join,
         private changed: () => void,
-        private left: (reason: "LEFT" | "ROOM_CLOSED") => void = () => undefined,
+        private left: (reason: "LEFT" | "ROOM_CLOSED" | "RECONNECT_EXPIRED") => void = () =>
+            undefined,
     ) {
         this.role = joined.role;
+        if (typeof window !== "undefined") {
+            window.addEventListener("offline", this.browserOffline);
+            window.addEventListener("online", this.browserOnline);
+        }
         this.connect();
     }
     /** Opens a socket and re-authenticates with the participant credential. */
     private connect(): void {
+        if (this.leaving || this.disposed) return;
+        if (typeof navigator !== "undefined" && navigator.onLine === false) {
+            this.markReconnecting();
+            return;
+        }
+        if (this.retry) window.clearTimeout(this.retry);
+        this.retry = undefined;
         const scheme = location.protocol === "https:" ? "wss" : "ws";
-        this.socket = new WebSocket(`${scheme}://${location.host}/ws?locale=${locale}`);
-        this.socket.onopen = () => {
+        const socket = new WebSocket(`${scheme}://${location.host}/ws?locale=${locale}`);
+        this.socket = socket;
+        socket.onopen = () => {
+            if (this.socket !== socket || this.disposed) return;
+            this.lastServerActivity = Date.now();
+            this.startHeartbeat(socket);
             this.error = "";
             this.errorCode = "";
             this.send("client.hello", null, {
@@ -258,8 +290,11 @@ export class RoomSocket {
                 participantCredential: this.joined.participantCredential,
             });
         };
-        this.socket.onmessage = (event) => {
+        socket.onmessage = (event) => {
+            if (this.socket !== socket || this.disposed) return;
+            this.lastServerActivity = Date.now();
             const message = JSON.parse(event.data) as ServerEnvelope;
+            if (message.type === "server.pong") return;
             if (message.type === "room.snapshot") {
                 const next = message.payload as RoomSnapshot;
                 const previousCardId = this.snapshot?.session?.currentCard?.id;
@@ -323,26 +358,80 @@ export class RoomSocket {
                     !this.authenticated &&
                     ["ROOM_NOT_FOUND", "NOT_AUTHORIZED"].includes(payload.code)
                 ) {
+                    this.terminalReason = "RECONNECT_EXPIRED";
                     this.leaving = true;
-                    this.socket.close();
+                    socket.close();
                 }
             }
             this.changed();
         };
-        this.socket.onclose = (event) => {
+        socket.onerror = () => {
+            if (this.socket !== socket || this.disposed || this.leaving) return;
+            this.reconnectFrom(socket);
+        };
+        socket.onclose = (event) => {
+            if (this.socket !== socket || this.disposed) return;
+            this.stopHeartbeat();
+            this.authenticated = false;
             if (event.code === 4001) {
                 this.left("ROOM_CLOSED");
                 return;
             }
             if (this.leaving) {
-                this.left("LEFT");
+                this.left(this.terminalReason);
                 return;
             }
-            this.error = messages.common.reconnecting;
-            this.changed();
-            this.retry = window.setTimeout(() => this.connect(), 1000);
+            this.markReconnecting();
+            this.scheduleReconnect();
         };
     }
+    private startHeartbeat(socket: WebSocket): void {
+        this.stopHeartbeat();
+        this.heartbeat = window.setInterval(() => {
+            if (this.socket !== socket || this.leaving || this.disposed) return;
+            if (Date.now() - this.lastServerActivity > 12_000) {
+                this.reconnectFrom(socket);
+                return;
+            }
+            this.send("client.ping", null);
+        }, 5_000);
+    }
+    private stopHeartbeat(): void {
+        if (this.heartbeat) window.clearInterval(this.heartbeat);
+        this.heartbeat = undefined;
+    }
+    private reconnectFrom(socket: WebSocket): void {
+        if (this.socket !== socket || this.leaving || this.disposed) return;
+        this.stopHeartbeat();
+        this.markReconnecting();
+        socket.close();
+        this.scheduleReconnect();
+    }
+    private markReconnecting(): void {
+        this.authenticated = false;
+        this.error = messages.common.reconnecting;
+        this.changed();
+    }
+    private scheduleReconnect(): void {
+        if (this.retry || this.leaving || this.disposed) return;
+        this.retry = window.setTimeout(() => {
+            this.retry = undefined;
+            this.connect();
+        }, 1_000);
+    }
+    private browserOffline = (): void => {
+        if (this.socket) this.reconnectFrom(this.socket);
+        else {
+            this.markReconnecting();
+            this.scheduleReconnect();
+        }
+    };
+    private browserOnline = (): void => {
+        if (this.authenticated || this.leaving || this.disposed) return;
+        if (this.retry) window.clearTimeout(this.retry);
+        this.retry = undefined;
+        this.connect();
+    };
     send(type: string, revision: number | null, payload: object = {}): void {
         if (this.socket.readyState === WebSocket.OPEN) {
             this.socket.send(
@@ -366,7 +455,13 @@ export class RoomSocket {
     }
     dispose(): void {
         if (this.retry) window.clearTimeout(this.retry);
+        this.stopHeartbeat();
+        this.disposed = true;
         this.leaving = true;
+        if (typeof window !== "undefined") {
+            window.removeEventListener("offline", this.browserOffline);
+            window.removeEventListener("online", this.browserOnline);
+        }
         this.socket?.close();
     }
 }

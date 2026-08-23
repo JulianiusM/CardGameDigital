@@ -16,7 +16,7 @@ const request = () => ({
     cardType: CARD_TYPES.QUESTION,
     profile: profile(),
     boundaries: [boundaries()],
-    maximumIntensity: 5,
+    maximumIntensityScore: 20,
     sessionHistory: [],
     groupHistoryCardIds: new Set(),
 });
@@ -45,8 +45,12 @@ describe("composable card eligibility", () => {
         ).toContain("QUESTION_BOUNDARY");
         expect(
             eligibilityReasons(
-                { ...question, intensity: 4 },
-                { ...request(), maximumIntensity: 3 },
+                {
+                    ...question,
+                    questionCategoryId: QUESTION_CATEGORIES.SEX_OPENNESS,
+                    intensity: 1,
+                },
+                { ...request(), maximumIntensityScore: 8 },
             ),
         ).toContain("INTENSITY");
         expect(eligibilityReasons({ ...question, active: false }, request())).toContain("INACTIVE");

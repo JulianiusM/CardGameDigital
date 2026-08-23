@@ -57,7 +57,11 @@ Help HTML is generated from trusted bundled Markdown; it is not user-authored co
             "enabledQuestionCategoryIds": ["CAT_EVERYDAY"],
             "enabledDareTypeIds": ["DARE_SILLY"],
             "blockedOperationalFlags": [],
+            "startingIntensity": 1,
             "maximumIntensity": 3,
+            "intensityProgressionUnit": "CARDS",
+            "intensityProgressionInterval": 2,
+            "intensityProgressionIncrement": 1,
             "randomQuestionRatio": 0.6,
             "maximumTypeStreak": 3,
             "letsTalkMetaInterval": 5
@@ -73,6 +77,13 @@ server default; when supplied, its Group must belong to the selected DataSpace.
 `neverHaveIEverRevealMode` is `ANONYMOUS_AGGREGATE` or `NAMED_ANSWERS` and defaults to
 anonymous when omitted. It is relevant only to Never Have I Ever, is copied into the
 Session at start, and cannot be changed while that Session is active.
+`configuration.startingIntensity` and `maximumIntensity` are public 1–5 levels with start
+less than or equal to end. `intensityProgressionUnit` is `ROUNDS` or `CARDS`, and
+`intensityProgressionInterval` is a positive integer up to 100.
+`intensityProgressionIncrement` accepts half-steps from 0.5 through 4 internal score
+points. Runtime increases the fine-grained score ceiling by that increment after each
+interval until the end. Omitted progression fields default to start 1, Card-based pacing,
+interval 2, and increment 1; response snapshots always include them.
 Returns `201` with `roomId`, six-character `roomCode`, `participantId`,
 `participantCredential`, and role `HOST`.
 
@@ -115,6 +126,9 @@ is null until completion. Anonymous results contain counts only; named results t
 ordered `{playerId,displayName,vote}` entries. Individual values are never copied into
 CardAppearance or Group history.
 
+The `currentCard.intensity` in Couch and Room snapshots is the derived global 1–5 band,
+not the producer's relative per-taxonomy position.
+
 ## Accounts
 
 Local account endpoints may be disabled by deployment configuration.
@@ -147,7 +161,8 @@ hashed; clients must not persist them after use.
 `/groups` and `/game-settings` require an authenticated, owned current DataSpace.
 Groups support `GET`, `POST`, `PUT /:id`, `DELETE /:id`, and confirmed
 `POST /:id/history-reset`. Resetting history advances the Group's history cutoff; it
-does not delete the Group or historical Session/CardAppearance records. Game settings support
-`GET` and `PUT` for preferred profile, intensity, question ratio, conversation interval,
-and optional default group. Resource IDs are UUIDs and are always authorization-scoped
-to the selected DataSpace.
+does not delete the Group or historical Session/CardAppearance records. Game settings
+support `GET` and `PUT` for preferred profile, start/end intensity, progression unit and
+interval, progression increment, question ratio, conversation interval, and optional
+default group. Resource IDs are UUIDs and are always authorization-scoped to the selected
+DataSpace.

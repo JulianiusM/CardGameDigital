@@ -47,6 +47,7 @@
     $: progressSteps = hostSteps.map((step) => messages.setup.stepLabels[step]);
     $: presentation.setScene(screen === "menu" ? "MENU" : "LOBBY");
     $: editorSettings = setupRoomSettings(setup);
+    $: homePhaseKey = screen === "menu" ? "menu" : `${setup.intent ?? "setup"}:${setup.step}`;
 
     onMount(async () => {
         const requestedStep = query.get("setup") as SetupStep | null;
@@ -118,7 +119,11 @@
             enabledQuestionCategoryIds: [...profile.enabledQuestionCategoryIds],
             enabledDareTypeIds: [...profile.enabledDareTypeIds],
             blockedOperationalFlags: [...profile.blockedOperationalFlags],
+            startingIntensity: profile.startingIntensity as GameSetupState["startingIntensity"],
             maximumIntensity: profile.maximumIntensity as GameSetupState["maximumIntensity"],
+            intensityProgressionUnit: profile.intensityProgressionUnit,
+            intensityProgressionInterval: profile.intensityProgressionInterval,
+            intensityProgressionIncrement: profile.intensityProgressionIncrement,
             randomQuestionRatio: profile.randomQuestionRatio,
             maximumTypeStreak: profile.maximumTypeStreak,
             letsTalkMetaInterval: profile.letsTalkMetaInterval,
@@ -134,7 +139,11 @@
             enabledQuestionCategoryIds: [...settings.configuration.enabledQuestionCategoryIds],
             enabledDareTypeIds: [...settings.configuration.enabledDareTypeIds],
             blockedOperationalFlags: [...settings.configuration.blockedOperationalFlags],
+            startingIntensity: settings.configuration.startingIntensity,
             maximumIntensity: settings.configuration.maximumIntensity,
+            intensityProgressionUnit: settings.configuration.intensityProgressionUnit,
+            intensityProgressionInterval: settings.configuration.intensityProgressionInterval,
+            intensityProgressionIncrement: settings.configuration.intensityProgressionIncrement,
             randomQuestionRatio: settings.configuration.randomQuestionRatio,
             maximumTypeStreak: settings.configuration.maximumTypeStreak,
             letsTalkMetaInterval: settings.configuration.letsTalkMetaInterval,
@@ -257,216 +266,234 @@
         <h1>{messages.menu.title}</h1>
         <p>{messages.menu.subtitle}</p>
     </header>
-    {#if screen === "menu"}
-        <nav class="main-menu entry-menu" aria-label={messages.menu.title}>
-            <button class="menu-tile primary-tile" on:click={() => openIntent("HOST")}
-                ><span class="tile-symbol" aria-hidden="true">⌂</span><strong
-                    >{messages.menu.hostGame}</strong
-                ><small>{messages.setup.hostHint}</small></button
-            >
-            <button class="menu-tile" on:click={() => openIntent("JOIN")}
-                ><span aria-hidden="true">→</span><strong>{messages.menu.joinGame}</strong><small
-                    >{messages.setup.joinHint}</small
-                ></button
-            >
-            <button class="menu-tile" on:click={() => openIntent("DISPLAY")}
-                ><span aria-hidden="true">▰</span><strong>{messages.menu.displayOnly}</strong><small
-                    >{messages.menu.displayOnlyHint}</small
-                ></button
-            >
-            {#if groups.length}<button class="menu-tile continue-tile" on:click={continueGroup}
-                    ><span aria-hidden="true">◎</span><strong
-                        >{messages.menu.continueGroup}: {groups[0].name}</strong
-                    ></button
-                >{/if}
-        </nav>
-    {:else}
-        <section class="wizard card-panel" aria-labelledby="wizard-title">
-            {#if setup.intent === "HOST" && currentIndex >= 0}
-                <div
-                    class="wizard-progress"
-                    aria-label={messages.setup.progress(currentIndex + 1, hostSteps.length)}
-                >
-                    {#each progressSteps as label, index}<span
-                            class:current={index === currentIndex}
-                            class:done={index < currentIndex}
-                            aria-label={label}><i></i><b>{label}</b></span
-                        >{/each}
-                </div>
-            {/if}
-            <button class="text-action back-link" on:click={back}>← {messages.setup.back}</button>
-            {#if setup.intent === "JOIN" || setup.intent === "DISPLAY"}
-                <h2 id="wizard-title">
-                    {setup.intent === "DISPLAY" ? messages.setup.display : messages.setup.join}
-                </h2>
-                <div class="join-form">
-                    <label
-                        >{messages.setup.joinName}<input
-                            bind:value={joinName}
-                            maxlength="40"
-                        /></label
-                    ><label
-                        >{messages.setup.roomCode}<input
-                            bind:value={roomCode}
-                            maxlength="6"
-                        /></label
-                    ><button
-                        class="primary"
-                        disabled={busy ||
-                            (setup.intent === "JOIN" && !joinName.trim()) ||
-                            roomCode.trim().length !== 6}
-                        on:click={joinRoom}>{messages.setup.joinAction}</button
+    {#key homePhaseKey}
+        <div class="home-phase-transition">
+            {#if screen === "menu"}
+                <nav class="main-menu entry-menu" aria-label={messages.menu.title}>
+                    <button class="menu-tile primary-tile" on:click={() => openIntent("HOST")}
+                        ><span class="tile-symbol" aria-hidden="true">⌂</span><strong
+                            >{messages.menu.hostGame}</strong
+                        ><small>{messages.setup.hostHint}</small></button
                     >
-                </div>
-            {:else if setup.step === "group"}
-                <h2 id="wizard-title">{messages.setup.chooseGroup}</h2>
-                <div class="option-grid three group-choice-grid">
-                    <button
-                        class:selected={setup.groupChoice === "NONE"}
-                        class="option-card"
-                        on:click={() => chooseGroup(null)}
-                        ><span class="option-symbol">⚡</span><strong
-                            >{messages.setup.noGroup}</strong
-                        ><small>{messages.setup.quickGroupHint}</small></button
+                    <button class="menu-tile" on:click={() => openIntent("JOIN")}
+                        ><span aria-hidden="true">→</span><strong>{messages.menu.joinGame}</strong
+                        ><small>{messages.setup.joinHint}</small></button
                     >
-                    <button
-                        class:selected={setup.groupChoice === "SELECT"}
-                        class="option-card"
-                        on:click={() => persist({ groupChoice: "SELECT" })}
-                        ><span class="option-symbol">◎</span><strong
-                            >{messages.setup.selectGroup}</strong
-                        ><small>{messages.setup.selectGroupHint}</small></button
+                    <button class="menu-tile" on:click={() => openIntent("DISPLAY")}
+                        ><span aria-hidden="true">▰</span><strong
+                            >{messages.menu.displayOnly}</strong
+                        ><small>{messages.menu.displayOnlyHint}</small></button
                     >
-                    <button
-                        class:selected={setup.groupChoice === "NEW"}
-                        class="option-card"
-                        on:click={() => persist({ groupChoice: "NEW", groupId: null })}
-                        ><span class="option-symbol">+</span><strong
-                            >{messages.setup.newGroup}</strong
-                        ><small>{messages.setup.newGroupHint}</small></button
-                    >
-                </div>
-                {#if setup.groupChoice === "SELECT"}<div class="group-list" role="list">
-                        {#each groups as group}<div
-                                class:selected={setup.groupId === group.id}
-                                class="group-list-row"
-                                role="listitem"
-                            >
-                                <button
-                                    class="group-select-action text-button"
-                                    aria-pressed={setup.groupId === group.id}
-                                    on:click={() => chooseGroup(group)}
-                                    ><strong>{group.name}</strong><small
-                                        >{group.members.join(", ")}</small
-                                    ></button
-                                ><button class="text-action" on:click={() => resetHistory(group)}
-                                    >{messages.setup.resetHistory}</button
-                                >
-                            </div>{/each}
-                    </div>
-                {:else if setup.groupChoice === "NEW" && groupsAvailable}<div
-                        class="group-create settings-section-card"
-                    >
-                        <h3>{messages.setup.createGroup}</h3>
-                        <label
-                            >{messages.setup.groupName}<input
-                                bind:value={groupName}
-                                maxlength="80"
-                            /></label
-                        ><label
-                            >{messages.setup.groupMembers}<input bind:value={groupMembers} /></label
-                        ><button
-                            class="secondary"
-                            disabled={busy || !groupName.trim()}
-                            on:click={createSavedGroup}>{messages.setup.saveGroup}</button
-                        >
-                    </div>{/if}
-            {:else if setup.step === "mode"}
-                <h2 id="wizard-title">{messages.setup.chooseMode}</h2>
-                <div class="option-grid">
-                    {#each gameModes as item, index}<button
-                            class:selected={setup.mode === item[0]}
-                            class="option-card"
-                            on:click={() => persist({ mode: item[0] })}
-                            ><span class="option-symbol">{["?", "↝", "✋", "◌"][index]}</span
-                            ><strong>{item[1]}</strong><small>{item[2]}</small></button
-                        >{/each}
-                </div>
-            {:else if setup.step === "profile"}
-                <h2 id="wizard-title">{messages.setup.chooseProfile}</h2>
-                <div class="option-grid profiles">
-                    {#each profiles as profile}<button
-                            class:selected={setup.profileId === profile.id}
-                            class="option-card"
-                            on:click={() => chooseProfile(profile)}
-                            ><strong>{profile.name}</strong><small>{profile.description}</small
+                    {#if groups.length}<button
+                            class="menu-tile continue-tile"
+                            on:click={continueGroup}
+                            ><span aria-hidden="true">◎</span><strong
+                                >{messages.menu.continueGroup}: {groups[0].name}</strong
                             ></button
-                        >{/each}
-                </div>
-                {#if profiles.find(({ id }) => id === setup.profileId)?.requiresAdultConfirmation}<label
-                        class="adult-confirmation wizard-confirmation"
-                        ><input
-                            type="checkbox"
-                            checked={setup.adultContentConfirmed}
-                            on:change={(event) =>
-                                persist({ adultContentConfirmed: event.currentTarget.checked })}
-                        />{messages.room.adultConfirmation}</label
-                    >{/if}
-            {:else if setup.step === "customize"}
-                <div class="wizard-title-row">
-                    <h2 id="wizard-title">{messages.setup.customizeExperience}</h2>
-                    {#if setup.profileId !== "PROFILE_CUSTOM"}<button
-                            class="primary primary-action wizard-skip"
-                            disabled={busy}
-                            on:click={next}>{messages.common.skip}<span>→</span></button
                         >{/if}
-                </div>
-                <GameSettingsEditor
-                    settings={editorSettings}
-                    {profiles}
-                    {cardLocales}
-                    showMode={false}
-                    showProfile={false}
-                    onChange={applyEditor}
-                />
-            {:else if setup.step === "screen"}
-                <h2 id="wizard-title">{messages.setup.chooseScreen}</h2>
-                <div class="option-grid three">
-                    {#each messages.setup.deviceOptions as item}<button
-                            class:selected={setup.deviceMode === item[0]}
-                            class="option-card"
-                            on:click={() => persist({ deviceMode: item[0] })}
-                            ><span class="option-symbol">{item[1]}</span><strong>{item[2]}</strong
-                            ><small>{item[3]}</small></button
-                        >{/each}
-                </div>
-                {#if setup.deviceMode !== "couch"}<label class="host-name-field"
-                        >{messages.setup.hostName}<input
-                            bind:value={setup.hostName}
-                            on:input={() => saveSetup(setup)}
-                            maxlength="40"
-                        /></label
-                    >{/if}
+                </nav>
+            {:else}
+                <section class="wizard card-panel" aria-labelledby="wizard-title">
+                    {#if setup.intent === "HOST" && currentIndex >= 0}
+                        <div
+                            class="wizard-progress"
+                            aria-label={messages.setup.progress(currentIndex + 1, hostSteps.length)}
+                        >
+                            {#each progressSteps as label, index}<span
+                                    class:current={index === currentIndex}
+                                    class:done={index < currentIndex}
+                                    aria-label={label}><i></i><b>{label}</b></span
+                                >{/each}
+                        </div>
+                    {/if}
+                    <button class="text-action back-link" on:click={back}
+                        >← {messages.setup.back}</button
+                    >
+                    {#if setup.intent === "JOIN" || setup.intent === "DISPLAY"}
+                        <h2 id="wizard-title">
+                            {setup.intent === "DISPLAY"
+                                ? messages.setup.display
+                                : messages.setup.join}
+                        </h2>
+                        <div class="join-form">
+                            <label
+                                >{messages.setup.joinName}<input
+                                    bind:value={joinName}
+                                    maxlength="40"
+                                /></label
+                            ><label
+                                >{messages.setup.roomCode}<input
+                                    bind:value={roomCode}
+                                    maxlength="6"
+                                /></label
+                            ><button
+                                class="primary"
+                                disabled={busy ||
+                                    (setup.intent === "JOIN" && !joinName.trim()) ||
+                                    roomCode.trim().length !== 6}
+                                on:click={joinRoom}>{messages.setup.joinAction}</button
+                            >
+                        </div>
+                    {:else if setup.step === "group"}
+                        <h2 id="wizard-title">{messages.setup.chooseGroup}</h2>
+                        <div class="option-grid three group-choice-grid">
+                            <button
+                                class:selected={setup.groupChoice === "NONE"}
+                                class="option-card"
+                                on:click={() => chooseGroup(null)}
+                                ><span class="option-symbol">⚡</span><strong
+                                    >{messages.setup.noGroup}</strong
+                                ><small>{messages.setup.quickGroupHint}</small></button
+                            >
+                            <button
+                                class:selected={setup.groupChoice === "SELECT"}
+                                class="option-card"
+                                on:click={() => persist({ groupChoice: "SELECT" })}
+                                ><span class="option-symbol">◎</span><strong
+                                    >{messages.setup.selectGroup}</strong
+                                ><small>{messages.setup.selectGroupHint}</small></button
+                            >
+                            <button
+                                class:selected={setup.groupChoice === "NEW"}
+                                class="option-card"
+                                on:click={() => persist({ groupChoice: "NEW", groupId: null })}
+                                ><span class="option-symbol">+</span><strong
+                                    >{messages.setup.newGroup}</strong
+                                ><small>{messages.setup.newGroupHint}</small></button
+                            >
+                        </div>
+                        {#if setup.groupChoice === "SELECT"}<div class="group-list" role="list">
+                                {#each groups as group}<div
+                                        class:selected={setup.groupId === group.id}
+                                        class="group-list-row"
+                                        role="listitem"
+                                    >
+                                        <button
+                                            class="group-select-action text-button"
+                                            aria-pressed={setup.groupId === group.id}
+                                            on:click={() => chooseGroup(group)}
+                                            ><strong>{group.name}</strong><small
+                                                >{group.members.join(", ")}</small
+                                            ></button
+                                        ><button
+                                            class="text-action"
+                                            on:click={() => resetHistory(group)}
+                                            >{messages.setup.resetHistory}</button
+                                        >
+                                    </div>{/each}
+                            </div>
+                        {:else if setup.groupChoice === "NEW" && groupsAvailable}<div
+                                class="group-create settings-section-card"
+                            >
+                                <h3>{messages.setup.createGroup}</h3>
+                                <label
+                                    >{messages.setup.groupName}<input
+                                        bind:value={groupName}
+                                        maxlength="80"
+                                    /></label
+                                ><label
+                                    >{messages.setup.groupMembers}<input
+                                        bind:value={groupMembers}
+                                    /></label
+                                ><button
+                                    class="secondary"
+                                    disabled={busy || !groupName.trim()}
+                                    on:click={createSavedGroup}>{messages.setup.saveGroup}</button
+                                >
+                            </div>{/if}
+                    {:else if setup.step === "mode"}
+                        <h2 id="wizard-title">{messages.setup.chooseMode}</h2>
+                        <div class="option-grid">
+                            {#each gameModes as item, index}<button
+                                    class:selected={setup.mode === item[0]}
+                                    class="option-card"
+                                    on:click={() => persist({ mode: item[0] })}
+                                    ><span class="option-symbol"
+                                        >{["?", "↝", "✋", "◌"][index]}</span
+                                    ><strong>{item[1]}</strong><small>{item[2]}</small></button
+                                >{/each}
+                        </div>
+                    {:else if setup.step === "profile"}
+                        <h2 id="wizard-title">{messages.setup.chooseProfile}</h2>
+                        <div class="option-grid profiles">
+                            {#each profiles as profile}<button
+                                    class:selected={setup.profileId === profile.id}
+                                    class="option-card"
+                                    on:click={() => chooseProfile(profile)}
+                                    ><strong>{profile.name}</strong><small
+                                        >{profile.description}</small
+                                    ></button
+                                >{/each}
+                        </div>
+                        {#if profiles.find(({ id }) => id === setup.profileId)?.requiresAdultConfirmation}<label
+                                class="adult-confirmation wizard-confirmation"
+                                ><input
+                                    type="checkbox"
+                                    checked={setup.adultContentConfirmed}
+                                    on:change={(event) =>
+                                        persist({
+                                            adultContentConfirmed: event.currentTarget.checked,
+                                        })}
+                                />{messages.room.adultConfirmation}</label
+                            >{/if}
+                    {:else if setup.step === "customize"}
+                        <div class="wizard-title-row">
+                            <h2 id="wizard-title">{messages.setup.customizeExperience}</h2>
+                            {#if setup.profileId !== "PROFILE_CUSTOM"}<button
+                                    class="primary primary-action wizard-skip"
+                                    disabled={busy}
+                                    on:click={next}>{messages.common.skip}<span>→</span></button
+                                >{/if}
+                        </div>
+                        <GameSettingsEditor
+                            settings={editorSettings}
+                            {profiles}
+                            {cardLocales}
+                            showMode={false}
+                            showProfile={false}
+                            onChange={applyEditor}
+                        />
+                    {:else if setup.step === "screen"}
+                        <h2 id="wizard-title">{messages.setup.chooseScreen}</h2>
+                        <div class="option-grid three">
+                            {#each messages.setup.deviceOptions as item}<button
+                                    class:selected={setup.deviceMode === item[0]}
+                                    class="option-card"
+                                    on:click={() => persist({ deviceMode: item[0] })}
+                                    ><span class="option-symbol">{item[1]}</span><strong
+                                        >{item[2]}</strong
+                                    ><small>{item[3]}</small></button
+                                >{/each}
+                        </div>
+                        {#if setup.deviceMode !== "couch"}<label class="host-name-field"
+                                >{messages.setup.hostName}<input
+                                    bind:value={setup.hostName}
+                                    on:input={() => saveSetup(setup)}
+                                    maxlength="40"
+                                /></label
+                            >{/if}
+                    {/if}
+                    {#if setup.intent === "HOST"}<button
+                            class="primary primary-action wizard-next"
+                            disabled={busy ||
+                                (setup.step === "group" &&
+                                    setup.groupChoice === "SELECT" &&
+                                    !setup.groupId) ||
+                                (setup.step === "group" && setup.groupChoice === "NEW") ||
+                                (setup.step === "screen" &&
+                                    setup.deviceMode !== "couch" &&
+                                    !setup.hostName.trim()) ||
+                                (setup.step === "profile" &&
+                                    profiles.find(({ id }) => id === setup.profileId)
+                                        ?.requiresAdultConfirmation &&
+                                    !setup.adultContentConfirmed)}
+                            on:click={next}
+                            >{setup.step === "screen"
+                                ? messages.setup.continue
+                                : messages.common.next}<span>→</span></button
+                        >{/if}
+                </section>
             {/if}
-            {#if setup.intent === "HOST"}<button
-                    class="primary primary-action wizard-next"
-                    disabled={busy ||
-                        (setup.step === "group" &&
-                            setup.groupChoice === "SELECT" &&
-                            !setup.groupId) ||
-                        (setup.step === "group" && setup.groupChoice === "NEW") ||
-                        (setup.step === "screen" &&
-                            setup.deviceMode !== "couch" &&
-                            !setup.hostName.trim()) ||
-                        (setup.step === "profile" &&
-                            profiles.find(({ id }) => id === setup.profileId)
-                                ?.requiresAdultConfirmation &&
-                            !setup.adultContentConfirmed)}
-                    on:click={next}
-                    >{setup.step === "screen" ? messages.setup.continue : messages.common.next}<span
-                        >→</span
-                    ></button
-                >{/if}
-        </section>
-    {/if}
+        </div>
+    {/key}
 </main>

@@ -73,6 +73,9 @@ export const effectiveGameSettingsSchema = z
         enabledQuestionCategoryIds: z.array(z.enum(QUESTION_CATEGORIES)),
         enabledDareTypeIds: z.array(z.enum(DARE_TYPES)),
         blockedOperationalFlags: z.array(z.enum(OPERATIONAL_FLAGS)),
+        startingIntensity: z
+            .union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5)])
+            .default(1),
         maximumIntensity: z.union([
             z.literal(1),
             z.literal(2),
@@ -80,11 +83,18 @@ export const effectiveGameSettingsSchema = z
             z.literal(4),
             z.literal(5),
         ]),
+        intensityProgressionUnit: z.enum(["ROUNDS", "CARDS"]).default("CARDS"),
+        intensityProgressionInterval: z.number().int().min(1).max(100).default(2),
+        intensityProgressionIncrement: z.number().min(0.5).max(4).multipleOf(0.5).default(1),
         randomQuestionRatio: z.number().min(0).max(1),
         maximumTypeStreak: z.number().int().min(1).max(10),
         letsTalkMetaInterval: z.number().int().min(1).max(100),
     })
-    .strict();
+    .strict()
+    .refine(({ startingIntensity, maximumIntensity }) => startingIntensity <= maximumIntensity, {
+        message: "startingIntensity cannot exceed maximumIntensity",
+        path: ["startingIntensity"],
+    });
 export const roomGameSettingsSchema = z
     .object({
         mode: z.enum([
@@ -174,6 +184,11 @@ export const roomCommandEnvelopeSchema = z.union([
 ]);
 export const snapshotRequestEnvelopeSchema = envelopeSchema.extend({
     type: z.literal("room.snapshot.request"),
+    payload: emptyPayloadSchema,
+});
+export const clientPingEnvelopeSchema = envelopeSchema.extend({
+    type: z.literal("client.ping"),
+    revision: z.null(),
     payload: emptyPayloadSchema,
 });
 export type ClientHelloEnvelope = z.infer<typeof clientHelloEnvelopeSchema>;

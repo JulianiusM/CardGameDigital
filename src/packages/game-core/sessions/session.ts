@@ -1,6 +1,7 @@
 import { MESSAGE_KEYS } from "../../localization/keys";
 import type { Card, PlayableCard } from "../cards/card";
 import { CARD_TYPES, type CardType } from "../cards/taxonomy";
+import { intensityMaximumScoreForProgress, type Intensity } from "../cards/intensity";
 import { eligibleCards, type EligibilityRequest } from "../eligibility/cardEligibility";
 import type { CardAppearance } from "../history/history";
 import type { GameProfile, PlayerBoundaries } from "../profiles/gameProfile";
@@ -44,14 +45,13 @@ export type GameSessionOptions = {
     mode: GameMode;
     players: readonly Player[];
     profile: GameProfile;
-    maximumIntensity?: number;
     groupHistoryCardIds?: ReadonlySet<Card["id"]>;
     boundariesByPlayer?: ReadonlyMap<string, PlayerBoundaries>;
     cardLocale: string;
     neverHaveIEverRevealMode?: NeverHaveIEverRevealMode;
 };
 export type GameSessionRuntimeState = {
-    version: 1;
+    version: 2;
     id: string;
     startedAt: number;
     mode: GameMode;
@@ -62,7 +62,11 @@ export type GameSessionRuntimeState = {
         enabledQuestionCategoryIds: string[];
         enabledDareTypeIds: string[];
         blockedOperationalFlags: string[];
-        maximumIntensity: 1 | 2 | 3 | 4 | 5;
+        startingIntensity: 1 | 2 | 3 | 4 | 5;
+        maximumIntensity: Intensity;
+        intensityProgressionUnit: "ROUNDS" | "CARDS";
+        intensityProgressionInterval: number;
+        intensityProgressionIncrement: number;
         randomQuestionRatio: number;
         maximumTypeStreak: number;
         letsTalkMetaInterval: number;
@@ -79,7 +83,6 @@ export type GameSessionRuntimeState = {
     questionsSinceMeta: number;
     turnsCompletedInRound: number;
     lastCardTypes: CardType[];
-    maximumIntensity: number;
     groupHistoryCardIds: Card["id"][];
     boundariesByPlayer: [
         string,
@@ -140,7 +143,6 @@ export class GameSession {
     questionsSinceMeta = 0;
     private turnsCompletedInRound = 0;
     private lastCardTypes: CardType[] = [];
-    private readonly maximumIntensity: number;
     private readonly groupHistoryCardIds: ReadonlySet<Card["id"]>;
     private readonly boundariesByPlayer: ReadonlyMap<string, PlayerBoundaries>;
     private pendingCardType: CardType | null = null;
@@ -163,7 +165,6 @@ export class GameSession {
         this.cardLocale = options.cardLocale;
         this.neverHaveIEverRevealMode =
             options.neverHaveIEverRevealMode ?? NEVER_HAVE_I_EVER_REVEAL_MODES.ANONYMOUS_AGGREGATE;
-        this.maximumIntensity = options.maximumIntensity ?? options.profile.maximumIntensity;
         this.groupHistoryCardIds = options.groupHistoryCardIds ?? new Set();
         this.boundariesByPlayer = options.boundariesByPlayer ?? new Map();
         // A restored, ended Session can legitimately have no players after the
@@ -177,7 +178,7 @@ export class GameSession {
     }
 
     static restore(runtime: GameSessionRuntimeState, random: RandomSource): GameSession {
-        if (runtime.version !== 1)
+        if (runtime.version !== 2)
             throw new Error(`Unsupported GameSession runtime version ${runtime.version}`);
         // JSON cannot represent Set and Map. Rehydrate those domain collections
         // explicitly so persistence remains an adapter concern, not a domain dependency.
@@ -204,7 +205,6 @@ export class GameSession {
                 mode: runtime.mode,
                 players: runtime.players,
                 profile,
-                maximumIntensity: runtime.maximumIntensity,
                 groupHistoryCardIds: new Set(runtime.groupHistoryCardIds),
                 boundariesByPlayer,
                 cardLocale: runtime.cardLocale,
@@ -238,7 +238,7 @@ export class GameSession {
     toRuntimeState(): GameSessionRuntimeState {
         // Keep this representation versioned and JSON-safe for restart/reconnect recovery.
         return {
-            version: 1,
+            version: 2,
             id: this.id,
             startedAt: this.startedAt,
             mode: this.mode,
@@ -261,7 +261,6 @@ export class GameSession {
             questionsSinceMeta: this.questionsSinceMeta,
             turnsCompletedInRound: this.turnsCompletedInRound,
             lastCardTypes: [...this.lastCardTypes],
-            maximumIntensity: this.maximumIntensity,
             groupHistoryCardIds: [...this.groupHistoryCardIds],
             boundariesByPlayer: [...this.boundariesByPlayer].map(([id, boundary]) => [
                 id,
@@ -281,6 +280,13 @@ export class GameSession {
         return this.mode === GAME_MODES.NEVER_HAVE_I_EVER
             ? null
             : (this.players[this.activePlayerIndex] ?? null);
+    }
+
+    get currentMaximumIntensityScore(): number {
+        return intensityMaximumScoreForProgress(this.profile, {
+            roundNumber: this.roundNumber,
+            cardsShown: this.sessionHistory.length,
+        });
     }
 
     get votingPlayers(): readonly Player[] {
@@ -459,7 +465,8 @@ export class GameSession {
         this.pendingCardType = null;
         this.votes.clear();
         this.voterIds = [];
-        if (this.mode !== GAME_MODES.NEVER_HAVE_I_EVER) this.rotatePlayer();
+        if (this.mode === GAME_MODES.NEVER_HAVE_I_EVER) this.roundNumber++;
+        else this.rotatePlayer();
         this.state =
             this.mode === GAME_MODES.CLASSIC
                 ? SESSION_STATES.CHOOSING_CARD_TYPE
@@ -493,7 +500,7 @@ export class GameSession {
             requireYesNoAnswer: requireYesNo,
             profile: this.profile,
             boundaries,
-            maximumIntensity: this.maximumIntensity,
+            maximumIntensityScore: this.currentMaximumIntensityScore,
             sessionHistory: this.sessionHistory,
             groupHistoryCardIds: this.groupHistoryCardIds,
         };

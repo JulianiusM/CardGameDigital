@@ -180,7 +180,10 @@
         cardLocales = loadedLocales.locales;
     }
 
-    function leaveCompleted(value: Join, reason: "LEFT" | "ROOM_CLOSED"): void {
+    function leaveCompleted(
+        value: Join,
+        reason: "LEFT" | "ROOM_CLOSED" | "RECONNECT_EXPIRED",
+    ): void {
         clearJoin(value);
         resetRoomOverlays();
         joined = null;
@@ -188,6 +191,8 @@
         resetSetup("intent");
         if (reason === "ROOM_CLOSED") {
             showNotification(messages.room.closedNotice, "info");
+        } else if (reason === "RECONNECT_EXPIRED") {
+            showNotification(messages.room.reconnectExpired, "info");
         }
         navigate("/play/", { force: true });
     }
@@ -287,121 +292,130 @@
         onDismiss={() => dismissNotification($notification?.id)}
     />{/if}
 
-{#if route === "home"}
-    <Home />
-{:else if route === "account"}
-    <Account />
-{:else if route === "help"}
-    <Help />
-{:else if route === "couch"}
-    <Couch />
-{:else if route === "room"}
-    <main
-        class:playing={Boolean(session && session.state !== "ENDED")}
-        class:display-role={effectiveRole === "DISPLAY"}
-    >
-        {#if recoveringRoom || !snapshot || !effectiveRole}
-            <section class="card-panel reconnect-panel" aria-live="polite">
-                <h1>{messages.common.reconnecting}</h1>
-            </section>
-        {:else}
-            {#if !session || session.state === "ENDED"}<header>
-                    <span class="eyebrow">{messages.room.roles[effectiveRole]}</span>
-                    <h1>{roomCode}</h1>
-                </header>{/if}
-            <SettingsTrigger onOpen={openSettings} />
-            {#if !session}
-                <RoomLobby
-                    {participants}
-                    presence={roomPresence}
-                    {effectiveRole}
-                    boundaryConfigured={snapshot.boundaryConfigured}
-                    {qr}
-                    code={roomCode}
-                    settings={snapshot.settings}
-                    {profiles}
-                    {cardLocales}
-                    {devicePlayerNames}
-                    onSetDevicePlayer={setDevicePlayer}
-                    onAddDevicePlayer={() => (devicePlayerNames = [...devicePlayerNames, ""])}
-                    onRemoveDevicePlayer={(index) =>
-                        (devicePlayerNames = devicePlayerNames.filter(
-                            (_, current) => current !== index,
-                        ))}
-                    onSaveDevicePlayers={saveDevicePlayers}
-                    onStart={startSession}
-                    onSaveBoundaries={saveBoundaries}
-                    onOpenSettings={openSettings}
-                    onViewSettings={() => (currentSettingsOpen = true)}
-                    onLeave={leaveRoom}
-                />
-            {:else}
-                <RoomGameplay
-                    {session}
-                    role={effectiveRole}
-                    {participants}
-                    presence={roomPresence}
-                    {roomCode}
-                    exhausted={connectionErrorCode === "CARD_POOL_EXHAUSTED"}
-                    onCommand={command}
-                    onOpenSettings={openSettings}
-                    onNewGame={effectiveRole === "HOST" ? newRoomGame : undefined}
-                    onSummaryExit={effectiveRole === "HOST" ? closeRoom : leaveRoom}
-                    summaryExitLabel={effectiveRole === "HOST"
-                        ? messages.settings.closeRoom
-                        : messages.room.leaveRoom}
-                    summaryExitDanger={effectiveRole === "HOST"}
-                    {cardReplacementSequence}
-                    {cardReplacementReason}
-                />
-            {/if}
-            <SettingsModal
-                bind:open={settingsOpen}
-                showGame={!session && effectiveRole === "HOST"}
-                showAdvanced={effectiveRole === "HOST"}
-                showContent={!session && effectiveRole !== "DISPLAY"}
-                onBoundaries={!session && effectiveRole !== "DISPLAY" ? saveBoundaries : undefined}
-                onEnd={session && session.state !== "ENDED" && effectiveRole === "HOST"
-                    ? () => command("command.endSession")
-                    : undefined}
-                onCloseRoom={effectiveRole === "HOST" ? closeRoom : undefined}
-                onLeave={leaveRoom}
-                currentGameSettings={session ? snapshot.settings : undefined}
-                gameProfiles={profiles}
-                {cardLocales}
-                {roomCode}
-                {qr}
-                defaultTab={settingsDefaultTab}
+{#key route}
+    <div class="app-location">
+        {#if route === "home"}
+            <Home />
+        {:else if route === "account"}
+            <Account />
+        {:else if route === "help"}
+            <Help />
+        {:else if route === "couch"}
+            <Couch />
+        {:else if route === "room"}
+            <main
+                class:playing={Boolean(session && session.state !== "ENDED")}
+                class:display-role={effectiveRole === "DISPLAY"}
             >
-                <div slot="game">
-                    {#if settingsDraft}<GameSettingsEditor
-                            settings={settingsDraft}
+                {#if recoveringRoom || !snapshot || !effectiveRole}
+                    <section class="card-panel reconnect-panel" aria-live="polite">
+                        <h1>{messages.common.reconnecting}</h1>
+                    </section>
+                {:else}
+                    {#if !session || session.state === "ENDED"}<header>
+                            <span class="eyebrow">{messages.room.roles[effectiveRole]}</span>
+                            <h1>{roomCode}</h1>
+                        </header>{/if}
+                    <SettingsTrigger onOpen={openSettings} />
+                    {#if !session}
+                        <RoomLobby
+                            {participants}
+                            presence={roomPresence}
+                            {effectiveRole}
+                            boundaryConfigured={snapshot.boundaryConfigured}
+                            {qr}
+                            code={roomCode}
+                            settings={snapshot.settings}
                             {profiles}
                             {cardLocales}
-                            onChange={changeSettings}
+                            {devicePlayerNames}
+                            onSetDevicePlayer={setDevicePlayer}
+                            onAddDevicePlayer={() =>
+                                (devicePlayerNames = [...devicePlayerNames, ""])}
+                            onRemoveDevicePlayer={(index) =>
+                                (devicePlayerNames = devicePlayerNames.filter(
+                                    (_, current) => current !== index,
+                                ))}
+                            onSaveDevicePlayers={saveDevicePlayers}
+                            onStart={startSession}
+                            onSaveBoundaries={saveBoundaries}
+                            onOpenSettings={openSettings}
+                            onViewSettings={() => (currentSettingsOpen = true)}
+                            onLeave={leaveRoom}
                         />
-                        <button
-                            class="primary wide"
-                            disabled={!settingsDirty}
-                            on:click={saveRoomSettings}>{messages.common.save}</button
-                        >{/if}
-                </div>
-                <div slot="advanced">
-                    <HostTransferControl
-                        {participants}
-                        selected={transferTarget}
-                        onSelect={(participantId) => (transferTarget = participantId)}
-                        onTransfer={() =>
-                            command("command.transferHost", { participantId: transferTarget })}
+                    {:else}
+                        <RoomGameplay
+                            {session}
+                            role={effectiveRole}
+                            {participants}
+                            presence={roomPresence}
+                            {roomCode}
+                            exhausted={connectionErrorCode === "CARD_POOL_EXHAUSTED"}
+                            onCommand={command}
+                            onOpenSettings={openSettings}
+                            onNewGame={effectiveRole === "HOST" ? newRoomGame : undefined}
+                            onSummaryExit={effectiveRole === "HOST" ? closeRoom : leaveRoom}
+                            summaryExitLabel={effectiveRole === "HOST"
+                                ? messages.settings.closeRoom
+                                : messages.room.leaveRoom}
+                            summaryExitDanger={effectiveRole === "HOST"}
+                            {cardReplacementSequence}
+                            {cardReplacementReason}
+                        />
+                    {/if}
+                    <SettingsModal
+                        bind:open={settingsOpen}
+                        showGame={!session && effectiveRole === "HOST"}
+                        showAdvanced={effectiveRole === "HOST"}
+                        showContent={!session && effectiveRole !== "DISPLAY"}
+                        onBoundaries={!session && effectiveRole !== "DISPLAY"
+                            ? saveBoundaries
+                            : undefined}
+                        onEnd={session && session.state !== "ENDED" && effectiveRole === "HOST"
+                            ? () => command("command.endSession")
+                            : undefined}
+                        onCloseRoom={effectiveRole === "HOST" ? closeRoom : undefined}
+                        onLeave={leaveRoom}
+                        currentGameSettings={session ? snapshot.settings : undefined}
+                        gameProfiles={profiles}
+                        {cardLocales}
+                        {roomCode}
+                        {qr}
+                        defaultTab={settingsDefaultTab}
+                    >
+                        <div slot="game">
+                            {#if settingsDraft}<GameSettingsEditor
+                                    settings={settingsDraft}
+                                    {profiles}
+                                    {cardLocales}
+                                    onChange={changeSettings}
+                                />
+                                <button
+                                    class="primary wide"
+                                    disabled={!settingsDirty}
+                                    on:click={saveRoomSettings}>{messages.common.save}</button
+                                >{/if}
+                        </div>
+                        <div slot="advanced">
+                            <HostTransferControl
+                                {participants}
+                                selected={transferTarget}
+                                onSelect={(participantId) => (transferTarget = participantId)}
+                                onTransfer={() =>
+                                    command("command.transferHost", {
+                                        participantId: transferTarget,
+                                    })}
+                            />
+                        </div>
+                    </SettingsModal>
+                    <GameSettingsModal
+                        bind:open={currentSettingsOpen}
+                        settings={snapshot.settings}
+                        {profiles}
+                        {cardLocales}
                     />
-                </div>
-            </SettingsModal>
-            <GameSettingsModal
-                bind:open={currentSettingsOpen}
-                settings={snapshot.settings}
-                {profiles}
-                {cardLocales}
-            />
+                {/if}
+            </main>
         {/if}
-    </main>
-{/if}
+    </div>
+{/key}

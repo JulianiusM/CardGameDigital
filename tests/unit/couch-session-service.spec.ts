@@ -6,7 +6,7 @@ import { card } from "../support/game";
 import { effectiveSettingsFromProfile } from "../../src/packages/application/roomGameSettings";
 
 const cards = [
-    card({ id: "q" as never, repeatableInSession: true }),
+    card({ id: "q" as never, intensity: 3, repeatableInSession: true }),
     card({ id: "yes" as never, yesNoAnswerPossible: true, repeatableInSession: true }),
     card({
         id: "d" as never,
@@ -59,6 +59,7 @@ describe("CouchSessionService", () => {
                     : await service.startTurn(snapshot.id, snapshot.revision);
             expect(snapshot.revision).toBe(1);
             expect(snapshot.currentCard).not.toBeNull();
+            if (mode === GAME_MODES.CLASSIC) expect(snapshot.currentCard?.intensity).toBe(1);
             expect(await service.get(snapshot.id)).toEqual(snapshot);
         }
     });

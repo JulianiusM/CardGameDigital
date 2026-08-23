@@ -1,4 +1,5 @@
 import type { CardId } from "../index";
+import type { Intensity } from "./intensity";
 import type { CardType, DareTypeId, OperationalFlag, QuestionCategoryId } from "./taxonomy";
 
 export type Card = {
@@ -8,7 +9,7 @@ export type Card = {
     questionCategoryId: QuestionCategoryId | null;
     dareTypeId: DareTypeId | null;
     dareAffinityCategoryId: QuestionCategoryId | null;
-    intensity: 1 | 2 | 3 | 4 | 5;
+    intensity: Intensity;
     alwaysEligible: boolean;
     repeatableInSession: boolean;
     repeatCooldown: number;

@@ -7,6 +7,7 @@
     import ResponsiveTabs from "./ResponsiveTabs.svelte";
     import SettingsAction from "./SettingsAction.svelte";
     import GameSettingsSummary from "./GameSettingsSummary.svelte";
+    import ModalShell from "./ModalShell.svelte";
     import type { CardLocaleSummary, GameProfileSummary, PublicGameSettings } from "./multiplayer";
 
     export let open = false;
@@ -88,151 +89,128 @@
     }
 </script>
 
-{#if open}
-    <div class="modal-backdrop" role="presentation" on:click={() => (open = false)}>
-        <!-- Dialog contains controls; click propagation keeps backdrop dismissal separate. -->
-        <!-- svelte-ignore a11y_no_noninteractive_element_to_interactive_role a11y_click_events_have_key_events -->
-        <div
-            class="settings-modal"
-            role="dialog"
-            tabindex="-1"
-            aria-modal="true"
-            aria-labelledby="settings-title"
-            on:click|stopPropagation
-        >
-            <header class="modal-header">
-                <div>
-                    <span class="eyebrow">{messages.settings.eyebrow}</span>
-                    <h2 id="settings-title">{messages.settings.title}</h2>
-                </div>
-                <button
-                    class="icon close"
-                    aria-label={messages.settings.close}
-                    on:click={() => (open = false)}>×</button
-                >
-            </header>
-            <ResponsiveTabs
-                tabs={availableTabs}
-                selected={tab}
-                label={messages.settings.title}
-                onSelect={(value) => (tab = value as typeof tab)}
-            />
-            <div class="modal-content">
-                {#if tab === "game"}
-                    <slot name="game" />
-                {:else if tab === "currentGame" && currentGameSettings}
-                    <GameSettingsSummary
-                        settings={currentGameSettings}
-                        profiles={gameProfiles}
-                        {cardLocales}
-                    />
-                {:else if tab === "audio"}
-                    <label class="setting-row"
-                        ><span
-                            ><strong>{messages.presentation.music}</strong><small
-                                >{messages.settings.musicHint}</small
-                            ></span
-                        ><input
-                            type="checkbox"
-                            checked={preferences.musicEnabled}
-                            on:change={(e) => update("musicEnabled", e.currentTarget.checked)}
-                        /></label
-                    >
-                    <label class="setting-row"
-                        ><span><strong>{messages.settings.musicVolume}</strong></span><input
-                            type="range"
-                            min="0"
-                            max="1"
-                            step="0.05"
-                            value={preferences.musicVolume}
-                            on:input={(e) => update("musicVolume", Number(e.currentTarget.value))}
-                        /></label
-                    >
-                    <label class="setting-row"
-                        ><span
-                            ><strong>{messages.presentation.effects}</strong><small
-                                >{messages.settings.effectsHint}</small
-                            ></span
-                        ><input
-                            type="checkbox"
-                            checked={preferences.effectsEnabled}
-                            on:change={(e) => update("effectsEnabled", e.currentTarget.checked)}
-                        /></label
-                    >
-                {:else if tab === "display"}
-                    <label class="setting-row"
-                        ><span
-                            ><strong>{messages.presentation.reducedMotion}</strong><small
-                                >{messages.settings.motionHint}</small
-                            ></span
-                        ><input
-                            type="checkbox"
-                            checked={preferences.reducedMotion}
-                            on:change={(e) => update("reducedMotion", e.currentTarget.checked)}
-                        /></label
-                    >
-                    <label class="setting-row"
-                        ><span
-                            ><strong>{messages.settings.largeText}</strong><small
-                                >{messages.settings.largeTextHint}</small
-                            ></span
-                        ><input
-                            type="checkbox"
-                            checked={preferences.largeText}
-                            on:change={(e) => update("largeText", e.currentTarget.checked)}
-                        /></label
-                    >
-                {:else if tab === "content" && onBoundaries}
-                    <BoundarySetup
-                        onSave={(value) => {
-                            onBoundaries?.(value);
-                            open = false;
-                        }}
-                    />
-                    {#if showPlayers}<button class="secondary wide" on:click={onShowPlayers}
-                            >{messages.settings.managePlayers}</button
-                        >{/if}
-                {:else if tab === "session"}
-                    {#if onEnd}<p>{messages.settings.endHint}</p>
-                        <button class="danger wide" on:click={endSession}
-                            >{messages.common.end}</button
-                        >{/if}
-                    {#if onCloseRoom}<div class="danger-zone room-close-zone">
-                            <strong>{messages.settings.closeRoom}</strong>
-                            <p>{messages.settings.closeRoomHint}</p>
-                            <button class="danger wide" on:click={closeRoom}
-                                >{messages.settings.closeRoom}</button
-                            >
-                        </div>{/if}
-                {:else if tab === "services"}
-                    {#if roomCode}<div class="settings-join-info">
-                            <strong>{messages.setup.roomCode}: {roomCode}</strong>
-                            {#if qr}<img
-                                    src={qr}
-                                    alt={messages.accessibility.roomQrCode(roomCode)}
-                                />{/if}
-                        </div>{/if}
-                    <div class="service-actions">
-                        <SettingsAction
-                            href="/play/help"
-                            label={messages.settings.help}
-                            icon="?"
-                            newTab
-                        />
-                        {#if authenticationAvailable}<SettingsAction
-                                href="/play/account"
-                                label={messages.settings.account}
-                                icon="☺"
-                            />{/if}
-                    </div>
-                    {#if onLeave}<p>{messages.settings.leaveHint}</p>
-                        <button class="danger wide" on:click={onLeave}
-                            >{messages.settings.leave}</button
-                        >{/if}
-                {:else if tab === "advanced"}
-                    <slot name="advanced" />
-                {/if}
-            </div>
+<ModalShell bind:open labelledBy="settings-title">
+    <header class="modal-header">
+        <div>
+            <span class="eyebrow">{messages.settings.eyebrow}</span>
+            <h2 id="settings-title">{messages.settings.title}</h2>
         </div>
+        <button
+            class="icon close"
+            aria-label={messages.settings.close}
+            on:click={() => (open = false)}>×</button
+        >
+    </header>
+    <ResponsiveTabs
+        tabs={availableTabs}
+        selected={tab}
+        label={messages.settings.title}
+        onSelect={(value) => (tab = value as typeof tab)}
+    />
+    <div class="modal-content">
+        {#if tab === "game"}
+            <slot name="game" />
+        {:else if tab === "currentGame" && currentGameSettings}
+            <GameSettingsSummary
+                settings={currentGameSettings}
+                profiles={gameProfiles}
+                {cardLocales}
+            />
+        {:else if tab === "audio"}
+            <label class="setting-row"
+                ><span
+                    ><strong>{messages.presentation.music}</strong><small
+                        >{messages.settings.musicHint}</small
+                    ></span
+                ><input
+                    type="checkbox"
+                    checked={preferences.musicEnabled}
+                    on:change={(e) => update("musicEnabled", e.currentTarget.checked)}
+                /></label
+            >
+            <label class="setting-row"
+                ><span><strong>{messages.settings.musicVolume}</strong></span><input
+                    type="range"
+                    min="0"
+                    max="1"
+                    step="0.05"
+                    value={preferences.musicVolume}
+                    on:input={(e) => update("musicVolume", Number(e.currentTarget.value))}
+                /></label
+            >
+            <label class="setting-row"
+                ><span
+                    ><strong>{messages.presentation.effects}</strong><small
+                        >{messages.settings.effectsHint}</small
+                    ></span
+                ><input
+                    type="checkbox"
+                    checked={preferences.effectsEnabled}
+                    on:change={(e) => update("effectsEnabled", e.currentTarget.checked)}
+                /></label
+            >
+        {:else if tab === "display"}
+            <label class="setting-row"
+                ><span
+                    ><strong>{messages.presentation.reducedMotion}</strong><small
+                        >{messages.settings.motionHint}</small
+                    ></span
+                ><input
+                    type="checkbox"
+                    checked={preferences.reducedMotion}
+                    on:change={(e) => update("reducedMotion", e.currentTarget.checked)}
+                /></label
+            >
+            <label class="setting-row"
+                ><span
+                    ><strong>{messages.settings.largeText}</strong><small
+                        >{messages.settings.largeTextHint}</small
+                    ></span
+                ><input
+                    type="checkbox"
+                    checked={preferences.largeText}
+                    on:change={(e) => update("largeText", e.currentTarget.checked)}
+                /></label
+            >
+        {:else if tab === "content" && onBoundaries}
+            <BoundarySetup
+                onSave={(value) => {
+                    onBoundaries?.(value);
+                    open = false;
+                }}
+            />
+            {#if showPlayers}<button class="secondary wide" on:click={onShowPlayers}
+                    >{messages.settings.managePlayers}</button
+                >{/if}
+        {:else if tab === "session"}
+            {#if onEnd}<p>{messages.settings.endHint}</p>
+                <button class="danger wide" on:click={endSession}>{messages.common.end}</button
+                >{/if}
+            {#if onCloseRoom}<div class="danger-zone room-close-zone">
+                    <strong>{messages.settings.closeRoom}</strong>
+                    <p>{messages.settings.closeRoomHint}</p>
+                    <button class="danger wide" on:click={closeRoom}
+                        >{messages.settings.closeRoom}</button
+                    >
+                </div>{/if}
+        {:else if tab === "services"}
+            {#if roomCode}<div class="settings-join-info">
+                    <strong>{messages.setup.roomCode}: {roomCode}</strong>
+                    {#if qr}<img src={qr} alt={messages.accessibility.roomQrCode(roomCode)} />{/if}
+                </div>{/if}
+            <div class="service-actions">
+                <SettingsAction href="/play/help" label={messages.settings.help} icon="?" newTab />
+                {#if authenticationAvailable}<SettingsAction
+                        href="/play/account"
+                        label={messages.settings.account}
+                        icon="☺"
+                    />{/if}
+            </div>
+            {#if onLeave}<p>{messages.settings.leaveHint}</p>
+                <button class="danger wide" on:click={onLeave}>{messages.settings.leave}</button
+                >{/if}
+        {:else if tab === "advanced"}
+            <slot name="advanced" />
+        {/if}
     </div>
-{/if}
+</ModalShell>

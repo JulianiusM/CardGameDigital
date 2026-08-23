@@ -15,7 +15,11 @@ export type GameSetupState = {
     mode: string;
     profileId: string;
     adultContentConfirmed: boolean;
+    startingIntensity: 1 | 2 | 3 | 4 | 5;
     maximumIntensity: 1 | 2 | 3 | 4 | 5;
+    intensityProgressionUnit: "ROUNDS" | "CARDS";
+    intensityProgressionInterval: number;
+    intensityProgressionIncrement: number;
     randomQuestionRatio: number;
     letsTalkMetaInterval: number;
     maximumTypeStreak: number;
@@ -38,7 +42,11 @@ const defaults: GameSetupState = {
     mode: "CLASSIC_TRUTH_OR_DARE",
     profileId: "PROFILE_FRIENDS",
     adultContentConfirmed: false,
+    startingIntensity: 1,
     maximumIntensity: 3,
+    intensityProgressionUnit: "CARDS",
+    intensityProgressionInterval: 2,
+    intensityProgressionIncrement: 1,
     randomQuestionRatio: 0.6,
     letsTalkMetaInterval: 5,
     maximumTypeStreak: 3,
@@ -95,7 +103,11 @@ export function setupRoomSettings(state: GameSetupState): RoomGameSettings {
             enabledQuestionCategoryIds: state.enabledQuestionCategoryIds,
             enabledDareTypeIds: state.enabledDareTypeIds,
             blockedOperationalFlags: state.blockedOperationalFlags,
+            startingIntensity: state.startingIntensity,
             maximumIntensity: state.maximumIntensity,
+            intensityProgressionUnit: state.intensityProgressionUnit,
+            intensityProgressionInterval: state.intensityProgressionInterval,
+            intensityProgressionIncrement: state.intensityProgressionIncrement,
             randomQuestionRatio: state.randomQuestionRatio,
             maximumTypeStreak: state.maximumTypeStreak,
             letsTalkMetaInterval: state.letsTalkMetaInterval,

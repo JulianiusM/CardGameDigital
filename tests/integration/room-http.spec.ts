@@ -90,7 +90,11 @@ describe("Room HTTP API", () => {
             response.body.profiles.find(({ id }: { id: string }) => id === "PROFILE_CUSTOM"),
         ).toMatchObject({
             immutable: false,
+            startingIntensity: 1,
             maximumIntensity: 1,
+            intensityProgressionUnit: "CARDS",
+            intensityProgressionInterval: 2,
+            intensityProgressionIncrement: 1,
             enabledQuestionCategoryIds: [],
             enabledDareTypeIds: [],
         });

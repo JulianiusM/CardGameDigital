@@ -5,6 +5,7 @@ import {
     DARE_TYPES,
     OPERATIONAL_FLAGS,
     QUESTION_CATEGORIES,
+    validateGameProfile,
 } from "../../src/packages/game-core";
 import {
     CUSTOM_GAME_PROFILE_ID,
@@ -74,6 +75,23 @@ describe("built-in GameProfiles", () => {
             enabledQuestionCategoryIds: [],
             enabledDareTypeIds: [],
             blockedOperationalFlags: Object.values(OPERATIONAL_FLAGS),
+            startingIntensity: 1,
+            maximumIntensity: 1,
+            intensityProgressionUnit: "CARDS",
+            intensityProgressionInterval: 2,
+            intensityProgressionIncrement: 1,
         });
+    });
+
+    it("rejects progression increments that cannot follow the half-point score scale", () => {
+        const friends = BUILT_IN_GAME_PROFILES.find(
+            ({ id }) => id === BUILT_IN_PROFILE_IDS.FRIENDS,
+        )!;
+        expect(() =>
+            validateGameProfile({ ...friends, intensityProgressionIncrement: 0.25 }),
+        ).toThrow(/half-step/);
+        expect(() =>
+            validateGameProfile({ ...friends, intensityProgressionIncrement: 4.5 }),
+        ).toThrow(/half-step/);
     });
 });

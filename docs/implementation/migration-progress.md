@@ -71,6 +71,10 @@ Statuses mean: **NOT STARTED**, **IN PROGRESS**, **BLOCKED**, **IMPLEMENTED**, o
 - Profile Question Categories and DareTypes are separate sets. Dare Affinity is
   not used as a hard dare filter. Disabled DareTypes and operational flags are
   never reintroduced by intensity or weighted selection.
+- Eligibility derives an internal global score from overlapping hard-coded taxonomy
+  ranges and the relative Card level. Settings control start/end intensity and increase
+  intervals measured in completed rounds or displayed Cards, plus the half-point score
+  increment applied at each interval.
 - Built-in profile selections remain an editorial Phase 7 concern. Phase 3 uses
   validated, data-driven `GameProfile` values and does not guess those defaults.
 

@@ -18,6 +18,11 @@
     $: noNames = voting.result?.namedAnswers
         ?.filter(({ vote }) => vote === "NO")
         .map(({ displayName }) => displayName);
+    $: resultTotal = voting.result?.total ?? 0;
+    $: yesPercentage = resultTotal
+        ? Math.round(((voting.result?.yes ?? 0) / resultTotal) * 100)
+        : 0;
+    $: noPercentage = resultTotal ? 100 - yesPercentage : 0;
 </script>
 
 <section class="never-voting" aria-label={messages.neverHaveIEver.progress}>
@@ -29,60 +34,94 @@
 
     {#if voting.result}
         <h2>{messages.neverHaveIEver.result}</h2>
-        <div class:stage-results={stage} class="never-result-columns">
-            <section class="answer-column yes-column" aria-label={messages.common.yes}>
-                <header>
-                    <strong>{messages.common.yes}</strong><span>{voting.result.yes}</span>
-                </header>
-                {#if stage && yesNames?.length}
-                    <AutoPageRegion
-                        itemCount={yesNames.length}
-                        rowHeight={60}
-                        grid={false}
-                        label={messages.common.yes}
-                        let:start
-                        let:end
-                    >
+        {#if voting.revealMode === "ANONYMOUS_AGGREGATE"}
+            <div
+                class:stage-aggregate={stage}
+                class="anonymous-result"
+                role="group"
+                aria-label={messages.neverHaveIEver.anonymous}
+            >
+                <div
+                    class="aggregate-split"
+                    role="img"
+                    aria-label={`${messages.common.yes}: ${voting.result.yes}, ${messages.common.no}: ${voting.result.no}`}
+                >
+                    <span class="aggregate-yes" style={`width: ${yesPercentage}%`}></span>
+                    <span class="aggregate-no" style={`width: ${noPercentage}%`}></span>
+                </div>
+                <section class="aggregate-metric aggregate-yes-metric">
+                    <span>{messages.common.yes}</span>
+                    <strong>{voting.result.yes}</strong>
+                    <small>{yesPercentage}%</small>
+                </section>
+                <section class="aggregate-metric aggregate-no-metric">
+                    <span>{messages.common.no}</span>
+                    <strong>{voting.result.no}</strong>
+                    <small>{noPercentage}%</small>
+                </section>
+                <p class="aggregate-total">
+                    <strong>{voting.result.total}</strong>
+                    {messages.neverHaveIEver.votes}
+                </p>
+            </div>
+        {:else}
+            <div class:stage-results={stage} class="never-result-columns">
+                <section class="answer-column yes-column" aria-label={messages.common.yes}>
+                    <header>
+                        <strong>{messages.common.yes}</strong><span>{voting.result.yes}</span>
+                    </header>
+                    {#if stage && yesNames?.length}
+                        <AutoPageRegion
+                            itemCount={yesNames.length}
+                            rowHeight={60}
+                            grid={false}
+                            label={messages.common.yes}
+                            let:start
+                            let:end
+                        >
+                            <div class="answer-name-list">
+                                {#each yesNames.slice(start, end) as name}<div class="answer-name">
+                                        {name}
+                                    </div>{/each}
+                            </div>
+                        </AutoPageRegion>
+                    {:else if yesNames?.length}
                         <div class="answer-name-list">
-                            {#each yesNames.slice(start, end) as name}<div class="answer-name">
-                                    {name}
-                                </div>{/each}
+                            {#each yesNames as name}<div class="answer-name">{name}</div>{/each}
                         </div>
-                    </AutoPageRegion>
-                {:else if yesNames?.length}
-                    <div class="answer-name-list">
-                        {#each yesNames as name}<div class="answer-name">{name}</div>{/each}
-                    </div>
-                {:else if voting.result.yes === 0}<small>{messages.neverHaveIEver.noAnswers}</small
-                    >{/if}
-            </section>
-            <section class="answer-column no-column" aria-label={messages.common.no}>
-                <header>
-                    <strong>{messages.common.no}</strong><span>{voting.result.no}</span>
-                </header>
-                {#if stage && noNames?.length}
-                    <AutoPageRegion
-                        itemCount={noNames.length}
-                        rowHeight={60}
-                        grid={false}
-                        label={messages.common.no}
-                        let:start
-                        let:end
-                    >
+                    {:else if voting.result.yes === 0}<small
+                            >{messages.neverHaveIEver.noAnswers}</small
+                        >{/if}
+                </section>
+                <section class="answer-column no-column" aria-label={messages.common.no}>
+                    <header>
+                        <strong>{messages.common.no}</strong><span>{voting.result.no}</span>
+                    </header>
+                    {#if stage && noNames?.length}
+                        <AutoPageRegion
+                            itemCount={noNames.length}
+                            rowHeight={60}
+                            grid={false}
+                            label={messages.common.no}
+                            let:start
+                            let:end
+                        >
+                            <div class="answer-name-list">
+                                {#each noNames.slice(start, end) as name}<div class="answer-name">
+                                        {name}
+                                    </div>{/each}
+                            </div>
+                        </AutoPageRegion>
+                    {:else if noNames?.length}
                         <div class="answer-name-list">
-                            {#each noNames.slice(start, end) as name}<div class="answer-name">
-                                    {name}
-                                </div>{/each}
+                            {#each noNames as name}<div class="answer-name">{name}</div>{/each}
                         </div>
-                    </AutoPageRegion>
-                {:else if noNames?.length}
-                    <div class="answer-name-list">
-                        {#each noNames as name}<div class="answer-name">{name}</div>{/each}
-                    </div>
-                {:else if voting.result.no === 0}<small>{messages.neverHaveIEver.noAnswers}</small
-                    >{/if}
-            </section>
-        </div>
+                    {:else if voting.result.no === 0}<small
+                            >{messages.neverHaveIEver.noAnswers}</small
+                        >{/if}
+                </section>
+            </div>
+        {/if}
     {:else}
         <h2>{messages.neverHaveIEver.progress}</h2>
         {#if stage}

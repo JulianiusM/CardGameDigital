@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
     cardReplacedEventPayloadSchema,
+    clientPingEnvelopeSchema,
     clientHelloEnvelopeSchema,
     participantLeftEventPayloadSchema,
     PROTOCOL_VERSION,
@@ -25,6 +26,21 @@ describe("protocol v2 boundary", () => {
             },
         });
         expect(result.success).toBe(true);
+    });
+
+    it("accepts only the empty authenticated heartbeat shape", () => {
+        const heartbeat = {
+            protocol: PROTOCOL_VERSION,
+            type: "client.ping",
+            requestId: "heartbeat-1",
+            revision: null,
+            payload: {},
+        };
+        expect(clientPingEnvelopeSchema.safeParse(heartbeat).success).toBe(true);
+        expect(
+            clientPingEnvelopeSchema.safeParse({ ...heartbeat, payload: { credential: "no" } })
+                .success,
+        ).toBe(false);
     });
 
     it("rejects unknown payload fields and invalid roles", () => {
@@ -165,5 +181,43 @@ describe("protocol v2 boundary", () => {
                 },
             }).success,
         ).toBe(true);
+    });
+
+    it("defaults compatible progression settings and rejects an end below the start", () => {
+        const settings = defaultRoomGameSettings();
+        const configuration = { ...settings.configuration } as Record<string, unknown>;
+        delete configuration.startingIntensity;
+        delete configuration.intensityProgressionUnit;
+        delete configuration.intensityProgressionInterval;
+        delete configuration.intensityProgressionIncrement;
+        const parsed = roomCommandEnvelopeSchema.parse({
+            protocol: PROTOCOL_VERSION,
+            type: "command.updateRoomSettings",
+            requestId: "progression-defaults",
+            revision: null,
+            payload: { expectedRevision: 0, settings: { ...settings, configuration } },
+        });
+        expect(parsed.payload.settings.configuration).toMatchObject({
+            startingIntensity: 1,
+            intensityProgressionUnit: "CARDS",
+            intensityProgressionInterval: 2,
+            intensityProgressionIncrement: 1,
+        });
+        expect(
+            roomCommandEnvelopeSchema.safeParse({
+                ...parsed,
+                payload: {
+                    ...parsed.payload,
+                    settings: {
+                        ...parsed.payload.settings,
+                        configuration: {
+                            ...parsed.payload.settings.configuration,
+                            startingIntensity: 4,
+                            maximumIntensity: 3,
+                        },
+                    },
+                },
+            }).success,
+        ).toBe(false);
     });
 });

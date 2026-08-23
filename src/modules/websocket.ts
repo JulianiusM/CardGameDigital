@@ -2,6 +2,7 @@ import { MESSAGE_KEYS } from "../packages/localization/keys";
 import type http from "node:http";
 import { WebSocket, WebSocketServer } from "ws";
 import {
+    clientPingEnvelopeSchema,
     clientHelloEnvelopeSchema,
     envelopeSchema,
     PROTOCOL_VERSION,
@@ -25,14 +26,27 @@ type Context = {
 export function attachWebSocketServer(
     server: http.Server,
     service: RoomService,
-    options: { hostDisconnectGraceMs?: number } = {},
+    options: { hostDisconnectGraceMs?: number; heartbeatIntervalMs?: number } = {},
 ): WebSocketServer {
     const sockets = new Set<Context>();
     const disconnectTimers = new Map<string, NodeJS.Timeout>();
     const orphanedRooms = new Map<string, string>();
     const hostDisconnectGraceMs = options.hostDisconnectGraceMs ?? 15_000;
+    const heartbeatIntervalMs = options.heartbeatIntervalMs ?? 5_000;
     const lifecycleReady = service.initializeConnectionLifecycle();
     const wss = new WebSocketServer({ server, path: "/ws" });
+    const responsiveSockets = new WeakSet<WebSocket>();
+    const heartbeat = setInterval(() => {
+        for (const socket of wss.clients) {
+            if (!responsiveSockets.has(socket)) {
+                socket.terminate();
+                continue;
+            }
+            responsiveSockets.delete(socket);
+            socket.ping();
+        }
+    }, heartbeatIntervalMs);
+    heartbeat.unref();
 
     function scheduleDisconnectExpiry(participant: RoomParticipant): void {
         const existing = disconnectTimers.get(participant.id);
@@ -99,6 +113,8 @@ export function attachWebSocketServer(
         broadcastPresence(sockets, roomId);
     }
     wss.on("connection", (socket, request) => {
+        responsiveSockets.add(socket);
+        socket.on("pong", () => responsiveSockets.add(socket));
         const requestedLocale = new URL(request.url ?? "/ws", "http://localhost").searchParams.get(
             "locale",
         );
@@ -207,6 +223,10 @@ export function attachWebSocketServer(
                     );
                     return;
                 }
+                if (clientPingEnvelopeSchema.safeParse(value).success) {
+                    send(socket, "server.pong", requestId, null, { serverTime: Date.now() });
+                    return;
+                }
                 const command = roomCommandEnvelopeSchema.parse(value) as RoomCommand;
                 // RoomService returns only after the transition has committed. Each
                 // recipient then receives its own capability/private-state projection.
@@ -272,6 +292,7 @@ export function attachWebSocketServer(
         });
     });
     wss.on("close", () => {
+        clearInterval(heartbeat);
         for (const timer of disconnectTimers.values()) clearTimeout(timer);
         disconnectTimers.clear();
         orphanedRooms.clear();

@@ -52,5 +52,17 @@ describe("SQLite migration path", () => {
                 "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('guests', 'profiles')",
             ),
         ).toHaveLength(0);
+        const gameSettingColumns = await source.query(
+            "PRAGMA table_info(data_space_game_settings)",
+        );
+        expect(gameSettingColumns.map(({ name }: { name: string }) => name)).toEqual(
+            expect.arrayContaining([
+                "starting_intensity",
+                "maximum_intensity",
+                "intensity_progression_unit",
+                "intensity_progression_interval",
+                "intensity_progression_increment",
+            ]),
+        );
     });
 });

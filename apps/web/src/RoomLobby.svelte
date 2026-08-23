@@ -58,7 +58,8 @@
                 </p>
                 <small
                     >{selectedLocale?.nativeName ?? settings.cardLocale} · {messages.room
-                        .maximumIntensity}: {settings.configuration.maximumIntensity} · {settings
+                        .startingIntensity}: {settings.configuration.startingIntensity} → {messages
+                        .room.endingIntensity}: {settings.configuration.maximumIntensity} · {settings
                         .configuration.enabledQuestionCategoryIds.length}
                     {messages.settings.content} · {settings.configuration.enabledDareTypeIds.length}
                     {messages.common.dare}</small

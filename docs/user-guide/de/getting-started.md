@@ -42,3 +42,10 @@ ist aber keine zweite Spielleitung und enthält keine privaten Grenzen.
 
 Eine gute Runde entsteht nicht durch maximale Intensität, sondern durch eine Einstellung,
 bei der alle freiwillig mitspielen können.
+
+Legt Start- und Endintensität fest. Wählt außerdem, wie oft und wie stark das Spiel die
+Intensität erhöht. Standardmäßig kommt nach zwei angezeigten Karten ein feiner Punkt
+hinzu; ein 0,5-Punkte-Schritt ist sanfter, größere Schritte steigern schneller. Die
+Kartenoption bleibt bei jeder Gruppengröße gleichmäßig; die Rundenoption folgt den
+Spielzügen der Gruppe. Überspringen, private Grenzen, deaktivierte Inhalte und der
+Kartenverlauf gelten unverändert weiter.

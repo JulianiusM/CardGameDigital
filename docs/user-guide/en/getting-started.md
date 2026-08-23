@@ -36,3 +36,9 @@ Discuss expected duration, a group-safe intensity, whether adult content is want
 and the rule that anyone may skip without explanation. Decide who hosts first and who
 could take over. The best intensity is one where everyone participates freely, not the
 highest available setting.
+
+Choose both a starting and ending intensity. Also choose how often the game increases and
+how large each increase should be. The default adds one fine-grained point every two
+displayed cards; a 0.5-point step is gentler, while larger steps escalate faster. Card
+pacing is consistent across group sizes; round pacing follows the group's natural turns.
+Skips, private boundaries, disabled content types, and history remain in force throughout.

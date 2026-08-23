@@ -12,6 +12,13 @@ viewer-specific `room.snapshot` and presence.
 Participant credentials are bearer secrets. They are never valid in URLs or QR codes.
 A reload reconnects the same RoomParticipant; it does not create another participant.
 
+After authentication, browser clients send `client.ping` with an empty payload and
+`revision:null` while the connection is otherwise idle. The server answers
+`server.pong` with `{serverTime}`. Missing application heartbeat responses cause the
+client to enter reconnecting state without waiting for user input. The server also uses
+WebSocket ping/pong control frames to terminate half-open transports and start the normal
+participant disconnect grace period.
+
 ## Commands
 
 | Type                         | Revision        | Payload/meaning                                                                             |
@@ -35,9 +42,19 @@ A reload reconnects the same RoomParticipant; it does not create another partici
 
 Room settings use the canonical engine configuration: mode, profile ID, optional Group,
 adult confirmation, card locale, enabled Question Categories, enabled DareTypes, blocked
-operational flags, maximum intensity, random question ratio, maximum type streak, and
+operational flags, intensity progression, random question ratio, maximum type streak, and
 Let's Talk meta interval. Room snapshots expose versioned public settings to every
 participant. They never expose private participant boundaries.
+
+Intensity settings include public 1–5 `startingIntensity` and `maximumIntensity`, plus
+`intensityProgressionUnit` (`ROUNDS` or `CARDS`) and a positive
+`intensityProgressionInterval`. `intensityProgressionIncrement` accepts half-steps from
+0.5 through 4 internal score points. The Session increases its score ceiling by that
+increment after each interval and caps at the end. Omitted progression fields default to
+Card-based pacing every two Cards with an increment of 1, so the addition is
+backward-compatible within protocol v2; snapshots always include them.
+`currentCard.intensity` is the derived global display band rather than the producer's
+relative per-taxonomy position.
 
 Settings include `neverHaveIEverRevealMode` with values `ANONYMOUS_AGGREGATE` and
 `NAMED_ANSWERS`; omission defaults to anonymous. The Host may change it only before
@@ -78,7 +95,7 @@ reconnect never duplicates an existing Session player, and DISPLAY participants 
 game players. The committed Session revision and fresh snapshots make the expanded roster
 visible to every client.
 
-Server messages are `server.hello`, `room.snapshot`, `room.presence`,
+Server messages are `server.hello`, `server.pong`, `room.snapshot`, `room.presence`,
 `room.roleChanged`, `room.participantLeft`, `session.cardReplaced`, and `error`.
 `room.participantLeft` contains `{participantId,displayName,reason}` where `reason` is
 `LEFT` or `DISCONNECT_EXPIRED`; it is sent to remaining connected Room devices after

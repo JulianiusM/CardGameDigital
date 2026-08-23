@@ -63,6 +63,13 @@ and startup, then reconciled transactionally before readiness. Missing Cards, lo
 or localizations are soft-disabled. Gameplay requests an active database locale and
 excludes missing localizations unless deployment explicitly enables fallback.
 
+`game-core` owns an independent, hard-coded numeric intensity offset for every Question
+Category and DareType. It combines that offset with each Card's relative 1–5 position;
+fractional values fine-tune how much related ranges overlap without changing the catalog
+contract. The shared Session engine applies configurable start/end intensity and round-
+or Card-based pacing with a fine-grained score increment; adapters only persist or
+project that decision.
+
 ## Persistence and ownership
 
 - SQLite is the single-process local deployment store and uses WAL plus foreign keys.

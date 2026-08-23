@@ -7,16 +7,29 @@ import { BUILT_IN_PROFILE_IDS, builtInGameProfile } from "../../packages/game-co
 import { requireCurrentDataSpace } from "./dataSpaceAccess";
 
 const router = express.Router();
-const schema = z.object({
-    preferredProfileId: z.string().min(1),
-    maximumIntensity: z.number().int().min(1).max(5),
-    randomQuestionRatio: z.number().min(0).max(1),
-    letsTalkMetaInterval: z.number().int().min(1).max(100),
-    defaultGroupId: z.string().uuid().nullable(),
-});
+const schema = z
+    .object({
+        preferredProfileId: z.string().min(1),
+        startingIntensity: z.number().int().min(1).max(5).default(1),
+        maximumIntensity: z.number().int().min(1).max(5),
+        intensityProgressionUnit: z.enum(["ROUNDS", "CARDS"]).default("CARDS"),
+        intensityProgressionInterval: z.number().int().min(1).max(100).default(2),
+        intensityProgressionIncrement: z.number().min(0.5).max(4).multipleOf(0.5).default(1),
+        randomQuestionRatio: z.number().min(0).max(1),
+        letsTalkMetaInterval: z.number().int().min(1).max(100),
+        defaultGroupId: z.string().uuid().nullable(),
+    })
+    .refine(({ startingIntensity, maximumIntensity }) => startingIntensity <= maximumIntensity, {
+        message: "startingIntensity cannot exceed maximumIntensity",
+        path: ["startingIntensity"],
+    });
 const defaults = {
     preferredProfileId: BUILT_IN_PROFILE_IDS.FRIENDS,
+    startingIntensity: 1,
     maximumIntensity: 3,
+    intensityProgressionUnit: "CARDS" as const,
+    intensityProgressionInterval: 2,
+    intensityProgressionIncrement: 1,
     randomQuestionRatio: 0.6,
     letsTalkMetaInterval: 5,
     defaultGroupId: null,

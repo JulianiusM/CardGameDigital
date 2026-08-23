@@ -1,4 +1,5 @@
 import type { Card, CardType, DareTypeId, OperationalFlag, QuestionCategoryId } from "../index";
+import { globalCardIntensityScore, maximumGlobalIntensityScore } from "../cards/intensity";
 import type { CardAppearance } from "../history/history";
 import { isAllowedByHistory } from "../history/history";
 import type { GameProfile, PlayerBoundaries } from "../profiles/gameProfile";
@@ -8,7 +9,7 @@ export type EligibilityRequest = {
     requireYesNoAnswer?: boolean;
     profile: GameProfile;
     boundaries: readonly PlayerBoundaries[];
-    maximumIntensity: number;
+    maximumIntensityScore: number;
     sessionHistory: readonly CardAppearance[];
     groupHistoryCardIds: ReadonlySet<Card["id"]>;
 };
@@ -70,7 +71,13 @@ export function eligibilityReasons(
         for (const flag of boundary.blockedOperationalFlags) blockedFlags.add(flag);
     if (card.operationalFlags.some((flag) => blockedFlags.has(flag)))
         reasons.push("OPERATIONAL_FLAG");
-    if (card.intensity > Math.min(request.maximumIntensity, request.profile.maximumIntensity))
+    if (
+        globalCardIntensityScore(card) >
+        Math.min(
+            request.maximumIntensityScore,
+            maximumGlobalIntensityScore(request.profile.maximumIntensity),
+        )
+    )
         reasons.push("INTENSITY");
     if (!card.active) reasons.push("INACTIVE");
     if (!isAllowedByHistory(card, request.sessionHistory, request.groupHistoryCardIds))

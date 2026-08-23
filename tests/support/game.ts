@@ -1,5 +1,10 @@
 import type { GameProfile, PlayableCard, PlayerBoundaries } from "../../src/packages/game-core";
-import { CARD_TYPES, DARE_TYPES, QUESTION_CATEGORIES } from "../../src/packages/game-core";
+import {
+    CARD_TYPES,
+    DARE_TYPES,
+    INTENSITY_PROGRESSION_UNITS,
+    QUESTION_CATEGORIES,
+} from "../../src/packages/game-core";
 
 export function card(overrides: Partial<PlayableCard> & Pick<PlayableCard, "id">): PlayableCard {
     return {
@@ -29,7 +34,11 @@ export function profile(overrides: Partial<GameProfile> = {}): GameProfile {
         enabledQuestionCategoryIds: new Set(Object.values(QUESTION_CATEGORIES)),
         enabledDareTypeIds: new Set(Object.values(DARE_TYPES)),
         blockedOperationalFlags: new Set(),
+        startingIntensity: 1,
         maximumIntensity: 5,
+        intensityProgressionUnit: INTENSITY_PROGRESSION_UNITS.ROUNDS,
+        intensityProgressionInterval: 2,
+        intensityProgressionIncrement: 1,
         randomQuestionRatio: 0.6,
         maximumTypeStreak: 3,
         letsTalkMetaInterval: 2,

@@ -263,9 +263,9 @@ meaning._
 
 # 11. Intensity gradient
 
-Intensity modifies a family; it never replaces the family. A
-high-intensity Childhood question stays golden/amber. A low-intensity
-SEX dare stays berry/raspberry, only softer and calmer.
+The intensity used for presentation is the derived global Card intensity. It modifies a
+family; it never replaces the family. A Childhood question stays golden/amber and a SEX
+dare stays berry/raspberry regardless of their position in the global progression.
 
 | **Intensity**       | **Color**                                | **Icon opacity** | **Density** | **Row drift** | **Character**                                                  |
 | ------------------- | ---------------------------------------- | ---------------- | ----------- | ------------- | -------------------------------------------------------------- |

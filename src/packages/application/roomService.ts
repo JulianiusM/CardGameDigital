@@ -3,11 +3,13 @@ import { createHash, randomBytes, randomUUID } from "node:crypto";
 import {
     CARD_TYPES,
     GameSession,
+    globalCardIntensityLevel,
     type DareTypeId,
     type OperationalFlag,
     type QuestionCategoryId,
     type RandomSource,
     type PlayerBoundaries,
+    type PlayableCard,
 } from "../game-core";
 import {
     DEFAULT_CARD_TRANSLATION_POLICY,
@@ -66,6 +68,14 @@ const roleCapabilities: Record<RoomRole, ReadonlySet<string>> = {
     ]),
     DISPLAY: new Set(["DISPLAY_SESSION", "LEAVE_ROOM"]),
 };
+
+function projectCurrentCard(card: PlayableCard | null) {
+    if (!card) return null;
+    return {
+        ...card,
+        intensity: globalCardIntensityLevel(card),
+    };
+}
 export type RoomCommand =
     | { type: "command.startSession"; revision: null; payload: Record<string, never> }
     | {
@@ -674,7 +684,7 @@ export class RoomService {
             roundNumber: session.roundNumber,
             activePlayer: session.activePlayer,
             players: session.players,
-            currentCard: session.currentCard,
+            currentCard: projectCurrentCard(session.currentCard),
             cardsShown: session.sessionHistory.length,
             voteResult: session.voteResult(),
             neverHaveIEverVoting: projectNeverHaveIEverVoting(session),

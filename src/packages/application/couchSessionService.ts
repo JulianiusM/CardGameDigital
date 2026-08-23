@@ -1,6 +1,12 @@
 import { MESSAGE_KEYS } from "../localization/keys";
 import { randomUUID } from "node:crypto";
-import { GameSession, type GameMode, CARD_TYPES, type DataSpaceId } from "../game-core";
+import {
+    GameSession,
+    type GameMode,
+    CARD_TYPES,
+    globalCardIntensityLevel,
+    type DataSpaceId,
+} from "../game-core";
 import {
     DEFAULT_CARD_TRANSLATION_POLICY,
     type CardLocalizationPolicy,
@@ -241,7 +247,7 @@ export class CouchSessionService {
                       id: session.currentCard.id,
                       cardText: session.currentCard.cardText,
                       cardType: session.currentCard.cardType,
-                      intensity: session.currentCard.intensity,
+                      intensity: globalCardIntensityLevel(session.currentCard),
                       questionCategoryId: session.currentCard.questionCategoryId,
                       dareTypeId: session.currentCard.dareTypeId,
                   }
@@ -259,7 +265,11 @@ export class CouchSessionService {
                     enabledQuestionCategoryIds: [...session.profile.enabledQuestionCategoryIds],
                     enabledDareTypeIds: [...session.profile.enabledDareTypeIds],
                     blockedOperationalFlags: [...session.profile.blockedOperationalFlags],
+                    startingIntensity: session.profile.startingIntensity,
                     maximumIntensity: session.profile.maximumIntensity,
+                    intensityProgressionUnit: session.profile.intensityProgressionUnit,
+                    intensityProgressionInterval: session.profile.intensityProgressionInterval,
+                    intensityProgressionIncrement: session.profile.intensityProgressionIncrement,
                     randomQuestionRatio: session.profile.randomQuestionRatio,
                     maximumTypeStreak: session.profile.maximumTypeStreak,
                     letsTalkMetaInterval: session.profile.letsTalkMetaInterval,

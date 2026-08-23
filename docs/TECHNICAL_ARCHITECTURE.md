@@ -691,6 +691,13 @@ Equivalent localization tables exist for:
 - built-in GameProfile;
 - other catalog-defined labels.
 
+Card catalog v1 and taxonomy persistence remain unchanged. `game-core` owns an
+independently tuned, hard-coded numeric base offset for each QuestionCategory and
+DareType and derives an internal score as `base offset + Card intensity`. Fractional
+offsets allow the overlap between each pair of five-score ranges to match their actual
+content relationship while distant classifications remain separated. The browser
+receives the global 1–5 display level `min(5, ceil(score / 4))`.
+
 ---
 
 # 27. Custom GameProfiles
@@ -1000,7 +1007,7 @@ Card type
 → QuestionCategory
 → GameProfile
 → boundaries
-→ intensity
+→ derived global intensity / Session phase
 → history
 → repeat rules
 → weighting
@@ -1016,11 +1023,20 @@ Card type
 → boundaries
 → flags
 → Dare Affinity
-→ intensity
+→ derived global intensity / Session phase
 → history
 → repeat rules
 → weighting
 ```
+
+The Session ceiling begins at `startingIntensity × 4` and increases by the configured
+`intensityProgressionIncrement` after each interval of either completed rounds or
+displayed Cards. The increment accepts half-steps from 0.5 through 4 and never raises the
+ceiling above `maximumIntensity × 4`. Built-ins use one point every two displayed Cards,
+which crosses overlapping taxonomy thresholds gradually. Never Have I Ever treats one
+completed all-player Card as a round; Card-based pacing uses authoritative CardAppearance
+count. This calculation lives in `game-core`, is serialized in runtime version 2, and is
+shared by every topology.
 
 ---
 

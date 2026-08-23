@@ -22,6 +22,12 @@ describe("game-card-catalog/v1 contract", () => {
         expect(cardProperties.operationalFlags.items.enum).toEqual(CARD_CATALOG_OPERATIONAL_FLAGS);
         expect(schema.$defs.questionCategory.enum).toEqual(CARD_CATALOG_QUESTION_CATEGORIES);
         expect(schema.$defs.dareType.enum).toEqual(CARD_CATALOG_DARE_TYPES);
+
+        for (const taxonomyName of ["questionCategories", "dareTypes"]) {
+            const taxonomySchema = schema.properties[taxonomyName].items;
+            expect(taxonomySchema.required).toEqual(["id", "localizations"]);
+            expect(Object.keys(taxonomySchema.properties)).toEqual(["id", "localizations"]);
+        }
     });
 
     it("accepts a multilingual catalog including a UI-unsupported Card locale", () => {

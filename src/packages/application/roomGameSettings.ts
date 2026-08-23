@@ -1,12 +1,15 @@
 import {
     BUILT_IN_PROFILE_IDS,
     GAME_MODES,
+    INTENSITY_PROGRESSION_UNITS,
     NEVER_HAVE_I_EVER_REVEAL_MODES,
     OPERATIONAL_FLAGS,
     builtInGameProfile,
     type DareTypeId,
     type GameMode,
     type GameProfile,
+    type Intensity,
+    type IntensityProgressionUnit,
     type OperationalFlag,
     type NeverHaveIEverRevealMode,
     type QuestionCategoryId,
@@ -14,12 +17,22 @@ import {
 } from "../game-core";
 
 export const CUSTOM_GAME_PROFILE_ID = "PROFILE_CUSTOM";
+export const DEFAULT_INTENSITY_PROGRESSION = {
+    startingIntensity: 1,
+    intensityProgressionUnit: INTENSITY_PROGRESSION_UNITS.CARDS,
+    intensityProgressionInterval: 2,
+    intensityProgressionIncrement: 1,
+} as const;
 
 export type EffectiveGameSettings = {
     enabledQuestionCategoryIds: QuestionCategoryId[];
     enabledDareTypeIds: DareTypeId[];
     blockedOperationalFlags: OperationalFlag[];
-    maximumIntensity: 1 | 2 | 3 | 4 | 5;
+    startingIntensity: Intensity;
+    maximumIntensity: Intensity;
+    intensityProgressionUnit: IntensityProgressionUnit;
+    intensityProgressionInterval: number;
+    intensityProgressionIncrement: number;
     randomQuestionRatio: number;
     maximumTypeStreak: number;
     letsTalkMetaInterval: number;
@@ -47,7 +60,11 @@ export function effectiveSettingsFromProfile(profileId: string): EffectiveGameSe
             enabledQuestionCategoryIds: [...profile.enabledQuestionCategoryIds],
             enabledDareTypeIds: [...profile.enabledDareTypeIds],
             blockedOperationalFlags: [...profile.blockedOperationalFlags],
+            startingIntensity: profile.startingIntensity,
             maximumIntensity: profile.maximumIntensity,
+            intensityProgressionUnit: profile.intensityProgressionUnit,
+            intensityProgressionInterval: profile.intensityProgressionInterval,
+            intensityProgressionIncrement: profile.intensityProgressionIncrement,
             randomQuestionRatio: profile.randomQuestionRatio,
             maximumTypeStreak: profile.maximumTypeStreak,
             letsTalkMetaInterval: profile.letsTalkMetaInterval,
@@ -58,6 +75,7 @@ export function effectiveSettingsFromProfile(profileId: string): EffectiveGameSe
         enabledQuestionCategoryIds: [],
         enabledDareTypeIds: [],
         blockedOperationalFlags: Object.values(OPERATIONAL_FLAGS),
+        ...DEFAULT_INTENSITY_PROGRESSION,
         maximumIntensity: 1,
         randomQuestionRatio: 0.5,
         maximumTypeStreak: 3,
@@ -83,6 +101,21 @@ export function normalizeRoomGameSettings(
 ): RoomGameSettings {
     return {
         ...settings,
+        configuration: {
+            ...settings.configuration,
+            startingIntensity:
+                settings.configuration.startingIntensity ??
+                DEFAULT_INTENSITY_PROGRESSION.startingIntensity,
+            intensityProgressionUnit:
+                settings.configuration.intensityProgressionUnit ??
+                DEFAULT_INTENSITY_PROGRESSION.intensityProgressionUnit,
+            intensityProgressionInterval:
+                settings.configuration.intensityProgressionInterval ??
+                DEFAULT_INTENSITY_PROGRESSION.intensityProgressionInterval,
+            intensityProgressionIncrement:
+                settings.configuration.intensityProgressionIncrement ??
+                DEFAULT_INTENSITY_PROGRESSION.intensityProgressionIncrement,
+        },
         neverHaveIEverRevealMode:
             settings.neverHaveIEverRevealMode ?? NEVER_HAVE_I_EVER_REVEAL_MODES.ANONYMOUS_AGGREGATE,
     };
@@ -97,7 +130,11 @@ export function roomSettingsGameProfile(settings: RoomGameSettings): GameProfile
         enabledQuestionCategoryIds: new Set(settings.configuration.enabledQuestionCategoryIds),
         enabledDareTypeIds: new Set(settings.configuration.enabledDareTypeIds),
         blockedOperationalFlags: new Set(settings.configuration.blockedOperationalFlags),
+        startingIntensity: settings.configuration.startingIntensity,
         maximumIntensity: settings.configuration.maximumIntensity,
+        intensityProgressionUnit: settings.configuration.intensityProgressionUnit,
+        intensityProgressionInterval: settings.configuration.intensityProgressionInterval,
+        intensityProgressionIncrement: settings.configuration.intensityProgressionIncrement,
         randomQuestionRatio: settings.configuration.randomQuestionRatio,
         maximumTypeStreak: settings.configuration.maximumTypeStreak,
         letsTalkMetaInterval: settings.configuration.letsTalkMetaInterval,

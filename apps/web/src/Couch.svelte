@@ -68,7 +68,8 @@
         dismissNotification();
         exhausted = false;
         try {
-            session = await action();
+            const snapshot = await action();
+            session = snapshot;
         } catch (cause) {
             if (cause instanceof ApiError && cause.code === "CARD_POOL_EXHAUSTED") {
                 if (session) exhausted = true;
@@ -101,7 +102,11 @@
                     enabledQuestionCategoryIds: setup.enabledQuestionCategoryIds,
                     enabledDareTypeIds: setup.enabledDareTypeIds,
                     blockedOperationalFlags: setup.blockedOperationalFlags,
+                    startingIntensity: setup.startingIntensity,
                     maximumIntensity: setup.maximumIntensity,
+                    intensityProgressionUnit: setup.intensityProgressionUnit,
+                    intensityProgressionInterval: setup.intensityProgressionInterval,
+                    intensityProgressionIncrement: setup.intensityProgressionIncrement,
                     randomQuestionRatio: setup.randomQuestionRatio,
                     maximumTypeStreak: setup.maximumTypeStreak,
                     letsTalkMetaInterval: setup.letsTalkMetaInterval,
@@ -166,18 +171,20 @@
             >
         </section>
     {:else if session.state === "ENDED"}
-        <SessionSummary
-            cardsShown={session.cardsShown}
-            roundNumber={session.roundNumber}
-            {elapsedMinutes}
-            onAnotherRound={() => {
-                session = null;
-                createSession();
-            }}
-            onNewGame={() => (session = null)}
-            onExit={backToMain}
-            exitLabel={messages.common.backToMain}
-        />
+        <div class="summary-phase game-phase">
+            <SessionSummary
+                cardsShown={session.cardsShown}
+                roundNumber={session.roundNumber}
+                {elapsedMinutes}
+                onAnotherRound={() => {
+                    session = null;
+                    createSession();
+                }}
+                onNewGame={() => (session = null)}
+                onExit={backToMain}
+                exitLabel={messages.common.backToMain}
+            />
+        </div>
     {:else}
         <section class="game-shell" data-atmosphere={cardAtmosphere}>
             <div class="status">
@@ -189,14 +196,14 @@
                     <span>{messages.common.nowPlaying}</span>{session.activePlayer.name}
                 </p>{/if}
             {#if exhausted}
-                <div class="card-panel exhausted-state" role="status">
+                <div class="card-panel exhausted-state game-phase" role="status">
                     <h2>{messages.couch.exhausted}</h2>
                     <button class="danger" on:click={() => command("end")}
                         >{messages.common.end}</button
                     >
                 </div>
             {:else if session.state === "CHOOSING_CARD_TYPE"}
-                <div class="choice card-panel">
+                <div class="choice card-panel game-phase">
                     <span class="choice-symbol">↝</span>
                     <h2>{messages.common.truthOrDare}</h2>
                     <div>
@@ -212,7 +219,7 @@
                     </div>
                 </div>
             {:else if session.state === "WAITING_FOR_PLAYER"}
-                <div class="card-panel center turn-ready">
+                <div class="card-panel center turn-ready game-phase">
                     <span class="orbit-symbol">✦</span>
                     <h2>{messages.common.ready}</h2>
                     <button class="primary" disabled={busy} on:click={() => command("start")}

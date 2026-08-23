@@ -469,13 +469,16 @@ Internal code:
 
 Question Categories describe subject matter.
 
-They are not guaranteed intensity levels.
+They are not substitutes for player boundaries. Each Category belongs to an internal
+pacing band, while Cards within it may be milder or stronger and the categories remain
+independently selectable.
 
 For example, one person may find an orientation-related question more personal than a light question about attraction.
 
 Therefore:
 
-> Category and Intensity remain separate dimensions.
+> Category eligibility, relative Card intensity, and global pacing remain separate
+> decisions. Neighboring pacing ranges may overlap; distant content ranges remain apart.
 
 ---
 
@@ -676,21 +679,95 @@ It does not replace DareType filtering.
 
 # 14. Intensity
 
-Cards may have an Intensity value.
+Every Card has a relative Intensity from 1 to 5 within its Question Category or DareType.
+The game owns a hard-coded base offset for each taxonomy. These values are internal game
+policy: they are not part of card catalog v1, taxonomy persistence, or the public taxonomy
+API.
 
 Recommended scale:
 
-| Intensity | Meaning                                   |
-| --------- | ----------------------------------------- |
-| 1         | mild                                      |
-| 2         | personal / somewhat challenging           |
-| 3         | intimate / strong                         |
-| 4         | very intimate / spicy                     |
-| 5         | explicit / extreme within allowed content |
+| Global Intensity | Meaning                                   |
+| ---------------- | ----------------------------------------- |
+| 1                | mild                                      |
+| 2                | personal / somewhat challenging           |
+| 3                | intimate / strong                         |
+| 4                | very intimate / spicy                     |
+| 5                | explicit / extreme within allowed content |
 
-For questions, intensity describes personal or emotional intensity.
+The authoritative internal global score is:
 
-For dares, intensity describes intensity **within the selected DareType**.
+```text
+taxonomy base offset + relative Card intensity
+```
+
+Each taxonomy has an independently tuned numeric offset. Fractional offsets allow two
+closely related ranges to overlap heavily and two more distinct ranges to overlap only
+at their edges. A strong Card in a lower range may therefore outrank a mild Card in a
+nearby range. Distant ranges remain separated, so this editorial nuance does not equate
+friendly personal content with explicit sexual dares.
+
+| Question Category | Offset | Question Category | Offset |
+| ----------------- | -----: | ----------------- | -----: |
+| `EVERYDAY`        |    0.0 | `CHILDHOOD`       |    0.5 |
+| `SCENARIO`        |    1.0 | `PERSONALITY`     |    2.5 |
+| `FRIENDSHIP`      |    3.0 | `INTOXICATION`    |    4.5 |
+| `RELATIONSHIP`    |    5.0 | `BODY`            |    5.5 |
+| `SEXUALITY`       |    7.0 | `SEX_OPENNESS`    |    7.5 |
+| `SEX_TENSION`     |    9.5 | `SEX_EXPERIENCE`  |   10.0 |
+
+| DareType      | Offset | DareType         | Offset |
+| ------------- | -----: | ---------------- | -----: |
+| `SILLY`       |    0.0 | `OTHER`          |    1.0 |
+| `THIRD_PARTY` |    3.0 | `TOUCH`          |    3.5 |
+| `KISS`        |    5.0 | `CLOTHING`       |    5.5 |
+| `TOUCH_SPICY` |    6.0 | `KISS_SPICY`     |    6.5 |
+| `NUDITY`      |    8.0 | `SEXUAL_TENSION` |    8.5 |
+| `TOUCH_SEXY`  |    9.5 | `BORDERLINE_SEX` |   10.5 |
+| `SEX`         |   12.0 |                  |        |
+
+Conversation/meta Cards have no primary taxonomy and use offset 0.
+
+The public global Intensity remains 1 to 5 and uses four-point internal score bands:
+
+```text
+min(5, ceil(global score / 4))
+```
+
+For questions, relative intensity describes personal or emotional intensity within the
+Question Category.
+
+For dares, relative intensity describes intensity **within the selected DareType**.
+
+Game settings define:
+
+- starting Intensity from 1 to 5;
+- ending/maximum Intensity from 1 to 5, never below the start;
+- progression unit: completed rounds or displayed Cards;
+- progression interval: the positive number of those units between increases.
+- progression increment: 0.5 to 4 internal score points per increase, in half-point steps.
+
+The current internal score ceiling is:
+
+```text
+min(
+    end × 4,
+    start × 4 + floor(completed progression units / interval) × increment
+)
+```
+
+Public levels 1–5 map to internal score ceilings 4, 8, 12, 16, and 20. In turn-based
+modes, one completed round means every active player has taken a turn. In `Ich hab noch
+nie`, each completed all-player Card is one round. Card-based pacing counts every Card
+committed for display, including a skipped Card, because the group already experienced
+that content. The newly calculated ceiling applies to the next selection.
+
+Built-in profiles default to a one-point increase every two displayed Cards. That makes
+the ceiling cross the independently tuned half-point and whole-point category thresholds
+gradually instead of opening an entire four-point public band at once. Hosts may choose a
+0.5-point step for a gentler game or up to 4 points for deliberately fast escalation.
+
+Escalation expands the eligible ceiling; it does not force every new Card to be stronger,
+does not bypass history, and is never raised early when a phase pool is exhausted.
 
 A disabled DareType can never become eligible through intensity escalation.
 
@@ -1499,22 +1576,21 @@ A GameProfile configures:
 ## Questions
 
 - enabled Question Categories;
-- optional Intensity maximum;
 - weighting.
 
 ## Dares
 
 - enabled DareTypes;
-- optional Intensity maximum;
 - operational restrictions;
 - optional Dare Affinity weighting.
 
 ## Game behavior
 
-Potentially:
+Additionally:
 
 - question/dare ratio;
-- escalation;
+- starting and ending Intensity;
+- progression unit and interval;
 - meta-card frequency.
 
 Built-in GameProfiles have localized display names and descriptions.

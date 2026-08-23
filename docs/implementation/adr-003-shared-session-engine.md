@@ -37,6 +37,23 @@ boundaries, operational flags, intensity, active state, Session history, Group
 history, repeat rules, and weight remain separate stages. Dare Affinity is not
 a hard eligibility switch. No filter is relaxed when the pool is empty.
 
+Intensity eligibility uses independent numeric base offsets owned by `game-core`, not
+catalog or persistence metadata. Fractional hard-coded values fine-tune the amount of
+overlap for each actual Question Category and DareType relationship. The Card's relative
+1–5 value produces an internal score; public intensity is
+`min(5, ceil(score / 4))`.
+
+Settings provide starting intensity, ending `maximumIntensity`, progression unit
+(`ROUNDS` or `CARDS`), positive interval, and a half-point increment from 0.5 through 4.
+The Session raises its internal score ceiling by that increment after each interval and
+caps it at the configured end. The built-in default is one point every two displayed
+Cards, avoiding a four-point band jump. Never Have I Ever advances a round after each
+completed all-player Card; Card pacing uses displayed appearance count. Exhaustion never
+advances progression early.
+
+Persisted GameSession runtime is version 2 because progression policy is frozen into the
+Session profile. Runtime version 1 is rejected rather than inferred with hidden defaults.
+
 `AlwaysEligible` ignores Group history only. `RepeatableInSession` is required
 for same-Session repetition. Cooldown counts other displayed cards since the
 last appearance, matching the GDD's recommended semantics.

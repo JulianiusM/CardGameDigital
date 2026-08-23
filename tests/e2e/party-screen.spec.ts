@@ -41,6 +41,59 @@ async function joinRoom(page: Page, code: string, name: string, display = false)
     await expect(page.getByRole("heading", { name: "Lobby" })).toBeVisible();
 }
 
+async function forbidDocumentTransitions(page: Page): Promise<void> {
+    await page.evaluate(() => {
+        document.documentElement.dataset.documentTransitionCalls = "0";
+        Object.defineProperty(document, "startViewTransition", {
+            configurable: true,
+            value: () => {
+                const current = Number(
+                    document.documentElement.dataset.documentTransitionCalls ?? "0",
+                );
+                document.documentElement.dataset.documentTransitionCalls = String(current + 1);
+                throw new Error("Document-level transition must not be used");
+            },
+        });
+    });
+}
+
+async function expectCompactResultCard(page: Page): Promise<void> {
+    const layout = await page.locator(".game-card.result-compact").evaluate((card) => {
+        const bounds = card.getBoundingClientRect();
+        const type = card.querySelector(".card-type")!.getBoundingClientRect();
+        const text = card.querySelector("p")!.getBoundingClientRect();
+        const intensity = card.querySelector(".dots")!.getBoundingClientRect();
+        return {
+            inside:
+                type.top >= bounds.top - 1 &&
+                intensity.bottom <= bounds.bottom + 1 &&
+                text.left >= bounds.left - 1 &&
+                text.right <= bounds.right + 1,
+            ordered: type.bottom <= text.top + 1 && text.bottom <= intensity.top + 1,
+        };
+    });
+    expect(layout.inside).toBe(true);
+    expect(layout.ordered).toBe(true);
+}
+
+async function expectInsideViewport(page: Page, selector: string): Promise<void> {
+    const bounds = await page.locator(selector).evaluate((element) => {
+        const box = element.getBoundingClientRect();
+        return {
+            top: box.top,
+            right: box.right,
+            bottom: box.bottom,
+            left: box.left,
+            viewportWidth: window.innerWidth,
+            viewportHeight: window.innerHeight,
+        };
+    });
+    expect(bounds.top).toBeGreaterThanOrEqual(-1);
+    expect(bounds.left).toBeGreaterThanOrEqual(-1);
+    expect(bounds.right).toBeLessThanOrEqual(bounds.viewportWidth + 1);
+    expect(bounds.bottom).toBeLessThanOrEqual(bounds.viewportHeight + 1);
+}
+
 test("host creates a Party Screen Room and exposes safe QR join information", async ({
     browser,
 }) => {
@@ -82,10 +135,18 @@ test("settings, device players and transferred Host authority synchronize across
     await expect(newHost.getByText("Carla", { exact: true })).toBeVisible();
     await expect(thirdPlayer.getByText("Ben", { exact: true })).toBeVisible();
     await expect(newHost.getByText("Host Anna", { exact: true })).toBeVisible();
-    await expect(newHost.getByText("Maximale Intensität: 3")).toBeVisible();
+    await expect(newHost.getByText(/Startintensität: 1 → Endintensität: 3/)).toBeVisible();
 
     await oldHost.getByRole("button", { name: "Spieleinstellungen bearbeiten" }).click();
-    await oldHost.getByRole("slider", { name: /Maximale Intensität/ }).fill("2");
+    await expect(oldHost.locator(".number-input")).toBeVisible();
+    await expect(
+        oldHost.getByRole("button", { name: /Verringern: Steigerung alle/ }),
+    ).toBeVisible();
+    await expect(oldHost.getByRole("button", { name: /Erhöhen: Steigerung alle/ })).toBeVisible();
+    await oldHost.getByRole("slider", { name: /Endintensität/ }).fill("2");
+    await oldHost.getByRole("button", { name: "Nach Karten" }).click();
+    await oldHost.getByRole("spinbutton", { name: /Steigerung alle/ }).fill("4");
+    await oldHost.getByRole("slider", { name: /Stärke je Steigerung/ }).fill("0.5");
     await oldHost.getByRole("button", { name: "Speichern", exact: true }).click();
     await expect(newHost.getByRole("status")).toContainText(
         "Der Host hat die Spieleinstellungen geändert.",
@@ -93,7 +154,11 @@ test("settings, device players and transferred Host authority synchronize across
     await expect(thirdPlayer.getByRole("status")).toContainText(
         "Der Host hat die Spieleinstellungen geändert.",
     );
-    await expect(newHost.getByText("Maximale Intensität: 2")).toBeVisible();
+    await expect(newHost.getByText(/Startintensität: 1 → Endintensität: 2/)).toBeVisible();
+    await newHost.getByRole("button", { name: "Spieleinstellungen ansehen" }).click();
+    const changedSettings = newHost.locator(".current-settings-modal");
+    await expect(changedSettings).toContainText("Alle 4 Karten · +0.5");
+    await changedSettings.getByLabel("Einstellungen schließen").click();
     await expect(newHost.getByRole("status")).toHaveCount(0, { timeout: 7_000 });
 
     await oldHost.getByRole("button", { name: "Einstellungen", exact: true }).click();
@@ -145,6 +210,9 @@ test("players can inspect complete public settings without private boundaries", 
     const modal = player.locator(".current-settings-modal");
     await expect(modal.getByRole("heading", { name: "Aktuelle Spieleinstellungen" })).toBeVisible();
     await expect(modal).toContainText("Fragenanteil");
+    await expect(modal).toContainText("Startintensität");
+    await expect(modal).toContainText("Endintensität");
+    await expect(modal).toContainText("Alle 2 Karten · +1");
     await expect(modal).toContainText("Maximale Kartenfolge desselben Typs");
     await expect(modal).toContainText("Zusätzliche Inhaltsregeln");
     await expect(modal).toContainText("Deutsch (Deutschland) · de-DE");
@@ -170,6 +238,8 @@ test("players can inspect complete public settings without private boundaries", 
     await player.getByRole("tab", { name: "Aktuelle Spieleinstellungen" }).click();
     const inGameSettings = player.locator(".settings-modal");
     await expect(inGameSettings).toContainText("Fragenanteil");
+    await expect(inGameSettings).toContainText("Startintensität");
+    await expect(inGameSettings).toContainText("Endintensität");
     await expect(inGameSettings).toContainText("Maximale Kartenfolge desselben Typs");
     await expect(inGameSettings).toContainText("Deutsch (Deutschland) · de-DE");
     await expect(inGameSettings).not.toContainText("Private Grenzen gespeichert");
@@ -209,6 +279,76 @@ test("a player joining during active play enters the authoritative Session roste
     await hostContext.close();
     await firstContext.close();
     await lateContext.close();
+});
+
+test("network loss enters reconnecting immediately and restores the same participant", async ({
+    browser,
+}) => {
+    const hostContext = await browser.newContext();
+    const playerContext = await browser.newContext();
+    const host = await hostContext.newPage();
+    const player = await playerContext.newPage();
+    const code = await hostRoom(host, "personal");
+    await joinRoom(player, code, "Ben");
+    await expect(host.locator(".participant:not(.device-player)")).toHaveCount(2);
+
+    await playerContext.setOffline(true);
+    await expect(player.locator(".reconnect-panel")).toContainText(
+        "Verbindung wird wiederhergestellt",
+        { timeout: 2_000 },
+    );
+    await playerContext.setOffline(false);
+    await expect(player.getByRole("heading", { name: "Lobby" })).toBeVisible({ timeout: 5_000 });
+    await expect(host.locator(".participant:not(.device-player)")).toHaveCount(2);
+    await expect(player).toHaveURL(/\/play\/room$/);
+
+    await hostContext.close();
+    await playerContext.close();
+});
+
+test("hosted players see Card intensity and shared game/modal transitions", async ({ browser }) => {
+    const hostContext = await browser.newContext();
+    const playerContext = await browser.newContext();
+    const host = await hostContext.newPage();
+    const player = await playerContext.newPage();
+    const code = await hostRoom(host, "personal");
+    await joinRoom(player, code, "Ben");
+    await host.getByRole("button", { name: "Spiel starten" }).click();
+    const hostChoice = host.getByRole("button", { name: "Wahrheit", exact: true });
+    const playerChoice = player.getByRole("button", { name: "Wahrheit", exact: true });
+    await expect
+        .poll(async () => (await hostChoice.isVisible()) || playerChoice.isVisible())
+        .toBe(true);
+    const chooser = (await hostChoice.isVisible()) ? host : player;
+    await chooser.getByRole("button", { name: "Wahrheit", exact: true }).click();
+
+    for (const page of [host, player]) {
+        await expect(page.locator(".game-card .dots")).toBeVisible();
+        await expect(page.locator(".game-card")).toHaveCSS("animation-name", "card-enter");
+        await expect(page.locator(".game-card .dots")).toHaveAttribute(
+            "aria-label",
+            /Intensität [1-5]/,
+        );
+        await expect(page.locator(".game-phase")).toHaveCSS("animation-name", "phase-enter");
+    }
+
+    const settingsButton = host.getByRole("button", { name: "Einstellungen", exact: true });
+    await host.emulateMedia({ reducedMotion: "no-preference" });
+    const modalDurations = await settingsButton.evaluate(async (button) => {
+        button.click();
+        await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+        const backdrop = document.querySelector(".modal-backdrop");
+        return (
+            backdrop
+                ?.getAnimations({ subtree: true })
+                .map((animation) => Number(animation.effect?.getTiming().duration ?? 0)) ?? []
+        );
+    });
+    await expect(host.locator(".settings-modal")).toBeVisible();
+    expect(modalDurations.some((duration) => duration >= 160)).toBe(true);
+
+    await hostContext.close();
+    await playerContext.close();
 });
 
 test("named Never Have I Ever synchronizes private progress then public answer columns", async ({
@@ -273,6 +413,7 @@ test("named Never Have I Ever synchronizes private progress then public answer c
             () => document.scrollingElement!.scrollHeight <= window.innerHeight + 1,
         ),
     ).toBe(true);
+    await expectCompactResultCard(display);
 
     await display.getByRole("button", { name: "Einstellungen", exact: true }).click();
     await expect(display.getByRole("tab", { name: "Aktuelle Spieleinstellungen" })).toHaveAttribute(
@@ -283,6 +424,59 @@ test("named Never Have I Ever synchronizes private progress then public answer c
     await expect(display.locator(".settings-modal")).toContainText("Antworten werden aufgedeckt");
     await expect(display.getByRole("tab", { name: /Erweiterte Einstellungen/ })).toHaveCount(0);
     await display.getByLabel("Einstellungen schließen").click();
+
+    await hostContext.close();
+    await playerContext.close();
+    await displayContext.close();
+});
+
+test("anonymous Never Have I Ever uses a compact aggregate on a short display", async ({
+    browser,
+}) => {
+    const hostContext = await browser.newContext();
+    const playerContext = await browser.newContext();
+    const displayContext = await browser.newContext({ viewport: { width: 640, height: 360 } });
+    const host = await hostContext.newPage();
+    const player = await playerContext.newPage();
+    const display = await displayContext.newPage();
+    const code = await hostRoom(host, "party", /^Freunde /, /Ich hab noch nie/, "anonymous");
+    await joinRoom(player, code, "Ben");
+    await joinRoom(display, code, "", true);
+
+    await host.getByRole("button", { name: "Spiel starten" }).click();
+    await host.getByRole("button", { name: "Karte aufdecken" }).click();
+    await host.getByRole("button", { name: "Trifft zu" }).click();
+    await player.getByRole("button", { name: "Trifft nicht zu" }).click();
+
+    for (const page of [host, player, display]) {
+        await expect(page.locator(".anonymous-result")).toBeVisible();
+        await expect(page.locator(".aggregate-split")).toBeVisible();
+        await expect(page.locator(".aggregate-metric")).toHaveCount(2);
+        await expect(page.locator(".never-result-columns")).toHaveCount(0);
+        await expect(page.locator(".answer-name-list")).toHaveCount(0);
+    }
+    await expect(display.locator(".aggregate-total")).toContainText("2");
+    await expectCompactResultCard(display);
+    expect(
+        await display.evaluate(
+            () => document.scrollingElement!.scrollHeight <= window.innerHeight + 1,
+        ),
+    ).toBe(true);
+
+    await display.setViewportSize({ width: 480, height: 640 });
+    await expect
+        .poll(async () => {
+            const card = await display.locator(".game-card").boundingBox();
+            const result = await display.locator(".never-voting").boundingBox();
+            return Boolean(card && result && card.y + card.height <= result.y + 1);
+        })
+        .toBe(true);
+    await expectCompactResultCard(display);
+    expect(
+        await display.evaluate(
+            () => document.scrollingElement!.scrollHeight <= window.innerHeight + 1,
+        ),
+    ).toBe(true);
 
     await hostContext.close();
     await playerContext.close();
@@ -331,7 +525,7 @@ test("small public displays automatically page long voting rosters and named res
 }) => {
     test.setTimeout(75_000);
     const hostContext = await browser.newContext();
-    const displayContext = await browser.newContext({ viewport: { width: 800, height: 450 } });
+    const displayContext = await browser.newContext({ viewport: { width: 800, height: 600 } });
     const host = await hostContext.newPage();
     const display = await displayContext.newPage();
     const code = await hostRoom(host, "party", /^Freunde /, /Ich hab noch nie/, "named");
@@ -346,12 +540,17 @@ test("small public displays automatically page long voting rosters and named res
     }
     await host.getByRole("button", { name: "Personen für dieses Gerät speichern" }).click();
     await joinRoom(display, code, "", true);
+    await expectInsideViewport(display, ".public-stage-lobby");
+    await expectInsideViewport(display, ".public-stage-lobby .stage-player-roster");
+    await expectInsideViewport(display, ".public-stage-lobby .join-card");
     await host.getByRole("button", { name: "Spiel starten" }).click();
     await host.getByRole("button", { name: "Karte aufdecken" }).click();
 
     const displayVoting = display.locator(".never-voting");
     await expect(display.locator(".public-stage")).toBeVisible();
     await expect(display.locator(".game-card")).toBeVisible();
+    await expectInsideViewport(display, ".game-card");
+    await expectInsideViewport(display, ".never-voting");
     await expect(displayVoting.locator(".auto-page-status")).toBeVisible();
     const firstProgressPage = await displayVoting.locator(".vote-progress-list").innerText();
     await expect
@@ -381,6 +580,20 @@ test("small public displays automatically page long voting rosters and named res
             timeout: 7_000,
         })
         .not.toBe(firstResultPage);
+    expect(
+        await display.evaluate(
+            () => document.scrollingElement!.scrollHeight <= window.innerHeight + 1,
+        ),
+    ).toBe(true);
+    await expectCompactResultCard(display);
+    await expectInsideViewport(display, ".never-voting");
+
+    await host.getByRole("button", { name: "Einstellungen", exact: true }).click();
+    await host.getByRole("tab", { name: "Session" }).click();
+    await host.getByRole("button", { name: "Spiel beenden" }).click();
+    await expect(display.getByRole("heading", { name: /Gute Nacht/ })).toBeVisible();
+    await expectInsideViewport(display, ".ended-stage");
+    await expectInsideViewport(display, ".ended-stage .session-summary");
     expect(
         await display.evaluate(
             () => document.scrollingElement!.scrollHeight <= window.innerHeight + 1,
@@ -451,6 +664,7 @@ test("Host closes an active Room and every device returns cleanly to the main me
     await joinRoom(display, code, "", true);
     await host.getByRole("button", { name: "Spiel starten" }).click();
     await expect(player.getByText("Runde 1")).toBeVisible();
+    for (const page of [host, player, display]) await forbidDocumentTransitions(page);
 
     await host.getByRole("button", { name: "Einstellungen", exact: true }).click();
     await host.getByRole("tab", { name: "Session" }).click();
@@ -460,6 +674,12 @@ test("Host closes an active Room and every device returns cleanly to the main me
     for (const page of [host, player, display]) {
         await expect(page).toHaveURL(/\/play\/?$/);
         await expect(page.getByRole("button", { name: /Spiel hosten/ })).toBeVisible();
+        await expect(page.locator(".app-location")).toHaveCSS("animation-name", "none");
+        await expect(page.locator(".home-phase-transition")).toHaveCSS(
+            "animation-name",
+            "phase-enter",
+        );
+        await expect(page.locator("html")).toHaveAttribute("data-document-transition-calls", "0");
         await expect(page.getByRole("status")).toContainText(
             "Der Host hat den Raum geschlossen. Du bist zurück im Hauptmenü.",
         );

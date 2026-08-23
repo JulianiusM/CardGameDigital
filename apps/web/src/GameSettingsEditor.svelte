@@ -1,5 +1,6 @@
 <script lang="ts">
     import { gameModes, messages } from "./i18n";
+    import NumberInput from "./NumberInput.svelte";
     import type { CardLocaleSummary, GameProfileSummary, RoomGameSettings } from "./multiplayer";
     import { dareTypeIds, operationalFlagIds, questionCategoryIds } from "./gameSettingsOptions";
 
@@ -33,7 +34,11 @@
                 enabledQuestionCategoryIds: [...profile.enabledQuestionCategoryIds],
                 enabledDareTypeIds: [...profile.enabledDareTypeIds],
                 blockedOperationalFlags: [...profile.blockedOperationalFlags],
+                startingIntensity: profile.startingIntensity as 1 | 2 | 3 | 4 | 5,
                 maximumIntensity: profile.maximumIntensity as 1 | 2 | 3 | 4 | 5,
+                intensityProgressionUnit: profile.intensityProgressionUnit,
+                intensityProgressionInterval: profile.intensityProgressionInterval,
+                intensityProgressionIncrement: profile.intensityProgressionIncrement,
                 randomQuestionRatio: profile.randomQuestionRatio,
                 maximumTypeStreak: profile.maximumTypeStreak,
                 letsTalkMetaInterval: profile.letsTalkMetaInterval,
@@ -127,18 +132,94 @@
         <h3>{messages.setup.behaviorHeading}</h3>
         <label class="setting-row">
             <span
-                ><strong>{messages.room.maximumIntensity}</strong><small
-                    >{settings.configuration.maximumIntensity} / 5</small
+                ><strong>{messages.room.startingIntensity}</strong><small
+                    >{settings.configuration.startingIntensity} / 5</small
                 ></span
             >
             <input
                 type="range"
                 min="1"
+                max={settings.configuration.maximumIntensity}
+                value={settings.configuration.startingIntensity}
+                on:input={(event) =>
+                    updateConfiguration({
+                        startingIntensity: Number(event.currentTarget.value) as 1 | 2 | 3 | 4 | 5,
+                    })}
+            />
+        </label>
+        <label class="setting-row">
+            <span
+                ><strong>{messages.room.endingIntensity}</strong><small
+                    >{settings.configuration.maximumIntensity} / 5</small
+                ></span
+            >
+            <input
+                type="range"
+                min={settings.configuration.startingIntensity}
                 max="5"
                 value={settings.configuration.maximumIntensity}
                 on:input={(event) =>
                     updateConfiguration({
                         maximumIntensity: Number(event.currentTarget.value) as 1 | 2 | 3 | 4 | 5,
+                    })}
+            />
+        </label>
+        <div class="setting-row progression-setting">
+            <span><strong>{messages.room.intensityPacing}</strong></span>
+            <div class="choice-chip-grid compact progression-unit-options">
+                <button
+                    type="button"
+                    class:selected={settings.configuration.intensityProgressionUnit === "ROUNDS"}
+                    aria-pressed={settings.configuration.intensityProgressionUnit === "ROUNDS"}
+                    on:click={() => updateConfiguration({ intensityProgressionUnit: "ROUNDS" })}
+                    >{messages.room.progressionRounds}</button
+                >
+                <button
+                    type="button"
+                    class:selected={settings.configuration.intensityProgressionUnit === "CARDS"}
+                    aria-pressed={settings.configuration.intensityProgressionUnit === "CARDS"}
+                    on:click={() => updateConfiguration({ intensityProgressionUnit: "CARDS" })}
+                    >{messages.room.progressionCards}</button
+                >
+            </div>
+        </div>
+        <div class="setting-row">
+            <span id="progression-interval-label"
+                ><strong>{messages.room.progressionInterval}</strong><small
+                    >{settings.configuration.intensityProgressionInterval}
+                    {settings.configuration.intensityProgressionUnit === "ROUNDS"
+                        ? messages.common.rounds
+                        : messages.common.cards}</small
+                ></span
+            >
+            <NumberInput
+                min={1}
+                max={100}
+                value={settings.configuration.intensityProgressionInterval}
+                labelledBy="progression-interval-label"
+                decreaseLabel={`${messages.common.decrease}: ${messages.room.progressionInterval}`}
+                increaseLabel={`${messages.common.increase}: ${messages.room.progressionInterval}`}
+                onChange={(value) =>
+                    updateConfiguration({
+                        intensityProgressionInterval: value,
+                    })}
+            />
+        </div>
+        <label class="setting-row">
+            <span
+                ><strong>{messages.room.progressionIncrement}</strong><small
+                    >+{settings.configuration.intensityProgressionIncrement}</small
+                ></span
+            >
+            <input
+                type="range"
+                min="0.5"
+                max="4"
+                step="0.5"
+                value={settings.configuration.intensityProgressionIncrement}
+                on:input={(event) =>
+                    updateConfiguration({
+                        intensityProgressionIncrement: Number(event.currentTarget.value),
                     })}
             />
         </label>

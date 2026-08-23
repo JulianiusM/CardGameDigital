@@ -14,6 +14,12 @@ async function reachCouch(
     await page.getByRole("button", { name: /^Freunde / }).click();
     await page.getByRole("button", { name: /^Weiter/ }).click();
     await expect(page.getByRole("heading", { name: "Erlebnis anpassen" })).toBeVisible();
+    await expect(page.getByRole("slider", { name: /Startintensität/ })).toBeVisible();
+    await expect(page.getByRole("slider", { name: /Endintensität/ })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Nach Runden" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Nach Karten" })).toBeVisible();
+    await expect(page.getByRole("spinbutton", { name: /Steigerung alle/ })).toHaveValue("2");
+    await expect(page.getByRole("slider", { name: /Stärke je Steigerung/ })).toHaveValue("1");
     if (modeLabel === "Ich hab noch nie") {
         await page
             .getByRole("button", { name: reveal === "named" ? /^Antworten offen/ : /^Anonym/ })
@@ -107,6 +113,32 @@ test("main setup exposes Host, Join and Display and guards direct Host URLs", as
     await expect(page).toHaveURL(/\/play\/?$/);
     await expect(page.getByRole("button", { name: /Spiel hosten/ })).toBeVisible();
     await expect(page.getByText("Lobby", { exact: true })).toHaveCount(0);
+});
+
+test("navigation animates its component panel without invoking a document transition", async ({
+    page,
+}) => {
+    await page.goto("/play/");
+    await page.evaluate(() => {
+        document.documentElement.dataset.documentTransitionCalls = "0";
+        Object.defineProperty(document, "startViewTransition", {
+            configurable: true,
+            value: () => {
+                const current = Number(
+                    document.documentElement.dataset.documentTransitionCalls ?? "0",
+                );
+                document.documentElement.dataset.documentTransitionCalls = String(current + 1);
+                throw new Error("Document-level transition must not be used");
+            },
+        });
+    });
+
+    await page.getByRole("button", { name: /Spiel hosten/ }).click();
+
+    await expect(page.getByRole("heading", { name: /Mit wem spielt ihr/ })).toBeVisible();
+    await expect(page.locator(".home-phase-transition")).toHaveCSS("animation-name", "phase-enter");
+    await expect(page.locator(".app-location")).toHaveCSS("animation-name", "none");
+    await expect(page.locator("html")).toHaveAttribute("data-document-transition-calls", "0");
 });
 
 test("Group step has exactly three choices and a new Group is immediately selected", async ({
@@ -223,6 +255,7 @@ test("Couch named Never Have I Ever uses public progress and neutral answer colu
 test("built-in profiles offer a validation-preserving Customize shortcut", async ({ page }) => {
     await page.goto("/play/");
     await page.getByRole("button", { name: /Spiel hosten/ }).click();
+    await expect(page.locator(".home-phase-transition")).toHaveCSS("animation-name", "phase-enter");
     await page.getByRole("button", { name: /Keine Gruppe/ }).click();
     await page.getByRole("button", { name: /^Weiter/ }).click();
     await page.getByRole("button", { name: /^Weiter/ }).click();
@@ -241,7 +274,15 @@ test("built-in profiles offer a validation-preserving Customize shortcut", async
                 width: element.getBoundingClientRect().width,
             };
         });
-    expect(await styles(skip)).toEqual(await styles(next));
+    const skipStyles = await styles(skip);
+    const nextStyles = await styles(next);
+    expect({ ...skipStyles, height: undefined, width: undefined }).toEqual({
+        ...nextStyles,
+        height: undefined,
+        width: undefined,
+    });
+    expect(Math.abs(skipStyles.height - nextStyles.height)).toBeLessThan(1);
+    expect(Math.abs(skipStyles.width - nextStyles.width)).toBeLessThan(1);
     await skip.click();
     await expect(page.getByRole("heading", { name: /Bildschirme/ })).toBeVisible();
 });

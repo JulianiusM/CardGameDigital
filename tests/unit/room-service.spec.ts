@@ -622,7 +622,10 @@ describe("RoomService", () => {
             profileId: "PROFILE_CUSTOM",
             configuration: {
                 ...defaultRoomGameSettings().configuration,
+                startingIntensity: 2 as const,
                 maximumIntensity: 2 as const,
+                intensityProgressionUnit: "CARDS" as const,
+                intensityProgressionInterval: 4,
                 enabledDareTypeIds: [],
             },
         };
@@ -640,7 +643,13 @@ describe("RoomService", () => {
             revision: 1,
             profileId: "PROFILE_CUSTOM",
             updatedByParticipantId: host.id,
-            configuration: { maximumIntensity: 2, enabledDareTypeIds: [] },
+            configuration: {
+                startingIntensity: 2,
+                maximumIntensity: 2,
+                intensityProgressionUnit: "CARDS",
+                intensityProgressionInterval: 4,
+                enabledDareTypeIds: [],
+            },
         });
         expect((await service.snapshot(joined.roomId, player)).settings).toEqual(updated.settings);
         expect(JSON.stringify(updated.settings)).not.toContain("disabledDareTypeIds");
