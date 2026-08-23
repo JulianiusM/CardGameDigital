@@ -37,7 +37,7 @@
                 {#if stage && yesNames?.length}
                     <AutoPageRegion
                         itemCount={yesNames.length}
-                        rowHeight={41}
+                        rowHeight={60}
                         grid={false}
                         label={messages.common.yes}
                         let:start
@@ -63,7 +63,7 @@
                 {#if stage && noNames?.length}
                     <AutoPageRegion
                         itemCount={noNames.length}
-                        rowHeight={41}
+                        rowHeight={60}
                         grid={false}
                         label={messages.common.no}
                         let:start

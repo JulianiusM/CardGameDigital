@@ -79,8 +79,14 @@ game players. The committed Session revision and fresh snapshots make the expand
 visible to every client.
 
 Server messages are `server.hello`, `room.snapshot`, `room.presence`,
-`room.roleChanged`, and `error`. Error `code` is stable; localized `message` is not a
-programmatic contract. Clients must ignore additive response fields.
+`room.roleChanged`, `room.participantLeft`, `session.cardReplaced`, and `error`.
+`room.participantLeft` contains `{participantId,displayName,reason}` where `reason` is
+`LEFT` or `DISCONNECT_EXPIRED`; it is sent to remaining connected Room devices after
+the leave/removal commits. `session.cardReplaced` contains `{reason}` where `reason` is
+`SKIPPED` or `VETOED`; it precedes the fresh snapshot so clients can explain and animate
+the authoritative Card transition. Neither event grants authority or replaces the
+snapshot. Error `code` is stable; localized `message` is not a programmatic contract.
+Clients must ignore additive response fields.
 
 ## Compatibility impact
 

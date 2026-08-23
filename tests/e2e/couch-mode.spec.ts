@@ -283,7 +283,10 @@ test("Couch lobby has canonical Settings and zero-card start stays with a warnin
 test("Couch end summary offers a clean return to the main menu", async ({ page }) => {
     await createGame(page, "Wahrheit oder Pflicht");
     await page.getByRole("button", { name: "Einstellungen", exact: true }).click();
-    await page.getByRole("tab", { name: "Session" }).click();
+    await expect(page.getByRole("tab", { name: "Session" })).toHaveAttribute(
+        "aria-selected",
+        "true",
+    );
     await page.getByRole("button", { name: "Spiel beenden" }).click();
     await expect(page.getByRole("heading", { name: /Gute Nacht/ })).toBeVisible();
     await page.getByRole("button", { name: "Zurück zum Hauptmenü" }).click();

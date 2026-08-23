@@ -4,6 +4,7 @@
 
     export let card: PresentedCard;
     export let showIntensity = false;
+    export let replacementDraw = false;
 
     const symbols: Record<string, string> = { QUESTION: "?", DARE: "↝", CONVERSATION: "◌" };
     $: classificationId = card.questionCategoryId ?? card.dareTypeId;
@@ -12,7 +13,7 @@
         : "";
 </script>
 
-<article class="game-card" data-type={card.cardType}>
+<article class:replacement-draw={replacementDraw} class="game-card" data-type={card.cardType}>
     <div class="card-shine"></div>
     <span class="card-symbol" aria-hidden="true">{symbols[card.cardType] ?? "◇"}</span>
     <span class="card-type">

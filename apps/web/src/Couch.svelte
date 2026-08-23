@@ -247,5 +247,6 @@
         {currentGameSettings}
         gameProfiles={profiles}
         {cardLocales}
+        defaultTab={session && session.state !== "ENDED" ? "session" : "audio"}
     />
 </main>

@@ -424,6 +424,14 @@ describe("Room WebSocket protocol", () => {
                 ),
             () => JSON.stringify(playerClient.messages),
         );
+        expect(
+            playerClient.messages.find((message) => message.type === "room.participantLeft")
+                ?.payload,
+        ).toEqual({
+            participantId: host.participantId,
+            displayName: "Host",
+            reason: "DISCONNECT_EXPIRED",
+        });
         expect(repository.participants.filter(({ role }) => role === "HOST")).toHaveLength(1);
         expect(repository.participants.find(({ id }) => id === player.participantId)?.role).toBe(
             "HOST",
@@ -718,6 +726,13 @@ describe("Room WebSocket protocol", () => {
             ),
         );
         expect(
+            hostClient.messages.find((message) => message.type === "room.participantLeft")?.payload,
+        ).toEqual({
+            participantId: player.participantId,
+            displayName: "Leaving player",
+            reason: "LEFT",
+        });
+        expect(
             repository.participants.find(({ id }) => id === player.participantId)?.connectionStatus,
         ).toBe("LEFT");
         expect(
@@ -784,6 +799,101 @@ describe("Room WebSocket protocol", () => {
         lateClient.socket.terminate();
         await new Promise<void>((resolve) => wss.close(() => resolve()));
     });
+
+    it.each([
+        ["command.skipCard", "SKIPPED", "HOST"],
+        ["command.vetoCard", "VETOED", "PLAYER"],
+    ] as const)(
+        "broadcasts the committed %s Card replacement before its fresh snapshot",
+        async (commandType, reason, actorRole) => {
+            const repository = new Repo();
+            const neverCards: CardRepository = {
+                ...cards,
+                listActive: async () => [
+                    card({
+                        id: "replacement-a" as never,
+                        yesNoAnswerPossible: true,
+                    }),
+                    card({
+                        id: "replacement-b" as never,
+                        yesNoAnswerPossible: true,
+                    }),
+                ],
+            };
+            const service = new RoomService(
+                repository,
+                neverCards,
+                new SequenceRandomSource([0, 0]),
+            );
+            const host = await service.createRoom("Host", null, {
+                ...defaultRoomGameSettings(),
+                mode: "NEVER_HAVE_I_EVER",
+            });
+            const player = await service.joinRoom(host.roomCode, "Player", "PLAYER");
+            const display = await service.joinRoom(host.roomCode, "Display", "DISPLAY");
+            server = http.createServer();
+            const wss = attachWebSocketServer(server, service);
+            await new Promise<void>((resolve) => server!.listen(0, "127.0.0.1", resolve));
+            const port = (server.address() as { port: number }).port;
+            const clients = await Promise.all(
+                [host, player, display].map((participant) =>
+                    hello(
+                        port,
+                        participant.roomCode,
+                        participant.participantCredential,
+                        participant.role,
+                    ),
+                ),
+            );
+            const send = (
+                client: (typeof clients)[number],
+                type: string,
+                revision: number | null,
+            ) =>
+                client.socket.send(
+                    JSON.stringify({
+                        protocol: PROTOCOL_VERSION,
+                        type,
+                        requestId: type,
+                        revision,
+                        payload: {},
+                    }),
+                );
+
+            send(clients[0], "command.startSession", null);
+            await waitFor(() => repository.runtime?.revision === 0);
+            send(clients[0], "command.startTurn", 0);
+            await waitFor(() => repository.runtime?.revision === 1);
+            const firstCardId = repository.runtime?.currentCard?.id;
+            const actor = actorRole === "HOST" ? clients[0] : clients[1];
+            send(actor, commandType, 1);
+            await waitFor(() => repository.runtime?.currentCard?.id !== firstCardId);
+            await waitFor(() =>
+                clients.every((client) =>
+                    client.messages.some(
+                        (message) =>
+                            message.type === "session.cardReplaced" &&
+                            message.payload.reason === reason,
+                    ),
+                ),
+            );
+            for (const client of clients) {
+                const eventIndex = client.messages.findIndex(
+                    (message) => message.type === "session.cardReplaced",
+                );
+                const changedSnapshotIndex = client.messages.findIndex(
+                    (message, index) =>
+                        index > eventIndex &&
+                        message.type === "room.snapshot" &&
+                        message.payload.session?.currentCard?.id !== firstCardId,
+                );
+                expect(eventIndex).toBeGreaterThanOrEqual(0);
+                expect(changedSnapshotIndex).toBeGreaterThan(eventIndex);
+            }
+            for (const client of clients) client.socket.terminate();
+            await new Promise<void>((resolve) => wss.close(() => resolve()));
+        },
+    );
 
     it("keeps named Never Have I Ever answers private until every voter completes", async () => {
         const repository = new Repo();

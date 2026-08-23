@@ -19,9 +19,12 @@
     export let presence: Presence[];
     export let roomCode: string;
     export let exhausted: boolean;
+    export let cardReplacementSequence = 0;
+    export let cardReplacementReason: "SKIPPED" | "VETOED" | "" = "";
 
     $: actions = new Set(session.availableActions);
     $: elapsedMinutes = minutesSince(session.startedAt);
+    $: showingVotingResults = Boolean(session.neverHaveIEverVoting?.result);
 </script>
 
 <section class:public-stage={role === "DISPLAY"} class="game-shell">
@@ -102,8 +105,19 @@
             {/if}
         </div>
     {:else if session.currentCard}
-        <div class:with-public-voting={session.neverHaveIEverVoting} class="gameplay-focus">
-            <GameCard card={session.currentCard} showIntensity={role === "DISPLAY"} />
+        <div
+            class:with-public-voting={session.neverHaveIEverVoting}
+            class:voting-results={showingVotingResults}
+            class:voting-collection={session.neverHaveIEverVoting && !showingVotingResults}
+            class="gameplay-focus"
+        >
+            {#key `${session.currentCard.id}:${cardReplacementSequence}`}
+                <GameCard
+                    card={session.currentCard}
+                    showIntensity={role === "DISPLAY"}
+                    replacementDraw={Boolean(cardReplacementReason)}
+                />
+            {/key}
 
             {#if session.neverHaveIEverVoting}
                 <NeverHaveIEverVoting

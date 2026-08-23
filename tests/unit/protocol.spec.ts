@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+    cardReplacedEventPayloadSchema,
     clientHelloEnvelopeSchema,
+    participantLeftEventPayloadSchema,
     PROTOCOL_VERSION,
     roomCommandEnvelopeSchema,
 } from "../../src/packages/protocol";
@@ -67,6 +69,28 @@ describe("protocol v2 boundary", () => {
                 payload: {},
             }).success,
         ).toBe(true);
+    });
+
+    it("validates semantic Room lifecycle event payloads strictly", () => {
+        expect(
+            participantLeftEventPayloadSchema.safeParse({
+                participantId: "00000000-0000-4000-8000-000000000001",
+                displayName: "Ben",
+                reason: "DISCONNECT_EXPIRED",
+            }).success,
+        ).toBe(true);
+        expect(
+            participantLeftEventPayloadSchema.safeParse({
+                participantId: "00000000-0000-4000-8000-000000000001",
+                displayName: "Ben",
+                reason: "LEFT",
+                privateBoundaries: [],
+            }).success,
+        ).toBe(false);
+        expect(cardReplacedEventPayloadSchema.safeParse({ reason: "SKIPPED" }).success).toBe(true);
+        expect(cardReplacedEventPayloadSchema.safeParse({ reason: "ADVANCED" }).success).toBe(
+            false,
+        );
     });
 
     it("accepts the Host-only ended-Session reset as a revisioned command", () => {

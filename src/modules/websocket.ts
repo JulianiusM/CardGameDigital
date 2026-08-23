@@ -7,6 +7,8 @@ import {
     PROTOCOL_VERSION,
     roomCommandEnvelopeSchema,
     snapshotRequestEnvelopeSchema,
+    type CardReplacedEventPayload,
+    type ParticipantLeftEventPayload,
 } from "../packages/protocol";
 import type { RoomParticipant } from "../packages/application/realtimeRooms";
 import type { RoomCommand, RoomService } from "../packages/application/roomService";
@@ -48,7 +50,14 @@ export function attachWebSocketServer(
                     );
                     if (!hasHost) orphanedRooms.set(participant.roomId, participant.id);
                 }
-                if (expired) await refreshRoom(participant.roomId);
+                if (expired) {
+                    broadcastRoomEvent(sockets, participant.roomId, "room.participantLeft", {
+                        participantId: participant.id,
+                        displayName: participant.displayName,
+                        reason: "DISCONNECT_EXPIRED",
+                    });
+                    await refreshRoom(participant.roomId);
+                }
             } catch {
                 // Server shutdown or Room expiry can race the grace timer.
             }
@@ -225,6 +234,16 @@ export function attachWebSocketServer(
                         sockets.delete(peer);
                         peer.socket.close(1000, "left room");
                     }
+                    broadcastRoomEvent(sockets, roomId, "room.participantLeft", {
+                        participantId: context.participant.id,
+                        displayName: context.participant.displayName,
+                        reason: "LEFT",
+                    });
+                }
+                if (command.type === "command.skipCard" || command.type === "command.vetoCard") {
+                    broadcastRoomEvent(sockets, roomId, "session.cardReplaced", {
+                        reason: command.type === "command.skipCard" ? "SKIPPED" : "VETOED",
+                    });
                 }
                 await refreshRoom(roomId, requestId);
             } catch (error) {
@@ -284,4 +303,20 @@ function broadcastPresence(sockets: Set<Context>, roomId: string): void {
     for (const peer of sockets)
         if (peer.participant.roomId === roomId && peer.socket.readyState === WebSocket.OPEN)
             send(peer.socket, "room.presence", null, null, { connected });
+}
+
+type RoomEventPayloads = {
+    "room.participantLeft": ParticipantLeftEventPayload;
+    "session.cardReplaced": CardReplacedEventPayload;
+};
+
+function broadcastRoomEvent<Type extends keyof RoomEventPayloads>(
+    sockets: Set<Context>,
+    roomId: string,
+    type: Type,
+    payload: RoomEventPayloads[Type],
+): void {
+    for (const peer of sockets)
+        if (peer.participant.roomId === roomId && peer.socket.readyState === WebSocket.OPEN)
+            send(peer.socket, type, null, null, payload);
 }

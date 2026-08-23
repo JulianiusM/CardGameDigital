@@ -24,6 +24,7 @@
     export let cardLocales: readonly CardLocaleSummary[] = [];
     export let roomCode = "";
     export let qr = "";
+    export let defaultTab = "audio";
     let preferences = presentation.preferences;
     let tab:
         | "game"
@@ -33,17 +34,9 @@
         | "content"
         | "session"
         | "services"
-        | "advanced" = showGame ? "game" : "audio";
+        | "advanced" = "audio";
     let wasOpen = false;
     let authenticationAvailable = false;
-    $: if (!showGame && tab === "game") tab = "audio";
-    $: if (!showAdvanced && tab === "advanced") tab = "audio";
-    $: if (!currentGameSettings && tab === "currentGame") tab = "audio";
-    $: if (open && !wasOpen) {
-        tab = showGame ? "game" : "audio";
-        wasOpen = true;
-    }
-    $: if (!open) wasOpen = false;
     $: availableTabs = [
         ...(showGame ? [{ id: "game", label: messages.settings.game, icon: "♠" }] : []),
         ...(currentGameSettings
@@ -55,11 +48,24 @@
         ...(onEnd || onCloseRoom
             ? [{ id: "session", label: messages.settings.session, icon: "•••" }]
             : []),
-        { id: "services", label: messages.settings.services, icon: "?" },
+        {
+            id: "services",
+            label: roomCode ? messages.settings.roomDetails : messages.settings.services,
+            icon: roomCode ? "⌂" : "?",
+        },
         ...(showAdvanced
             ? [{ id: "advanced", label: messages.settings.advanced, icon: "•••" }]
             : []),
     ];
+    $: if (!availableTabs.some(({ id }) => id === tab)) {
+        tab = (availableTabs[0]?.id ?? "audio") as typeof tab;
+    }
+    $: if (open && !wasOpen) {
+        const requested = availableTabs.find(({ id }) => id === defaultTab)?.id;
+        tab = (requested ?? availableTabs[0]?.id ?? "audio") as typeof tab;
+        wasOpen = true;
+    }
+    $: if (!open) wasOpen = false;
 
     onMount(async () => {
         try {

@@ -99,6 +99,11 @@ export const de = {
         answerReveal: "Anzeige der Antworten",
         settingsError: "Einstellungen konnten nicht gespeichert werden",
         settingsChanged: "Der Host hat die Spieleinstellungen geändert.",
+        participantLeft: (name: string) => `${name} hat den Raum verlassen.`,
+        participantRemoved: (name: string) =>
+            `${name} wurde nach dem Verbindungsabbruch aus dem Raum entfernt.`,
+        cardSkipped: "Die Karte wurde übersprungen. Eine neue Karte wurde gezogen.",
+        cardVetoed: "Eine andere Karte wurde gewünscht. Eine neue Karte wurde gezogen.",
         currentSettings: "Aktuelle Spieleinstellungen",
         viewSettings: "Spieleinstellungen ansehen",
         closeConfirm:
@@ -302,6 +307,7 @@ export const de = {
         game: "Spiel",
         players: "Spieler",
         services: "Hilfe & Konto",
+        roomDetails: "Raum",
         help: "Hilfe öffnen",
         account: "Konto öffnen",
         leave: "Spiel verlassen",

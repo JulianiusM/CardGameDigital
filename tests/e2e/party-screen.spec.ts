@@ -154,11 +154,19 @@ test("players can inspect complete public settings without private boundaries", 
     await host.getByRole("button", { name: "Spiel starten" }).click();
     await expect(player.getByRole("button", { name: "Spieleinstellungen ansehen" })).toHaveCount(0);
     await host.getByRole("button", { name: "Einstellungen", exact: true }).click();
+    await expect(host.getByRole("tab", { name: "Session" })).toHaveAttribute(
+        "aria-selected",
+        "true",
+    );
     await expect(host.getByRole("tab", { name: /Erweiterte Einstellungen/ })).toBeVisible();
     await host.getByRole("tab", { name: /Erweiterte Einstellungen/ }).click();
     await expect(host.getByLabel("Host-Aufgabe übertragen")).toBeVisible();
     await host.getByLabel("Einstellungen schließen").click();
     await player.getByRole("button", { name: "Einstellungen", exact: true }).click();
+    await expect(player.getByRole("tab", { name: "Raum" })).toHaveAttribute(
+        "aria-selected",
+        "true",
+    );
     await player.getByRole("tab", { name: "Aktuelle Spieleinstellungen" }).click();
     const inGameSettings = player.locator(".settings-modal");
     await expect(inGameSettings).toContainText("Fragenanteil");
@@ -228,6 +236,9 @@ test("named Never Have I Ever synchronizes private progress then public answer c
         await expect(page.locator(".vote-progress-list")).toContainText("Ben");
         await expect(page.locator(".never-result-columns")).toHaveCount(0);
     }
+    const progressCard = await display.locator(".game-card").boundingBox();
+    const progressPanel = await display.locator(".never-voting").boundingBox();
+    expect(progressCard!.height).toBeGreaterThan(progressPanel!.height * 1.2);
 
     await host.getByRole("button", { name: "Trifft zu" }).click();
     await expect(
@@ -243,6 +254,20 @@ test("named Never Have I Ever synchronizes private progress then public answer c
         await expect(page.locator(".yes-column")).toContainText("Host Anna");
         await expect(page.locator(".no-column")).toContainText("Ben");
     }
+    await expect
+        .poll(async () => {
+            const cardBox = await display.locator(".game-card").boundingBox();
+            const panelBox = await display.locator(".never-voting").boundingBox();
+            return panelBox!.width / cardBox!.width;
+        })
+        .toBeGreaterThan(1.5);
+    const resultCard = await display.locator(".game-card").boundingBox();
+    const resultPanel = await display.locator(".never-voting").boundingBox();
+    expect(resultPanel!.height).toBeGreaterThan(resultCard!.height * 1.5);
+    await expect(display.locator(".gameplay-focus.voting-results")).toHaveCSS(
+        "transition-duration",
+        /0\.46s/,
+    );
     expect(
         await display.evaluate(
             () => document.scrollingElement!.scrollHeight <= window.innerHeight + 1,
@@ -250,11 +275,51 @@ test("named Never Have I Ever synchronizes private progress then public answer c
     ).toBe(true);
 
     await display.getByRole("button", { name: "Einstellungen", exact: true }).click();
-    await display.getByRole("tab", { name: "Aktuelle Spieleinstellungen" }).click();
+    await expect(display.getByRole("tab", { name: "Aktuelle Spieleinstellungen" })).toHaveAttribute(
+        "aria-selected",
+        "true",
+    );
     await expect(display.locator(".settings-modal")).toContainText("Deutsch (Deutschland) · de-DE");
     await expect(display.locator(".settings-modal")).toContainText("Antworten werden aufgedeckt");
     await expect(display.getByRole("tab", { name: /Erweiterte Einstellungen/ })).toHaveCount(0);
     await display.getByLabel("Einstellungen schließen").click();
+
+    await hostContext.close();
+    await playerContext.close();
+    await displayContext.close();
+});
+
+test("leaving notifies every remaining device and a clean rejoin keeps Settings closed", async ({
+    browser,
+}) => {
+    const hostContext = await browser.newContext();
+    const playerContext = await browser.newContext();
+    const displayContext = await browser.newContext();
+    const host = await hostContext.newPage();
+    const player = await playerContext.newPage();
+    const display = await displayContext.newPage();
+    const code = await hostRoom(host, "party");
+    await joinRoom(player, code, "Ben");
+    await joinRoom(display, code, "", true);
+
+    await player.getByRole("button", { name: "Einstellungen", exact: true }).click();
+    await expect(player.getByRole("tab", { name: "Inhalte" })).toHaveAttribute(
+        "aria-selected",
+        "true",
+    );
+    await player.getByRole("tab", { name: "Raum" }).click();
+    await player.getByRole("button", { name: "Spiel verlassen" }).click();
+    await expect(player).toHaveURL(/\/play\/?$/);
+    for (const page of [host, display]) {
+        await expect(page.getByRole("status")).toContainText("Ben hat den Raum verlassen.");
+    }
+
+    await player.getByRole("button", { name: /Spiel beitreten/ }).click();
+    await player.getByLabel("Dein Name").fill("Ben zurück");
+    await player.getByLabel("Raumcode").fill(code);
+    await player.getByRole("button", { name: "Raum beitreten" }).click();
+    await expect(player.getByRole("heading", { name: "Lobby" })).toBeVisible();
+    await expect(player.locator(".settings-modal")).toHaveCount(0);
 
     await hostContext.close();
     await playerContext.close();

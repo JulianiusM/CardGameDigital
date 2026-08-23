@@ -226,9 +226,14 @@ export class RoomSocket {
     authenticated = false;
     settingsNotice = "";
     settingsNoticeId = 0;
+    roomNotice = "";
+    roomNoticeId = 0;
+    cardReplacementSequence = 0;
+    cardReplacementReason: "SKIPPED" | "VETOED" | "" = "";
     role: Role;
     private retry: number | undefined;
     private leaving = false;
+    private pendingCardReplacement: "SKIPPED" | "VETOED" | null = null;
     constructor(
         private joined: Join,
         private changed: () => void,
@@ -257,6 +262,8 @@ export class RoomSocket {
             const message = JSON.parse(event.data) as ServerEnvelope;
             if (message.type === "room.snapshot") {
                 const next = message.payload as RoomSnapshot;
+                const previousCardId = this.snapshot?.session?.currentCard?.id;
+                const nextCardId = next.session?.currentCard?.id;
                 const previousRevision = this.snapshot?.settings.revision;
                 if (
                     previousRevision !== undefined &&
@@ -265,6 +272,13 @@ export class RoomSocket {
                 ) {
                     this.settingsNotice = messages.room.settingsChanged;
                     this.settingsNoticeId++;
+                }
+                if (this.pendingCardReplacement && nextCardId) {
+                    this.cardReplacementReason = this.pendingCardReplacement;
+                    this.cardReplacementSequence++;
+                    this.pendingCardReplacement = null;
+                } else if (previousCardId !== nextCardId) {
+                    this.cardReplacementReason = "";
                 }
                 this.snapshot = next;
                 this.error = "";
@@ -275,6 +289,26 @@ export class RoomSocket {
             }
             if (message.type === "room.roleChanged") {
                 this.role = (message.payload as { role: Role }).role;
+            }
+            if (message.type === "room.participantLeft") {
+                const payload = message.payload as {
+                    displayName: string;
+                    reason: "LEFT" | "DISCONNECT_EXPIRED";
+                };
+                this.roomNotice =
+                    payload.reason === "DISCONNECT_EXPIRED"
+                        ? messages.room.participantRemoved(payload.displayName)
+                        : messages.room.participantLeft(payload.displayName);
+                this.roomNoticeId++;
+            }
+            if (message.type === "session.cardReplaced") {
+                const payload = message.payload as { reason: "SKIPPED" | "VETOED" };
+                this.pendingCardReplacement = payload.reason;
+                this.roomNotice =
+                    payload.reason === "SKIPPED"
+                        ? messages.room.cardSkipped
+                        : messages.room.cardVetoed;
+                this.roomNoticeId++;
             }
             if (message.type === "server.hello") {
                 const payload = message.payload as { participantId: string; role: Role };

@@ -26,6 +26,7 @@
         type GameProfileSummary,
         type CardLocaleSummary,
         type Join,
+        type Role,
         type RoomGameSettings,
     } from "./multiplayer";
     import { presentation } from "./presentation";
@@ -58,6 +59,7 @@
     let openSettingsAfterReset = false;
     let lastConnectionNotice = "";
     let lastSettingsNoticeId = 0;
+    let lastRoomNoticeId = 0;
 
     $: snapshot = (updateCounter, connection?.snapshot);
     $: session = snapshot?.session;
@@ -81,8 +83,13 @@
     $: connectionErrorCode = (updateCounter, connection?.errorCode ?? "");
     $: settingsNotice = (updateCounter, connection?.settingsNotice ?? "");
     $: settingsNoticeId = (updateCounter, connection?.settingsNoticeId ?? 0);
+    $: roomNotice = (updateCounter, connection?.roomNotice ?? "");
+    $: roomNoticeId = (updateCounter, connection?.roomNoticeId ?? 0);
+    $: cardReplacementSequence = (updateCounter, connection?.cardReplacementSequence ?? 0);
+    $: cardReplacementReason = (updateCounter, connection?.cardReplacementReason ?? "");
     $: roomSettings = snapshot?.settings;
     $: roomCode = joined?.roomCode ?? "";
+    $: settingsDefaultTab = defaultSettingsTab(effectiveRole, session?.state);
     $: if (connectionError && connectionError !== lastConnectionNotice) {
         lastConnectionNotice = connectionError;
         showNotification(connectionError, "error");
@@ -90,6 +97,10 @@
     $: if (settingsNotice && settingsNoticeId > lastSettingsNoticeId) {
         lastSettingsNoticeId = settingsNoticeId;
         showNotification(settingsNotice, "info");
+    }
+    $: if (roomNotice && roomNoticeId > lastRoomNoticeId) {
+        lastRoomNoticeId = roomNoticeId;
+        showNotification(roomNotice, "info");
     }
     $: {
         const cardId = session?.currentCard?.id;
@@ -145,6 +156,7 @@
     async function connect(value: Join): Promise<void> {
         if (joined?.participantId === value.participantId && connection) return;
         connection?.dispose();
+        resetRoomOverlays();
         joined = value;
         recoveringRoom = true;
         connection = new RoomSocket(
@@ -170,6 +182,7 @@
 
     function leaveCompleted(value: Join, reason: "LEFT" | "ROOM_CLOSED"): void {
         clearJoin(value);
+        resetRoomOverlays();
         joined = null;
         connection = null;
         resetSetup("intent");
@@ -177,6 +190,34 @@
             showNotification(messages.room.closedNotice, "info");
         }
         navigate("/play/", { force: true });
+    }
+
+    function resetRoomOverlays(): void {
+        settingsOpen = false;
+        currentSettingsOpen = false;
+        openSettingsAfterReset = false;
+        settingsDraft = null;
+        settingsDirty = false;
+        transferTarget = "";
+        lastCardId = undefined;
+        lastSettingsNoticeId = 0;
+        lastRoomNoticeId = 0;
+    }
+
+    function defaultSettingsTab(role: Role | undefined, sessionState?: string): string {
+        if (sessionState === "ENDED") {
+            if (role === "HOST") return "audio";
+            return "services";
+        }
+        if (sessionState) {
+            if (role === "HOST") return "session";
+            if (role === "PLAYER") return "services";
+            if (role === "DISPLAY") return "currentGame";
+        }
+        if (role === "HOST") return "game";
+        if (role === "PLAYER") return "content";
+        if (role === "DISPLAY") return "services";
+        return "audio";
     }
 
     function command(type: string, payload: object = {}): void {
@@ -310,6 +351,8 @@
                         ? messages.settings.closeRoom
                         : messages.room.leaveRoom}
                     summaryExitDanger={effectiveRole === "HOST"}
+                    {cardReplacementSequence}
+                    {cardReplacementReason}
                 />
             {/if}
             <SettingsModal
@@ -328,6 +371,7 @@
                 {cardLocales}
                 {roomCode}
                 {qr}
+                defaultTab={settingsDefaultTab}
             >
                 <div slot="game">
                     {#if settingsDraft}<GameSettingsEditor

@@ -55,6 +55,18 @@ export const clientHelloEnvelopeSchema = envelopeSchema.extend({
     payload: clientHelloPayloadSchema,
 });
 export type Envelope = z.infer<typeof envelopeSchema>;
+export const participantLeftEventPayloadSchema = z
+    .object({
+        participantId: z.string().uuid(),
+        displayName: z.string().min(1).max(80),
+        reason: z.enum(["LEFT", "DISCONNECT_EXPIRED"]),
+    })
+    .strict();
+export const cardReplacedEventPayloadSchema = z
+    .object({ reason: z.enum(["SKIPPED", "VETOED"]) })
+    .strict();
+export type ParticipantLeftEventPayload = z.infer<typeof participantLeftEventPayloadSchema>;
+export type CardReplacedEventPayload = z.infer<typeof cardReplacedEventPayloadSchema>;
 
 export const effectiveGameSettingsSchema = z
     .object({
