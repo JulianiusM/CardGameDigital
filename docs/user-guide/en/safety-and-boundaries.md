@@ -10,6 +10,11 @@ to whom.
 Questions apply the active player's limits. Dares and group-wide modes apply the
 relevant limits of everyone affected.
 
+For **Never Have I Ever**, check the answer reveal setting before voting. **Anonymous**
+keeps individual answers hidden; **Reveal answers** deliberately shows every player's
+answer after everyone has voted. The setting cannot be switched during the active
+session.
+
 ## Consent during play
 
 - Anyone may reject a card without explaining why.

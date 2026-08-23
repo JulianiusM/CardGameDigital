@@ -4,14 +4,14 @@
 
 Warm, playful, card-first, and adaptive. A golden-orange visual universe that changes character with the game without becoming visually fragmented.
 
-| | |
-|---|---|
-| **Document status** | Canonical visual and interaction design reference |
-| **Version** | 1.0 |
-| **Date** | 22 August 2026 |
-| **Scope** | Look, feel, visual hierarchy, iconography, motion, and interaction presentation |
+|                     |                                                                                 |
+| ------------------- | ------------------------------------------------------------------------------- |
+| **Document status** | Canonical visual and interaction design reference                               |
+| **Version**         | 1.1                                                                             |
+| **Date**            | 22 August 2026                                                                  |
+| **Scope**           | Look, feel, visual hierarchy, iconography, motion, and interaction presentation |
 
-*Companion references: Game Design Document v1.2 for gameplay/product behavior; Technical Architecture Document v1.1 for implementation constraints. This document is authoritative within its visual-design scope.*
+_Companion references: Game Design Document v1.3 for gameplay/product behavior; Technical Architecture Document v1.2 for implementation constraints. This document is authoritative within its visual-design scope._
 
 # 1. Authority and scope
 
@@ -71,8 +71,8 @@ The palette is a continuous warm spectrum rather than a set of unrelated
 category colors. Ivory and dark brown provide stable reading surfaces;
 the animated atmosphere lives behind them.
 
-| **Name**          | **Swatch** | **Hex**  | **Role**                       |
-|-------------------|------------|----------|--------------------------------|
+| **Name**          | **Swatch** | **Hex** | **Role**                       |
+| ----------------- | ---------- | ------- | ------------------------------ |
 | **Warm Paper**    |            | #FFF8E8 | Primary card and modal surface |
 | **Soft Cream**    |            | #FFF1C7 | Selected/raised warm surface   |
 | **Espresso Ink**  |            | #3B2416 | Primary text and icon ink      |
@@ -131,10 +131,34 @@ settings access.
 receive more whitespace and calmer visual pacing than ordinary questions
 or dares.
 
+**Never Have I Ever voting status.** While answers are being collected, the Card remains
+the primary surface and a compact voting-status roster sits directly below it on phones
+or beside/below it on larger displays. Every voter is shown by name with exactly one
+public state: **Pending** or **Voted**. For large rosters, use a two-column/grid treatment
+on active devices and a vertically scrollable list on small personal devices rather
+than hiding individual names. A passive Party Screen must never depend on manual
+scrolling: it automatically pages and wraps the variable roster rows while the Card,
+reveal-mode indicator, section heading, and result totals remain fixed.
+
+The status treatment must remain neutral. A submitted vote uses a check mark plus text;
+a pending vote uses a muted dot/clock plus text. Do not use `YES`/`NO`, binary answer
+colors, or any visual hint of the submitted value before reveal.
+
+**Reveal-mode indicator.** The selected Never-Have-I-Ever answer mode is visible before
+and during voting as a small but explicit text treatment such as **Anonymous result** or
+**Answers revealed**. It may not rely on color alone.
+
+**Anonymous result.** After voting completes, show aggregate `YES`/`NO` totals as the
+primary result. Do not show names beside either answer.
+
+**Named-answer result.** After voting completes, show each player's name and answer in
+the Session player order. An aggregate summary may remain above the list. Use neutral,
+equally weighted answer chips; avoid moralizing green/red success/failure styling.
+
 # 6. Buttons, choices, and wizard behavior
 
 | **Shape**           | Large pill or generously rounded tile; primary actions should feel tactile and obvious.                                                                                       |
-|---------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Primary color**   | Sunflower/golden surface (#FFD166) with espresso text (#3B2416); on very yellow scenes, use a warm-cream lift and a stronger orange/brown edge so the control stays distinct. |
 | **Secondary color** | Warm ivory/cream surface at roughly 70-85% opacity with espresso text and a subtle warm edge.                                                                                 |
 | **Hover**           | Over about 160 ms, rise 3 px, rotate approximately -0.35°, and deepen the soft shadow.                                                                                        |
@@ -208,34 +232,34 @@ intensity.
 # 9. Question visual families
 
 | **Family**           | **Members**                   | **Intensity-3 gradient** | **Pattern tone** | **Motifs**                                                                       |
-|----------------------|-------------------------------|--------------------------|------------------|----------------------------------------------------------------------------------|
-| **Curiosity**        | EVERYDAY, CHILDHOOD, SCENARIO | #FFE49A → #FFB347      | #B86516         | ?, lightbulbs, thought bubbles, clouds, stars, dice                              |
-| **Inner Self**       | PERSONALITY, BODY             | #FFC18A → #E97D5D      | #884434         | mirrors, fingerprints, eyes, silhouettes, contour lines, sparkles                |
-| **Connection**       | FRIENDSHIP, RELATIONSHIP      | #FFAD75 → #FF7485      | #9C4050         | linked circles, paired speech bubbles, hands, paired stars, small hearts         |
-| **Unfiltered**       | INTOXICATION                  | #FFC44D → #FF7A1A      | #9B470F         | wobbles, bubbles, spirals, warped stars, tilted abstract shapes                  |
-| **Intimate Talk**    | SEXUALITY, SEX_OPENNESS       | #FF9A78 → #E85D82      | #8B3550         | open hearts, lips, speech bubbles, keyholes, soft sparkles                       |
-| **Desire & Stories** | SEX_TENSION, SEX_EXPERIENCE   | #FF775F → #D84670      | #792A48         | sparks, kiss marks, magnetic curves, hearts, trailing lines, memory-frame shapes |
+| -------------------- | ----------------------------- | ------------------------ | ---------------- | -------------------------------------------------------------------------------- |
+| **Curiosity**        | EVERYDAY, CHILDHOOD, SCENARIO | #FFE49A → #FFB347        | #B86516          | ?, lightbulbs, thought bubbles, clouds, stars, dice                              |
+| **Inner Self**       | PERSONALITY, BODY             | #FFC18A → #E97D5D        | #884434          | mirrors, fingerprints, eyes, silhouettes, contour lines, sparkles                |
+| **Connection**       | FRIENDSHIP, RELATIONSHIP      | #FFAD75 → #FF7485        | #9C4050          | linked circles, paired speech bubbles, hands, paired stars, small hearts         |
+| **Unfiltered**       | INTOXICATION                  | #FFC44D → #FF7A1A        | #9B470F          | wobbles, bubbles, spirals, warped stars, tilted abstract shapes                  |
+| **Intimate Talk**    | SEXUALITY, SEX_OPENNESS       | #FF9A78 → #E85D82        | #8B3550          | open hearts, lips, speech bubbles, keyholes, soft sparkles                       |
+| **Desire & Stories** | SEX_TENSION, SEX_EXPERIENCE   | #FF775F → #D84670        | #792A48          | sparks, kiss marks, magnetic curves, hearts, trailing lines, memory-frame shapes |
 
-*INTOXICATION uses warped/chaotic abstract motifs rather than bottles or
+_INTOXICATION uses warped/chaotic abstract motifs rather than bottles or
 drink branding. BODY remains an inward/self-image family and is not
-automatically sexualized.*
+automatically sexualized._
 
 # 10. Dare visual families
 
 | **Family**       | **Members**                             | **Intensity-3 gradient** | **Pattern tone** | **Motifs**                                                                    |
-|------------------|-----------------------------------------|--------------------------|------------------|-------------------------------------------------------------------------------|
-| **Mischief**     | SILLY                                   | #FFD45F → #FF8A1F      | #9E4B0D         | zigzags, bursts, stars, goofy blobs, exclamation marks                        |
-| **Social Chaos** | THIRD_PARTY                             | #FFB13D → #F0602A      | #853718         | outward arrows, satellite dots, message bubbles, ringing circles, people-dots |
-| **Affection**    | KISS, TOUCH                             | #FFB58E → #F67C74      | #91483F         | hearts, hands, paired shapes, kiss marks, soft ripples                        |
-| **Flirt**        | KISS_SPICY, TOUCH_SPICY, SEXUAL_TENSION | #FF906D → #E94775      | #812B49         | lips, sparks, magnetic curves, hearts, electric squiggles                     |
-| **Reveal**       | CLOTHING, NUDITY                        | #EE8A4F → #9F4A64      | #613245         | fabric folds, hangers, curtains, silhouettes, reveal/sunrise shapes           |
-| **Heat**         | TOUCH_SEXY, BORDERLINE_SEX, SEX         | #E85065 → #942C59      | #FFD0B5\*       | flames, intertwined curves, pulses, crescents, dense sparks                   |
-| **Generic Dare** | OTHER                                   | #FFC05A → #FF8A1F      | #91400E         | arrows, bursts, exclamation marks, motion lines                               |
+| ---------------- | --------------------------------------- | ------------------------ | ---------------- | ----------------------------------------------------------------------------- |
+| **Mischief**     | SILLY                                   | #FFD45F → #FF8A1F        | #9E4B0D          | zigzags, bursts, stars, goofy blobs, exclamation marks                        |
+| **Social Chaos** | THIRD_PARTY                             | #FFB13D → #F0602A        | #853718          | outward arrows, satellite dots, message bubbles, ringing circles, people-dots |
+| **Affection**    | KISS, TOUCH                             | #FFB58E → #F67C74        | #91483F          | hearts, hands, paired shapes, kiss marks, soft ripples                        |
+| **Flirt**        | KISS_SPICY, TOUCH_SPICY, SEXUAL_TENSION | #FF906D → #E94775        | #812B49          | lips, sparks, magnetic curves, hearts, electric squiggles                     |
+| **Reveal**       | CLOTHING, NUDITY                        | #EE8A4F → #9F4A64        | #613245          | fabric folds, hangers, curtains, silhouettes, reveal/sunrise shapes           |
+| **Heat**         | TOUCH_SEXY, BORDERLINE_SEX, SEX         | #E85065 → #942C59        | #FFD0B5\*        | flames, intertwined curves, pulses, crescents, dense sparks                   |
+| **Generic Dare** | OTHER                                   | #FFC05A → #FF8A1F        | #91400E          | arrows, bursts, exclamation marks, motion lines                               |
 
-*\*Heat is the exception where the pattern tone may switch to a lighter
+_\*Heat is the exception where the pattern tone may switch to a lighter
 warm tint at higher intensities because the background itself becomes
 dark. OTHER intentionally remains generic and must not invent semantic
-meaning.*
+meaning._
 
 # 11. Intensity gradient
 
@@ -244,7 +268,7 @@ high-intensity Childhood question stays golden/amber. A low-intensity
 SEX dare stays berry/raspberry, only softer and calmer.
 
 | **Intensity**       | **Color**                                | **Icon opacity** | **Density** | **Row drift** | **Character**                                                  |
-|---------------------|------------------------------------------|------------------|-------------|---------------|----------------------------------------------------------------|
+| ------------------- | ---------------------------------------- | ---------------- | ----------- | ------------- | -------------------------------------------------------------- |
 | **1 — Mild**        | ≈30% softer/lighter than the family base | 8%               | 5 rows      | 52-58 s       | Very airy; low contrast; calm motion                           |
 | **2 — Personal**    | ≈15% softer/lighter                      | 10%              | 5-6 rows    | 45-50 s       | Still soft, with clearer family identity                       |
 | **3 — Strong**      | Canonical family gradient                | 13%              | 6 rows      | 37-42 s       | Reference/default atmosphere                                   |
@@ -273,6 +297,17 @@ retune it.
 **Gespräch/meta cards.** Use approximately 1.35× slower ambient motion,
 more whitespace, and a slower card reveal around 430-480 ms. They should
 feel like intentional pauses.
+
+**Never Have I Ever voting.** Submitting a vote should produce only a local/private
+confirmation plus the public status change from Pending to Voted. The public status
+transition should be quick and restrained (approximately 160-220 ms). It must not reveal
+or imply the answer value.
+
+**Never Have I Ever result reveal.** When the final required vote arrives, transition
+from the voting roster to the result over approximately 280-360 ms. Anonymous mode
+reveals aggregate totals. Named-answer mode reveals the player-answer rows together as
+one deliberate result state rather than animating answers one by one, which could
+suggest an order or ranking that does not exist.
 
 **Celebration/end.** Confetti/star motifs may appear, but remain within
 the warm palette and do not become a full-screen particle storm.
@@ -315,6 +350,11 @@ surface.
 density should not increase merely because more pixels are available.
 Shared displays should feel spacious rather than busier.
 
+**Passive Party Screens.** Treat the viewport as a bounded public stage. Room identity,
+live status, the current Card, and public progress/result headings stay visible. If a
+roster exceeds the available region, advance through measured pages automatically and
+wrap to the first page. Do not introduce document scrolling or participation controls.
+
 **Small displays.** Option grids collapse before individual choices
 become cramped. The settings tabs may scroll horizontally; essential
 labels remain readable.
@@ -322,7 +362,7 @@ labels remain readable.
 # 15. Canonical do / do not
 
 | **DO**                                                                        | **DON’T**                                                                     |
-|-------------------------------------------------------------------------------|-------------------------------------------------------------------------------|
+| ----------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
 | Keep the entire game in one warm chromatic universe.                          | Assign every category an unrelated rainbow color.                             |
 | Let category/DareType define the motif family and let intensity tune it.      | Treat intensity as a second category or a universal “red = extreme” scale.    |
 | Use slow diagonal icon rows and a separately moving gradient.                 | Use a rotating conic background or obvious corporate ambient halo.            |
@@ -356,6 +396,12 @@ following are true:
 
 - Primary typography and tactile button motion preserve the established
   character.
+
+- Never-Have-I-Ever voting visibly distinguishes Pending from Voted for every current
+  voter without exposing answer values before the reveal.
+
+- Anonymous and named-answer results are visually distinct by explicit labels and
+  content structure, not by color alone.
 
 - Reduced-motion presentation remains complete and visually coherent.
 

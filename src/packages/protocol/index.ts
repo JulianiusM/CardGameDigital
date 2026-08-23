@@ -85,6 +85,9 @@ export const roomGameSettingsSchema = z
         groupId: z.string().uuid().nullable(),
         adultContentConfirmed: z.boolean(),
         cardLocale: z.string().min(2).max(35),
+        neverHaveIEverRevealMode: z
+            .enum(["ANONYMOUS_AGGREGATE", "NAMED_ANSWERS"])
+            .default("ANONYMOUS_AGGREGATE"),
         configuration: effectiveGameSettingsSchema,
     })
     .strict();

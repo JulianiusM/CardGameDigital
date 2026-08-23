@@ -1,7 +1,7 @@
 # Multiplayer Party Card Game — Technical Architecture Document
 
 **Document status:** Canonical technical architecture / single source of truth  
-**Version:** 1.1  
+**Version:** 1.2
 **Companion document:** Multiplayer Party Card Game — Game Design Document  
 **Primary runtime language:** TypeScript / Node.js  
 **Primary architecture:** Server-authoritative, LAN-first modular monolith  
@@ -293,7 +293,7 @@ Contains pure gameplay logic:
 - history;
 - repetition;
 - GameProfile logic;
-- voting;
+- voting and Never-Have-I-Ever reveal policy;
 - intensity;
 - rounds;
 - randomization.
@@ -318,7 +318,7 @@ Contains catalog-domain concepts:
 
 - Card identity;
 - Card metadata;
-- source mapping;
+- producer-owned stable identity;
 - lifecycle state;
 - catalog version;
 - taxonomy;
@@ -355,6 +355,7 @@ Contains use cases such as:
 - ChooseTruth;
 - ChooseDare;
 - SubmitVote;
+- ConfigureNeverHaveIEverRevealMode;
 - ChangeSettings;
 - ImportCatalog;
 - PublishLocalization.
@@ -1130,6 +1131,61 @@ Game Session:
 
 Neither may be reused as the other.
 
+## Never Have I Ever Reveal Configuration
+
+`Ich hab noch nie` remains one Game Mode. The canonical Session configuration includes:
+
+```text
+neverHaveIEverRevealMode:
+    ANONYMOUS_AGGREGATE
+    NAMED_ANSWERS
+```
+
+`ANONYMOUS_AGGREGATE` is the default.
+
+The setting is part of pre-Session Room/Couch configuration and is copied into the
+authoritative `GameSession` when the Session starts. It is immutable for the lifetime of
+that active Session. A new Session is required to change it.
+
+This setting is not a GameProfile taxonomy rule and must not be inferred from a profile.
+
+## Never Have I Ever Voting Projection
+
+The domain retains vote values keyed by the current eligible voter IDs while collecting
+answers. The application projection separates **completion state** from **answer
+visibility**.
+
+During answer collection, every authorized presentation receives the public voter
+progress for the current Card:
+
+```text
+playerId
+displayName
+status = PENDING | VOTED
+```
+
+No projection may expose another player's `YES`/`NO` value while the Session is in the
+collection state, regardless of reveal mode.
+
+The voter set is fixed for the current Card when collection begins. Existing Session
+rules for late joins therefore apply from the next applicable Card.
+
+After all required votes exist, the Session moves to the result state.
+
+For `ANONYMOUS_AGGREGATE`, the public result contains aggregate counts only.
+
+For `NAMED_ANSWERS`, the public result contains:
+
+- aggregate counts;
+- each voter ID/display name;
+- each voter's final `YES`/`NO` answer.
+
+Named values become public only in the result state.
+
+Couch HTTP projections and Room WebSocket snapshots MUST use the same canonical voting
+projection semantics so Couch, Personal, and Party Screen do not implement separate
+privacy rules.
+
 ---
 
 # 55. WebSocket Protocol
@@ -1140,7 +1196,7 @@ Example:
 
 ```json id="qsd16b"
 {
-    "protocol": 1,
+    "protocol": 2,
     "type": "session.cardShown",
     "requestId": null,
     "revision": 184,
@@ -1238,6 +1294,7 @@ room_id
 group_id
 mode
 card_locale
+never_have_i_ever_reveal_mode
 revision
 runtime_state_version
 runtime_state_json
@@ -1249,13 +1306,22 @@ ended_at
 
 # 61. Sensitive Ephemeral Data
 
-Do not persist long-term by default:
+Do not persist as long-term history or analytics by default:
 
 - individual private boundaries;
 - individual Never-Have-I-Ever answers;
 - veto identity.
 
-A restart may require sensitive settings to be reconfirmed.
+Never-Have-I-Ever vote values may exist in active Session runtime state, including the
+versioned active-Session snapshot when required for authoritative reconnect/restart
+recovery. They must be cleared from active state when the Card is resolved/advanced and
+must not be copied into `CardAppearance`, Group history, general analytics, or logs.
+
+`NAMED_ANSWERS` changes only the result projection: it authorizes broadcasting the final
+per-player answers after reveal. It does not make those answers durable history.
+
+A restart may require sensitive boundary settings to be reconfirmed where they were not
+persisted.
 
 ---
 
@@ -1391,7 +1457,7 @@ Used for active gameplay:
 - Room presence;
 - turn actions;
 - card display;
-- voting;
+- voting, voter-completion progress, and configured result reveal;
 - settings updates;
 - resynchronization.
 
@@ -1410,7 +1476,8 @@ Snapshot includes:
 - active player;
 - current localized Card if visible;
 - Card locale;
-- voting state;
+- voting state, including the current voter `PENDING`/`VOTED` roster;
+- Never-Have-I-Ever reveal mode and any result currently authorized for this viewer;
 - relevant Session settings.
 
 ---
@@ -1578,7 +1645,7 @@ Logs must not contain:
 - participant tokens;
 - reset tokens;
 - private boundaries;
-- private individual answers.
+- individual Never-Have-I-Ever answers, including named-reveal result values.
 
 Localized Card text should normally not be logged at informational level because Card IDs are sufficient for diagnostics.
 
@@ -1615,7 +1682,7 @@ Testing layers:
 - migration tests;
 - catalog tests;
 - localization tests;
-- protocol tests;
+- protocol tests, including Never-Have-I-Ever privacy projections;
 - WebSocket integration tests;
 - Playwright E2E;
 - native client fixture tests.
@@ -1624,44 +1691,47 @@ Testing layers:
 
 # 86. Localization Tests
 
-Required invariants include:
+Required runtime invariants include:
 
-- same Card UUID across all locales;
-- translation import never creates duplicate logical Cards;
-- missing translation excludes Card by default;
-- stale translation is not eligible;
+- the same producer Card UUID resolves across every locale;
+- applying another locale never creates a second logical Card;
+- a missing/soft-disabled localization excludes the Card by default;
 - changing UI locale does not alter history;
 - changing Card locale does not reset history;
-- taxonomy logic uses codes, not labels;
-- retired Card remains resolvable from history;
-- source text edit preserves Card UUID;
-- meaning-changing replacement receives new Card UUID.
+- taxonomy logic uses stable codes rather than localized labels;
+- a retired/soft-disabled Card remains resolvable from history;
+- a newer FULL snapshot can update wording without changing the producer Card UUID.
+
+Producer-side draft/review/staleness workflow is outside the game runtime and is tested
+by the catalog producer rather than by runtime persistence.
 
 ---
 
 # 87. Catalog Reconciliation Tests
 
-Test scenarios include:
+Runtime reconciliation tests include:
 
-```text id="h9kxka"
-existing source Card edited
-→ same UUID
+```text
+existing producer Card UUID with updated metadata/text
+→ same UUID updated
 ```
 
-```text id="mknq7n"
-source Card removed
-→ RETIRED
+```text
+stored producer Card UUID absent from newer FULL snapshot
+→ soft-disabled / retired
 ```
 
-```text id="kt4szh"
-new source Card
-→ new UUID
+```text
+new producer Card UUID in newer FULL snapshot
+→ new logical Card
 ```
 
-```text id="8r4jzq"
-source Card returns
+```text
+previously soft-disabled producer Card UUID reappears
 → same existing UUID reactivated
 ```
+
+The game never derives identity from source IDs or text similarity.
 
 ---
 
@@ -1694,7 +1764,10 @@ Large deterministic simulations verify:
 - repeat rules;
 - GameProfile behavior;
 - Random-mode balancing;
-- meta-card scheduling.
+- meta-card scheduling;
+- both Never-Have-I-Ever reveal modes;
+- no pre-reveal leakage of individual vote values;
+- correct per-player `PENDING` / `VOTED` progress.
 
 ---
 
@@ -1935,13 +2008,19 @@ The architecture is being followed when:
 - game logic never branches on translated labels;
 - card selection requires locale-compatible published localization;
 - Group history is independent from Card language;
-- translation staleness is tracked against source revision;
-- source ingest reconciles identities rather than replacing tables;
-- locale packs can be added without schema redesign;
+- producer-approved localization presence/absence is reconciled without changing Card identity;
+- FULL catalog snapshots preserve producer-owned stable UUIDs while soft-disabling removed runtime content;
+- locales can be added through catalog releases without schema redesign;
 - web/Kodi/TV clients all use the same protocol;
 - database behavior is tested on SQLite and MariaDB;
 - catalog and schema versions are independently tracked;
-- no runtime CDN is required for local play.
+- no runtime CDN is required for local play;
+- `neverHaveIEverRevealMode` is authoritative Session configuration and defaults to `ANONYMOUS_AGGREGATE`;
+- reveal mode is immutable during an active Session;
+- all clients receive per-player `PENDING`/`VOTED` progress during Never-Have-I-Ever collection;
+- no client receives another player's answer value before the result state;
+- `NAMED_ANSWERS` exposes per-player answers only after all required votes are present;
+- individual Never-Have-I-Ever answers are not copied into long-term history, analytics, or logs.
 
 ---
 

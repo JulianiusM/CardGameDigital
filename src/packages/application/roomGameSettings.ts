@@ -1,12 +1,14 @@
 import {
     BUILT_IN_PROFILE_IDS,
     GAME_MODES,
+    NEVER_HAVE_I_EVER_REVEAL_MODES,
     OPERATIONAL_FLAGS,
     builtInGameProfile,
     type DareTypeId,
     type GameMode,
     type GameProfile,
     type OperationalFlag,
+    type NeverHaveIEverRevealMode,
     type QuestionCategoryId,
     validateGameProfile,
 } from "../game-core";
@@ -29,6 +31,7 @@ export type RoomGameSettings = {
     groupId: string | null;
     adultContentConfirmed: boolean;
     cardLocale: string;
+    neverHaveIEverRevealMode: NeverHaveIEverRevealMode;
     configuration: EffectiveGameSettings;
 };
 
@@ -69,7 +72,19 @@ export function defaultRoomGameSettings(): RoomGameSettings {
         groupId: null,
         adultContentConfirmed: false,
         cardLocale: "de-DE",
+        neverHaveIEverRevealMode: NEVER_HAVE_I_EVER_REVEAL_MODES.ANONYMOUS_AGGREGATE,
         configuration: effectiveSettingsFromProfile(BUILT_IN_PROFILE_IDS.FRIENDS),
+    };
+}
+
+export function normalizeRoomGameSettings(
+    settings: Omit<RoomGameSettings, "neverHaveIEverRevealMode"> &
+        Partial<Pick<RoomGameSettings, "neverHaveIEverRevealMode">>,
+): RoomGameSettings {
+    return {
+        ...settings,
+        neverHaveIEverRevealMode:
+            settings.neverHaveIEverRevealMode ?? NEVER_HAVE_I_EVER_REVEAL_MODES.ANONYMOUS_AGGREGATE,
     };
 }
 

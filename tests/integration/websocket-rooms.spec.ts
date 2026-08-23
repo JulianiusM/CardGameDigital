@@ -785,6 +785,110 @@ describe("Room WebSocket protocol", () => {
         await new Promise<void>((resolve) => wss.close(() => resolve()));
     });
 
+    it("keeps named Never Have I Ever answers private until every voter completes", async () => {
+        const repository = new Repo();
+        const neverCards: CardRepository = {
+            ...cards,
+            listActive: async () => [
+                card({ id: "named-never-ws" as never, yesNoAnswerPossible: true }),
+            ],
+        };
+        const service = new RoomService(repository, neverCards, new SequenceRandomSource([0]));
+        const host = await service.createRoom("Host", null, {
+            ...defaultRoomGameSettings(),
+            mode: "NEVER_HAVE_I_EVER",
+            neverHaveIEverRevealMode: "NAMED_ANSWERS",
+        });
+        const player = await service.joinRoom(host.roomCode, "Player", "PLAYER");
+        const display = await service.joinRoom(host.roomCode, "Display", "DISPLAY");
+        server = http.createServer();
+        const wss = attachWebSocketServer(server, service);
+        await new Promise<void>((resolve) => server!.listen(0, "127.0.0.1", resolve));
+        const port = (server.address() as { port: number }).port;
+        const hostClient = await hello(port, host.roomCode, host.participantCredential, host.role);
+        const playerClient = await hello(
+            port,
+            player.roomCode,
+            player.participantCredential,
+            player.role,
+        );
+        const displayClient = await hello(
+            port,
+            display.roomCode,
+            display.participantCredential,
+            display.role,
+        );
+        const clients = [hostClient, playerClient, displayClient];
+        const send = (client: typeof hostClient, type: string, revision: number, payload = {}) =>
+            client.socket.send(
+                JSON.stringify({
+                    protocol: PROTOCOL_VERSION,
+                    type,
+                    requestId: type,
+                    revision,
+                    payload,
+                }),
+            );
+        hostClient.socket.send(
+            JSON.stringify({
+                protocol: PROTOCOL_VERSION,
+                type: "command.startSession",
+                requestId: "named-start",
+                revision: null,
+                payload: {},
+            }),
+        );
+        await waitFor(() => repository.runtime?.revision === 0);
+        send(hostClient, "command.startTurn", 0);
+        await waitFor(() => repository.runtime?.revision === 1);
+        send(hostClient, "command.submitVote", 1, {
+            playerId: host.participantId,
+            vote: "YES",
+        });
+        await waitFor(() => repository.runtime?.revision === 2);
+        await waitFor(() =>
+            clients.every((client) => {
+                const snapshot = client.messages.findLast(
+                    (message) => message.type === "room.snapshot",
+                );
+                return (
+                    snapshot?.payload.session?.neverHaveIEverVoting?.progress?.[0]?.status ===
+                    "VOTED"
+                );
+            }),
+        );
+        for (const client of clients) {
+            const voting = client.messages.findLast((message) => message.type === "room.snapshot")
+                .payload.session.neverHaveIEverVoting;
+            expect(voting.result).toBeNull();
+            expect(JSON.stringify(voting)).not.toContain('"YES"');
+        }
+
+        send(playerClient, "command.submitVote", 2, {
+            playerId: player.participantId,
+            vote: "NO",
+        });
+        await waitFor(() =>
+            clients.every((client) => {
+                const snapshot = client.messages.findLast(
+                    (message) => message.type === "room.snapshot",
+                );
+                return snapshot?.payload.session?.state === "SHOWING_RESULTS";
+            }),
+        );
+        for (const client of clients) {
+            expect(
+                client.messages.findLast((message) => message.type === "room.snapshot").payload
+                    .session.neverHaveIEverVoting.result.namedAnswers,
+            ).toEqual([
+                { playerId: host.participantId, displayName: "Host", vote: "YES" },
+                { playerId: player.participantId, displayName: "Player", vote: "NO" },
+            ]);
+        }
+        for (const client of clients) client.socket.terminate();
+        await new Promise<void>((resolve) => wss.close(() => resolve()));
+    });
+
     it("rejects a stale Never Have I Ever result Skip without an internal-server message", async () => {
         const repository = new Repo();
         const neverCards: CardRepository = {

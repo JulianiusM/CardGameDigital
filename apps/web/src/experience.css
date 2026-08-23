@@ -399,19 +399,6 @@ button:not(:disabled):not(.text-action):not(.text-button):not(.icon):active,
 .setup-summary a {
     color: white;
 }
-.playful-list label {
-    grid-template-columns: 2.8rem 1fr auto;
-}
-.avatar {
-    display: grid;
-    place-items: center;
-    width: 2.5rem;
-    aspect-ratio: 1;
-    border-radius: 50%;
-    color: #17132d !important;
-    background: var(--scene-c);
-    font-weight: 800;
-}
 .add-player {
     border-style: dashed;
 }
@@ -1045,24 +1032,6 @@ button:not(:disabled):not(.text-action):not(.text-button):not(.icon):active,
 .settings-section-card h3 {
     margin: 0 0 0.85rem;
 }
-.device-player-editor {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) 44px;
-    align-items: end;
-    gap: 0.5rem;
-}
-.device-player-editor label {
-    display: grid;
-    grid-template-columns: minmax(5rem, auto) minmax(0, 1fr);
-    align-items: center;
-    gap: 0.5rem;
-    min-width: 0;
-}
-.device-player-editor .icon {
-    width: 44px;
-    height: 44px;
-    padding: 0;
-}
 .room-settings-summary {
     display: flex;
     align-items: center;
@@ -1120,6 +1089,145 @@ button:not(:disabled):not(.text-action):not(.text-button):not(.icon):active,
     margin: 0.4rem 0;
     line-height: 1.55;
 }
+.priority-setting {
+    border-color: color-mix(in srgb, var(--scene-c) 35%, #ffffff1f);
+}
+.wizard-intro {
+    max-width: 62ch;
+    margin: -0.35rem 0 1rem;
+    color: #c8bfd5;
+    line-height: 1.55;
+}
+.reveal-summary {
+    display: block;
+    margin-top: 0.35rem;
+    color: var(--scene-c);
+    font-weight: 700;
+}
+.never-voting {
+    display: grid;
+    gap: 0.75rem;
+    width: min(900px, 100%);
+    min-width: 0;
+    padding: clamp(0.85rem, 2vw, 1.25rem);
+    border: 1px solid #ffffff24;
+    border-radius: 20px;
+    background: #17132de8;
+}
+.never-voting > h2,
+.never-voting h3,
+.never-voting p {
+    margin: 0;
+}
+.reveal-mode-indicator {
+    justify-self: start;
+    padding: 0.35rem 0.7rem;
+    border: 1px solid var(--scene-c);
+    border-radius: 999px;
+    color: var(--scene-c);
+    font-size: 0.82rem;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+}
+.vote-progress-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(12rem, 100%), 1fr));
+    gap: 0.45rem;
+}
+.vote-progress-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 0.65rem;
+    min-height: 44px;
+    padding: 0.5rem 0.7rem;
+    border: 1px solid #ffffff18;
+    border-radius: 12px;
+    background: #ffffff07;
+}
+.vote-progress-row strong,
+.answer-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.vote-progress-row span {
+    color: #bdb4ca;
+    font-size: 0.86rem;
+}
+.vote-progress-row.voted span {
+    color: var(--scene-c);
+}
+.vote-progress-row i {
+    display: inline-block;
+    width: 1.1rem;
+    font-style: normal;
+    text-align: center;
+}
+.never-vote-controls {
+    display: grid;
+    gap: 0.5rem;
+    padding-top: 0.25rem;
+    border-top: 1px solid #ffffff18;
+}
+.never-vote-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 0.75rem;
+}
+.never-vote-row > div {
+    display: flex;
+    gap: 0.45rem;
+}
+.never-vote-row button {
+    min-width: 5.5rem;
+}
+.never-result-columns {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: clamp(0.65rem, 2vw, 1.25rem);
+}
+.answer-column {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(8rem, 100%), 1fr));
+    align-content: start;
+    gap: 0.4rem;
+    min-width: 0;
+    padding: clamp(0.75rem, 2vw, 1.15rem);
+    border: 1px solid #ffffff24;
+    border-radius: 16px;
+    background: #ffffff08;
+}
+.answer-column header {
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding-bottom: 0.4rem;
+    border-bottom: 1px solid #ffffff1f;
+}
+.answer-column header span {
+    display: grid;
+    place-items: center;
+    min-width: 2.35rem;
+    height: 2.35rem;
+    border: 1px solid var(--scene-c);
+    border-radius: 50%;
+    color: var(--scene-c);
+    font-size: 1.25rem;
+    font-weight: 850;
+}
+.answer-name {
+    min-height: 36px;
+    padding: 0.45rem 0.6rem;
+    border-radius: 9px;
+    background: #ffffff09;
+}
+.answer-column > small {
+    grid-column: 1 / -1;
+}
 .lobby-actions {
     display: flex;
     justify-content: center;
@@ -1142,10 +1250,6 @@ button:not(:disabled):not(.text-action):not(.text-button):not(.icon):active,
     border: 1px solid #ffffff29;
     border-radius: 12px;
     background: #100c22;
-}
-.section-grid {
-    display: grid;
-    gap: 0.8rem;
 }
 .service-actions {
     display: grid;
@@ -1241,6 +1345,24 @@ button:not(:disabled):not(.text-action):not(.text-button):not(.icon):active,
     border-radius: 14px;
     background: #17132dbb;
 }
+.participant-roster-list {
+    width: 100%;
+    padding: 0.75rem 1rem;
+    border: 1px solid #ffffff20;
+    border-radius: 14px;
+    background: #17132d7d;
+}
+.participant-roster-list > header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin: 0;
+    text-align: left;
+}
+.participant-roster-list > header span {
+    color: var(--scene-c);
+    font-weight: 850;
+}
 .live-players summary {
     cursor: pointer;
 }
@@ -1257,6 +1379,329 @@ button:not(:disabled):not(.text-action):not(.text-button):not(.icon):active,
     padding: 2rem;
     text-align: center;
 }
+
+/* Shared player editing: label, field, and destructive action stay one intentional row. */
+.player-name-row {
+    display: grid;
+    grid-template-columns: minmax(5.25rem, 7rem) minmax(0, 1fr) 44px;
+    align-items: center;
+    gap: 0.6rem;
+    width: 100%;
+    min-width: 0;
+    padding: 0.4rem;
+    border: 1px solid #ffffff18;
+    border-radius: 14px;
+    background: #ffffff06;
+}
+.players .player-name-row label {
+    display: block;
+    min-width: 0;
+    margin: 0;
+    color: #c9c0d8;
+    font-size: 0.86rem;
+    font-weight: 700;
+}
+.player-name-row input {
+    width: 100%;
+    min-width: 0;
+    height: 44px;
+    padding: 0.7rem 0.8rem;
+    color: #fff;
+    border: 1px solid #ffffff29;
+    border-radius: 11px;
+    background: #100c22;
+}
+.remove-player-button,
+.player-row-action-spacer {
+    display: grid;
+    place-items: center;
+    width: 44px;
+    height: 44px;
+}
+.remove-player-button {
+    padding: 0;
+    border: 1px solid #ff72954d;
+    border-radius: 12px;
+    color: #ffd7e1;
+    background: #8f285238;
+    box-shadow: none;
+    transform: none !important;
+}
+.remove-player-button:hover,
+.remove-player-button:active {
+    border-color: #ff7295a3;
+    background: #8f285266;
+    box-shadow: none;
+    transform: none !important;
+}
+.remove-player-button span {
+    font-size: 1.55rem;
+    line-height: 1;
+}
+
+/* Host authority transfer uses the same sectional settings language as game settings. */
+.host-transfer-control {
+    display: grid;
+    gap: 1rem;
+}
+.host-transfer-control h3,
+.host-transfer-control p {
+    margin: 0;
+}
+.host-transfer-control p {
+    margin-top: 0.35rem;
+    color: #bdb4ca;
+    line-height: 1.5;
+}
+.host-transfer-action {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: end;
+    gap: 0.75rem;
+}
+.host-transfer-action label {
+    display: grid;
+    gap: 0.4rem;
+    min-width: 0;
+    color: #d8d1e2;
+    font-weight: 700;
+}
+.host-transfer-action select {
+    width: 100%;
+    min-height: 48px;
+    padding: 0.7rem 2.5rem 0.7rem 0.85rem;
+    color: white;
+    border: 1px solid #ffffff29;
+    border-radius: 12px;
+    background: #100c22;
+}
+.host-transfer-action button {
+    min-height: 48px;
+}
+
+/* Never-Have-I-Ever actions are neutral, equal-weight game choices. */
+.never-vote-row .vote-choice {
+    min-width: 7.5rem;
+    min-height: 48px;
+    padding: 0.75rem 1rem;
+    border-color: color-mix(in srgb, var(--scene-c) 34%, #ffffff2e);
+    border-radius: 14px;
+    background: #ffffff12;
+    box-shadow: none;
+}
+.never-vote-row .vote-choice:hover,
+.never-vote-row .vote-choice:focus-visible {
+    border-color: var(--scene-c);
+    background: color-mix(in srgb, var(--scene-c) 13%, #ffffff12);
+}
+.answer-name-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(8rem, 100%), 1fr));
+    align-content: start;
+    gap: 0.4rem;
+    min-height: 0;
+}
+.answer-column > .answer-name-list,
+.answer-column > .auto-page-region {
+    grid-column: 1 / -1;
+}
+
+.gameplay-focus {
+    display: grid;
+    justify-items: center;
+    gap: clamp(0.65rem, 1.5vh, 1rem);
+    width: 100%;
+    min-width: 0;
+    min-height: 0;
+}
+.stage-status {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 1rem;
+    width: 100%;
+}
+.stage-room-code {
+    color: var(--scene-c);
+    letter-spacing: 0.14em;
+}
+.stage-player-roster {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: stretch;
+    gap: 0.8rem;
+    width: 100%;
+    min-width: 0;
+    min-height: 0;
+    padding: 0.45rem 0.65rem;
+    border: 1px solid #ffffff20;
+    border-radius: 14px;
+    background: #17132dbb;
+}
+.stage-player-roster > header {
+    display: grid;
+    grid-template-columns: auto auto;
+    align-content: center;
+    gap: 0.1rem 0.45rem;
+    min-width: 7.5rem;
+    margin: 0;
+    text-align: left;
+}
+.stage-player-roster > header span {
+    color: var(--scene-c);
+    font-weight: 850;
+}
+.stage-player-roster > header small {
+    grid-column: 1 / -1;
+    color: #aaa1bb;
+}
+.stage-player-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(10rem, 100%), 1fr));
+    gap: 0.35rem;
+}
+.stage-player {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+    gap: 0.45rem;
+    min-height: 34px;
+    padding: 0.3rem 0.5rem;
+    border-radius: 9px;
+    background: #ffffff08;
+}
+.stage-player i {
+    width: 0.55rem;
+    height: 0.55rem;
+    border-radius: 50%;
+    background: #6e687a;
+}
+.stage-player i.online {
+    background: #65d1c5;
+}
+.stage-player strong {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* A DISPLAY is a bounded public stage: public data stays visible without document scrolling. */
+main.display-role {
+    width: min(1600px, 100%);
+}
+main.display-role.playing {
+    width: 100%;
+    height: 100dvh;
+    min-height: 0;
+    padding: clamp(0.65rem, 1.5vw, 1.35rem);
+    overflow: hidden;
+}
+main.display-role.playing > .public-stage {
+    display: grid;
+    grid-template-rows: auto auto auto minmax(0, 1fr) auto;
+    align-items: stretch;
+    justify-items: center;
+    gap: clamp(0.4rem, 1.1vh, 0.85rem);
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+}
+.public-stage .stage-player-roster {
+    height: clamp(4.65rem, 9.5vh, 6.2rem);
+}
+.public-stage .active-player {
+    margin: 0;
+    font-size: clamp(1.25rem, 3.2vh, 2.35rem);
+}
+.public-stage .gameplay-focus {
+    align-self: stretch;
+    height: 100%;
+    overflow: hidden;
+}
+.public-stage .gameplay-focus:not(.with-public-voting) {
+    place-items: center;
+}
+.public-stage .gameplay-focus.with-public-voting {
+    grid-template-columns: minmax(0, 1.2fr) minmax(21rem, 0.8fr);
+    align-items: stretch;
+}
+main.playing .public-stage .gameplay-focus .game-card {
+    width: min(1100px, 84vw);
+    height: min(100%, 680px);
+    max-height: 100%;
+    min-height: 0;
+    margin: auto;
+    padding: clamp(1rem, 3.5vh, 3rem) clamp(1.5rem, 4.5vw, 5rem);
+}
+main.playing .public-stage .with-public-voting .game-card {
+    width: 100%;
+    height: 100%;
+    max-height: none;
+}
+.public-stage .game-card p {
+    margin: clamp(0.4rem, 1.2vh, 1rem) 0;
+    font-size: clamp(1.75rem, min(4vw, 5.4vh), 4.5rem);
+}
+main.playing .public-stage .never-voting {
+    display: grid;
+    grid-template-rows: auto auto minmax(0, 1fr);
+    width: 100%;
+    height: 100%;
+    max-height: none;
+    min-height: 0;
+    overflow: hidden;
+}
+.public-stage .never-result-columns {
+    min-height: 0;
+    overflow: hidden;
+}
+.public-stage .stage-results .answer-column {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto minmax(0, 1fr);
+    align-content: stretch;
+    overflow: hidden;
+}
+.public-stage .stage-results .answer-name-list {
+    grid-template-columns: 1fr;
+}
+
+main.display-role:not(.playing) {
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
+    height: 100dvh;
+    min-height: 0;
+    padding: clamp(0.75rem, 2vw, 1.75rem);
+    overflow: hidden;
+}
+main.display-role:not(.playing) > header {
+    margin: 0 0 0.75rem;
+}
+main.display-role:not(.playing) > header h1 {
+    font-size: clamp(2rem, 6vh, 4rem);
+}
+.public-stage-lobby {
+    height: 100%;
+    min-height: 0;
+}
+.public-stage-lobby > .lobby,
+.public-stage-lobby > .join-card {
+    min-height: 0;
+    overflow: hidden;
+}
+.public-stage-lobby > .lobby {
+    display: grid;
+    grid-template-rows: auto auto minmax(0, 1fr) auto;
+}
+.public-stage-lobby .stage-player-roster {
+    height: 100%;
+}
+.public-stage-lobby .join-card {
+    display: grid;
+    align-content: center;
+}
+.public-stage-lobby .join-card img {
+    width: min(34vh, 260px, 100%);
+}
 @media (max-width: 600px) {
     .article-shell {
         padding: 0.75rem;
@@ -1271,9 +1716,10 @@ button:not(:disabled):not(.text-action):not(.text-button):not(.icon):active,
         align-items: stretch;
         flex-direction: column;
     }
-    .device-player-editor label {
-        grid-template-columns: 1fr;
-        gap: 0.25rem;
+    .player-name-row {
+        grid-template-columns: minmax(4.7rem, 5.5rem) minmax(0, 1fr) 44px;
+        gap: 0.4rem;
+        padding: 0.3rem;
     }
     .group-list-row {
         grid-template-columns: minmax(0, 1fr) auto;
@@ -1326,6 +1772,49 @@ button:not(:disabled):not(.text-action):not(.text-button):not(.icon):active,
     main.playing .actions {
         min-height: 44px;
     }
+    main.playing .game-shell:not(.public-stage):has(.never-voting) .game-card {
+        flex-basis: min(38vh, 390px);
+        height: min(38vh, 390px);
+        max-height: min(38vh, 390px);
+    }
+    main.playing .never-voting {
+        flex: 0 1 auto;
+        max-height: 34vh;
+        overflow: auto;
+    }
+    main.playing .game-shell:not(.public-stage) .gameplay-focus {
+        flex: 1 1 auto;
+        overflow: hidden;
+    }
+    main.playing
+        .game-shell:not(.public-stage)
+        .gameplay-focus:not(.with-public-voting)
+        .game-card {
+        height: min(100%, 520px);
+        max-height: min(100%, 520px);
+    }
+    main.playing .game-shell:not(.public-stage) .gameplay-focus.with-public-voting {
+        grid-template-rows: minmax(0, 1fr) auto;
+    }
+    main.playing .game-shell:not(.public-stage) .gameplay-focus.with-public-voting .game-card {
+        height: 100%;
+        max-height: 100%;
+    }
+    main.playing .game-shell:not(.public-stage) .gameplay-focus.with-public-voting .never-voting {
+        max-height: min(34vh, 310px);
+    }
+}
+@media (max-width: 900px), (max-aspect-ratio: 4 / 3) {
+    .public-stage .gameplay-focus.with-public-voting {
+        grid-template-columns: 1fr;
+        grid-template-rows: minmax(0, 0.9fr) minmax(0, 1.1fr);
+    }
+    main.playing .public-stage .with-public-voting .game-card {
+        height: 100%;
+    }
+    .public-stage .stage-player-roster {
+        height: clamp(4.4rem, 9vh, 5.2rem);
+    }
 }
 @media (max-width: 420px) {
     .group-list-row {
@@ -1333,5 +1822,24 @@ button:not(:disabled):not(.text-action):not(.text-button):not(.icon):active,
     }
     .group-list-row > .text-action {
         justify-self: start;
+    }
+    .never-vote-row {
+        grid-template-columns: 1fr;
+    }
+    .never-vote-row > div,
+    .never-vote-row button {
+        width: 100%;
+    }
+    .player-name-row {
+        grid-template-columns: minmax(4.5rem, 5rem) minmax(0, 1fr) 44px;
+    }
+    .player-name-row label {
+        font-size: 0.75rem;
+    }
+    .host-transfer-action {
+        grid-template-columns: 1fr;
+    }
+    .host-transfer-action button {
+        width: 100%;
     }
 }

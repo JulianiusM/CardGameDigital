@@ -10,6 +10,7 @@
         "run": "node dist/server.js",
         "server:dev": "nodemon --watch src --ext ts,js --exec \"ts-node --project tsconfig.server.json src/server.ts\"",
         "server": "npm run build && npm run server:dev",
+        "serve": "npm run build && npm run run",
         "typeorm": "ts-node --project tsconfig.server.json scripts/runMigration.ts",
         "typeorm:drop": "npm run typeorm -- schema:drop migrationDataSource.ts",
         "typeorm:sync": "npm run typeorm -- schema:sync migrationDataSource.ts",

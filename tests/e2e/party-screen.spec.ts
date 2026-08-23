@@ -5,6 +5,7 @@ async function hostRoom(
     screen: "personal" | "party" = "party",
     profile: RegExp = /^Freunde /,
     mode?: RegExp,
+    reveal: "anonymous" | "named" = "anonymous",
 ) {
     await page.goto("/play/");
     await page.getByRole("button", { name: /Spiel hosten/ }).click();
@@ -14,6 +15,11 @@ async function hostRoom(
     await page.getByRole("button", { name: /^Weiter/ }).click();
     await page.getByRole("button", { name: profile }).click();
     await page.getByRole("button", { name: /^Weiter/ }).click();
+    if (mode?.test("Ich hab noch nie")) {
+        await page
+            .getByRole("button", { name: reveal === "named" ? /^Antworten offen/ : /^Anonym/ })
+            .click();
+    }
     await page.getByRole("button", { name: /^Weiter/ }).click();
     await page
         .getByRole("button", {
@@ -39,7 +45,7 @@ test("host creates a Party Screen Room and exposes safe QR join information", as
     browser,
 }) => {
     const hostContext = await browser.newContext();
-    const displayContext = await browser.newContext();
+    const displayContext = await browser.newContext({ viewport: { width: 1920, height: 1080 } });
     const host = await hostContext.newPage();
     const code = await hostRoom(host);
     expect(code).toMatch(/^[A-Z2-9]{6}$/);
@@ -48,6 +54,12 @@ test("host creates a Party Screen Room and exposes safe QR join information", as
     await expect(display.getByAltText(`QR-Code für Raum ${code}`)).toBeVisible();
     await expect(host.getByText("Party Screen", { exact: true })).toBeVisible();
     await expect(display.getByRole("button", { name: "Lobby verlassen" })).toBeVisible();
+    await expect(display.locator(".public-stage-lobby")).toBeVisible();
+    expect(
+        await display.evaluate(
+            () => document.scrollingElement!.scrollHeight <= window.innerHeight + 1,
+        ),
+    ).toBe(true);
     await hostContext.close();
     await displayContext.close();
 });
@@ -104,7 +116,7 @@ test("settings, device players and transferred Host authority synchronize across
 
     await newHost.setViewportSize({ width: 360, height: 740 });
     await newHost.getByRole("button", { name: /Person auf diesem Gerät/ }).click();
-    const editor = newHost.locator(".device-player-editor");
+    const editor = newHost.locator(".player-name-row");
     await editor.getByRole("textbox").fill("Bea");
     const playersPanel = newHost.locator(".players");
     expect((await editor.boundingBox())!.width).toBeLessThanOrEqual(
@@ -135,6 +147,7 @@ test("players can inspect complete public settings without private boundaries", 
     await expect(modal).toContainText("Fragenanteil");
     await expect(modal).toContainText("Maximale Kartenfolge desselben Typs");
     await expect(modal).toContainText("Zusätzliche Inhaltsregeln");
+    await expect(modal).toContainText("Deutsch (Deutschland) · de-DE");
     await expect(modal).not.toContainText("Private Grenzen gespeichert");
     await modal.getByLabel("Einstellungen schließen").click();
 
@@ -150,6 +163,7 @@ test("players can inspect complete public settings without private boundaries", 
     const inGameSettings = player.locator(".settings-modal");
     await expect(inGameSettings).toContainText("Fragenanteil");
     await expect(inGameSettings).toContainText("Maximale Kartenfolge desselben Typs");
+    await expect(inGameSettings).toContainText("Deutsch (Deutschland) · de-DE");
     await expect(inGameSettings).not.toContainText("Private Grenzen gespeichert");
     await hostContext.close();
     await playerContext.close();
@@ -187,6 +201,129 @@ test("a player joining during active play enters the authoritative Session roste
     await hostContext.close();
     await firstContext.close();
     await lateContext.close();
+});
+
+test("named Never Have I Ever synchronizes private progress then public answer columns", async ({
+    browser,
+}) => {
+    const hostContext = await browser.newContext();
+    const playerContext = await browser.newContext();
+    const displayContext = await browser.newContext({ viewport: { width: 1920, height: 1080 } });
+    const host = await hostContext.newPage();
+    const player = await playerContext.newPage();
+    const display = await displayContext.newPage();
+    const code = await hostRoom(host, "party", /^Freunde /, /Ich hab noch nie/, "named");
+    await joinRoom(player, code, "Ben");
+    await joinRoom(display, code, "", true);
+    await expect(player.locator(".room-settings-summary")).toContainText("Deutsch (Deutschland)");
+    await expect(player.locator(".room-settings-summary")).toContainText(
+        "Antworten werden aufgedeckt",
+    );
+
+    await host.getByRole("button", { name: "Spiel starten" }).click();
+    await host.getByRole("button", { name: "Karte aufdecken" }).click();
+    for (const page of [host, player, display]) {
+        await expect(page.getByText("Antworten werden aufgedeckt", { exact: true })).toBeVisible();
+        await expect(page.locator(".vote-progress-list")).toContainText("Host Anna");
+        await expect(page.locator(".vote-progress-list")).toContainText("Ben");
+        await expect(page.locator(".never-result-columns")).toHaveCount(0);
+    }
+
+    await host.getByRole("button", { name: "Trifft zu" }).click();
+    await expect(
+        display.locator(".vote-progress-row").filter({ hasText: "Host Anna" }),
+    ).toContainText("Abgestimmt");
+    await expect(display.locator(".vote-progress-row").filter({ hasText: "Ben" })).toContainText(
+        "Wartet",
+    );
+    await expect(display.locator(".never-voting")).not.toContainText("Trifft zu");
+
+    await player.getByRole("button", { name: "Trifft nicht zu" }).click();
+    for (const page of [host, player, display]) {
+        await expect(page.locator(".yes-column")).toContainText("Host Anna");
+        await expect(page.locator(".no-column")).toContainText("Ben");
+    }
+    expect(
+        await display.evaluate(
+            () => document.scrollingElement!.scrollHeight <= window.innerHeight + 1,
+        ),
+    ).toBe(true);
+
+    await display.getByRole("button", { name: "Einstellungen", exact: true }).click();
+    await display.getByRole("tab", { name: "Aktuelle Spieleinstellungen" }).click();
+    await expect(display.locator(".settings-modal")).toContainText("Deutsch (Deutschland) · de-DE");
+    await expect(display.locator(".settings-modal")).toContainText("Antworten werden aufgedeckt");
+    await expect(display.getByRole("tab", { name: /Erweiterte Einstellungen/ })).toHaveCount(0);
+    await display.getByLabel("Einstellungen schließen").click();
+
+    await hostContext.close();
+    await playerContext.close();
+    await displayContext.close();
+});
+
+test("small public displays automatically page long voting rosters and named results", async ({
+    browser,
+}) => {
+    test.setTimeout(75_000);
+    const hostContext = await browser.newContext();
+    const displayContext = await browser.newContext({ viewport: { width: 800, height: 450 } });
+    const host = await hostContext.newPage();
+    const display = await displayContext.newPage();
+    const code = await hostRoom(host, "party", /^Freunde /, /Ich hab noch nie/, "named");
+
+    for (let index = 0; index < 11; index += 1) {
+        await host.getByRole("button", { name: /Person auf diesem Gerät/ }).click();
+        await host
+            .locator(".player-name-row")
+            .last()
+            .locator("input")
+            .fill(`Person ${index + 2}`);
+    }
+    await host.getByRole("button", { name: "Personen für dieses Gerät speichern" }).click();
+    await joinRoom(display, code, "", true);
+    await host.getByRole("button", { name: "Spiel starten" }).click();
+    await host.getByRole("button", { name: "Karte aufdecken" }).click();
+
+    const displayVoting = display.locator(".never-voting");
+    await expect(display.locator(".public-stage")).toBeVisible();
+    await expect(display.locator(".game-card")).toBeVisible();
+    await expect(displayVoting.locator(".auto-page-status")).toBeVisible();
+    const firstProgressPage = await displayVoting.locator(".vote-progress-list").innerText();
+    await expect
+        .poll(() => displayVoting.locator(".vote-progress-list").innerText(), { timeout: 7_000 })
+        .not.toBe(firstProgressPage);
+    await expect(display.locator(".game-card")).toBeVisible();
+    expect(
+        await display.evaluate(
+            () => document.scrollingElement!.scrollHeight <= window.innerHeight + 1,
+        ),
+    ).toBe(true);
+
+    for (let remaining = 12; remaining > 0; remaining -= 1) {
+        await host
+            .locator(".never-vote-row")
+            .first()
+            .getByRole("button", { name: "Trifft zu" })
+            .click();
+    }
+    await expect(display.locator(".yes-column")).toBeVisible();
+    await expect(display.locator(".no-column")).toBeVisible();
+    await expect(display.locator(".game-card")).toBeVisible();
+    await expect(display.locator(".yes-column .auto-page-status")).toBeVisible();
+    const firstResultPage = await display.locator(".yes-column .answer-name-list").innerText();
+    await expect
+        .poll(() => display.locator(".yes-column .answer-name-list").innerText(), {
+            timeout: 7_000,
+        })
+        .not.toBe(firstResultPage);
+    expect(
+        await display.evaluate(
+            () => document.scrollingElement!.scrollHeight <= window.innerHeight + 1,
+        ),
+    ).toBe(true);
+
+    await hostContext.close();
+    await displayContext.close();
 });
 
 test("New Game reuses the Room for Host, Player, and Display", async ({ browser }) => {

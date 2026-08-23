@@ -1,13 +1,15 @@
 <script lang="ts">
     import { gameModes, messages } from "./i18n";
     import { dareTypeIds, operationalFlagIds, questionCategoryIds } from "./gameSettingsOptions";
-    import type { GameProfileSummary, VersionedRoomGameSettings } from "./multiplayer";
+    import type { CardLocaleSummary, GameProfileSummary, PublicGameSettings } from "./multiplayer";
 
-    export let settings: VersionedRoomGameSettings;
+    export let settings: PublicGameSettings;
     export let profiles: readonly GameProfileSummary[] = [];
+    export let cardLocales: readonly CardLocaleSummary[] = [];
 
     $: mode = gameModes.find(([id]) => id === settings.mode);
     $: profile = profiles.find(({ id }) => id === settings.profileId);
+    $: cardLocale = cardLocales.find(({ id }) => id === settings.cardLocale);
     $: includesDares = ["CLASSIC_TRUTH_OR_DARE", "RANDOM_TRUTH_OR_DARE"].includes(settings.mode);
     $: enabledQuestions = questionCategoryIds.filter((id) =>
         settings.configuration.enabledQuestionCategoryIds.includes(id),
@@ -35,13 +37,21 @@
             <dt>{messages.room.gameMode}</dt>
             <dd>{mode?.[1] ?? settings.mode}</dd>
         </div>
+        {#if settings.mode === "NEVER_HAVE_I_EVER"}<div>
+                <dt>{messages.room.answerReveal}</dt>
+                <dd>
+                    {settings.neverHaveIEverRevealMode === "NAMED_ANSWERS"
+                        ? messages.neverHaveIEver.named
+                        : messages.neverHaveIEver.anonymous}
+                </dd>
+            </div>{/if}
+        <div>
+            <dt>{messages.room.cardLanguage}</dt>
+            <dd>{cardLocale?.nativeName ?? settings.cardLocale} · {settings.cardLocale}</dd>
+        </div>
         <div>
             <dt>{messages.room.profile}</dt>
             <dd>{profile?.name ?? settings.profileId}</dd>
-        </div>
-        <div>
-            <dt>{messages.room.cardLanguage}</dt>
-            <dd>{settings.cardLocale}</dd>
         </div>
         <div>
             <dt>{messages.room.maximumIntensity}</dt>

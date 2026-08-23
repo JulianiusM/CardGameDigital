@@ -13,6 +13,11 @@ import {
     roomSettingsGameProfile,
     type EffectiveGameSettings,
 } from "./roomGameSettings";
+import {
+    projectNeverHaveIEverVoting,
+    type NeverHaveIEverVotingProjection,
+} from "./neverHaveIEverVoting";
+import { NEVER_HAVE_I_EVER_REVEAL_MODES, type NeverHaveIEverRevealMode } from "../game-core";
 
 export type CreateCouchSession = {
     mode: GameMode;
@@ -21,6 +26,7 @@ export type CreateCouchSession = {
     profileId: string;
     adultContentConfirmed: boolean;
     cardLocale: string;
+    neverHaveIEverRevealMode?: NeverHaveIEverRevealMode;
     groupId?: string | null;
     dataSpaceId?: DataSpaceId;
 };
@@ -45,6 +51,14 @@ export type CouchSessionSnapshot = {
     cardsShown: number;
     voteResult: { yes: number; no: number; total: number };
     votedPlayerIds: readonly string[];
+    neverHaveIEverVoting: NeverHaveIEverVotingProjection | null;
+    settings: {
+        mode: GameMode;
+        profileId: string;
+        cardLocale: string;
+        neverHaveIEverRevealMode: NeverHaveIEverRevealMode;
+        configuration: EffectiveGameSettings;
+    };
 };
 
 export class CouchSessionNotFoundError extends Error {
@@ -87,6 +101,9 @@ export class CouchSessionService {
             groupId: input.groupId ?? null,
             adultContentConfirmed: input.adultContentConfirmed,
             cardLocale: input.cardLocale,
+            neverHaveIEverRevealMode:
+                input.neverHaveIEverRevealMode ??
+                NEVER_HAVE_I_EVER_REVEAL_MODES.ANONYMOUS_AGGREGATE,
             configuration: input.configuration,
         });
         const groupHistoryCardIds =
@@ -104,6 +121,7 @@ export class CouchSessionService {
                     name: player.name.trim(),
                 })),
                 cardLocale: input.cardLocale,
+                neverHaveIEverRevealMode: input.neverHaveIEverRevealMode,
                 groupHistoryCardIds,
             },
             this.random,
@@ -231,6 +249,22 @@ export class CouchSessionService {
             cardsShown: session.sessionHistory.length,
             voteResult: session.voteResult(),
             votedPlayerIds: [...session.votes.keys()],
+            neverHaveIEverVoting: projectNeverHaveIEverVoting(session),
+            settings: {
+                mode: session.mode,
+                profileId: session.profile.id,
+                cardLocale: session.cardLocale,
+                neverHaveIEverRevealMode: session.neverHaveIEverRevealMode,
+                configuration: {
+                    enabledQuestionCategoryIds: [...session.profile.enabledQuestionCategoryIds],
+                    enabledDareTypeIds: [...session.profile.enabledDareTypeIds],
+                    blockedOperationalFlags: [...session.profile.blockedOperationalFlags],
+                    maximumIntensity: session.profile.maximumIntensity,
+                    randomQuestionRatio: session.profile.randomQuestionRatio,
+                    maximumTypeStreak: session.profile.maximumTypeStreak,
+                    letsTalkMetaInterval: session.profile.letsTalkMetaInterval,
+                },
+            },
         };
     }
 }

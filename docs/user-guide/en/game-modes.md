@@ -12,9 +12,21 @@ when the group does not want a choice prompt every turn.
 
 ## Never Have I Ever
 
-Only suitable yes/no questions appear. Each controlled player votes for themselves;
-the public result is aggregated. A shared device can submit each of its local players'
-votes in turn.
+Only suitable yes/no questions appear. Before the session starts, choose how answers
+will be revealed:
+
+- **Anonymous:** after everyone votes, only the group totals are shown.
+- **Reveal answers:** after everyone votes, every player's name and answer are shown.
+
+Anonymous is the default. The reveal choice is fixed for the active session, and the
+voting screen always shows which option is in use before anyone answers.
+
+While voting is open, everyone can see who has already voted and who is still waiting.
+The game never shows _what_ someone voted until the result is revealed. In anonymous
+mode, individual answers are never revealed.
+
+Each controlled player votes for themselves. A shared device can submit each of its
+local players' votes in turn.
 
 ## Let's Talk
 

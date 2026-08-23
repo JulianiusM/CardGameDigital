@@ -2,12 +2,15 @@
 
 ## In zwei Minuten zur ersten Karte
 
-1. Bestimmt mindestens zwei spielende Personen.
-2. Wählt **Neues Spiel** und danach die Gerätekombination.
-3. Tragt alle Personen ein – auch mehrere Personen, die sich ein Gerät teilen.
-4. Wählt ein Profil und eine Intensität, die für die gesamte Gruppe passen.
-5. Jede Person bzw. jedes gemeinsam genutzte Gerät legt Grenzen fest.
-6. Prüft in der Lobby, ob alle richtigen Namen angezeigt werden, und startet.
+1. Wählt im Hauptmenü **Spiel hosten**.
+2. Spielt ohne Gruppe, wählt eine vorhandene Gruppe oder erstellt direkt eine neue.
+3. Wählt Spielmodus und GameProfile.
+4. Prüft unter **Erlebnis anpassen** Intensität, Kartensprache und Inhalte. Bei **Ich
+   hab noch nie** legt ihr hier fest, ob nur Summen oder Namen mit Antworten erscheinen.
+5. Wählt Couch, persönliche Geräte oder TV plus Smartphones.
+6. Tragt mindestens zwei spielende Personen ein – auch mehrere Personen auf einem Gerät
+   – und legt private Grenzen fest.
+7. Prüft in der Lobby Namen und öffentliche Einstellungen und startet.
 
 ## Welche Gerätekombination passt?
 

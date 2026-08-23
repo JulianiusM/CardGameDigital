@@ -15,6 +15,13 @@ export const GAME_MODES = {
 } as const;
 export type GameMode = (typeof GAME_MODES)[keyof typeof GAME_MODES];
 
+export const NEVER_HAVE_I_EVER_REVEAL_MODES = {
+    ANONYMOUS_AGGREGATE: "ANONYMOUS_AGGREGATE",
+    NAMED_ANSWERS: "NAMED_ANSWERS",
+} as const;
+export type NeverHaveIEverRevealMode =
+    (typeof NEVER_HAVE_I_EVER_REVEAL_MODES)[keyof typeof NEVER_HAVE_I_EVER_REVEAL_MODES];
+
 export const SESSION_STATES = {
     WAITING_FOR_PLAYER: "WAITING_FOR_PLAYER",
     CHOOSING_CARD_TYPE: "CHOOSING_CARD_TYPE",
@@ -41,6 +48,7 @@ export type GameSessionOptions = {
     groupHistoryCardIds?: ReadonlySet<Card["id"]>;
     boundariesByPlayer?: ReadonlyMap<string, PlayerBoundaries>;
     cardLocale: string;
+    neverHaveIEverRevealMode?: NeverHaveIEverRevealMode;
 };
 export type GameSessionRuntimeState = {
     version: 1;
@@ -66,6 +74,7 @@ export type GameSessionRuntimeState = {
     currentCard: PlayableCard | null;
     sessionHistory: CardAppearance[];
     votes: [string, Vote][];
+    voterIds?: string[];
     shownTypeCounts: { QUESTION: number; DARE: number };
     questionsSinceMeta: number;
     turnsCompletedInRound: number;
@@ -82,6 +91,7 @@ export type GameSessionRuntimeState = {
     ][];
     pendingCardType: CardType | null;
     cardLocale: string;
+    neverHaveIEverRevealMode?: NeverHaveIEverRevealMode;
 };
 
 export class StaleSessionRevisionError extends Error {
@@ -118,6 +128,7 @@ export class GameSession {
     readonly profile: GameProfile;
     readonly sessionHistory: CardAppearance[] = [];
     readonly cardLocale: string;
+    readonly neverHaveIEverRevealMode: NeverHaveIEverRevealMode;
     readonly votes = new Map<string, Vote>();
     readonly shownTypeCounts = { [CARD_TYPES.QUESTION]: 0, [CARD_TYPES.DARE]: 0 };
     players: Player[];
@@ -133,6 +144,7 @@ export class GameSession {
     private readonly groupHistoryCardIds: ReadonlySet<Card["id"]>;
     private readonly boundariesByPlayer: ReadonlyMap<string, PlayerBoundaries>;
     private pendingCardType: CardType | null = null;
+    private voterIds: string[] = [];
 
     constructor(
         options: GameSessionOptions,
@@ -149,6 +161,8 @@ export class GameSession {
         this.players = [...options.players];
         this.profile = options.profile;
         this.cardLocale = options.cardLocale;
+        this.neverHaveIEverRevealMode =
+            options.neverHaveIEverRevealMode ?? NEVER_HAVE_I_EVER_REVEAL_MODES.ANONYMOUS_AGGREGATE;
         this.maximumIntensity = options.maximumIntensity ?? options.profile.maximumIntensity;
         this.groupHistoryCardIds = options.groupHistoryCardIds ?? new Set();
         this.boundariesByPlayer = options.boundariesByPlayer ?? new Map();
@@ -194,6 +208,7 @@ export class GameSession {
                 groupHistoryCardIds: new Set(runtime.groupHistoryCardIds),
                 boundariesByPlayer,
                 cardLocale: runtime.cardLocale,
+                neverHaveIEverRevealMode: runtime.neverHaveIEverRevealMode,
             },
             random,
             true,
@@ -212,6 +227,11 @@ export class GameSession {
         session.turnsCompletedInRound = runtime.turnsCompletedInRound;
         session.lastCardTypes = [...runtime.lastCardTypes];
         session.pendingCardType = runtime.pendingCardType;
+        session.voterIds = runtime.voterIds
+            ? [...runtime.voterIds]
+            : runtime.mode === GAME_MODES.NEVER_HAVE_I_EVER && runtime.currentCard
+              ? runtime.players.map(({ id }) => id)
+              : [];
         return session;
     }
 
@@ -236,6 +256,7 @@ export class GameSession {
             currentCard: this.currentCard,
             sessionHistory: this.sessionHistory.map((appearance) => ({ ...appearance })),
             votes: [...this.votes],
+            voterIds: [...this.voterIds],
             shownTypeCounts: { ...this.shownTypeCounts },
             questionsSinceMeta: this.questionsSinceMeta,
             turnsCompletedInRound: this.turnsCompletedInRound,
@@ -252,6 +273,7 @@ export class GameSession {
             ]),
             pendingCardType: this.pendingCardType,
             cardLocale: this.cardLocale,
+            neverHaveIEverRevealMode: this.neverHaveIEverRevealMode,
         };
     }
 
@@ -259,6 +281,18 @@ export class GameSession {
         return this.mode === GAME_MODES.NEVER_HAVE_I_EVER
             ? null
             : (this.players[this.activePlayerIndex] ?? null);
+    }
+
+    get votingPlayers(): readonly Player[] {
+        const byId = new Map(this.players.map((player) => [player.id, player]));
+        return this.voterIds.flatMap((id) => {
+            const player = byId.get(id);
+            return player ? [player] : [];
+        });
+    }
+
+    isCurrentVoter(playerId: string): boolean {
+        return this.voterIds.includes(playerId);
     }
 
     /** Checks the initial authoritative pool without selecting or relaxing any rule. */
@@ -282,6 +316,7 @@ export class GameSession {
         this.players = this.players.filter(({ id }) => !playerIds.has(id));
         if (this.players.length === previousPlayers.length) return;
         for (const playerId of playerIds) this.votes.delete(playerId);
+        this.voterIds = this.voterIds.filter((id) => !playerIds.has(id));
         if (!this.players.length) {
             this.state = SESSION_STATES.ENDED;
             this.currentCard = null;
@@ -308,7 +343,7 @@ export class GameSession {
         }
         if (
             this.state === SESSION_STATES.COLLECTING_ANSWERS &&
-            this.votes.size === this.players.length
+            this.votes.size === this.voterIds.length
         )
             this.state = SESSION_STATES.SHOWING_RESULTS;
         this.revision++;
@@ -401,12 +436,11 @@ export class GameSession {
     submitVote(expectedRevision: number, playerId: string, vote: Vote): void {
         this.assertRevision(expectedRevision);
         this.assertState("submitVote", SESSION_STATES.COLLECTING_ANSWERS);
-        if (!this.players.some((player) => player.id === playerId))
-            throw new Error(MESSAGE_KEYS.GAME_UNKNOWN_PLAYER);
+        if (!this.isCurrentVoter(playerId)) throw new Error(MESSAGE_KEYS.GAME_UNKNOWN_PLAYER);
         if (this.votes.has(playerId)) throw new Error(MESSAGE_KEYS.GAME_ALREADY_VOTED);
         this.votes.set(playerId, vote);
         this.state =
-            this.votes.size === this.players.length
+            this.votes.size === this.voterIds.length
                 ? SESSION_STATES.SHOWING_RESULTS
                 : SESSION_STATES.COLLECTING_ANSWERS;
         this.revision++;
@@ -424,6 +458,7 @@ export class GameSession {
         this.currentCard = null;
         this.pendingCardType = null;
         this.votes.clear();
+        this.voterIds = [];
         if (this.mode !== GAME_MODES.NEVER_HAVE_I_EVER) this.rotatePlayer();
         this.state =
             this.mode === GAME_MODES.CLASSIC
@@ -438,6 +473,7 @@ export class GameSession {
         this.state = SESSION_STATES.ENDED;
         this.currentCard = null;
         this.votes.clear();
+        this.voterIds = [];
         this.revision++;
     }
 
@@ -486,6 +522,8 @@ export class GameSession {
             this.mode === GAME_MODES.NEVER_HAVE_I_EVER
                 ? SESSION_STATES.COLLECTING_ANSWERS
                 : SESSION_STATES.SHOWING_CARD;
+        this.voterIds =
+            this.mode === GAME_MODES.NEVER_HAVE_I_EVER ? this.players.map(({ id }) => id) : [];
         this.revision++;
         return card;
     }

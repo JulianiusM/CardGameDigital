@@ -1,10 +1,15 @@
 <script lang="ts">
     import GameSettingsSummary from "./GameSettingsSummary.svelte";
     import { messages } from "./i18n";
-    import type { GameProfileSummary, VersionedRoomGameSettings } from "./multiplayer";
+    import type {
+        CardLocaleSummary,
+        GameProfileSummary,
+        VersionedRoomGameSettings,
+    } from "./multiplayer";
     export let open = false;
     export let settings: VersionedRoomGameSettings;
     export let profiles: readonly GameProfileSummary[] = [];
+    export let cardLocales: readonly CardLocaleSummary[] = [];
 </script>
 
 {#if open}
@@ -27,7 +32,9 @@
                     on:click={() => (open = false)}>×</button
                 >
             </header>
-            <div class="modal-content"><GameSettingsSummary {settings} {profiles} /></div>
+            <div class="modal-content">
+                <GameSettingsSummary {settings} {profiles} {cardLocales} />
+            </div>
         </div>
     </div>
 {/if}

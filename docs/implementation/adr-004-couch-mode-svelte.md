@@ -23,7 +23,7 @@ The Couch UI supports:
 - active-player and round presentation;
 - Classic Question/Dare choice;
 - Random automatic type selection;
-- Ich hab noch nie aggregate voting;
+- Ich hab noch nie voting with anonymous aggregate or named-answer reveal;
 - Let's Talk meta scheduling through the shared domain engine;
 - skip, advance, explicit pool exhaustion, and end Session;
 - responsive layout and reduced-motion behavior.
@@ -32,9 +32,10 @@ The Couch UI supports:
 
 Runtime state lives in the server process for this vertical slice, not browser
 storage. Commands include the current revision and stale revisions are rejected.
-Snapshots expose aggregate votes and voter completion, not individual answer
-values. Phase 5 will persist and synchronize this same aggregate through Rooms;
-it will not introduce another game engine.
+Snapshots use the shared application voting projection. They expose every required
+voter's Pending/Voted completion without answer values during collection. Anonymous
+results remain aggregate-only; named values appear together only after completion.
+Ephemeral answers remain only in active runtime recovery state and never enter history.
 
 ## Offline behavior
 

@@ -7,6 +7,7 @@
     import GameSettingsEditor from "./GameSettingsEditor.svelte";
     import GameSettingsModal from "./GameSettingsModal.svelte";
     import Help from "./Help.svelte";
+    import HostTransferControl from "./HostTransferControl.svelte";
     import Home from "./Home.svelte";
     import PresentationControls from "./PresentationControls.svelte";
     import RoomGameplay from "./RoomGameplay.svelte";
@@ -18,10 +19,12 @@
     import { messages } from "./i18n";
     import {
         clearJoin,
+        loadCardLocales,
         loadGameProfiles,
         loadLastJoin,
         RoomSocket,
         type GameProfileSummary,
+        type CardLocaleSummary,
         type Join,
         type RoomGameSettings,
     } from "./multiplayer";
@@ -41,6 +44,7 @@
     let connection: RoomSocket | null = null;
     let qr = "";
     let profiles: GameProfileSummary[] = [];
+    let cardLocales: CardLocaleSummary[] = [];
     let settingsDraft: RoomGameSettings | null = null;
     let settingsDirty = false;
     let devicePlayerNames: string[] = [];
@@ -156,7 +160,12 @@
             width: 260,
             color: { dark: "#17132d", light: "#ffffff" },
         });
-        profiles = await loadGameProfiles();
+        const [loadedProfiles, loadedLocales] = await Promise.all([
+            loadGameProfiles(),
+            loadCardLocales(),
+        ]);
+        profiles = loadedProfiles;
+        cardLocales = loadedLocales.locales;
     }
 
     function leaveCompleted(value: Join, reason: "LEFT" | "ROOM_CLOSED"): void {
@@ -246,7 +255,10 @@
 {:else if route === "couch"}
     <Couch />
 {:else if route === "room"}
-    <main class:playing={Boolean(session && session.state !== "ENDED")}>
+    <main
+        class:playing={Boolean(session && session.state !== "ENDED")}
+        class:display-role={effectiveRole === "DISPLAY"}
+    >
         {#if recoveringRoom || !snapshot || !effectiveRole}
             <section class="card-panel reconnect-panel" aria-live="polite">
                 <h1>{messages.common.reconnecting}</h1>
@@ -267,6 +279,7 @@
                     code={roomCode}
                     settings={snapshot.settings}
                     {profiles}
+                    {cardLocales}
                     {devicePlayerNames}
                     onSetDevicePlayer={setDevicePlayer}
                     onAddDevicePlayer={() => (devicePlayerNames = [...devicePlayerNames, ""])}
@@ -312,6 +325,7 @@
                 onLeave={leaveRoom}
                 currentGameSettings={session ? snapshot.settings : undefined}
                 gameProfiles={profiles}
+                {cardLocales}
                 {roomCode}
                 {qr}
             >
@@ -319,6 +333,7 @@
                     {#if settingsDraft}<GameSettingsEditor
                             settings={settingsDraft}
                             {profiles}
+                            {cardLocales}
                             onChange={changeSettings}
                         />
                         <button
@@ -327,28 +342,21 @@
                             on:click={saveRoomSettings}>{messages.common.save}</button
                         >{/if}
                 </div>
-                <div slot="advanced" class="section-grid">
-                    <label
-                        >{messages.room.transfer}<select bind:value={transferTarget}
-                            ><option value="">{messages.room.selectDevice}</option
-                            >{#each participants.filter((participant) => participant.role === "PLAYER") as candidate}<option
-                                    value={candidate.id}>{candidate.displayName}</option
-                                >{/each}</select
-                        ></label
-                    >
-                    <button
-                        class="secondary"
-                        disabled={!transferTarget}
-                        on:click={() =>
+                <div slot="advanced">
+                    <HostTransferControl
+                        {participants}
+                        selected={transferTarget}
+                        onSelect={(participantId) => (transferTarget = participantId)}
+                        onTransfer={() =>
                             command("command.transferHost", { participantId: transferTarget })}
-                        >{messages.room.transferAction}</button
-                    >
+                    />
                 </div>
             </SettingsModal>
             <GameSettingsModal
                 bind:open={currentSettingsOpen}
                 settings={snapshot.settings}
                 {profiles}
+                {cardLocales}
             />
         {/if}
     </main>

@@ -5,6 +5,7 @@ import {
     GAME_MODES,
     GameSession,
     InvalidGameStateError,
+    NEVER_HAVE_I_EVER_REVEAL_MODES,
     QUESTION_CATEGORIES,
     SESSION_STATES,
     SequenceRandomSource,
@@ -85,12 +86,48 @@ describe("shared GameSession state machine", () => {
         session.startTurn(0, [repeatQuestion, yesNo]);
         expect(session.currentCard?.id).toBe(yesNo.id);
         expect(session.activePlayer).toBeNull();
+        expect(session.neverHaveIEverRevealMode).toBe(
+            NEVER_HAVE_I_EVER_REVEAL_MODES.ANONYMOUS_AGGREGATE,
+        );
         session.submitVote(1, "a", "YES");
         session.submitVote(2, "b", "NO");
         expect(session.state).toBe(SESSION_STATES.SHOWING_RESULTS);
         expect(session.voteResult()).toEqual({ yes: 1, no: 1, total: 2 });
         session.advance(3);
         expect(session.state).toBe(SESSION_STATES.WAITING_FOR_PLAYER);
+    });
+
+    it("freezes the Never Have I Ever voter set for the current card", () => {
+        const session = new GameSession(
+            {
+                id: "fixed-voters",
+                mode: GAME_MODES.NEVER_HAVE_I_EVER,
+                players,
+                profile: profile(),
+                cardLocale: "en-GB",
+                neverHaveIEverRevealMode: NEVER_HAVE_I_EVER_REVEAL_MODES.NAMED_ANSWERS,
+            },
+            new SequenceRandomSource([0]),
+        );
+        session.startTurn(0, [
+            card({ id: "fixed-voter-card" as never, yesNoAnswerPossible: true }),
+        ]);
+        session.addPlayers(1, [{ id: "late", name: "Late" }]);
+
+        expect(session.votingPlayers.map(({ id }) => id)).toEqual(["a", "b"]);
+        expect(() => session.submitVote(2, "late", "YES")).toThrow(/game.unknownPlayer/);
+        session.submitVote(2, "a", "YES");
+        session.submitVote(3, "b", "NO");
+        expect(session.state).toBe(SESSION_STATES.SHOWING_RESULTS);
+
+        const restored = GameSession.restore(
+            JSON.parse(JSON.stringify(session.toRuntimeState())),
+            new SequenceRandomSource([0]),
+        );
+        expect(restored.votingPlayers.map(({ id }) => id)).toEqual(["a", "b"]);
+        expect(restored.neverHaveIEverRevealMode).toBe(
+            NEVER_HAVE_I_EVER_REVEAL_MODES.NAMED_ANSWERS,
+        );
     });
 
     it("restores a Session below the creation minimum and can still end it", () => {

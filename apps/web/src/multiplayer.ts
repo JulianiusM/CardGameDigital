@@ -29,10 +29,30 @@ export type SessionView = {
     } | null;
     cardsShown: number;
     voteResult: { yes: number; no: number; total: number };
+    neverHaveIEverVoting: NeverHaveIEverVotingView | null;
     hasVoted: boolean;
     viewer: { participantId: string; role: Role; displayName: string };
     availableActions: string[];
     controllablePlayers: { id: string; name: string; hasVoted: boolean }[];
+};
+export type NeverHaveIEverRevealMode = "ANONYMOUS_AGGREGATE" | "NAMED_ANSWERS";
+export type NeverHaveIEverVotingView = {
+    revealMode: NeverHaveIEverRevealMode;
+    progress: {
+        playerId: string;
+        displayName: string;
+        status: "PENDING" | "VOTED";
+    }[];
+    result: {
+        yes: number;
+        no: number;
+        total: number;
+        namedAnswers?: {
+            playerId: string;
+            displayName: string;
+            vote: "YES" | "NO";
+        }[];
+    } | null;
 };
 export type RoomSnapshot = {
     roomId: string;
@@ -56,8 +76,13 @@ export type RoomGameSettings = {
     groupId: string | null;
     adultContentConfirmed: boolean;
     cardLocale: string;
+    neverHaveIEverRevealMode: NeverHaveIEverRevealMode;
     configuration: EffectiveGameSettings;
 };
+export type PublicGameSettings = Pick<
+    RoomGameSettings,
+    "mode" | "profileId" | "cardLocale" | "neverHaveIEverRevealMode" | "configuration"
+>;
 export type VersionedRoomGameSettings = RoomGameSettings & {
     revision: number;
     updatedByParticipantId: string | null;

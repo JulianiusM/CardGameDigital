@@ -14,6 +14,7 @@
         type GameProfileSummary,
         type GroupSummary,
         type RoomGameSettings,
+        type CardLocaleSummary,
     } from "./multiplayer";
     import { presentation } from "./presentation";
     import { dismissNotification, showNotification } from "./notifications";
@@ -28,27 +29,22 @@
         type SetupStep,
     } from "./setup";
 
-    const hostSteps: SetupStep[] = ["group", "mode", "profile", "customize", "screen"];
     const query = new URLSearchParams(location.search);
     let setup: GameSetupState = loadSetup();
     let screen: "menu" | "wizard" =
         query.has("setup") || query.has("room") || setup.intent !== null ? "wizard" : "menu";
     let groups: GroupSummary[] = [];
     let profiles: GameProfileSummary[] = [];
+    let cardLocales: CardLocaleSummary[] = [];
     let groupsAvailable = false;
     let groupName = "";
     let groupMembers = "";
     let joinName = "";
     let roomCode = query.get("room")?.toUpperCase() ?? "";
     let busy = false;
+    const hostSteps: SetupStep[] = ["group", "mode", "profile", "customize", "screen"];
     $: currentIndex = hostSteps.indexOf(setup.step);
-    $: progressSteps = [
-        messages.setup.group,
-        messages.setup.mode,
-        messages.setup.profile,
-        messages.setup.customize,
-        messages.setup.screen,
-    ];
+    $: progressSteps = hostSteps.map((step) => messages.setup.stepLabels[step]);
     $: presentation.setScene(screen === "menu" ? "MENU" : "LOBBY");
     $: editorSettings = setupRoomSettings(setup);
 
@@ -73,6 +69,7 @@
                 loadCardLocales(),
             ]);
             profiles = loadedProfiles;
+            cardLocales = catalogLocales.locales;
             if (!catalogLocales.locales.some(({ id }) => id === setup.cardLocale)) {
                 persist({ cardLocale: catalogLocales.defaultLocale });
             }
@@ -132,6 +129,8 @@
             mode: settings.mode,
             profileId: settings.profileId,
             adultContentConfirmed: settings.adultContentConfirmed,
+            cardLocale: settings.cardLocale,
+            neverHaveIEverRevealMode: settings.neverHaveIEverRevealMode,
             enabledQuestionCategoryIds: [...settings.configuration.enabledQuestionCategoryIds],
             enabledDareTypeIds: [...settings.configuration.enabledDareTypeIds],
             blockedOperationalFlags: [...settings.configuration.blockedOperationalFlags],
@@ -425,6 +424,7 @@
                 <GameSettingsEditor
                     settings={editorSettings}
                     {profiles}
+                    {cardLocales}
                     showMode={false}
                     showProfile={false}
                     onChange={applyEditor}

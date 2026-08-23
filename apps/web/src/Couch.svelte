@@ -1,16 +1,25 @@
 <script lang="ts">
+    import { onMount } from "svelte";
     import { ApiError, couchApi, type Snapshot } from "./api";
     import SettingsModal from "./SettingsModal.svelte";
     import SettingsTrigger from "./SettingsTrigger.svelte";
     import GameCard from "./GameCard.svelte";
     import SessionSummary from "./SessionSummary.svelte";
+    import NeverHaveIEverVoting from "./NeverHaveIEverVoting.svelte";
+    import PlayerNameRow from "./PlayerNameRow.svelte";
     import { presentation } from "./presentation";
     import { atmosphereFor, effectForCommand, sceneFor } from "./presentationMapping";
     import { messages, gameModes } from "./i18n";
     import { elapsedMinutes as minutesSince } from "./elapsedTime";
     import { navigate } from "./router";
     import { dismissNotification, showNotification } from "./notifications";
-    import { loadSetup, resetSetup, setupHref } from "./setup";
+    import { loadSetup, resetSetup, setupHref, setupRoomSettings } from "./setup";
+    import {
+        loadCardLocales,
+        loadGameProfiles,
+        type CardLocaleSummary,
+        type GameProfileSummary,
+    } from "./multiplayer";
 
     const setup = loadSetup();
     let mode = (gameModes.find((item) => item[0] === setup.mode) ?? gameModes[0])[0];
@@ -20,8 +29,9 @@
     let settingsOpen = false;
     let lastCardId: string | undefined;
     let exhausted = false;
-    $: unvotedPlayers =
-        session?.players.filter((player) => !session?.votedPlayerIds.includes(player.id)) ?? [];
+    let cardLocales: CardLocaleSummary[] = [];
+    let profiles: GameProfileSummary[] = [];
+    $: currentGameSettings = session?.settings ?? setupRoomSettings(setup);
     $: cardAtmosphere = atmosphereFor(session?.currentCard);
     $: {
         const cardId = session?.currentCard?.id;
@@ -32,6 +42,15 @@
             cardAtmosphere,
         );
     }
+
+    onMount(async () => {
+        const [loadedLocales, loadedProfiles] = await Promise.all([
+            loadCardLocales(),
+            loadGameProfiles(),
+        ]);
+        cardLocales = loadedLocales.locales;
+        profiles = loadedProfiles;
+    });
 
     function setPlayer(index: number, value: string): void {
         playerNames[index] = value;
@@ -90,6 +109,8 @@
                 profileId: setup.profileId,
                 adultContentConfirmed: setup.adultContentConfirmed,
                 groupId: setup.groupChoice === "SELECT" ? setup.groupId : null,
+                cardLocale: setup.cardLocale,
+                neverHaveIEverRevealMode: setup.neverHaveIEverRevealMode,
             }),
         );
     }
@@ -124,20 +145,15 @@
                     href={setupHref("mode")}>{messages.common.change}</a
                 >
             </div>
-            <div class="players playful-list">
+            <div class="players">
                 {#each playerNames as name, index}
-                    <label
-                        ><span class="avatar">{index + 1}</span><input
-                            aria-label={`${messages.common.person} ${index + 1}`}
-                            value={name}
-                            on:input={(event) => setPlayer(index, event.currentTarget.value)}
-                            maxlength="40"
-                        />{#if playerNames.length > 2}<button
-                                class="icon"
-                                aria-label={messages.common.removePerson}
-                                on:click={() => removePlayer(index)}>×</button
-                            >{/if}</label
-                    >
+                    <PlayerNameRow
+                        {index}
+                        value={name}
+                        removable={playerNames.length > 2}
+                        onInput={(value) => setPlayer(index, value)}
+                        onRemove={() => removePlayer(index)}
+                    />
                 {/each}
                 <button class="secondary add-player" on:click={addPlayer}
                     >{messages.common.addPerson}</button
@@ -205,25 +221,14 @@
                 </div>
             {:else if session.currentCard}
                 <GameCard card={session.currentCard} showIntensity />
-                {#if session.state === "COLLECTING_ANSWERS"}<div class="voting">
-                        <h2>{messages.couch.voteRemaining}: {unvotedPlayers.length}</h2>
-                        {#each unvotedPlayers as player}<div>
-                                <strong>{player.name}</strong><button
-                                    disabled={busy}
-                                    on:click={() =>
-                                        command("vote", { playerId: player.id, vote: "YES" })}
-                                    >{messages.common.yes}</button
-                                ><button
-                                    disabled={busy}
-                                    on:click={() =>
-                                        command("vote", { playerId: player.id, vote: "NO" })}
-                                    >{messages.common.no}</button
-                                >
-                            </div>{/each}
-                    </div>
-                {:else if session.state === "SHOWING_RESULTS"}<div class="result">
-                        {messages.common.result(session.voteResult.yes, session.voteResult.total)}
-                    </div>{/if}
+                {#if session.neverHaveIEverVoting}<NeverHaveIEverVoting
+                        voting={session.neverHaveIEverVoting}
+                        controllablePlayerIds={session.neverHaveIEverVoting.progress.map(
+                            ({ playerId }) => playerId,
+                        )}
+                        {busy}
+                        onVote={(playerId, vote) => command("vote", { playerId, vote })}
+                    />{/if}
                 <div class="actions">
                     <button class="secondary" disabled={busy} on:click={() => command("skip")}
                         >{messages.common.skip}</button
@@ -239,5 +244,8 @@
     <SettingsModal
         bind:open={settingsOpen}
         onEnd={session && session.state !== "ENDED" ? () => command("end") : undefined}
+        {currentGameSettings}
+        gameProfiles={profiles}
+        {cardLocales}
     />
 </main>

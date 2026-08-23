@@ -127,6 +127,39 @@ describe("Couch HTTP application adapter", () => {
         ).toBe(1);
     });
 
+    it("applies named reveal without leaking Couch answers during collection", async () => {
+        const created = await request(app)
+            .post("/api/v1/couch/sessions")
+            .send({
+                mode: GAME_MODES.NEVER_HAVE_I_EVER,
+                players: [{ name: "Anna" }, { name: "Ben" }],
+                neverHaveIEverRevealMode: "NAMED_ANSWERS",
+                ...canonicalSettings,
+            })
+            .expect(201);
+        const shown = await request(app)
+            .post(`/api/v1/couch/sessions/${created.body.id}/start`)
+            .send({ revision: 0 })
+            .expect(200);
+        const firstVote = await request(app)
+            .post(`/api/v1/couch/sessions/${created.body.id}/vote`)
+            .send({ revision: 1, playerId: shown.body.players[0].id, vote: "YES" })
+            .expect(200);
+        expect(firstVote.body.neverHaveIEverVoting.result).toBeNull();
+        expect(JSON.stringify(firstVote.body.neverHaveIEverVoting)).not.toContain('"YES"');
+
+        await request(app)
+            .post(`/api/v1/couch/sessions/${created.body.id}/vote`)
+            .send({ revision: 2, playerId: shown.body.players[1].id, vote: "NO" })
+            .expect(200)
+            .expect(({ body }) =>
+                expect(body.neverHaveIEverVoting.result.namedAnswers).toEqual([
+                    { playerId: shown.body.players[0].id, displayName: "Anna", vote: "YES" },
+                    { playerId: shown.body.players[1].id, displayName: "Ben", vote: "NO" },
+                ]),
+            );
+    });
+
     it("selects an active Card locale independently of Accept-Language", async () => {
         const created = await request(app)
             .post("/api/v1/couch/sessions")

@@ -23,6 +23,7 @@ export type GameSetupState = {
     enabledDareTypeIds: string[];
     blockedOperationalFlags: string[];
     cardLocale: string;
+    neverHaveIEverRevealMode: "ANONYMOUS_AGGREGATE" | "NAMED_ANSWERS";
     deviceMode: DeviceMode;
 };
 
@@ -53,6 +54,7 @@ const defaults: GameSetupState = {
     enabledDareTypeIds: ["DARE_SILLY", "DARE_OTHER", "DARE_TOUCH", "DARE_KISS", "DARE_CLOTHING"],
     blockedOperationalFlags: [],
     cardLocale: "de-DE",
+    neverHaveIEverRevealMode: "ANONYMOUS_AGGREGATE",
     deviceMode: "couch",
 };
 
@@ -88,6 +90,7 @@ export function setupRoomSettings(state: GameSetupState): RoomGameSettings {
         groupId: state.groupChoice === "SELECT" ? state.groupId : null,
         adultContentConfirmed: state.adultContentConfirmed,
         cardLocale: state.cardLocale,
+        neverHaveIEverRevealMode: state.neverHaveIEverRevealMode,
         configuration: {
             enabledQuestionCategoryIds: state.enabledQuestionCategoryIds,
             enabledDareTypeIds: state.enabledDareTypeIds,

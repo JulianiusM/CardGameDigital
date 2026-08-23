@@ -1,8 +1,11 @@
 <script lang="ts">
     import BoundarySetup, { type BoundarySelection } from "./BoundarySetup.svelte";
     import { messages } from "./i18n";
+    import ParticipantRoster from "./ParticipantRoster.svelte";
+    import PlayerNameRow from "./PlayerNameRow.svelte";
     import type {
         GameProfileSummary,
+        CardLocaleSummary,
         Participant,
         Presence,
         Role,
@@ -17,6 +20,7 @@
     export let code: string;
     export let settings: VersionedRoomGameSettings;
     export let profiles: GameProfileSummary[];
+    export let cardLocales: CardLocaleSummary[] = [];
     export let devicePlayerNames: string[];
     export let onSetDevicePlayer: (index: number, value: string) => void;
     export let onAddDevicePlayer: () => void;
@@ -38,12 +42,10 @@
     );
     $: selectedProfile = profiles.find(({ id }) => id === settings.profileId);
     $: selectedMode = Object.values(messages.modes).find(([id]) => id === settings.mode);
-    function isOnline(participantId: string): boolean {
-        return presence.some((entry) => entry.participantId === participantId);
-    }
+    $: selectedLocale = cardLocales.find(({ id }) => id === settings.cardLocale);
 </script>
 
-<section class="lobby-grid">
+<section class:public-stage-lobby={effectiveRole === "DISPLAY"} class="lobby-grid">
     <div class="card-panel lobby">
         <h2>{messages.room.lobby}</h2>
 
@@ -55,11 +57,17 @@
                         settings.profileId}
                 </p>
                 <small
-                    >{messages.room.maximumIntensity}: {settings.configuration.maximumIntensity} · {settings
+                    >{selectedLocale?.nativeName ?? settings.cardLocale} · {messages.room
+                        .maximumIntensity}: {settings.configuration.maximumIntensity} · {settings
                         .configuration.enabledQuestionCategoryIds.length}
                     {messages.settings.content} · {settings.configuration.enabledDareTypeIds.length}
                     {messages.common.dare}</small
                 >
+                {#if settings.mode === "NEVER_HAVE_I_EVER"}<small class="reveal-summary">
+                        {settings.neverHaveIEverRevealMode === "NAMED_ANSWERS"
+                            ? messages.neverHaveIEver.named
+                            : messages.neverHaveIEver.anonymous}
+                    </small>{/if}
             </div>
             <div class="room-settings-actions">
                 <button class="secondary" on:click={onViewSettings}
@@ -71,42 +79,25 @@
             </div>
         </section>
 
-        {#each participants as participant}
-            <div class="participant">
-                <span class:online={isOnline(participant.id)}></span>
-                <strong>{participant.displayName}</strong>
-                <small>{participant.role}</small>
-            </div>
-            {#each participant.devicePlayers as player}
-                <div class="participant device-player">
-                    <span class:online={isOnline(participant.id)}></span>
-                    <strong>{player.name}</strong>
-                    <small>{participant.displayName}</small>
-                </div>
-            {/each}
-        {/each}
+        <ParticipantRoster
+            {participants}
+            {presence}
+            stage={effectiveRole === "DISPLAY"}
+            includeDisplays={effectiveRole !== "DISPLAY"}
+            collapsible={false}
+            roomCode={code}
+        />
 
         {#if effectiveRole !== "DISPLAY"}
             <div class="players">
                 <h3>{messages.room.localPlayers}</h3>
                 {#each devicePlayerNames as localName, index}
-                    <div class="device-player-editor">
-                        <label
-                            ><span>{messages.common.person} {index + 1}</span><input
-                                value={localName}
-                                maxlength="40"
-                                on:input={(event) =>
-                                    onSetDevicePlayer(index, event.currentTarget.value)}
-                            /></label
-                        >
-                        <button
-                            class="icon"
-                            aria-label={messages.room.localPerson}
-                            on:click={() => onRemoveDevicePlayer(index)}
-                        >
-                            ×
-                        </button>
-                    </div>
+                    <PlayerNameRow
+                        {index}
+                        value={localName}
+                        onInput={(value) => onSetDevicePlayer(index, value)}
+                        onRemove={() => onRemoveDevicePlayer(index)}
+                    />
                 {/each}
                 <button class="secondary" on:click={onAddDevicePlayer}>
                     {messages.room.addLocalPerson}

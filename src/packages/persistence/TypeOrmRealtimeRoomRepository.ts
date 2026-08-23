@@ -6,7 +6,11 @@ import type {
     RealtimeRoomRepository,
     RoomParticipant,
 } from "../application/realtimeRooms";
-import type { RoomGameSettings, VersionedRoomGameSettings } from "../application/roomGameSettings";
+import {
+    normalizeRoomGameSettings,
+    type RoomGameSettings,
+    type VersionedRoomGameSettings,
+} from "../application/roomGameSettings";
 import { RoomEntity } from "../../modules/database/entities/game/RoomEntity";
 import { RoomParticipantEntity } from "../../modules/database/entities/game/RoomParticipantEntity";
 import { GameSessionEntity } from "../../modules/database/entities/game/GameSessionEntity";
@@ -205,7 +209,7 @@ export class TypeOrmRealtimeRoomRepository implements RealtimeRoomRepository {
     async loadSettings(roomId: string): Promise<VersionedRoomGameSettings> {
         const room = await this.source.getRepository(RoomEntity).findOneByOrFail({ id: roomId });
         return {
-            ...(JSON.parse(room.gameSettingsJson) as RoomGameSettings),
+            ...normalizeRoomGameSettings(JSON.parse(room.gameSettingsJson) as RoomGameSettings),
             revision: room.settingsRevision,
             updatedByParticipantId: room.settingsUpdatedByParticipantId,
         };

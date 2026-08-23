@@ -33,8 +33,21 @@ verbunden, erfolgt die Zuweisung beim nächsten geeigneten Beitritt.
 Nach einer Wiederverbindung immer den neuen Snapshot abwarten. Nur Schaltflächen, die
 der Server danach anbietet, sind aktuell erlaubt.
 
+## Ich hab noch nie auf gemeinsamen Anzeigen
+
+Während der Abstimmung darf der gemeinsame Bildschirm für jede aktuelle Person
+**Abgestimmt** oder **Wartet** anzeigen. Die eigentliche Ja/Nein-Antwort bleibt bis zur
+Ergebnisanzeige verborgen.
+
+Im Modus **Anonym** werden nur Summen angezeigt. Bei **Antworten offen** werden die
+Antworten nach Abschluss der Abstimmung bewusst öffentlich mit den Namen angezeigt.
+
 ## Party Screen
 
 Der Party Screen zeigt Karten, aktive Person, Runde und öffentliche Ergebnisse. Nutze
 ihn nicht als persönliches Gerät: Private Auswahlmöglichkeiten und Grenzen gehören auf
 die Spielergeräte. Ein Display kann nie automatisch Host werden.
+
+Lange Abstimmungs- und Ergebnislisten wechseln auf kleinen Party Screens automatisch
+seitenweise und beginnen danach wieder von vorn. Karte, Überschrift und Summen bleiben
+dabei sichtbar; niemand muss am Fernseher scrollen.

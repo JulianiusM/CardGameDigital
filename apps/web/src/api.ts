@@ -18,6 +18,8 @@ export type Snapshot = {
     cardsShown: number;
     voteResult: { yes: number; no: number; total: number };
     votedPlayerIds: string[];
+    neverHaveIEverVoting: import("./multiplayer").NeverHaveIEverVotingView | null;
+    settings: import("./multiplayer").PublicGameSettings;
 };
 
 export class ApiError extends Error {

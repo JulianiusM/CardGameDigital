@@ -80,8 +80,10 @@ Statuses mean: **NOT STARTED**, **IN PROGRESS**, **BLOCKED**, **IMPLEMENTED**, o
   are native routes in that same frontend and communicate through `/api/v1`.
 - Couch commands cross a validated `/api/v1/couch` boundary and execute through
   `CouchSessionService`; the browser never selects an authoritative card.
-- The Couch snapshot exposes the current revision and aggregate voting result.
-  Individual vote values remain inside the server-side Session aggregate.
+- The Couch snapshot exposes the current revision and the same privacy-safe
+  Never-Have-I-Ever voting projection as hosted Rooms. Vote values remain hidden
+  during collection; completed named answers are exposed only when the Session's
+  explicit reveal policy allows them.
 - Required gameplay assets are bundled locally. The gameplay client introduces
   no CDN, external font, image, sound, QR, or authentication dependency.
 - The Phase 4 service is deliberately in-process and server-authoritative. Phase
@@ -116,6 +118,9 @@ Statuses mean: **NOT STARTED**, **IN PROGRESS**, **BLOCKED**, **IMPLEMENTED**, o
   choices and votes are available only to the relevant participant.
 - Never-Have-I-Ever commands derive voter identity from the authenticated Room
   participant instead of accepting an authoritative player ID from the client.
+  The Session freezes the ordered voter set when a card enters vote collection,
+  so reconnects preserve pending votes and mid-card joiners participate starting
+  with the next card.
 - Presence and reconnect are server-authoritative. Reusing the participant
   credential reclaims the same identity and returns the current full snapshot.
 

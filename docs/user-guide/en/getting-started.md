@@ -2,12 +2,15 @@
 
 ## Get to the first card in two minutes
 
-1. Gather at least two players.
-2. Choose **New game**, then select the device topology.
-3. Enter every player, including multiple people sharing one device.
-4. Select a profile and intensity comfortable for the whole group.
-5. Each person or shared device configures boundaries.
-6. Verify the names in the lobby and let the host start.
+1. Choose **Host game** on the main menu.
+2. Play without a Group, select an existing Group, or create one in place.
+3. Select the Game Mode and GameProfile.
+4. In **Customize Experience**, review intensity, Card language, and content. For **Never
+   Have I Ever**, choose aggregate-only or named answers here.
+5. Select Couch, personal devices, or TV plus smartphones.
+6. Enter at least two players, including multiple people sharing a device, and configure
+   private boundaries.
+7. Verify names and public settings in the lobby, then let the Host start.
 
 ## Choose a device topology
 

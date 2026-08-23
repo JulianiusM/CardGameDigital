@@ -1,5 +1,7 @@
 <script lang="ts">
     import GameCard from "./GameCard.svelte";
+    import NeverHaveIEverVoting from "./NeverHaveIEverVoting.svelte";
+    import ParticipantRoster from "./ParticipantRoster.svelte";
     import SessionSummary from "./SessionSummary.svelte";
     import { messages } from "./i18n";
     import { elapsedMinutes as minutesSince } from "./elapsedTime";
@@ -20,36 +22,24 @@
 
     $: actions = new Set(session.availableActions);
     $: elapsedMinutes = minutesSince(session.startedAt);
-    $: pendingVotes = session.controllablePlayers.filter((player) => !player.hasVoted);
 </script>
 
-<section class="game-shell">
-    <div class="status">
-        <span>{messages.common.round} {session.roundNumber}</span>
-        <span>{session.cardsShown} {messages.common.cards}</span>
-        <span class="live">{messages.room.live}</span>
-    </div>
-    <details class="live-players">
-        <summary>{messages.settings.players} · {session.players.length}</summary>
-        <div class="participant-list">
-            {#each participants.filter((participant) => participant.role !== "DISPLAY") as participant}
-                <div class="participant">
-                    <span
-                        class:online={presence.some(
-                            ({ participantId }) => participantId === participant.id,
-                        )}
-                    ></span>
-                    <strong>{participant.displayName}</strong><small>{participant.role}</small>
-                </div>
-                {#each participant.devicePlayers as player}<div class="participant device-player">
-                        <span></span><strong>{player.name}</strong><small
-                            >{participant.displayName}</small
-                        >
-                    </div>{/each}
-            {/each}
+<section class:public-stage={role === "DISPLAY"} class="game-shell">
+    <div class="stage-status">
+        <div class="status">
+            <span>{messages.common.round} {session.roundNumber}</span>
+            <span>{session.cardsShown} {messages.common.cards}</span>
+            <span class="live">{messages.room.live}</span>
         </div>
-        <small>{messages.setup.roomCode}: {roomCode}</small>
-    </details>
+        {#if role === "DISPLAY"}<strong class="stage-room-code">{roomCode}</strong>{/if}
+    </div>
+    <ParticipantRoster
+        {participants}
+        {presence}
+        stage={role === "DISPLAY"}
+        includeDisplays={false}
+        {roomCode}
+    />
 
     {#if session.activePlayer}
         <p class="active-player">
@@ -112,41 +102,20 @@
             {/if}
         </div>
     {:else if session.currentCard}
-        <GameCard card={session.currentCard} />
+        <div class:with-public-voting={session.neverHaveIEverVoting} class="gameplay-focus">
+            <GameCard card={session.currentCard} showIntensity={role === "DISPLAY"} />
 
-        {#if actions.has("SUBMIT_VOTE")}
-            <div class="choice">
-                {#each pendingVotes as player}
-                    <div>
-                        <strong>{player.name}</strong>
-                        <button
-                            on:click={() =>
-                                onCommand("command.submitVote", {
-                                    playerId: player.id,
-                                    vote: "YES",
-                                })}
-                        >
-                            {messages.common.yes}
-                        </button>
-                        <button
-                            on:click={() =>
-                                onCommand("command.submitVote", {
-                                    playerId: player.id,
-                                    vote: "NO",
-                                })}
-                        >
-                            {messages.common.no}
-                        </button>
-                    </div>
-                {/each}
-            </div>
-        {/if}
-
-        {#if session.state === "SHOWING_RESULTS"}
-            <div class="result">
-                {messages.common.result(session.voteResult.yes, session.voteResult.total)}
-            </div>
-        {/if}
+            {#if session.neverHaveIEverVoting}
+                <NeverHaveIEverVoting
+                    voting={session.neverHaveIEverVoting}
+                    controllablePlayerIds={actions.has("SUBMIT_VOTE")
+                        ? session.controllablePlayers.map(({ id }) => id)
+                        : []}
+                    stage={role === "DISPLAY"}
+                    onVote={(playerId, vote) => onCommand("command.submitVote", { playerId, vote })}
+                />
+            {/if}
+        </div>
 
         <div class="actions">
             {#if actions.has("VETO_CARD")}

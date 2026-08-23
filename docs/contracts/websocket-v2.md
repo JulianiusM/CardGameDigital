@@ -39,6 +39,22 @@ operational flags, maximum intensity, random question ratio, maximum type streak
 Let's Talk meta interval. Room snapshots expose versioned public settings to every
 participant. They never expose private participant boundaries.
 
+Settings include `neverHaveIEverRevealMode` with values `ANONYMOUS_AGGREGATE` and
+`NAMED_ANSWERS`; omission defaults to anonymous. The Host may change it only before
+Session start. An active Never Have I Ever projection exposes:
+
+```text
+neverHaveIEverVoting
+  revealMode
+  progress[] = {playerId,displayName,status:PENDING|VOTED}
+  result = null | {yes,no,total,namedAnswers?}
+```
+
+The voter set is frozen when the Card enters answer collection, so a late joiner is not
+required for that Card. While collection is active, no viewer—including Host and
+DISPLAY—receives an answer value. After completion, anonymous mode exposes counts only;
+named mode additionally exposes ordered `{playerId,displayName,vote}` entries.
+
 An active Session projection includes `startedAt`, expressed as Unix epoch milliseconds.
 It is the authoritative start instant persisted with the Session; clients derive elapsed
 play time from it instead of starting a local timer when they first observe the Session.

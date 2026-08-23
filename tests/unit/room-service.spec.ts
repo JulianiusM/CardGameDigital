@@ -458,6 +458,85 @@ describe("RoomService", () => {
         });
     });
 
+    it("freezes mid-card voters and reveals named results to every Room viewer only at completion", async () => {
+        const repository = new MemoryRooms();
+        const yesNoCards: CardRepository = {
+            ...cards,
+            listActive: async () => [
+                card({ id: "named-never-question" as never, yesNoAnswerPossible: true }),
+            ],
+        };
+        const service = new RoomService(repository, yesNoCards, new SequenceRandomSource([0]));
+        const joined = await service.createRoom("Host", null, {
+            ...defaultRoomGameSettings(),
+            mode: "NEVER_HAVE_I_EVER",
+            neverHaveIEverRevealMode: "NAMED_ANSWERS",
+        });
+        const playerJoin = await service.joinRoom(joined.roomCode, "Player", "PLAYER");
+        const host = (await service.authenticate(joined.roomCode, joined.participantCredential))!;
+        const player = (await service.authenticate(
+            joined.roomCode,
+            playerJoin.participantCredential,
+        ))!;
+        await service.execute(joined.roomId, host, {
+            type: "command.startSession",
+            revision: null,
+            payload: {},
+        });
+        await service.execute(joined.roomId, host, {
+            type: "command.startTurn",
+            revision: 0,
+            payload: {},
+        });
+        const lateJoin = await service.joinRoom(joined.roomCode, "Late", "PLAYER");
+        const late = (await service.authenticate(joined.roomCode, lateJoin.participantCredential))!;
+
+        const duringVoting = await service.execute(joined.roomId, host, {
+            type: "command.submitVote",
+            revision: 2,
+            payload: { playerId: host.id, vote: "YES" },
+        });
+        expect(duringVoting.session?.neverHaveIEverVoting).toMatchObject({
+            revealMode: "NAMED_ANSWERS",
+            result: null,
+            progress: [
+                { playerId: host.id, status: "VOTED" },
+                { playerId: player.id, status: "PENDING" },
+            ],
+        });
+        expect(
+            (await service.snapshot(joined.roomId, late)).session?.availableActions,
+        ).not.toContain("SUBMIT_VOTE");
+        expect(JSON.stringify(duringVoting.session?.neverHaveIEverVoting)).not.toContain('"YES"');
+
+        await service.markTemporarilyDisconnected(player);
+        expect(
+            (await service.snapshot(joined.roomId, host)).session?.neverHaveIEverVoting?.progress,
+        ).toContainEqual({
+            playerId: player.id,
+            displayName: "Player",
+            status: "PENDING",
+        });
+        const reconnectedPlayer = (await service.authenticate(
+            joined.roomCode,
+            playerJoin.participantCredential,
+        ))!;
+
+        const result = await service.execute(joined.roomId, reconnectedPlayer, {
+            type: "command.submitVote",
+            revision: 3,
+            payload: { playerId: player.id, vote: "NO" },
+        });
+        expect(result.session?.neverHaveIEverVoting?.result?.namedAnswers).toEqual([
+            { playerId: host.id, displayName: "Host", vote: "YES" },
+            { playerId: player.id, displayName: "Player", vote: "NO" },
+        ]);
+        expect(
+            (await service.snapshot(joined.roomId, late)).session?.neverHaveIEverVoting?.result
+                ?.namedAnswers,
+        ).toEqual(result.session?.neverHaveIEverVoting?.result?.namedAnswers);
+    });
+
     it("does not expose an active player's private choice to another participant", async () => {
         const repository = new MemoryRooms();
         const service = new RoomService(repository, cards, new SequenceRandomSource([0]));

@@ -28,11 +28,13 @@ import {
 } from "./roomParticipants";
 import {
     defaultRoomGameSettings,
+    normalizeRoomGameSettings,
     profileRequiresAdultConfirmation,
     roomSettingsGameProfile,
     type RoomGameSettings,
     type VersionedRoomGameSettings,
 } from "./roomGameSettings";
+import { projectNeverHaveIEverVoting } from "./neverHaveIEverVoting";
 
 const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const roleCapabilities: Record<RoomRole, ReadonlySet<string>> = {
@@ -135,10 +137,12 @@ export class RoomService {
         dataSpaceId: string | null = null,
         initialSettings?: RoomGameSettings,
     ): Promise<RoomJoinResult> {
-        const settings = initialSettings ?? {
-            ...defaultRoomGameSettings(),
-            cardLocale: await this.cards.defaultLocale(),
-        };
+        const settings = normalizeRoomGameSettings(
+            initialSettings ?? {
+                ...defaultRoomGameSettings(),
+                cardLocale: await this.cards.defaultLocale(),
+            },
+        );
         await this.validateRoomSettings(settings);
         let code = "";
         do {
@@ -411,12 +415,13 @@ export class RoomService {
                     code: "INVALID_GAME_STATE",
                 });
             }
-            await this.validateRoomSettings(command.payload.settings);
+            const settings = normalizeRoomGameSettings(command.payload.settings);
+            await this.validateRoomSettings(settings);
             await this.repository.saveSettings(
                 roomId,
                 participant.id,
                 command.payload.expectedRevision,
-                command.payload.settings,
+                settings,
             );
             return this.snapshot(roomId, participant);
         }
@@ -487,6 +492,7 @@ export class RoomService {
                     boundariesByPlayer,
                     groupHistoryCardIds,
                     cardLocale: settings.cardLocale,
+                    neverHaveIEverRevealMode: settings.neverHaveIEverRevealMode,
                 },
                 this.random,
             );
@@ -651,7 +657,9 @@ export class RoomService {
                       : []),
                   ...(viewer.role !== "DISPLAY" &&
                   session.state === "COLLECTING_ANSWERS" &&
-                  [...controllablePlayerIds].some((id) => !session.votes.has(id))
+                  [...controllablePlayerIds].some(
+                      (id) => session.isCurrentVoter(id) && !session.votes.has(id),
+                  )
                       ? ["SUBMIT_VOTE"]
                       : []),
                   ...(viewer.role !== "DISPLAY" && cardCanBeSkipped ? ["VETO_CARD"] : []),
@@ -669,6 +677,7 @@ export class RoomService {
             currentCard: session.currentCard,
             cardsShown: session.sessionHistory.length,
             voteResult: session.voteResult(),
+            neverHaveIEverVoting: projectNeverHaveIEverVoting(session),
             hasVoted: viewer ? session.votes.has(viewer.id) : false,
             controllablePlayers: session.players
                 .filter(({ id }) => controllablePlayerIds.has(id))

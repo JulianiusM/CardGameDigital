@@ -7,7 +7,7 @@
     import ResponsiveTabs from "./ResponsiveTabs.svelte";
     import SettingsAction from "./SettingsAction.svelte";
     import GameSettingsSummary from "./GameSettingsSummary.svelte";
-    import type { GameProfileSummary, VersionedRoomGameSettings } from "./multiplayer";
+    import type { CardLocaleSummary, GameProfileSummary, PublicGameSettings } from "./multiplayer";
 
     export let open = false;
     export let showContent = false;
@@ -19,8 +19,9 @@
     export let onEnd: (() => void) | undefined;
     export let onLeave: (() => void) | undefined;
     export let onCloseRoom: (() => void) | undefined;
-    export let currentGameSettings: VersionedRoomGameSettings | undefined;
+    export let currentGameSettings: PublicGameSettings | undefined;
     export let gameProfiles: readonly GameProfileSummary[] = [];
+    export let cardLocales: readonly CardLocaleSummary[] = [];
     export let roomCode = "";
     export let qr = "";
     let preferences = presentation.preferences;
@@ -114,7 +115,11 @@
                 {#if tab === "game"}
                     <slot name="game" />
                 {:else if tab === "currentGame" && currentGameSettings}
-                    <GameSettingsSummary settings={currentGameSettings} profiles={gameProfiles} />
+                    <GameSettingsSummary
+                        settings={currentGameSettings}
+                        profiles={gameProfiles}
+                        {cardLocales}
+                    />
                 {:else if tab === "audio"}
                     <label class="setting-row"
                         ><span

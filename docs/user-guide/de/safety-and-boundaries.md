@@ -10,6 +10,11 @@ wurde – nicht welche Grenze von wem stammt.
 Bei Fragen gelten die Grenzen der aktiven Person. Bei Pflichten und gruppenweiten Modi
 werden die relevanten Grenzen aller betroffenen Personen berücksichtigt.
 
+Prüft bei **Ich hab noch nie** vor der Abstimmung die Art der Ergebnisanzeige. **Anonym**
+hält einzelne Antworten verborgen; bei **Antworten offen** werden nach Abschluss der
+Abstimmung Name und Antwort jeder Person angezeigt. Diese Einstellung kann während der
+aktiven Sitzung nicht gewechselt werden.
+
 ## Einvernehmen während des Spiels
 
 - Jede Person darf eine Karte ohne Erklärung ablehnen.

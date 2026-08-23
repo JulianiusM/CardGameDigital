@@ -31,3 +31,16 @@ an eligible player returns. A display never becomes host.
 
 After reconnecting, wait for the new snapshot. Only controls offered by that snapshot
 reflect the current authority and revision.
+
+## Never Have I Ever on shared displays
+
+While Never Have I Ever voting is open, the shared display may show every current
+player's **Voted** or **Waiting** status. It never shows the submitted answer before the
+result reveal.
+
+In **Anonymous** mode the result contains totals only. In **Reveal answers** mode the
+result is intentionally public and shows each player's answer after everyone has voted.
+
+On a small Party Screen, long voting and result rosters advance automatically in pages
+and wrap back to the beginning. The Card, heading, and totals stay visible, so nobody
+needs to scroll on the TV.

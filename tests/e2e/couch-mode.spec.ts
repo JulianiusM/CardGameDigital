@@ -1,6 +1,10 @@
 import { expect, test, type Page } from "@playwright/test";
 
-async function reachCouch(page: Page, modeLabel: string) {
+async function reachCouch(
+    page: Page,
+    modeLabel: string,
+    reveal: "anonymous" | "named" = "anonymous",
+) {
     await page.goto("/play/");
     await page.getByRole("button", { name: /Spiel hosten/ }).click();
     await page.getByRole("button", { name: /Keine Gruppe/ }).click();
@@ -10,6 +14,11 @@ async function reachCouch(page: Page, modeLabel: string) {
     await page.getByRole("button", { name: /^Freunde / }).click();
     await page.getByRole("button", { name: /^Weiter/ }).click();
     await expect(page.getByRole("heading", { name: "Erlebnis anpassen" })).toBeVisible();
+    if (modeLabel === "Ich hab noch nie") {
+        await page
+            .getByRole("button", { name: reveal === "named" ? /^Antworten offen/ : /^Anonym/ })
+            .click();
+    }
     await page.getByRole("button", { name: /^Weiter/ }).click();
     await page.getByRole("button", { name: /Nur dieser Bildschirm/ }).click();
     await page.getByRole("button", { name: /Weiter zur Lobby/ }).click();
@@ -144,6 +153,71 @@ test("Custom profile exposes the full shared customization editor", async ({ pag
     await expect(page.getByRole("heading", { name: /Zusätzliche Inhaltsregeln/ })).toBeVisible();
     await expect(page.getByRole("button", { name: "ALLTAG" })).toBeVisible();
     await expect(page.getByRole("button", { name: "KUSS", exact: true })).toBeVisible();
+    await expect(
+        page.getByRole("button", { name: /Deutsch \(Deutschland\).*de-DE/ }),
+    ).toBeVisible();
+    await expect(
+        page.getByRole("button", { name: /English \(United Kingdom\).*en-GB/ }),
+    ).toBeVisible();
+});
+
+test("Never Have I Ever reveal policy lives only in Customize Experience", async ({ page }) => {
+    await page.goto("/play/");
+    await page.getByRole("button", { name: /Spiel hosten/ }).click();
+    await page.getByRole("button", { name: /Keine Gruppe/ }).click();
+    await page.getByRole("button", { name: /^Weiter/ }).click();
+    await page.getByRole("button", { name: /Ich hab noch nie/ }).click();
+    await page.getByRole("button", { name: /^Weiter/ }).click();
+    await expect(
+        page.getByRole("heading", { name: "Welche Stimmung passt zu euch?" }),
+    ).toBeVisible();
+    await expect(
+        page.getByRole("heading", { name: "Wie sollen die Antworten aufgedeckt werden?" }),
+    ).toHaveCount(0);
+    await page.getByRole("button", { name: /^Freunde / }).click();
+    await page.getByRole("button", { name: /^Weiter/ }).click();
+    await expect(page.getByRole("heading", { name: "Erlebnis anpassen" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Anzeige der Antworten" })).toBeVisible();
+    await expect(page.locator(".wizard-progress span")).toHaveCount(5);
+});
+
+test("Couch named Never Have I Ever uses public progress and neutral answer columns", async ({
+    page,
+}) => {
+    await reachCouch(page, "Ich hab noch nie", "named");
+    await page.getByRole("button", { name: /Spiel starten/ }).click();
+    await page.getByRole("button", { name: "Karte aufdecken" }).click();
+    await expect(page.getByText("Antworten werden aufgedeckt", { exact: true })).toBeVisible();
+    const progress = page.locator(".vote-progress-list");
+    await expect(progress).toContainText("Anna");
+    await expect(progress).toContainText("Ben");
+    await expect(progress.getByText("Wartet")).toHaveCount(2);
+
+    await page
+        .locator(".never-vote-row")
+        .filter({ hasText: "Anna" })
+        .getByRole("button", {
+            name: "Trifft zu",
+        })
+        .click();
+    await expect(progress.locator(".vote-progress-row").filter({ hasText: "Anna" })).toContainText(
+        "Abgestimmt",
+    );
+    await expect(page.locator(".never-result-columns")).toHaveCount(0);
+
+    await page
+        .locator(".never-vote-row")
+        .filter({ hasText: "Ben" })
+        .getByRole("button", {
+            name: "Trifft nicht zu",
+        })
+        .click();
+    await expect(page.locator(".yes-column")).toContainText("Anna");
+    await expect(page.locator(".no-column")).toContainText("Ben");
+    await page.getByRole("button", { name: "Einstellungen", exact: true }).click();
+    await page.getByRole("tab", { name: "Aktuelle Spieleinstellungen" }).click();
+    await expect(page.locator(".settings-modal")).toContainText("de-DE");
+    await expect(page.locator(".settings-modal")).toContainText("Antworten werden aufgedeckt");
 });
 
 test("built-in profiles offer a validation-preserving Customize shortcut", async ({ page }) => {
@@ -221,7 +295,7 @@ test("same-device Couch player actions stay aligned on a narrow phone", async ({
     await page.setViewportSize({ width: 320, height: 700 });
     await reachCouch(page, "Wahrheit oder Pflicht");
     await page.getByRole("button", { name: /Person hinzufügen/ }).click();
-    const row = page.locator(".playful-list label").last();
+    const row = page.locator(".player-name-row").last();
     await row.getByRole("textbox").fill("Eine sehr lange Person mit langem Namen");
     const input = (await row.getByRole("textbox").boundingBox())!;
     const remove = (await row.getByRole("button").boundingBox())!;

@@ -42,6 +42,9 @@ const createSchema = z
         adultContentConfirmed: z.boolean(),
         groupId: z.string().uuid().nullable().optional(),
         cardLocale: z.string().min(2).max(35).optional(),
+        neverHaveIEverRevealMode: z
+            .enum(["ANONYMOUS_AGGREGATE", "NAMED_ANSWERS"])
+            .default("ANONYMOUS_AGGREGATE"),
     })
     .strict();
 const revisionBody = z.object({ revision: revisionSchema }).strict();

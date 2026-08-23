@@ -1,7 +1,7 @@
 # Multiplayer Party Card Game — Game Design Document
 
 **Document status:** Canonical design reference / single source of truth  
-**Version:** 1.2  
+**Version:** 1.3
 **Working title:** TBD  
 **Primary source language:** German (`de-DE`)  
 **Game type:** Multiplayer social, party and conversation card game  
@@ -849,66 +849,70 @@ If a localization changes the underlying gameplay meaning enough to become mater
 
 # 22. Translation Lifecycle
 
-Localized Card content uses a managed lifecycle.
+Localized Card content has an editorial lifecycle, but that lifecycle belongs to the
+external content producer rather than the game runtime.
 
-Recommended states:
+Recommended producer-side states include:
 
-```text id="nbsxqd"
+```text
 DRAFT
 REVIEW
 PUBLISHED
 STALE
 ```
 
-Only `PUBLISHED` localizations are normally eligible for gameplay.
+Only release-approved content is published to the game catalog. The runtime does not
+need to store draft, review, or stale editorial state.
 
 ---
 
-# 23. Source Revision
+# 23. Source Revisions and Translation Review
 
-Every Card has a source-content revision.
-
-A translation records the source revision it was based on.
+The content producer must track enough source revision information to determine whether
+a change to the canonical source wording requires translations to be reviewed.
 
 Example:
 
-```text id="r1w9ec"
+```text
 Card source revision: 8
-
-English translation:
-based on revision 7
+English localization reviewed against revision: 7
 ```
 
-The English localization is therefore stale.
+The producer should treat that localization as stale until it has been reviewed or
+explicitly approved as unaffected.
 
-A stale translation must be reviewed before returning to `PUBLISHED`.
+Source revision metadata is an authoring concern and does not have to be shipped to the
+game runtime.
 
 ---
 
 # 24. Source Text Changes
 
-When canonical German wording changes:
+When canonical German wording changes, the producer must decide whether the change:
+
+- preserves the same logical Card;
+- requires localized versions to be reviewed;
+- or changes gameplay meaning enough to require a new Card ID.
+
+For wording changes that preserve gameplay meaning:
 
 1. the same Card ID remains;
-2. the German localization is updated;
-3. source revision is incremented where the change may affect translation;
-4. dependent translations become `STALE`;
-5. translators/editors review them.
+2. the source localization is updated;
+3. affected translations are reviewed by the producer;
+4. the next catalog release contains only approved localized text.
 
-Minor non-semantic changes may be explicitly approved without invalidating translations.
-
-The system should err toward review rather than silently assuming a changed sentence remains equivalent in every language.
+Minor non-semantic corrections may be approved without translation changes.
 
 ---
 
 # 25. Adding a Language
 
-Adding a new language requires:
+Adding a new Card language requires the producer to:
 
-- registering the locale;
-- adding localized taxonomy labels;
-- adding Card localizations;
-- publishing reviewed translations.
+- register the locale in the catalog;
+- provide localized taxonomy labels;
+- provide release-approved Card localizations;
+- publish a new catalog release.
 
 No new logical Cards are created merely because a new language is introduced.
 
@@ -923,17 +927,18 @@ Removing or disabling a locale:
 - does not change Card IDs;
 - does not affect other languages.
 
-Locale records should normally be disabled rather than destructively deleted if historical references exist.
+When a locale or localization disappears from a newer FULL catalog release, the game
+runtime soft-disables the corresponding runtime content rather than deleting historical
+references.
 
 ---
 
 # 27. Card Language Eligibility
 
-A Card is normally eligible in a Session only if it has:
+A Card is normally eligible in a Session only if the current runtime catalog contains
+an active, release-approved localization in the selected Card Language.
 
-> a `PUBLISHED` localization in the selected Card Language.
-
-If a translation is missing, the Card is excluded.
+If a localization is unavailable, the Card is excluded.
 
 This can reduce the available pool for partially translated languages.
 
@@ -947,7 +952,7 @@ For ordinary client UI strings, locale fallback is allowed.
 
 Example:
 
-```text id="hlxfln"
+```text
 de-AT
 → de
 → configured default
@@ -955,9 +960,9 @@ de-AT
 
 For Card content, silent fallback is disabled by default.
 
-A Session may explicitly enable:
+A deployment or Session may explicitly enable:
 
-> Missing translations → use source language
+> Missing translations → use configured fallback Card language
 
 but the default is:
 
@@ -971,7 +976,8 @@ This avoids unexpected mixed-language games.
 
 History always refers to the logical Card ID.
 
-If a Group has already seen Card X in German, that Card is still considered seen if the Group later plays in English.
+If a Group has already seen Card X in German, that Card is still considered seen if the
+Group later plays in English.
 
 Changing language does not reset content history.
 
@@ -981,9 +987,9 @@ This behavior is intentional.
 
 # 30. Card Lifecycle
 
-Canonical Card states should include at least:
+Canonical Card states include at least:
 
-```text id="u8gc1b"
+```text
 ACTIVE
 RETIRED
 ```
@@ -992,10 +998,11 @@ A retired Card:
 
 - is not selected for new games;
 - remains in history;
-- retains translations;
-- retains source metadata.
+- retains historical localization references where required;
+- retains its stable Card identity.
 
-Hard deletion is reserved for exceptional administrative repair where no historical references exist.
+Hard deletion is reserved for exceptional administrative repair where no historical
+references exist.
 
 ---
 
@@ -1005,70 +1012,81 @@ If an edit changes a Card so substantially that it should count as new gameplay 
 
 1. retire the old Card;
 2. create a new Card ID;
-3. link the two editorially if useful.
+3. optionally link the two in the producer's editorial system.
 
 This preserves historical accuracy.
 
 ---
 
-# 32. Source Data and Ingest
+# 32. Content Producer and Source Data
 
-The existing Access database remains a source/content-authoring system.
+The existing Access database remains a source/content-authoring system, but the game
+runtime does not ingest Access directly.
 
-Production gameplay uses a normalized catalog.
+An external producer/editorial pipeline owns:
 
-Ingest is reconciliation-based rather than replacement-based.
+- source integration;
+- source-record mapping;
+- stable Card UUID assignment;
+- normalization;
+- translation review;
+- catalog release assembly.
+
+The game consumes one normalized, versioned FULL `game-card-catalog/v1` snapshot.
 
 ---
 
 # 33. Stable Source Mapping
 
-Every imported Card stores a mapping between:
+The producer must maintain a stable mapping between its source records and canonical
+Card IDs.
 
-```text id="0mos0c"
+Conceptually:
+
+```text
 source namespace
 +
 source record identity
-+
-canonical Card ID
+→
+canonical Card UUID
 ```
 
-Example:
+The game runtime does not need to store the producer's source IDs.
 
-```text id="zj1urw"
-source_namespace = legacy-access
-source_id = 1427
-card_id = 8fc2...
-```
-
-The Card ID is never derived from Card text.
+The canonical Card UUID is never derived from Card text.
 
 ---
 
-# 34. Ingest Behavior
+# 34. Producer Ingest and Runtime Reconciliation
 
-For each source import:
+The producer-side ingest pipeline should:
 
-1. import raw source data;
-2. resolve known source identity;
-3. reuse existing Card ID where known;
-4. create a new Card only for genuinely new source records;
-5. normalize Card metadata;
-6. update canonical source-language localization;
-7. detect text changes;
-8. update source revision when required;
-9. mark affected translations stale;
-10. identify previously known source Cards missing from the new import;
-11. retire missing Cards rather than deleting them;
-12. produce a new catalog version.
+1. read and preserve source records;
+2. resolve existing source-to-Card identity;
+3. reuse the existing Card UUID where the logical Card is unchanged;
+4. create a new Card UUID only for genuinely new logical content;
+5. normalize gameplay metadata;
+6. update and review localized content;
+7. retire missing/removed logical Cards without reusing their UUIDs;
+8. publish a validated FULL catalog snapshot.
+
+The game runtime then:
+
+1. validates the immutable catalog artifact;
+2. applies only a newer approved catalog sequence;
+3. upserts and activates Cards/localizations present in the FULL snapshot;
+4. soft-disables runtime Cards/localizations absent from the newer snapshot;
+5. preserves history and stable Card references.
 
 ---
 
 # 35. Source Identity Changes
 
-If the external source itself changes IDs or structure, content-management tooling must allow an editor to remap the new source record to the existing Card ID.
+If the external authoring source changes IDs or structure, the producer is responsible
+for remapping those records to the existing canonical Card UUIDs.
 
-Similarity of text may assist the editor but must not automatically create identity.
+Text similarity may assist editorial tooling but must never automatically redefine
+logical Card identity in the game.
 
 ---
 
@@ -1113,7 +1131,7 @@ The system should avoid excessively long same-type streaks.
 
 Eligible Cards:
 
-```text id="xy2yl4"
+```text
 Card Type = QUESTION
 YesNoAnswerPossible = true
 ```
@@ -1129,13 +1147,119 @@ plus all normal:
 
 rules.
 
-Every active player answers.
+Every active player in the current voting set answers once.
 
-Default result visibility:
+## Answer Reveal Mode
 
-> anonymous aggregate.
+`Ich hab noch nie` remains one Game Mode. Answer visibility is a Session setting rather
+than a separate mode because card eligibility, voting, pacing, and progression are
+otherwise identical.
 
-The game does not automatically rewrite arbitrary questions into "Ich habe noch nie..." statements.
+Canonical setting:
+
+```text
+neverHaveIEverRevealMode
+```
+
+with two values:
+
+```text
+ANONYMOUS_AGGREGATE
+NAMED_ANSWERS
+```
+
+Default:
+
+```text
+ANONYMOUS_AGGREGATE
+```
+
+The reveal mode is selected before the Session starts and is locked for the duration of
+that active Session. It must not be changed after players have started voting, because
+participants must know whether their answer will later be public.
+
+The selected reveal mode must be visible on the voting screen before any answer is
+submitted.
+
+### Anonymous aggregate
+
+During collection, answer values remain private.
+
+After all required votes have been submitted, the result shows only aggregate totals,
+for example:
+
+> Ja: 3
+> Nein: 4
+
+No association between a player and their answer is revealed.
+
+### Named answers
+
+During collection, answer values remain private exactly as in anonymous mode.
+
+After all required votes have been submitted, the reveal shows every player's name and
+answer. The aggregate totals may remain visible as a summary.
+
+Example:
+
+```text
+Anna     Ja
+Ben      Nein
+Lea      Ja
+Chris    Nein
+```
+
+Named answers are public Session state after the reveal. They are still ephemeral game
+data and are not persisted as long-term player-history or analytics records by default.
+
+## Voting Progress
+
+While votes are being collected, every game presentation must show who has and has not
+yet voted.
+
+For every player in the current voting set, show:
+
+```text
+PENDING
+VOTED
+```
+
+with the player's display name.
+
+Example:
+
+```text
+Anna      ✓ Abgestimmt
+Ben       • Wartet
+Lea       ✓ Abgestimmt
+Chris     • Wartet
+```
+
+Voting progress is public in both reveal modes.
+
+On a Party Screen, the Card, reveal-mode indicator, result totals, and current voting
+state remain on the public stage without requiring manual scrolling. When the full
+voter roster or named-answer columns cannot fit, only the variable roster rows are
+automatically paged. Pages advance and wrap continuously while the Card and the column
+or progress headings remain fixed.
+
+The progress display must never expose whether a submitted vote was `YES` or `NO` before
+the result reveal.
+
+The voting set is determined for the current Card when answer collection begins. A
+player joining during active play participates from the next applicable Card according
+to the normal Session-roster rules.
+
+## Completion
+
+The result reveal occurs only after every required player in the current voting set has
+submitted an answer.
+
+A reconnecting player who has not yet voted remains pending and may submit after
+reconnection.
+
+The game does not automatically rewrite arbitrary questions into "Ich habe noch nie..."
+statements.
 
 ---
 
@@ -1188,6 +1312,13 @@ Phones act as:
 - boundary interfaces.
 
 This is the flagship multiplayer experience.
+
+The Party Screen is a passive public stage. It shows the Room identity, connection/player
+state, current Card, active player where applicable, public voting progress, and public
+results. It never shows private controls, private boundaries, participant credentials,
+or actions that submit gameplay decisions. Its active-play presentation fits within the
+viewport without document scrolling; overflowing public rosters use automatic,
+wrapping pagination.
 
 ---
 
@@ -1506,18 +1637,29 @@ Secondary management areas may later include:
 
 # 62. New Game Setup
 
-Recommended sequence:
+The main entry presents three explicit paths:
 
-1. Game Mode
-2. Device Mode
-3. GameProfile
-4. Card Language
-5. Group
-6. Players / Room
-7. optional advanced content settings
-8. Start
+- **Host Game**;
+- **Join Game**;
+- **Display Only**.
 
-If only one Card Language is installed/enabled, the language step may be skipped automatically.
+The canonical Host wizard sequence is:
+
+1. Group — No Group, Select Group, or New Group;
+2. Game Mode;
+3. GameProfile, including Custom;
+4. Customize Experience;
+5. Screen Selection.
+
+Customize Experience contains the complete canonical settings editor, including Card
+Language and all mode-specific settings. For `Ich hab noch nie`, this is where the Host
+selects **Anonym** or **Antworten offen**. It is not repeated as a separate wizard page.
+Anonymous aggregate is the default.
+
+After Screen Selection, Couch starts local player setup and the other screen choices
+create a Room. Join Game asks for participant name and Room code; Display Only asks for
+the Room code and joins as a read-only Party Screen. A safe deep join URL may prefill
+the code, but never contains participant credentials.
 
 ---
 
@@ -1566,6 +1708,9 @@ The in-game modal may contain:
 - Card Language where changing it mid-Session is intentionally allowed.
 
 Changing Card Language applies only to future Cards and does not reset history.
+
+For an active `Ich hab noch nie` Session, the Answer Reveal Mode is displayed as a
+read-only Session property. It cannot be changed until a new Session is started.
 
 ## Players
 
@@ -1779,7 +1924,12 @@ Guests can still join Rooms without registration.
 
 Persistent storage should avoid unnecessary sensitive data.
 
-Individual answers should not be stored by default.
+Individual `Ich hab noch nie` answers are ephemeral in both reveal modes. In
+`NAMED_ANSWERS`, they become public Session state only after the reveal; they are not
+stored as long-term player-history or analytics records by default.
+
+Before voting, the UI must clearly indicate whether the current Session uses anonymous
+aggregate or named-answer reveal.
 
 Private boundaries should not be retained longer than necessary.
 
@@ -1850,6 +2000,13 @@ The first complete product should support:
 - Personal
 - Party Screen
 
+## Ich hab noch nie
+
+- `ANONYMOUS_AGGREGATE` reveal mode;
+- `NAMED_ANSWERS` reveal mode;
+- visible per-player `PENDING` / `VOTED` progress during answer collection;
+- no answer values exposed before reveal.
+
 ## Content
 
 - stable logical Card IDs;
@@ -1858,7 +2015,7 @@ The first complete product should support:
 - Dare Affinity;
 - Yes/No compatibility;
 - repeat settings;
-- source mapping;
+- producer-owned stable Card UUIDs;
 - German `de-DE` localization.
 
 ## Localization Foundation
@@ -1866,7 +2023,7 @@ The first complete product should support:
 - language-independent Card model;
 - locale-aware taxonomy;
 - Card localization records;
-- source revision tracking;
+- producer-side source/translation revision tracking;
 - missing-translation eligibility rules.
 
 Shipping an additional translated Card catalog is optional for the first release, but no schema redesign may be required to add one.
@@ -1911,7 +2068,7 @@ Intensity
 History rules
 Repeat rules
 Operational flags
-Source identity
+Producer-owned stable identity
 Lifecycle state
 ```
 
@@ -2008,9 +2165,13 @@ The following are canonical:
 15. Group history survives language changes.
 16. AlwaysEligible and RepeatableInSession remain independent.
 17. Gespräch Cards use pacing logic rather than ordinary random selection.
-18. Phones are supporting controllers in Party Screen Mode.
-19. The server remains authoritative.
-20. Accounts are not required for ordinary party participants.
+18. `Ich hab noch nie` uses one Game Mode with a pre-Session Answer Reveal Mode setting.
+19. During `Ich hab noch nie` voting, player completion status is public but answer values remain private until reveal.
+20. `NAMED_ANSWERS` reveals each player's answer only after all required votes are submitted.
+21. The `Ich hab noch nie` reveal mode cannot change during an active Session.
+22. Phones are supporting controllers in Party Screen Mode.
+23. The server remains authoritative.
+24. Accounts are not required for ordinary party participants.
 
 ---
 
@@ -2031,7 +2192,13 @@ The design is correctly implemented when:
 - AlwaysEligible and RepeatableInSession remain independent;
 - untranslated content reduces the pool predictably;
 - the UI communicates language coverage clearly where relevant;
-- source ingest reconciles existing Card identity rather than replacing the catalog;
+- producer catalog releases preserve stable Card UUIDs while runtime FULL reconciliation soft-disables removed content;
+- `Ich hab noch nie` defaults to anonymous aggregate reveal;
+- named-answer reveal exposes every player's answer only after all required votes are submitted;
+- while voting, every player is visibly marked `PENDING` or `VOTED`;
+- vote progress never reveals `YES`/`NO` values before the reveal;
+- the reveal mode is visible before voting and cannot change during an active Session;
+- individual answers are not stored as long-term history or analytics by default;
 - explicit content boundaries remain respected in every language.
 
 ---

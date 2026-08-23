@@ -1,16 +1,20 @@
 <script lang="ts">
     import { gameModes, messages } from "./i18n";
-    import type { GameProfileSummary, RoomGameSettings } from "./multiplayer";
+    import type { CardLocaleSummary, GameProfileSummary, RoomGameSettings } from "./multiplayer";
     import { dareTypeIds, operationalFlagIds, questionCategoryIds } from "./gameSettingsOptions";
 
     export let settings: RoomGameSettings;
     export let profiles: readonly GameProfileSummary[] = [];
+    export let cardLocales: readonly CardLocaleSummary[] = [];
     export let showMode = true;
     export let showProfile = true;
     export let onChange: (settings: RoomGameSettings) => void;
 
     const operationalFlagLabels: Record<string, string> = messages.boundaries.flags;
     $: includesDares = ["CLASSIC_TRUTH_OR_DARE", "RANDOM_TRUTH_OR_DARE"].includes(settings.mode);
+    $: localeOptions = cardLocales.length
+        ? cardLocales
+        : [{ id: settings.cardLocale, nativeName: settings.cardLocale, coverage: 1 }];
 
     function update(next: Partial<RoomGameSettings>): void {
         onChange({ ...settings, ...next });
@@ -57,6 +61,40 @@
         </section>
     {/if}
 
+    {#if settings.mode === "NEVER_HAVE_I_EVER"}
+        <section class="settings-section-card priority-setting">
+            <h3>{messages.room.answerReveal}</h3>
+            <div class="choice-chip-grid compact reveal-mode-options">
+                {#each messages.setup.neverRevealOptions as option}
+                    <button
+                        type="button"
+                        class:selected={settings.neverHaveIEverRevealMode === option[0]}
+                        aria-pressed={settings.neverHaveIEverRevealMode === option[0]}
+                        on:click={() => update({ neverHaveIEverRevealMode: option[0] })}
+                    >
+                        <strong>{option[1]}</strong><small>{option[2]}</small>
+                    </button>
+                {/each}
+            </div>
+        </section>
+    {/if}
+
+    <section class="settings-section-card priority-setting">
+        <h3>{messages.room.cardLanguage}</h3>
+        <div class="choice-chip-grid compact locale-options">
+            {#each localeOptions as locale}
+                <button
+                    type="button"
+                    class:selected={settings.cardLocale === locale.id}
+                    aria-pressed={settings.cardLocale === locale.id}
+                    on:click={() => update({ cardLocale: locale.id })}
+                >
+                    <strong>{locale.nativeName}</strong><small>{locale.id}</small>
+                </button>
+            {/each}
+        </div>
+    </section>
+
     {#if showProfile && profiles.length}
         <section class="settings-section-card">
             <h3>{messages.setup.chooseProfile}</h3>
@@ -85,69 +123,7 @@
         </section>
     {/if}
 
-    <section class="settings-section-card">
-        <h3>{messages.setup.questionsHeading}</h3>
-        <div class="toggle-chip-grid">
-            {#each questionCategoryIds as id}
-                <button
-                    type="button"
-                    class:selected={settings.configuration.enabledQuestionCategoryIds.includes(id)}
-                    aria-pressed={settings.configuration.enabledQuestionCategoryIds.includes(id)}
-                    on:click={() =>
-                        updateConfiguration({
-                            enabledQuestionCategoryIds: toggle(
-                                settings.configuration.enabledQuestionCategoryIds,
-                                id,
-                            ),
-                        })}>{messages.taxonomy[id] ?? id}</button
-                >
-            {/each}
-        </div>
-    </section>
-
-    {#if includesDares}
-        <section class="settings-section-card">
-            <h3>{messages.setup.daresHeading}</h3>
-            <div class="toggle-chip-grid">
-                {#each dareTypeIds as id}
-                    <button
-                        type="button"
-                        class:selected={settings.configuration.enabledDareTypeIds.includes(id)}
-                        aria-pressed={settings.configuration.enabledDareTypeIds.includes(id)}
-                        on:click={() =>
-                            updateConfiguration({
-                                enabledDareTypeIds: toggle(
-                                    settings.configuration.enabledDareTypeIds,
-                                    id,
-                                ),
-                            })}>{messages.taxonomy[id] ?? id}</button
-                    >
-                {/each}
-            </div>
-        </section>
-    {/if}
-
-    <section class="settings-section-card">
-        <h3>{messages.setup.operationsHeading}</h3>
-        <div class="toggle-chip-grid">
-            {#each operationalFlagIds as id}
-                <button
-                    type="button"
-                    class:selected={!settings.configuration.blockedOperationalFlags.includes(id)}
-                    aria-pressed={!settings.configuration.blockedOperationalFlags.includes(id)}
-                    on:click={() =>
-                        updateConfiguration({
-                            blockedOperationalFlags: toggle(
-                                settings.configuration.blockedOperationalFlags,
-                                id,
-                            ),
-                        })}>{operationalFlagLabels[id]}</button
-                >
-            {/each}
-        </div>
-    </section>
-
-    <section class="settings-section-card behavior-settings">
+    <section class="settings-section-card behavior-settings priority-setting">
         <h3>{messages.setup.behaviorHeading}</h3>
         <label class="setting-row">
             <span
@@ -222,5 +198,67 @@
                 />
             </label>
         {/if}
+    </section>
+
+    <section class="settings-section-card">
+        <h3>{messages.setup.questionsHeading}</h3>
+        <div class="toggle-chip-grid">
+            {#each questionCategoryIds as id}
+                <button
+                    type="button"
+                    class:selected={settings.configuration.enabledQuestionCategoryIds.includes(id)}
+                    aria-pressed={settings.configuration.enabledQuestionCategoryIds.includes(id)}
+                    on:click={() =>
+                        updateConfiguration({
+                            enabledQuestionCategoryIds: toggle(
+                                settings.configuration.enabledQuestionCategoryIds,
+                                id,
+                            ),
+                        })}>{messages.taxonomy[id] ?? id}</button
+                >
+            {/each}
+        </div>
+    </section>
+
+    {#if includesDares}
+        <section class="settings-section-card">
+            <h3>{messages.setup.daresHeading}</h3>
+            <div class="toggle-chip-grid">
+                {#each dareTypeIds as id}
+                    <button
+                        type="button"
+                        class:selected={settings.configuration.enabledDareTypeIds.includes(id)}
+                        aria-pressed={settings.configuration.enabledDareTypeIds.includes(id)}
+                        on:click={() =>
+                            updateConfiguration({
+                                enabledDareTypeIds: toggle(
+                                    settings.configuration.enabledDareTypeIds,
+                                    id,
+                                ),
+                            })}>{messages.taxonomy[id] ?? id}</button
+                    >
+                {/each}
+            </div>
+        </section>
+    {/if}
+
+    <section class="settings-section-card">
+        <h3>{messages.setup.operationsHeading}</h3>
+        <div class="toggle-chip-grid">
+            {#each operationalFlagIds as id}
+                <button
+                    type="button"
+                    class:selected={!settings.configuration.blockedOperationalFlags.includes(id)}
+                    aria-pressed={!settings.configuration.blockedOperationalFlags.includes(id)}
+                    on:click={() =>
+                        updateConfiguration({
+                            blockedOperationalFlags: toggle(
+                                settings.configuration.blockedOperationalFlags,
+                                id,
+                            ),
+                        })}>{operationalFlagLabels[id]}</button
+                >
+            {/each}
+        </div>
     </section>
 </div>

@@ -115,4 +115,31 @@ describe("protocol v2 boundary", () => {
             }).success,
         ).toBe(false);
     });
+
+    it("defaults omitted Never Have I Ever reveal settings and validates named reveal", () => {
+        const settings = defaultRoomGameSettings();
+        const legacyShape = { ...settings } as Record<string, unknown>;
+        delete legacyShape.neverHaveIEverRevealMode;
+        expect(
+            roomCommandEnvelopeSchema.parse({
+                protocol: PROTOCOL_VERSION,
+                type: "command.updateRoomSettings",
+                requestId: "default-reveal",
+                revision: null,
+                payload: { expectedRevision: 0, settings: legacyShape },
+            }).payload.settings.neverHaveIEverRevealMode,
+        ).toBe("ANONYMOUS_AGGREGATE");
+        expect(
+            roomCommandEnvelopeSchema.safeParse({
+                protocol: PROTOCOL_VERSION,
+                type: "command.updateRoomSettings",
+                requestId: "named-reveal",
+                revision: null,
+                payload: {
+                    expectedRevision: 0,
+                    settings: { ...settings, neverHaveIEverRevealMode: "NAMED_ANSWERS" },
+                },
+            }).success,
+        ).toBe(true);
+    });
 });

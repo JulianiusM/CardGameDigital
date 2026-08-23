@@ -52,6 +52,7 @@ Help HTML is generated from trusted bundled Markdown; it is not user-authored co
         "groupId": null,
         "adultContentConfirmed": false,
         "cardLocale": "de-DE",
+        "neverHaveIEverRevealMode": "ANONYMOUS_AGGREGATE",
         "configuration": {
             "enabledQuestionCategoryIds": ["CAT_EVERYDAY"],
             "enabledDareTypeIds": ["DARE_SILLY"],
@@ -69,6 +70,9 @@ Help HTML is generated from trusted bundled Markdown; it is not user-authored co
 DataSpace Rooms require an authenticated session and owned current DataSpace.
 `settings` is optional only to support callers that deliberately accept the documented
 server default; when supplied, its Group must belong to the selected DataSpace.
+`neverHaveIEverRevealMode` is `ANONYMOUS_AGGREGATE` or `NAMED_ANSWERS` and defaults to
+anonymous when omitted. It is relevant only to Never Have I Ever, is copied into the
+Session at start, and cannot be changed while that Session is active.
 Returns `201` with `roomId`, six-character `roomCode`, `participantId`,
 `participantCredential`, and role `HOST`.
 
@@ -91,19 +95,25 @@ Group history. An optional `cardLocale` selects an active database Card locale; 
 uses the catalog default and never derives Card language from UI language. Endpoints use a session
 UUID and optimistic `revision`.
 
-| Method | Path                          | Body                                                                                |
-| ------ | ----------------------------- | ----------------------------------------------------------------------------------- |
-| POST   | `/couch/sessions`             | Mode, 2–20 player names, canonical configuration, profile/group/adult confirmation. |
-| GET    | `/couch/sessions/:id`         | none                                                                                |
-| POST   | `/couch/sessions/:id/start`   | `{revision}`                                                                        |
-| POST   | `/couch/sessions/:id/choose`  | `{revision,cardType}`                                                               |
-| POST   | `/couch/sessions/:id/skip`    | `{revision}`                                                                        |
-| POST   | `/couch/sessions/:id/advance` | `{revision}`                                                                        |
-| POST   | `/couch/sessions/:id/vote`    | `{revision,playerId,vote}`                                                          |
-| POST   | `/couch/sessions/:id/end`     | `{revision}`                                                                        |
+| Method | Path                          | Body                                                                                                              |
+| ------ | ----------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| POST   | `/couch/sessions`             | Mode, 2–20 player names, canonical configuration, profile/group/adult confirmation, Card locale, and reveal mode. |
+| GET    | `/couch/sessions/:id`         | none                                                                                                              |
+| POST   | `/couch/sessions/:id/start`   | `{revision}`                                                                                                      |
+| POST   | `/couch/sessions/:id/choose`  | `{revision,cardType}`                                                                                             |
+| POST   | `/couch/sessions/:id/skip`    | `{revision}`                                                                                                      |
+| POST   | `/couch/sessions/:id/advance` | `{revision}`                                                                                                      |
+| POST   | `/couch/sessions/:id/vote`    | `{revision,playerId,vote}`                                                                                        |
+| POST   | `/couch/sessions/:id/end`     | `{revision}`                                                                                                      |
 
 Conflicts return `409` for stale revisions, invalid state, or an exhausted localized
 card pool. Missing sessions return `404`.
+
+Couch snapshots use the same `neverHaveIEverVoting` projection as Room snapshots. It
+contains reveal mode and ordered `PENDING`/`VOTED` progress while collecting. `result`
+is null until completion. Anonymous results contain counts only; named results then add
+ordered `{playerId,displayName,vote}` entries. Individual values are never copied into
+CardAppearance or Group history.
 
 ## Accounts
 
