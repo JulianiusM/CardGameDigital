@@ -12,6 +12,7 @@ export type Participant = {
 export type Presence = Pick<Participant, "displayName" | "role"> & { participantId: string };
 export type SessionView = {
     id: string;
+    startedAt: number;
     mode: string;
     revision: number;
     state: string;
@@ -199,13 +200,14 @@ export class RoomSocket {
     errorCode = "";
     authenticated = false;
     settingsNotice = "";
+    settingsNoticeId = 0;
     role: Role;
     private retry: number | undefined;
     private leaving = false;
     constructor(
         private joined: Join,
         private changed: () => void,
-        private left: () => void = () => undefined,
+        private left: (reason: "LEFT" | "ROOM_CLOSED") => void = () => undefined,
     ) {
         this.role = joined.role;
         this.connect();
@@ -237,6 +239,7 @@ export class RoomSocket {
                     next.settings.updatedByParticipantId !== this.joined.participantId
                 ) {
                     this.settingsNotice = messages.room.settingsChanged;
+                    this.settingsNoticeId++;
                 }
                 this.snapshot = next;
                 this.error = "";
@@ -267,9 +270,13 @@ export class RoomSocket {
             }
             this.changed();
         };
-        this.socket.onclose = () => {
+        this.socket.onclose = (event) => {
+            if (event.code === 4001) {
+                this.left("ROOM_CLOSED");
+                return;
+            }
             if (this.leaving) {
-                this.left();
+                this.left("LEFT");
                 return;
             }
             this.error = messages.common.reconnecting;

@@ -22,6 +22,18 @@ Only the Room creator can be HOST; the join contract accepts PLAYER or DISPLAY.
 Session settings and start/end authority remain host capabilities. Private
 boundary configuration is a separate per-player capability, not a Room setting.
 
+After an ended hosted Session, **New Game** reuses the Room. The Host clears the
+Room's current-Session pointer and reopens its in-Room game settings; PLAYER and
+DISPLAY participants remain attached and see the lobby until the next Session
+starts. This transition never routes clients through join screens or replaces
+participant credentials.
+
+The Host may instead close the Room from Session settings or the end screen.
+Closing first persists an authoritative end for active play, marks the Room
+closed, marks every participant `LEFT`, and terminally closes all Room sockets.
+Every client then clears its reconnect credential and returns to the canonical
+main menu; a closed Room code cannot be joined or reclaimed.
+
 A host can add device-local players to any Room topology. Their IDs are generated
 by the server and are not RoomParticipant credentials. The host may act only for
 itself and those local players; it cannot make private choices or votes for a
@@ -31,6 +43,17 @@ The same device-player mechanism applies to every PLAYER device, not just the
 host. Participant records persist their server-generated device-player IDs so
 reconnect, voting authority, boundaries, and host transfer do not require a
 mode-specific or UI-only ownership rule.
+
+When a PLAYER device joins during active play, Room authentication serializes an
+idempotent Session-roster expansion with ordinary Room commands. The participant
+and its device-local players become eligible from the next authoritative turn;
+reconnecting an existing participant does not duplicate people or reset the
+current card. DISPLAY devices remain presentation-only and never enter the roster.
+
+Session start time is authoritative Session runtime state. It is persisted and
+projected as an epoch-millisecond `startedAt` value so summaries remain correct
+across reload, reconnect, process restart, and Room reuse. A browser observation
+time is never treated as the beginning of play.
 
 Hosting is a transferable Room responsibility. The current host can explicitly
 promote a PLAYER device; persistence atomically demotes the old host so exactly

@@ -3,8 +3,13 @@ import {
     BUILT_IN_GAME_PROFILES,
     BUILT_IN_PROFILE_IDS,
     DARE_TYPES,
+    OPERATIONAL_FLAGS,
     QUESTION_CATEGORIES,
 } from "../../src/packages/game-core";
+import {
+    CUSTOM_GAME_PROFILE_ID,
+    effectiveSettingsFromProfile,
+} from "../../src/packages/application/roomGameSettings";
 
 describe("built-in GameProfiles", () => {
     it("keeps question categories and DareTypes independently configurable", () => {
@@ -35,5 +40,40 @@ describe("built-in GameProfiles", () => {
             expect(profile.enabledDareTypeIds.has(DARE_TYPES.SEX)).toBe(false);
             expect(profile.enabledDareTypeIds.has(DARE_TYPES.BORDERLINE_SEX)).toBe(false);
         }
+    });
+
+    it("uses conservative, data-driven additional-rule defaults per profile", () => {
+        const byId = new Map(BUILT_IN_GAME_PROFILES.map((profile) => [profile.id, profile]));
+        const colleagues = byId.get(BUILT_IN_PROFILE_IDS.COLLEAGUES)!;
+        const friends = byId.get(BUILT_IN_PROFILE_IDS.FRIENDS)!;
+        const couples = byId.get(BUILT_IN_PROFILE_IDS.COUPLES)!;
+
+        expect(
+            colleagues.blockedOperationalFlags.has(OPERATIONAL_FLAGS.REQUIRES_PHYSICAL_CONTACT),
+        ).toBe(true);
+        expect(
+            friends.blockedOperationalFlags.has(OPERATIONAL_FLAGS.REQUIRES_PHYSICAL_CONTACT),
+        ).toBe(false);
+        expect(friends.blockedOperationalFlags.has(OPERATIONAL_FLAGS.REMOVES_CLOTHING)).toBe(true);
+        expect(couples.blockedOperationalFlags.has(OPERATIONAL_FLAGS.REMOVES_CLOTHING)).toBe(false);
+        for (const profile of BUILT_IN_GAME_PROFILES) {
+            expect(
+                profile.blockedOperationalFlags.has(OPERATIONAL_FLAGS.INVOLVES_THIRD_PARTY),
+            ).toBe(true);
+            expect(profile.blockedOperationalFlags.has(OPERATIONAL_FLAGS.INVOLVES_ALCOHOL)).toBe(
+                true,
+            );
+            expect(
+                profile.blockedOperationalFlags.has(OPERATIONAL_FLAGS.INVOLVES_RECREATIONAL_DRUGS),
+            ).toBe(true);
+        }
+    });
+
+    it("starts Custom from an explicit neutral operational configuration", () => {
+        expect(effectiveSettingsFromProfile(CUSTOM_GAME_PROFILE_ID)).toMatchObject({
+            enabledQuestionCategoryIds: [],
+            enabledDareTypeIds: [],
+            blockedOperationalFlags: Object.values(OPERATIONAL_FLAGS),
+        });
     });
 });

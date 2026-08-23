@@ -4,11 +4,13 @@ async function hostRoom(
     page: Page,
     screen: "personal" | "party" = "party",
     profile: RegExp = /^Freunde /,
+    mode?: RegExp,
 ) {
     await page.goto("/play/");
     await page.getByRole("button", { name: /Spiel hosten/ }).click();
     await page.getByRole("button", { name: /Keine Gruppe/ }).click();
     await page.getByRole("button", { name: /^Weiter/ }).click();
+    if (mode) await page.getByRole("button", { name: mode }).click();
     await page.getByRole("button", { name: /^Weiter/ }).click();
     await page.getByRole("button", { name: profile }).click();
     await page.getByRole("button", { name: /^Weiter/ }).click();
@@ -80,6 +82,7 @@ test("settings, device players and transferred Host authority synchronize across
         "Der Host hat die Spieleinstellungen geändert.",
     );
     await expect(newHost.getByText("Maximale Intensität: 2")).toBeVisible();
+    await expect(newHost.getByRole("status")).toHaveCount(0, { timeout: 7_000 });
 
     await oldHost.getByRole("button", { name: "Einstellungen", exact: true }).click();
     await oldHost.getByRole("tab", { name: /Erweiterte Einstellungen/ }).click();
@@ -116,6 +119,159 @@ test("settings, device players and transferred Host authority synchronize across
     await thirdContext.close();
 });
 
+test("players can inspect complete public settings without private boundaries", async ({
+    browser,
+}) => {
+    const hostContext = await browser.newContext();
+    const playerContext = await browser.newContext();
+    const host = await hostContext.newPage();
+    const player = await playerContext.newPage();
+    const code = await hostRoom(host, "personal", /^Freunde /, /Zufällige Wahl/);
+    await joinRoom(player, code, "Ben");
+
+    await player.getByRole("button", { name: "Spieleinstellungen ansehen" }).click();
+    const modal = player.locator(".current-settings-modal");
+    await expect(modal.getByRole("heading", { name: "Aktuelle Spieleinstellungen" })).toBeVisible();
+    await expect(modal).toContainText("Fragenanteil");
+    await expect(modal).toContainText("Maximale Kartenfolge desselben Typs");
+    await expect(modal).toContainText("Zusätzliche Inhaltsregeln");
+    await expect(modal).not.toContainText("Private Grenzen gespeichert");
+    await modal.getByLabel("Einstellungen schließen").click();
+
+    await host.getByRole("button", { name: "Spiel starten" }).click();
+    await expect(player.getByRole("button", { name: "Spieleinstellungen ansehen" })).toHaveCount(0);
+    await host.getByRole("button", { name: "Einstellungen", exact: true }).click();
+    await expect(host.getByRole("tab", { name: /Erweiterte Einstellungen/ })).toBeVisible();
+    await host.getByRole("tab", { name: /Erweiterte Einstellungen/ }).click();
+    await expect(host.getByLabel("Host-Aufgabe übertragen")).toBeVisible();
+    await host.getByLabel("Einstellungen schließen").click();
+    await player.getByRole("button", { name: "Einstellungen", exact: true }).click();
+    await player.getByRole("tab", { name: "Aktuelle Spieleinstellungen" }).click();
+    const inGameSettings = player.locator(".settings-modal");
+    await expect(inGameSettings).toContainText("Fragenanteil");
+    await expect(inGameSettings).toContainText("Maximale Kartenfolge desselben Typs");
+    await expect(inGameSettings).not.toContainText("Private Grenzen gespeichert");
+    await hostContext.close();
+    await playerContext.close();
+});
+
+test("a player joining during active play enters the authoritative Session roster", async ({
+    browser,
+}) => {
+    const hostContext = await browser.newContext();
+    const firstContext = await browser.newContext();
+    const lateContext = await browser.newContext();
+    const host = await hostContext.newPage();
+    const first = await firstContext.newPage();
+    const late = await lateContext.newPage();
+    const code = await hostRoom(host, "personal");
+    await joinRoom(first, code, "Ben");
+    await host.getByRole("button", { name: "Spiel starten" }).click();
+    await expect(first.getByText("Runde 1")).toBeVisible();
+
+    await late.goto("/play/");
+    await late.getByRole("button", { name: /Spiel beitreten/ }).click();
+    await late.getByLabel("Dein Name").fill("Carla");
+    await late.getByLabel("Raumcode").fill(code);
+    await late.getByRole("button", { name: "Raum beitreten" }).click();
+
+    await expect(late.getByText("Runde 1")).toBeVisible();
+    for (const page of [host, first, late]) {
+        await expect(page.locator(".live-players summary")).toContainText("3");
+        await page.locator(".live-players summary").click();
+        await expect(
+            page.locator(".live-players").getByText("Carla", { exact: true }),
+        ).toBeVisible();
+    }
+
+    await hostContext.close();
+    await firstContext.close();
+    await lateContext.close();
+});
+
+test("New Game reuses the Room for Host, Player, and Display", async ({ browser }) => {
+    test.setTimeout(60_000);
+    const hostContext = await browser.newContext();
+    const playerContext = await browser.newContext();
+    const displayContext = await browser.newContext();
+    const host = await hostContext.newPage();
+    const player = await playerContext.newPage();
+    const display = await displayContext.newPage();
+    const code = await hostRoom(host, "party");
+    await joinRoom(player, code, "Ben");
+    await joinRoom(display, code, "", true);
+
+    await host.getByRole("button", { name: "Spiel starten" }).click();
+    await expect(player.getByText("Runde 1")).toBeVisible();
+    await expect(display.getByText("Runde 1")).toBeVisible();
+    await host.getByRole("button", { name: "Einstellungen", exact: true }).click();
+    await host.getByRole("tab", { name: "Session" }).click();
+    await host.getByRole("button", { name: "Spiel beenden" }).click();
+    await expect(host.getByRole("heading", { name: /Gute Nacht/ })).toBeVisible();
+    await expect(player.getByRole("heading", { name: /Gute Nacht/ })).toBeVisible();
+    await expect(display.getByRole("heading", { name: /Gute Nacht/ })).toBeVisible();
+    await expect(host.getByRole("button", { name: "Raum schließen" })).toBeVisible();
+    await expect(player.getByRole("button", { name: "Raum verlassen" })).toBeVisible();
+    await expect(display.getByRole("button", { name: "Raum verlassen" })).toBeVisible();
+    await host.getByRole("button", { name: "Einstellungen", exact: true }).click();
+    await expect(host.getByRole("tab", { name: "Audio" })).toHaveAttribute("aria-selected", "true");
+    await host.getByLabel("Einstellungen schließen").click();
+
+    await host.getByRole("button", { name: "Neues Spiel" }).click();
+    await expect(host.getByRole("heading", { name: "Einstellungen", exact: true })).toBeVisible();
+    await host.getByLabel("Einstellungen schließen").click();
+    for (const page of [host, player, display]) {
+        await expect(page.getByRole("heading", { name: "Lobby" })).toBeVisible();
+        await expect(page).toHaveURL(/\/play\/room$/);
+    }
+    await expect(host.locator(".participant:not(.device-player)")).toHaveCount(3);
+    await host.getByRole("button", { name: "Spiel starten" }).click();
+    await expect(player.getByText("Runde 1")).toBeVisible();
+    await expect(display.getByText("Runde 1")).toBeVisible();
+
+    await hostContext.close();
+    await playerContext.close();
+    await displayContext.close();
+});
+
+test("Host closes an active Room and every device returns cleanly to the main menu", async ({
+    browser,
+}) => {
+    test.setTimeout(60_000);
+    const hostContext = await browser.newContext();
+    const playerContext = await browser.newContext();
+    const displayContext = await browser.newContext();
+    const host = await hostContext.newPage();
+    const player = await playerContext.newPage();
+    const display = await displayContext.newPage();
+    const code = await hostRoom(host, "party");
+    await joinRoom(player, code, "Ben");
+    await joinRoom(display, code, "", true);
+    await host.getByRole("button", { name: "Spiel starten" }).click();
+    await expect(player.getByText("Runde 1")).toBeVisible();
+
+    await host.getByRole("button", { name: "Einstellungen", exact: true }).click();
+    await host.getByRole("tab", { name: "Session" }).click();
+    host.once("dialog", (dialog) => dialog.accept());
+    await host.getByRole("button", { name: "Raum schließen" }).click();
+
+    for (const page of [host, player, display]) {
+        await expect(page).toHaveURL(/\/play\/?$/);
+        await expect(page.getByRole("button", { name: /Spiel hosten/ })).toBeVisible();
+        await expect(page.getByRole("status")).toContainText(
+            "Der Host hat den Raum geschlossen. Du bist zurück im Hauptmenü.",
+        );
+    }
+    await expect(player.getByRole("status")).toHaveCount(0, { timeout: 7_000 });
+    await player.reload();
+    await expect(player).toHaveURL(/\/play\/?$/);
+    await expect(player.getByRole("heading", { name: "Lobby" })).toHaveCount(0);
+
+    await hostContext.close();
+    await playerContext.close();
+    await displayContext.close();
+});
+
 test("hosted zero-card settings are rejected without leaving the lobby", async ({ browser }) => {
     const hostContext = await browser.newContext();
     const playerContext = await browser.newContext();
@@ -125,8 +281,11 @@ test("hosted zero-card settings are rejected without leaving the lobby", async (
     await joinRoom(player, code, "Ben");
     await host.getByRole("button", { name: "Spiel starten" }).click();
     await expect(host.getByRole("alert")).toContainText("Keine Karte erfüllt alle aktiven Regeln.");
+    await expect(host.locator(".notification-toast")).toHaveCSS("position", "fixed");
+    await expect(host.locator(".room-error, .error, .notice")).toHaveCount(0);
     await expect(host.getByRole("heading", { name: "Lobby" })).toBeVisible();
     await expect(player.getByRole("heading", { name: "Lobby" })).toBeVisible();
+    await expect(host.getByRole("alert")).toHaveCount(0, { timeout: 7_000 });
     await hostContext.close();
     await playerContext.close();
 });

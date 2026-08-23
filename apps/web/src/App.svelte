@@ -5,12 +5,16 @@
     import type { BoundarySelection } from "./BoundarySetup.svelte";
     import Couch from "./Couch.svelte";
     import GameSettingsEditor from "./GameSettingsEditor.svelte";
+    import GameSettingsModal from "./GameSettingsModal.svelte";
     import Help from "./Help.svelte";
     import Home from "./Home.svelte";
     import PresentationControls from "./PresentationControls.svelte";
     import RoomGameplay from "./RoomGameplay.svelte";
     import RoomLobby from "./RoomLobby.svelte";
     import SettingsModal from "./SettingsModal.svelte";
+    import SettingsTrigger from "./SettingsTrigger.svelte";
+    import NotificationToast from "./NotificationToast.svelte";
+    import { dismissNotification, notification, showNotification } from "./notifications";
     import { messages } from "./i18n";
     import {
         clearJoin,
@@ -35,7 +39,6 @@
     let route: AppRoute = routeFromLocation();
     let joined: Join | null = null;
     let connection: RoomSocket | null = null;
-    let error = "";
     let qr = "";
     let profiles: GameProfileSummary[] = [];
     let settingsDraft: RoomGameSettings | null = null;
@@ -46,9 +49,11 @@
     let updateCounter = 0;
     let lastCardId: string | undefined;
     let settingsOpen = false;
+    let currentSettingsOpen = false;
     let recoveringRoom = false;
-    let sessionStartedAt = Date.now();
-    let observedSessionId: string | undefined;
+    let openSettingsAfterReset = false;
+    let lastConnectionNotice = "";
+    let lastSettingsNoticeId = 0;
 
     $: snapshot = (updateCounter, connection?.snapshot);
     $: session = snapshot?.session;
@@ -62,18 +67,27 @@
             devicePlayerNames = names;
         }
     }
+    $: if (openSettingsAfterReset && snapshot && !session && effectiveRole === "HOST") {
+        openSettingsAfterReset = false;
+        openSettings();
+    }
     $: effectiveRole = (updateCounter, connection?.role);
     $: roomPresence = (updateCounter, connection?.presence ?? []);
     $: connectionError = (updateCounter, connection?.error ?? "");
     $: connectionErrorCode = (updateCounter, connection?.errorCode ?? "");
     $: settingsNotice = (updateCounter, connection?.settingsNotice ?? "");
+    $: settingsNoticeId = (updateCounter, connection?.settingsNoticeId ?? 0);
     $: roomSettings = snapshot?.settings;
     $: roomCode = joined?.roomCode ?? "";
+    $: if (connectionError && connectionError !== lastConnectionNotice) {
+        lastConnectionNotice = connectionError;
+        showNotification(connectionError, "error");
+    } else if (!connectionError) lastConnectionNotice = "";
+    $: if (settingsNotice && settingsNoticeId > lastSettingsNoticeId) {
+        lastSettingsNoticeId = settingsNoticeId;
+        showNotification(settingsNotice, "info");
+    }
     $: {
-        if (session?.id && session.id !== observedSessionId) {
-            observedSessionId = session.id;
-            sessionStartedAt = Date.now();
-        }
         const cardId = session?.currentCard?.id;
         if (cardId && cardId !== lastCardId) presentation.playEffect("reveal");
         lastCardId = cardId;
@@ -129,14 +143,13 @@
         connection?.dispose();
         joined = value;
         recoveringRoom = true;
-        error = "";
         connection = new RoomSocket(
             value,
             () => {
                 updateCounter++;
                 recoveringRoom = !connection?.authenticated;
             },
-            () => leaveCompleted(value),
+            (reason) => leaveCompleted(value, reason),
         );
         qr = await QRCode.toDataURL(`${location.origin}/play/?room=${value.roomCode}`, {
             margin: 1,
@@ -146,11 +159,14 @@
         profiles = await loadGameProfiles();
     }
 
-    function leaveCompleted(value: Join): void {
+    function leaveCompleted(value: Join, reason: "LEFT" | "ROOM_CLOSED"): void {
         clearJoin(value);
         joined = null;
         connection = null;
         resetSetup("intent");
+        if (reason === "ROOM_CLOSED") {
+            showNotification(messages.room.closedNotice, "info");
+        }
         navigate("/play/", { force: true });
     }
 
@@ -160,6 +176,11 @@
     }
     function startSession(): void {
         command("command.startSession");
+    }
+    function newRoomGame(): void {
+        if (effectiveRole !== "HOST" || session?.state !== "ENDED") return;
+        openSettingsAfterReset = true;
+        command("command.resetSession");
     }
     function saveBoundaries(boundaries: BoundarySelection): void {
         command("command.setBoundaries", boundaries);
@@ -175,6 +196,10 @@
     }
     function leaveRoom(): void {
         command("command.leaveRoom");
+    }
+    function closeRoom(): void {
+        if (!confirm(messages.room.closeConfirm)) return;
+        command("command.closeRoom");
     }
     function openSettings(): void {
         if (roomSettings) {
@@ -204,6 +229,13 @@
 </script>
 
 {#if route === "home" || route === "account" || route === "help"}<PresentationControls />{/if}
+{#if $notification}<NotificationToast
+        message={$notification.message}
+        notificationId={$notification.id}
+        duration={$notification.duration}
+        kind={$notification.kind}
+        onDismiss={() => dismissNotification($notification?.id)}
+    />{/if}
 
 {#if route === "home"}
     <Home />
@@ -214,33 +246,18 @@
 {:else if route === "couch"}
     <Couch />
 {:else if route === "room"}
-    <main class:playing={joined}>
-        {#if error || connectionError}<div class="error room-error" role="alert">
-                {error || connectionError}
-            </div>{/if}
-        {#if settingsNotice}<div class="toast" role="status">
-                <span>{settingsNotice}</span><button
-                    class="icon"
-                    aria-label={messages.settings.dismiss}
-                    on:click={() => connection?.clearSettingsNotice()}>×</button
-                >
-            </div>{/if}
+    <main class:playing={Boolean(session && session.state !== "ENDED")}>
         {#if recoveringRoom || !snapshot || !effectiveRole}
             <section class="card-panel reconnect-panel" aria-live="polite">
                 <h1>{messages.common.reconnecting}</h1>
             </section>
         {:else}
-            <header>
-                <span class="eyebrow">{messages.room.roles[effectiveRole]}</span>
-                <h1>{roomCode}</h1>
-            </header>
+            {#if !session || session.state === "ENDED"}<header>
+                    <span class="eyebrow">{messages.room.roles[effectiveRole]}</span>
+                    <h1>{roomCode}</h1>
+                </header>{/if}
+            <SettingsTrigger onOpen={openSettings} />
             {#if !session}
-                <button
-                    class="settings-trigger"
-                    aria-label={messages.settings.title}
-                    on:click={openSettings}
-                    ><span class="gear-icon" aria-hidden="true">⚙</span></button
-                >
                 <RoomLobby
                     {participants}
                     presence={roomPresence}
@@ -261,31 +278,40 @@
                     onStart={startSession}
                     onSaveBoundaries={saveBoundaries}
                     onOpenSettings={openSettings}
+                    onViewSettings={() => (currentSettingsOpen = true)}
                     onLeave={leaveRoom}
                 />
             {:else}
                 <RoomGameplay
                     {session}
                     role={effectiveRole}
-                    startedAt={sessionStartedAt}
                     {participants}
                     presence={roomPresence}
                     {roomCode}
                     exhausted={connectionErrorCode === "CARD_POOL_EXHAUSTED"}
                     onCommand={command}
                     onOpenSettings={openSettings}
+                    onNewGame={effectiveRole === "HOST" ? newRoomGame : undefined}
+                    onSummaryExit={effectiveRole === "HOST" ? closeRoom : leaveRoom}
+                    summaryExitLabel={effectiveRole === "HOST"
+                        ? messages.settings.closeRoom
+                        : messages.room.leaveRoom}
+                    summaryExitDanger={effectiveRole === "HOST"}
                 />
             {/if}
             <SettingsModal
                 bind:open={settingsOpen}
                 showGame={!session && effectiveRole === "HOST"}
-                showAdvanced={!session && effectiveRole === "HOST"}
+                showAdvanced={effectiveRole === "HOST"}
                 showContent={!session && effectiveRole !== "DISPLAY"}
                 onBoundaries={!session && effectiveRole !== "DISPLAY" ? saveBoundaries : undefined}
-                onEnd={session && effectiveRole === "HOST"
+                onEnd={session && session.state !== "ENDED" && effectiveRole === "HOST"
                     ? () => command("command.endSession")
                     : undefined}
+                onCloseRoom={effectiveRole === "HOST" ? closeRoom : undefined}
                 onLeave={leaveRoom}
+                currentGameSettings={session ? snapshot.settings : undefined}
+                gameProfiles={profiles}
                 {roomCode}
                 {qr}
             >
@@ -319,6 +345,11 @@
                     >
                 </div>
             </SettingsModal>
+            <GameSettingsModal
+                bind:open={currentSettingsOpen}
+                settings={snapshot.settings}
+                {profiles}
+            />
         {/if}
     </main>
 {/if}

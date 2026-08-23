@@ -93,6 +93,74 @@ describe("shared GameSession state machine", () => {
         expect(session.state).toBe(SESSION_STATES.WAITING_FOR_PLAYER);
     });
 
+    it("restores a Session below the creation minimum and can still end it", () => {
+        const session = new GameSession(
+            {
+                id: "shrinking-session",
+                startedAt: 123_456,
+                mode: GAME_MODES.CLASSIC,
+                players,
+                profile: profile(),
+                cardLocale: "en-GB",
+            },
+            new SequenceRandomSource([0]),
+        );
+        session.removePlayers(0, new Set(["b"]));
+
+        const restored = GameSession.restore(
+            session.toRuntimeState(),
+            new SequenceRandomSource([0]),
+        );
+        expect(restored.players.map(({ id }) => id)).toEqual(["a"]);
+        expect(restored.startedAt).toBe(123_456);
+        expect(() => restored.end(1)).not.toThrow();
+        expect(restored.state).toBe(SESSION_STATES.ENDED);
+    });
+
+    it("restores an ended Session after its final player has left", () => {
+        const session = new GameSession(
+            {
+                id: "empty-session",
+                mode: GAME_MODES.RANDOM,
+                players,
+                profile: profile(),
+                cardLocale: "en-GB",
+            },
+            new SequenceRandomSource([0]),
+        );
+        session.removePlayers(0, new Set(players.map(({ id }) => id)));
+
+        const restored = GameSession.restore(
+            JSON.parse(JSON.stringify(session.toRuntimeState())),
+            new SequenceRandomSource([0]),
+        );
+
+        expect(restored.players).toEqual([]);
+        expect(restored.state).toBe(SESSION_STATES.ENDED);
+        expect(restored.activePlayer).toBeNull();
+    });
+
+    it("adds a newly connected player once without resetting active play", () => {
+        const session = new GameSession(
+            {
+                id: "join",
+                mode: GAME_MODES.CLASSIC,
+                players,
+                profile: profile(),
+                cardLocale: "en-GB",
+            },
+            new SequenceRandomSource([0]),
+        );
+        session.chooseCardType(0, CARD_TYPES.QUESTION, [repeatQuestion]);
+        session.addPlayers(1, [{ id: "c", name: "Carla" }]);
+        session.addPlayers(2, [{ id: "c", name: "Carla" }]);
+
+        expect(session.players.map(({ id }) => id)).toEqual(["a", "b", "c"]);
+        expect(session.activePlayer?.id).toBe("a");
+        expect(session.currentCard?.id).toBe(repeatQuestion.id);
+        expect(session.revision).toBe(2);
+    });
+
     it("keeps question and dare profile configuration independent", () => {
         const restrictive = profile({
             enabledQuestionCategoryIds: new Set([QUESTION_CATEGORIES.EVERYDAY]),

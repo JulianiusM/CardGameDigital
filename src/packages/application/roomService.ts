@@ -44,6 +44,8 @@ const roleCapabilities: Record<RoomRole, ReadonlySet<string>> = {
         "SKIP_CARD",
         "ADVANCE_SESSION",
         "END_SESSION",
+        "RESET_SESSION",
+        "CLOSE_ROOM",
         "SET_BOUNDARIES",
         "MANAGE_DEVICE_PLAYERS",
         "TRANSFER_HOST",
@@ -103,6 +105,8 @@ export type RoomCommand =
           };
       }
     | { type: "command.endSession"; revision: number; payload: Record<string, never> }
+    | { type: "command.resetSession"; revision: number; payload: Record<string, never> }
+    | { type: "command.closeRoom"; revision: number | null; payload: Record<string, never> }
     | { type: "command.leaveRoom"; revision: number | null; payload: Record<string, never> };
 
 export type RoomSnapshot = {
@@ -212,7 +216,9 @@ export class RoomService {
         );
         if (!participant) return null;
         await this.repository.setConnectionStatus(participant.id, "CONNECTED");
-        return { ...participant, connectionStatus: "CONNECTED" };
+        const connected = { ...participant, connectionStatus: "CONNECTED" as const };
+        await this.serialize(participant.roomId, () => this.addConnectedParticipant(connected));
+        return connected;
     }
 
     async markConnected(participant: RoomParticipant): Promise<void> {
@@ -258,12 +264,14 @@ export class RoomService {
         participant: RoomParticipant,
         command: RoomCommand,
     ): Promise<RoomSnapshot> {
-        // Commands for one Room share a promise chain. A failure is isolated so
-        // it cannot poison later commands, while different Rooms remain concurrent.
+        return this.serialize(roomId, () => this.executeSerialized(roomId, participant, command));
+    }
+
+    private serialize<T>(roomId: string, action: () => Promise<T>): Promise<T> {
+        // All participant and Session transitions for one Room share a promise chain.
+        // A failure is isolated so it cannot poison later work, while Rooms remain concurrent.
         const prior = this.queues.get(roomId) ?? Promise.resolve();
-        const next = prior
-            .catch(() => undefined)
-            .then(() => this.executeSerialized(roomId, participant, command));
+        const next = prior.catch(() => undefined).then(action);
         const tracked = next
             .catch(() => undefined)
             .finally(() => {
@@ -271,6 +279,24 @@ export class RoomService {
             });
         this.queues.set(roomId, tracked);
         return next;
+    }
+
+    private async addConnectedParticipant(participant: RoomParticipant): Promise<void> {
+        if (participant.role === "DISPLAY") return;
+        const current = await this.loadSession(participant.roomId);
+        if (!current || current.state === "ENDED") return;
+        const proposed = GameSession.restore(current.toRuntimeState(), this.random);
+        proposed.addPlayers(current.revision, [
+            { id: participant.id, name: participant.displayName },
+            ...participant.devicePlayers,
+        ]);
+        if (proposed.revision === current.revision) return;
+        await this.repository.commitRuntime(
+            participant.roomId,
+            current.revision,
+            proposed.toRuntimeState(),
+        );
+        this.sessions.set(participant.roomId, proposed);
     }
 
     /** Promote the oldest connected PLAYER after the host's reconnect grace period. */
@@ -337,6 +363,23 @@ export class RoomService {
             await this.leaveParticipant(roomId, participant);
             return this.snapshot(roomId);
         }
+        if (command.type === "command.closeRoom") {
+            const current = await this.loadSession(roomId);
+            if (current && current.state !== "ENDED") {
+                const proposed = GameSession.restore(current.toRuntimeState(), this.random);
+                proposed.end(command.revision ?? current.revision);
+                await this.repository.commitRuntime(
+                    roomId,
+                    current.revision,
+                    proposed.toRuntimeState(),
+                );
+                this.sessions.set(roomId, proposed);
+            }
+            await this.repository.closeRoom(roomId, participant.id);
+            const closedSnapshot = await this.snapshot(roomId);
+            this.sessions.delete(roomId);
+            return closedSnapshot;
+        }
         if (command.type === "command.setDevicePlayers") {
             if (await this.loadSession(roomId)) {
                 throw Object.assign(new Error(MESSAGE_KEYS.ROOM_DEVICE_PLAYERS_LOCKED), {
@@ -395,6 +438,17 @@ export class RoomService {
             await this.repository.saveBoundaries(participant.id, boundaries);
             return this.snapshot(roomId, participant);
         }
+        if (command.type === "command.resetSession") {
+            const current = await this.loadSession(roomId);
+            if (!current) return this.snapshot(roomId, participant);
+            if (current.state !== "ENDED")
+                throw Object.assign(new Error(MESSAGE_KEYS.ROOM_SESSION_NOT_ENDED), {
+                    code: "INVALID_GAME_STATE",
+                });
+            await this.repository.clearEndedRuntime(roomId, current.id, current.revision);
+            this.sessions.delete(roomId);
+            return this.snapshot(roomId, participant);
+        }
         if (command.type === "command.startSession") {
             if (await this.loadSession(roomId))
                 throw Object.assign(new Error(MESSAGE_KEYS.ROOM_SESSION_ALREADY_STARTED), {
@@ -426,6 +480,7 @@ export class RoomService {
             const proposed = new GameSession(
                 {
                     id: randomUUID(),
+                    startedAt: Date.now(),
                     mode: settings.mode,
                     profile,
                     players,
@@ -454,6 +509,8 @@ export class RoomService {
             throw Object.assign(new Error(MESSAGE_KEYS.ROOM_SESSION_NOT_STARTED), {
                 code: "INVALID_GAME_STATE",
             });
+        if (command.type === "command.endSession" && current.state === "ENDED")
+            return this.snapshot(roomId, participant);
         const roomParticipants = await this.repository.listParticipants(roomId);
         const controllablePlayerIds = controlledPlayerIds(participant, roomParticipants);
         if (
@@ -505,9 +562,13 @@ export class RoomService {
 
     private async loadSession(roomId: string): Promise<GameSession | null> {
         const cached = this.sessions.get(roomId);
-        if (cached) return cached;
         const runtime = await this.repository.loadRuntime(roomId);
-        if (!runtime) return null;
+        if (!runtime) {
+            this.sessions.delete(roomId);
+            return null;
+        }
+        if (cached && cached.id === runtime.id && cached.revision === runtime.revision)
+            return cached;
         const restored = GameSession.restore(runtime, this.random);
         this.sessions.set(roomId, restored);
         return restored;
@@ -527,6 +588,8 @@ export class RoomService {
                 "command.transferHost": "TRANSFER_HOST",
                 "command.updateRoomSettings": "CHANGE_ROOM_SETTINGS",
                 "command.endSession": "END_SESSION",
+                "command.resetSession": "RESET_SESSION",
+                "command.closeRoom": "CLOSE_ROOM",
                 "command.leaveRoom": "LEAVE_ROOM",
             } as Record<string, string>
         )[command];
@@ -563,24 +626,40 @@ export class RoomService {
         const controlsActivePlayer = session.activePlayer
             ? controllablePlayerIds.has(session.activePlayer.id)
             : false;
+        const cardCanBeSkipped =
+            session.state === "SHOWING_CARD" || session.state === "COLLECTING_ANSWERS";
+        const sessionCanAdvance =
+            session.state === "WAITING_FOR_PLAYER" ||
+            session.state === "SHOWING_CARD" ||
+            session.state === "SHOWING_RESULTS";
         const availableActions = viewer
             ? [
                   ...(viewer.role === "HOST"
-                      ? ["START_SESSION", "ADVANCE_SESSION", "SKIP_CARD", "END_SESSION"]
+                      ? [
+                            "START_SESSION",
+                            ...(sessionCanAdvance ? ["ADVANCE_SESSION"] : []),
+                            ...(cardCanBeSkipped ? ["SKIP_CARD"] : []),
+                            "END_SESSION",
+                        ]
                       : []),
                   ...(viewer.role !== "DISPLAY" && controlsActivePlayer
-                      ? ["CHOOSE_CARD_TYPE", "ADVANCE_SESSION", "SKIP_CARD"]
+                      ? [
+                            "CHOOSE_CARD_TYPE",
+                            ...(sessionCanAdvance ? ["ADVANCE_SESSION"] : []),
+                            ...(cardCanBeSkipped ? ["SKIP_CARD"] : []),
+                        ]
                       : []),
                   ...(viewer.role !== "DISPLAY" &&
                   session.state === "COLLECTING_ANSWERS" &&
                   [...controllablePlayerIds].some((id) => !session.votes.has(id))
                       ? ["SUBMIT_VOTE"]
                       : []),
-                  ...(viewer.role !== "DISPLAY" && session.currentCard ? ["VETO_CARD"] : []),
+                  ...(viewer.role !== "DISPLAY" && cardCanBeSkipped ? ["VETO_CARD"] : []),
               ]
             : [];
         return {
             id: session.id,
+            startedAt: session.startedAt,
             mode: session.mode,
             revision: session.revision,
             state: session.state,

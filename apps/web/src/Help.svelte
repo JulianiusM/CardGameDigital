@@ -3,6 +3,7 @@
     import { locale, messages } from "./i18n";
     import ArticleLayout from "./ArticleLayout.svelte";
     import ResponsiveTabs from "./ResponsiveTabs.svelte";
+    import { dismissNotification, showNotification } from "./notifications";
     let title = messages.help.title;
     let html = "";
     let error = "";
@@ -11,6 +12,7 @@
 
     async function load(slug: string): Promise<void> {
         error = "";
+        dismissNotification();
         const response = await fetch(`/api/v1/help/${encodeURIComponent(slug)}`, {
             headers: { "accept-language": locale },
         });
@@ -26,6 +28,7 @@
             await load(slug);
         } catch (cause) {
             error = cause instanceof Error ? cause.message : messages.help.loadFailed;
+            showNotification(error, "error");
         }
     }
 
@@ -40,6 +43,7 @@
             await load("readme");
         } catch (cause) {
             error = cause instanceof Error ? cause.message : messages.help.loadFailed;
+            showNotification(error, "error");
         }
     });
 </script>
@@ -54,5 +58,5 @@
             onSelect={selectDocument}
         />
     </div>
-    {#if error}<p class="error">{error}</p>{:else}<div class="help-content">{@html html}</div>{/if}
+    {#if !error}<div class="help-content">{@html html}</div>{/if}
 </ArticleLayout>

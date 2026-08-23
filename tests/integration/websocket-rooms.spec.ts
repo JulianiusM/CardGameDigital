@@ -105,6 +105,18 @@ class Repo implements RealtimeRoomRepository {
         current.role = "PLAYER";
         next.role = "HOST";
     }
+    async closeRoom(roomId: string, hostParticipantId: string) {
+        const host = this.participants.find(
+            (participant) =>
+                participant.id === hostParticipantId &&
+                participant.roomId === roomId &&
+                participant.role === "HOST" &&
+                participant.connectionStatus !== "LEFT",
+        );
+        if (!host) throw Object.assign(new Error("not authorized"), { code: "NOT_AUTHORIZED" });
+        for (const participant of this.participants)
+            if (participant.roomId === roomId) participant.connectionStatus = "LEFT";
+    }
     async loadSettings() {
         return this.settings;
     }
@@ -139,6 +151,15 @@ class Repo implements RealtimeRoomRepository {
         if ((this.runtime?.revision ?? null) !== previous)
             throw Object.assign(new Error("stale"), { code: "STALE_SESSION_REVISION" });
         this.runtime = runtime;
+    }
+    async clearEndedRuntime(_roomId: string, sessionId: string, revision: number) {
+        if (
+            this.runtime?.id !== sessionId ||
+            this.runtime.revision !== revision ||
+            this.runtime.state !== "ENDED"
+        )
+            throw Object.assign(new Error("invalid reset"), { code: "INVALID_GAME_STATE" });
+        this.runtime = null;
     }
 }
 const cards: CardRepository = {
@@ -279,6 +300,101 @@ describe("Room WebSocket protocol", () => {
             ),
         );
         for (const client of [...clients.slice(0, 3), reconnected]) client.socket.terminate();
+        await new Promise<void>((resolve) => wss.close(() => resolve()));
+    });
+
+    it("ends idempotently and starts a new Session without replacing Room participants", async () => {
+        const repository = new Repo();
+        const service = new RoomService(repository, cards, new SequenceRandomSource([0]));
+        const host = await service.createRoom("Host");
+        const player = await service.joinRoom(host.roomCode, "Player", "PLAYER");
+        const display = await service.joinRoom(host.roomCode, "Display", "DISPLAY");
+        server = http.createServer();
+        const wss = attachWebSocketServer(server, service);
+        await new Promise<void>((resolve) => server!.listen(0, "127.0.0.1", resolve));
+        const port = (server.address() as { port: number }).port;
+        const hostClient = await hello(port, host.roomCode, host.participantCredential, host.role);
+        const staleHostTab = await hello(
+            port,
+            host.roomCode,
+            host.participantCredential,
+            host.role,
+        );
+        const playerClient = await hello(
+            port,
+            player.roomCode,
+            player.participantCredential,
+            player.role,
+        );
+        const displayClient = await hello(
+            port,
+            display.roomCode,
+            display.participantCredential,
+            display.role,
+        );
+        const clients = [hostClient, staleHostTab, playerClient, displayClient];
+        const send = (
+            client: (typeof clients)[number],
+            type: string,
+            requestId: string,
+            revision: number | null,
+        ) =>
+            client.socket.send(
+                JSON.stringify({
+                    protocol: PROTOCOL_VERSION,
+                    type,
+                    requestId,
+                    revision,
+                    payload: {},
+                }),
+            );
+
+        send(hostClient, "command.startSession", "start-first", null);
+        await waitFor(() =>
+            clients.every((client) =>
+                client.messages.some(
+                    (message) =>
+                        message.type === "room.snapshot" && message.payload.session?.revision === 0,
+                ),
+            ),
+        );
+        const firstSessionId = repository.runtime!.id;
+        send(hostClient, "command.endSession", "end-first", 0);
+        await waitFor(() =>
+            clients.every(
+                (client) =>
+                    client.messages.findLast((message) => message.type === "room.snapshot").payload
+                        .session?.state === "ENDED",
+            ),
+        );
+        send(staleHostTab, "command.endSession", "stale-end", 0);
+        await waitFor(() =>
+            staleHostTab.messages.some(
+                (message) => message.requestId === "stale-end" && message.type === "room.snapshot",
+            ),
+        );
+        expect(
+            staleHostTab.messages.some(
+                (message) => message.requestId === "stale-end" && message.type === "error",
+            ),
+        ).toBe(false);
+
+        send(hostClient, "command.resetSession", "new-game", 1);
+        await waitFor(() =>
+            clients.every(
+                (client) =>
+                    client.messages.findLast((message) => message.type === "room.snapshot").payload
+                        .session === null,
+            ),
+        );
+        expect(repository.participants).toHaveLength(3);
+        send(hostClient, "command.startSession", "start-second", null);
+        await waitFor(
+            () => repository.runtime !== null && repository.runtime.id !== firstSessionId,
+        );
+        expect(repository.participants).toHaveLength(3);
+
+        for (const client of clients) client.socket.terminate();
         await new Promise<void>((resolve) => wss.close(() => resolve()));
     });
 
@@ -608,6 +724,207 @@ describe("Room WebSocket protocol", () => {
             await service.authenticate(player.roomCode, player.participantCredential),
         ).toBeNull();
         hostClient.socket.terminate();
+        await new Promise<void>((resolve) => wss.close(() => resolve()));
+    });
+
+    it("adds a participant who connects mid-game to the authoritative Session", async () => {
+        const repository = new Repo();
+        const service = new RoomService(repository, cards, new SequenceRandomSource([0]));
+        const host = await service.createRoom("Host");
+        const first = await service.joinRoom(host.roomCode, "First", "PLAYER");
+        server = http.createServer();
+        const wss = attachWebSocketServer(server, service);
+        await new Promise<void>((resolve) => server!.listen(0, "127.0.0.1", resolve));
+        const port = (server.address() as { port: number }).port;
+        const hostClient = await hello(port, host.roomCode, host.participantCredential, host.role);
+        const firstClient = await hello(
+            port,
+            first.roomCode,
+            first.participantCredential,
+            first.role,
+        );
+        hostClient.socket.send(
+            JSON.stringify({
+                protocol: PROTOCOL_VERSION,
+                type: "command.startSession",
+                requestId: "start-mid-join",
+                revision: null,
+                payload: {},
+            }),
+        );
+        await waitFor(() => repository.runtime?.players.length === 2);
+        firstClient.socket.send(
+            JSON.stringify({
+                protocol: PROTOCOL_VERSION,
+                type: "command.leaveRoom",
+                requestId: "leave-before-replacement",
+                revision: repository.runtime!.revision,
+                payload: {},
+            }),
+        );
+        await waitFor(() => repository.runtime?.players.length === 1);
+
+        const late = await service.joinRoom(host.roomCode, "Late", "PLAYER");
+        const lateClient = await hello(port, late.roomCode, late.participantCredential, late.role);
+        await waitFor(() =>
+            [hostClient, lateClient].every((client) =>
+                client.messages.some(
+                    (message) =>
+                        message.type === "room.snapshot" &&
+                        message.payload.session?.players.length === 2 &&
+                        message.payload.session.players.some(
+                            ({ id }: { id: string }) => id === late.participantId,
+                        ),
+                ),
+            ),
+        );
+        expect(repository.runtime?.players.map(({ name }) => name)).toEqual(["Host", "Late"]);
+        expect(repository.runtime?.startedAt).toEqual(expect.any(Number));
+        hostClient.socket.terminate();
+        lateClient.socket.terminate();
+        await new Promise<void>((resolve) => wss.close(() => resolve()));
+    });
+
+    it("rejects a stale Never Have I Ever result Skip without an internal-server message", async () => {
+        const repository = new Repo();
+        const neverCards: CardRepository = {
+            ...cards,
+            listActive: async () => [card({ id: "never-ws" as never, yesNoAnswerPossible: true })],
+        };
+        const service = new RoomService(repository, neverCards, new SequenceRandomSource([0]));
+        const host = await service.createRoom("Host", null, {
+            ...defaultRoomGameSettings(),
+            mode: "NEVER_HAVE_I_EVER",
+        });
+        const player = await service.joinRoom(host.roomCode, "Player", "PLAYER");
+        server = http.createServer();
+        const wss = attachWebSocketServer(server, service);
+        await new Promise<void>((resolve) => server!.listen(0, "127.0.0.1", resolve));
+        const port = (server.address() as { port: number }).port;
+        const hostClient = await hello(port, host.roomCode, host.participantCredential, host.role);
+        const playerClient = await hello(
+            port,
+            player.roomCode,
+            player.participantCredential,
+            player.role,
+        );
+        const send = (client: typeof hostClient, type: string, revision: number, payload = {}) =>
+            client.socket.send(
+                JSON.stringify({
+                    protocol: PROTOCOL_VERSION,
+                    type,
+                    requestId: type,
+                    revision,
+                    payload,
+                }),
+            );
+        hostClient.socket.send(
+            JSON.stringify({
+                protocol: PROTOCOL_VERSION,
+                type: "command.startSession",
+                requestId: "never-start",
+                revision: null,
+                payload: {},
+            }),
+        );
+        await waitFor(() => repository.runtime?.revision === 0);
+        send(hostClient, "command.startTurn", 0);
+        await waitFor(() => repository.runtime?.revision === 1);
+        send(hostClient, "command.submitVote", 1, {
+            playerId: host.participantId,
+            vote: "YES",
+        });
+        await waitFor(() => repository.runtime?.revision === 2);
+        send(playerClient, "command.submitVote", 2, {
+            playerId: player.participantId,
+            vote: "NO",
+        });
+        await waitFor(() => repository.runtime?.state === "SHOWING_RESULTS");
+        await waitFor(() =>
+            hostClient.messages.some(
+                (message) =>
+                    message.type === "room.snapshot" &&
+                    message.payload.session?.state === "SHOWING_RESULTS",
+            ),
+        );
+        const hostResult = hostClient.messages.findLast(
+            (message) =>
+                message.type === "room.snapshot" &&
+                message.payload.session?.state === "SHOWING_RESULTS",
+        ).payload.session;
+        expect(hostResult.availableActions).not.toContain("SKIP_CARD");
+        send(hostClient, "command.skipCard", repository.runtime!.revision);
+        await waitFor(() =>
+            hostClient.messages.some(
+                (message) => message.requestId === "command.skipCard" && message.type === "error",
+            ),
+        );
+        const rejected = hostClient.messages.find(
+            (message) => message.requestId === "command.skipCard" && message.type === "error",
+        );
+        expect(rejected.payload).toMatchObject({ code: "INVALID_GAME_STATE" });
+        expect(rejected.payload.message.toLowerCase()).not.toContain("internal server");
+        hostClient.socket.terminate();
+        playerClient.socket.terminate();
+        await new Promise<void>((resolve) => wss.close(() => resolve()));
+    });
+
+    it("closes every socket and invalidates every reconnect identity when the Host closes the Room", async () => {
+        const repository = new Repo();
+        const service = new RoomService(repository, cards, new SequenceRandomSource([0]));
+        const host = await service.createRoom("Host");
+        const player = await service.joinRoom(host.roomCode, "Player", "PLAYER");
+        const display = await service.joinRoom(host.roomCode, "Display", "DISPLAY");
+        server = http.createServer();
+        const wss = attachWebSocketServer(server, service);
+        await new Promise<void>((resolve) => server!.listen(0, "127.0.0.1", resolve));
+        const port = (server.address() as { port: number }).port;
+        const clients = await Promise.all(
+            [host, player, display].map((participant) =>
+                hello(
+                    port,
+                    participant.roomCode,
+                    participant.participantCredential,
+                    participant.role,
+                ),
+            ),
+        );
+        clients[0].socket.send(
+            JSON.stringify({
+                protocol: PROTOCOL_VERSION,
+                type: "command.startSession",
+                requestId: "start-before-close",
+                revision: null,
+                payload: {},
+            }),
+        );
+        await waitFor(() => repository.runtime?.state === "CHOOSING_CARD_TYPE");
+        const closed = clients.map(
+            ({ socket }) =>
+                new Promise<number>((resolve) => socket.once("close", (code) => resolve(code))),
+        );
+        clients[0].socket.send(
+            JSON.stringify({
+                protocol: PROTOCOL_VERSION,
+                type: "command.closeRoom",
+                requestId: "close-room",
+                revision: repository.runtime!.revision,
+                payload: {},
+            }),
+        );
+
+        await expect(Promise.all(closed)).resolves.toEqual([4001, 4001, 4001]);
+        expect(repository.runtime?.state).toBe("ENDED");
+        expect(
+            repository.participants.every(({ connectionStatus }) => connectionStatus === "LEFT"),
+        ).toBe(true);
+        expect(await service.authenticate(host.roomCode, host.participantCredential)).toBeNull();
+        expect(
+            await service.authenticate(player.roomCode, player.participantCredential),
+        ).toBeNull();
+        expect(
+            await service.authenticate(display.roomCode, display.participantCredential),
+        ).toBeNull();
         await new Promise<void>((resolve) => wss.close(() => resolve()));
     });
 });

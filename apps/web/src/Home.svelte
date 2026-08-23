@@ -16,6 +16,7 @@
         type RoomGameSettings,
     } from "./multiplayer";
     import { presentation } from "./presentation";
+    import { dismissNotification, showNotification } from "./notifications";
     import { navigate } from "./router";
     import {
         loadSetup,
@@ -39,8 +40,6 @@
     let groupMembers = "";
     let joinName = "";
     let roomCode = query.get("room")?.toUpperCase() ?? "";
-    let error = "";
-    let notice = "";
     let busy = false;
     $: currentIndex = hostSteps.indexOf(setup.step);
     $: progressSteps = [
@@ -150,7 +149,7 @@
     async function createSavedGroup(): Promise<void> {
         if (!groupName.trim()) return;
         busy = true;
-        error = "";
+        dismissNotification();
         try {
             const created = await createGroup(
                 groupName.trim(),
@@ -165,7 +164,10 @@
             groupName = "";
             groupMembers = "";
         } catch (cause) {
-            error = cause instanceof Error ? cause.message : messages.common.requestFailed;
+            showNotification(
+                cause instanceof Error ? cause.message : messages.common.requestFailed,
+                "error",
+            );
         } finally {
             busy = false;
         }
@@ -174,10 +176,10 @@
         if (!confirm(messages.setup.resetHistoryConfirm)) return;
         const updated = await resetGroupHistory(group.id);
         groups = groups.map((candidate) => (candidate.id === updated.id ? updated : candidate));
-        notice = messages.setup.historyReset;
+        showNotification(messages.setup.historyReset, "success");
     }
     async function next(): Promise<void> {
-        error = "";
+        dismissNotification();
         const index = hostSteps.indexOf(setup.step);
         if (setup.step === "profile" && setup.groupId) {
             const group = groups.find(({ id }) => id === setup.groupId);
@@ -213,7 +215,10 @@
             saveJoin(join);
             navigate("/play/room", { force: true });
         } catch (cause) {
-            error = cause instanceof Error ? cause.message : messages.common.connectionFailed;
+            showNotification(
+                cause instanceof Error ? cause.message : messages.common.connectionFailed,
+                "error",
+            );
         } finally {
             busy = false;
         }
@@ -229,7 +234,7 @@
     async function joinRoom(): Promise<void> {
         if (setup.intent !== "JOIN" && setup.intent !== "DISPLAY") return;
         busy = true;
-        error = "";
+        dismissNotification();
         try {
             const role = setup.intent === "DISPLAY" ? "DISPLAY" : "PLAYER";
             const displayName =
@@ -238,7 +243,10 @@
             saveJoin(join);
             navigate("/play/room", { force: true });
         } catch (cause) {
-            error = cause instanceof Error ? cause.message : messages.common.connectionFailed;
+            showNotification(
+                cause instanceof Error ? cause.message : messages.common.connectionFailed,
+                "error",
+            );
             busy = false;
         }
     }
@@ -288,8 +296,6 @@
                 </div>
             {/if}
             <button class="text-action back-link" on:click={back}>← {messages.setup.back}</button>
-            {#if error}<p class="error" role="alert">{error}</p>{/if}
-            {#if notice}<p class="notice" role="status">{notice}</p>{/if}
             {#if setup.intent === "JOIN" || setup.intent === "DISPLAY"}
                 <h2 id="wizard-title">
                     {setup.intent === "DISPLAY" ? messages.setup.display : messages.setup.join}
@@ -341,12 +347,16 @@
                         ><small>{messages.setup.newGroupHint}</small></button
                     >
                 </div>
-                {#if setup.groupChoice === "SELECT"}<div class="group-list choice-chip-grid">
+                {#if setup.groupChoice === "SELECT"}<div class="group-list" role="list">
                         {#each groups as group}<div
                                 class:selected={setup.groupId === group.id}
-                                class="group-option"
+                                class="group-list-row"
+                                role="listitem"
                             >
-                                <button on:click={() => chooseGroup(group)}
+                                <button
+                                    class="group-select-action text-button"
+                                    aria-pressed={setup.groupId === group.id}
+                                    on:click={() => chooseGroup(group)}
                                     ><strong>{group.name}</strong><small
                                         >{group.members.join(", ")}</small
                                     ></button
@@ -404,7 +414,14 @@
                         />{messages.room.adultConfirmation}</label
                     >{/if}
             {:else if setup.step === "customize"}
-                <h2 id="wizard-title">{messages.setup.customizeExperience}</h2>
+                <div class="wizard-title-row">
+                    <h2 id="wizard-title">{messages.setup.customizeExperience}</h2>
+                    {#if setup.profileId !== "PROFILE_CUSTOM"}<button
+                            class="primary primary-action wizard-skip"
+                            disabled={busy}
+                            on:click={next}>{messages.common.skip}<span>→</span></button
+                        >{/if}
+                </div>
                 <GameSettingsEditor
                     settings={editorSettings}
                     {profiles}

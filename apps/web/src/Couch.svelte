@@ -1,22 +1,24 @@
 <script lang="ts">
     import { ApiError, couchApi, type Snapshot } from "./api";
     import SettingsModal from "./SettingsModal.svelte";
+    import SettingsTrigger from "./SettingsTrigger.svelte";
     import GameCard from "./GameCard.svelte";
     import SessionSummary from "./SessionSummary.svelte";
     import { presentation } from "./presentation";
     import { atmosphereFor, effectForCommand, sceneFor } from "./presentationMapping";
     import { messages, gameModes } from "./i18n";
-    import { loadSetup, setupHref } from "./setup";
+    import { elapsedMinutes as minutesSince } from "./elapsedTime";
+    import { navigate } from "./router";
+    import { dismissNotification, showNotification } from "./notifications";
+    import { loadSetup, resetSetup, setupHref } from "./setup";
 
     const setup = loadSetup();
     let mode = (gameModes.find((item) => item[0] === setup.mode) ?? gameModes[0])[0];
     let playerNames = setup.groupMembers.length >= 2 ? [...setup.groupMembers] : ["Anna", "Ben"];
     let session: Snapshot | null = null;
     let busy = false;
-    let error = "";
     let settingsOpen = false;
     let lastCardId: string | undefined;
-    let startedAt = Date.now();
     let exhausted = false;
     $: unvotedPlayers =
         session?.players.filter((player) => !session?.votedPlayerIds.includes(player.id)) ?? [];
@@ -44,15 +46,21 @@
     }
     async function run(action: () => Promise<Snapshot>): Promise<void> {
         busy = true;
-        error = "";
+        dismissNotification();
         exhausted = false;
         try {
             session = await action();
         } catch (cause) {
-            if (cause instanceof ApiError && cause.code === "CARD_POOL_EXHAUSTED") exhausted = true;
-            else if (cause instanceof ApiError && cause.code === "STALE_SESSION_REVISION")
-                error = messages.couch.stale;
-            else error = cause instanceof Error ? cause.message : messages.couch.genericError;
+            if (cause instanceof ApiError && cause.code === "CARD_POOL_EXHAUSTED") {
+                if (session) exhausted = true;
+                else showNotification(messages.couch.noCardsForSettings, "error");
+            } else if (cause instanceof ApiError && cause.code === "STALE_SESSION_REVISION")
+                showNotification(messages.couch.stale, "error");
+            else
+                showNotification(
+                    cause instanceof Error ? cause.message : messages.couch.genericError,
+                    "error",
+                );
         } finally {
             busy = false;
         }
@@ -62,10 +70,9 @@
             .map((name) => ({ name: name.trim() }))
             .filter((player) => player.name);
         if (players.length < 2) {
-            error = messages.couch.minimumPlayers;
+            showNotification(messages.couch.minimumPlayers, "error");
             return;
         }
-        startedAt = Date.now();
         presentation.playEffect("confirm");
         void run(() =>
             couchApi.create({
@@ -90,10 +97,15 @@
         presentation.playEffect(effectForCommand(name));
         if (session) void run(() => couchApi.command(session!, name, payload));
     }
-    $: elapsedMinutes = Math.max(1, Math.round((Date.now() - startedAt) / 60_000));
+    function backToMain(): void {
+        resetSetup("intent");
+        navigate("/play/", { force: true });
+    }
+    $: elapsedMinutes = minutesSince(session?.startedAt ?? Date.now());
 </script>
 
 <main class:playing={session} class="couch-shell">
+    <SettingsTrigger onOpen={() => (settingsOpen = true)} />
     {#if !session}
         <header>
             <span class="eyebrow">{messages.couch.singleDevice}</span>
@@ -101,9 +113,10 @@
             <p>{messages.couch.passDevice}</p>
         </header>
     {/if}
-    {#if error}<div class="error" role="alert">{error}</div>{/if}
-
     {#if !session}
+        <button class="text-action back-link couch-back" on:click={backToMain}
+            >← {messages.common.backToMain}</button
+        >
         <section class="player-setup card-panel">
             <div class="setup-summary">
                 <span>{gameModes.find((item) => item[0] === mode)?.[1]}</span><a
@@ -145,15 +158,12 @@
                 session = null;
                 createSession();
             }}
+            onNewGame={() => (session = null)}
+            onExit={backToMain}
+            exitLabel={messages.common.backToMain}
         />
     {:else}
         <section class="game-shell" data-atmosphere={cardAtmosphere}>
-            <button
-                class="settings-trigger in-game"
-                aria-label={messages.settings.title}
-                on:click={() => (settingsOpen = true)}
-                ><span class="gear-icon" aria-hidden="true">⚙</span></button
-            >
             <div class="status">
                 <span>{messages.common.round} {session.roundNumber}</span><span
                     >{session.cardsShown} {messages.common.cards}</span
@@ -225,6 +235,9 @@
                 </div>
             {/if}
         </section>
-        <SettingsModal bind:open={settingsOpen} onEnd={() => command("end")} />
     {/if}
+    <SettingsModal
+        bind:open={settingsOpen}
+        onEnd={session && session.state !== "ENDED" ? () => command("end") : undefined}
+    />
 </main>

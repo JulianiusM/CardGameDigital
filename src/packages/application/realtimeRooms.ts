@@ -39,6 +39,7 @@ export interface RealtimeRoomRepository {
     resetConnectedParticipants(): Promise<readonly RoomParticipant[]>;
     saveDevicePlayers(participantId: string, players: readonly DevicePlayer[]): Promise<void>;
     transferHost(roomId: string, currentHostId: string, nextHostId: string): Promise<void>;
+    closeRoom(roomId: string, hostParticipantId: string): Promise<void>;
     loadSettings(roomId: string): Promise<VersionedRoomGameSettings>;
     saveSettings(
         roomId: string,
@@ -55,4 +56,5 @@ export interface RealtimeRoomRepository {
         previousRevision: number | null,
         runtime: GameSessionRuntimeState,
     ): Promise<void>;
+    clearEndedRuntime(roomId: string, sessionId: string, revision: number): Promise<void>;
 }

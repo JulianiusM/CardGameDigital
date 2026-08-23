@@ -69,4 +69,21 @@ describe("private boundary persistence", () => {
             true,
         );
     });
+
+    it("persists Room closure and excludes every participant and future join", async () => {
+        await repository.closeRoom(roomId, participantId);
+
+        expect(await repository.listParticipants(roomId)).toEqual([]);
+        await expect(
+            repository.joinRoom({
+                id: randomUUID(),
+                roomCode: "SAFE23",
+                role: "PLAYER",
+                displayName: "Late joiner",
+                devicePlayers: [],
+                connectionStatus: "CONNECTED",
+                credentialHash: "b".repeat(64),
+            }),
+        ).rejects.toMatchObject({ code: "ROOM_NOT_FOUND" });
+    });
 });

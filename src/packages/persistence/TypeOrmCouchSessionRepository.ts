@@ -63,7 +63,7 @@ export class TypeOrmCouchSessionRepository implements CouchSessionRepository {
                     revision: runtime.revision,
                     runtimeStateVersion: runtime.version,
                     runtimeStateJson: JSON.stringify(runtime),
-                    startedAt: new Date(),
+                    startedAt: new Date(runtime.startedAt),
                     endedAt: runtime.state === "ENDED" ? new Date() : null,
                 });
             } else {

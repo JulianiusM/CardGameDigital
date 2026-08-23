@@ -1,6 +1,6 @@
 import { Column, Entity, Index, PrimaryColumn } from "typeorm";
 
-@Index("UQ_game_session_room_active", ["roomId"], { unique: true })
+@Index("IDX_game_session_room", ["roomId"])
 @Entity("game_sessions")
 export class GameSessionEntity {
     @PrimaryColumn("varchar", { length: 36 }) id!: string;

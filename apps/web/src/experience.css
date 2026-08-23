@@ -366,10 +366,29 @@ button:not(:disabled):not(.text-action):not(.text-button):not(.icon):active,
     min-width: 210px;
     margin: 1.5rem 0 0 auto;
 }
+.wizard-skip {
+    flex: 0 0 auto;
+    min-width: 210px;
+}
+.wizard-next span,
+.wizard-skip span {
+    float: right;
+    margin-left: 1rem;
+}
 .player-setup {
     width: min(680px, 100%);
     margin: auto;
     padding: clamp(1.2rem, 4vw, 2.2rem);
+}
+.player-setup > .primary-action {
+    width: 100%;
+    margin-top: 1.25rem;
+}
+.couch-back {
+    display: block;
+    width: min(680px, 100%);
+    margin: 0 auto 0.75rem;
+    text-align: left;
 }
 .setup-summary {
     display: flex;
@@ -408,8 +427,8 @@ button:not(:disabled):not(.text-action):not(.text-button):not(.icon):active,
 .settings-trigger {
     position: fixed;
     z-index: 25;
-    top: 1rem;
-    right: 1rem;
+    top: max(1rem, env(safe-area-inset-top));
+    right: max(1rem, env(safe-area-inset-right));
     display: grid;
     place-items: center;
     width: 3rem;
@@ -421,14 +440,10 @@ button:not(:disabled):not(.text-action):not(.text-button):not(.icon):active,
     background: #17132de0;
     backdrop-filter: blur(12px);
 }
-.settings-trigger.in-game {
-    position: absolute;
-    top: 0;
-    right: 0;
-}
 .gear-icon {
-    font-size: 1.45rem;
-    line-height: 1;
+    width: 1.45rem;
+    height: 1.45rem;
+    fill: currentColor;
 }
 .modal-backdrop {
     position: fixed;
@@ -477,16 +492,27 @@ button:not(:disabled):not(.text-action):not(.text-button):not(.icon):active,
 .close {
     font-size: 2rem;
 }
+.responsive-tabs-shell {
+    display: grid;
+    grid-template-columns: 2.75rem minmax(0, 1fr) 2.75rem;
+    align-items: stretch;
+    width: 100%;
+    max-width: 100%;
+    overflow: hidden;
+    border-bottom: 1px solid #ffffff18;
+}
 .responsive-tabs {
     display: flex;
     gap: 0.35rem;
-    padding: 0.8rem 1.2rem;
+    min-width: 0;
+    padding: 0.8rem 0.2rem;
     max-width: 100%;
     overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    touch-action: pan-x;
     overscroll-behavior-inline: contain;
     scrollbar-width: none;
     scroll-snap-type: x proximity;
-    border-bottom: 1px solid #ffffff18;
 }
 .responsive-tabs::-webkit-scrollbar {
     display: none;
@@ -514,6 +540,33 @@ button:not(:disabled):not(.text-action):not(.text-button):not(.icon):active,
 .responsive-tabs button:active {
     transform: none;
     box-shadow: none;
+}
+.tab-scroll-arrow {
+    position: relative;
+    z-index: 1;
+    min-width: 44px;
+    min-height: 44px;
+    padding: 0;
+    color: #c9c0d8;
+    border: 0;
+    border-radius: 12px;
+    background: transparent;
+    box-shadow: none;
+    font-size: 1.75rem;
+    transform: none !important;
+}
+.tab-scroll-arrow.next {
+    background: transparent;
+}
+.tab-scroll-arrow:disabled {
+    visibility: hidden;
+}
+.tab-scroll-arrow:hover,
+.tab-scroll-arrow:active {
+    color: white;
+    background: #ffffff0b;
+    box-shadow: none;
+    transform: none;
 }
 .modal-content {
     padding: 1.2rem 1.5rem 1.6rem;
@@ -599,6 +652,7 @@ button:not(:disabled):not(.text-action):not(.text-button):not(.icon):active,
 }
 .game-card p {
     position: relative;
+    align-self: center;
 }
 .turn-ready,
 .choice {
@@ -671,9 +725,6 @@ button:not(:disabled):not(.text-action):not(.text-button):not(.icon):active,
     .game-shell {
         padding-top: 3rem;
     }
-    .settings-trigger.in-game {
-        right: 0.2rem;
-    }
     .summary-actions {
         flex-direction: column;
     }
@@ -682,14 +733,6 @@ button:not(:disabled):not(.text-action):not(.text-button):not(.icon):active,
     .playing main,
     main.playing {
         width: min(1400px, 100%);
-    }
-    .game-card p {
-        font-size: clamp(2.3rem, 4.4vw, 5rem);
-    }
-    .game-card {
-        min-height: 52vh;
-        display: grid;
-        align-content: center;
     }
 }
 :root[data-reduced-motion="true"] *,
@@ -772,11 +815,6 @@ button:not(:disabled):not(.text-action):not(.text-button):not(.icon):active,
 }
 .danger {
     background: #8f2852;
-}
-.notice {
-    padding: 0.8rem 1rem;
-    border-radius: 1rem;
-    background: rgba(64, 210, 169, 0.16);
 }
 .help-content {
     font-size: clamp(1rem, 1.2vw, 1.08rem);
@@ -887,16 +925,77 @@ button:not(:disabled):not(.text-action):not(.text-button):not(.icon):active,
     border-radius: 12px;
     background: #100c22;
 }
-.group-option {
+.group-list {
     display: grid;
-    border: 1px solid transparent;
-    border-radius: 19px;
-}
-.group-option .option-card {
+    gap: 0.55rem;
     width: 100%;
+    min-width: 0;
+    margin-top: 1rem;
+    padding: 0.5rem;
+    border: 1px solid #ffffff1a;
+    border-radius: 16px;
+    background: #0f0b202e;
 }
-.group-option.selected {
+.group-list-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 0.65rem;
+    min-width: 0;
+    padding: 0.45rem;
+    border: 1px solid transparent;
+    border-radius: 12px;
+    background: #ffffff06;
+}
+.group-list-row.selected {
     border-color: var(--scene-c);
+    background: color-mix(in srgb, var(--scene-c) 13%, transparent);
+}
+.group-list-row:focus-within,
+.group-list-row:has(.group-select-action:hover) {
+    border-color: color-mix(in srgb, var(--scene-c) 65%, transparent);
+    background: color-mix(in srgb, var(--scene-c) 9%, transparent);
+}
+.group-select-action {
+    display: grid;
+    justify-items: start;
+    min-width: 0;
+    min-height: 48px;
+    padding: 0.55rem 0.65rem;
+    color: white;
+    text-align: left;
+    border: 0;
+    border-radius: 9px;
+    background: transparent;
+    box-shadow: none;
+    transform: none !important;
+    transition: none;
+}
+.group-select-action:hover,
+.group-select-action:active {
+    background: transparent;
+    box-shadow: none;
+    transform: none !important;
+}
+.group-select-action strong,
+.group-select-action small {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.group-select-action small {
+    margin-top: 0.2rem;
+    color: #bdb4ca;
+}
+.wizard-title-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+}
+.wizard-title-row h2 {
+    margin: 0;
 }
 .choice-chip-grid,
 .toggle-chip-grid {
@@ -979,6 +1078,48 @@ button:not(:disabled):not(.text-action):not(.text-button):not(.icon):active,
 .room-settings-summary p {
     margin: 0 0 0.35rem;
 }
+.room-settings-actions {
+    display: grid;
+    justify-items: end;
+    gap: 0.35rem;
+    flex: 0 0 auto;
+}
+.current-settings-modal {
+    width: min(820px, 100%);
+}
+.game-settings-summary-full {
+    display: grid;
+    gap: 1rem;
+}
+.settings-facts {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(12rem, 100%), 1fr));
+    gap: 0.65rem;
+    margin: 0;
+}
+.settings-facts div,
+.settings-summary-section {
+    min-width: 0;
+    padding: 0.9rem;
+    border: 1px solid #ffffff1f;
+    border-radius: 14px;
+    background: #ffffff08;
+}
+.settings-facts dt {
+    color: #afa5bd;
+    font-size: 0.78rem;
+}
+.settings-facts dd {
+    margin: 0.25rem 0 0;
+    font-weight: 750;
+}
+.settings-summary-section h3 {
+    margin: 0 0 0.65rem;
+}
+.settings-summary-section p {
+    margin: 0.4rem 0;
+    line-height: 1.55;
+}
 .lobby-actions {
     display: flex;
     justify-content: center;
@@ -1007,9 +1148,81 @@ button:not(:disabled):not(.text-action):not(.text-button):not(.icon):active,
     gap: 0.8rem;
 }
 .service-actions {
-    display: flex;
-    flex-wrap: wrap;
+    display: grid;
     gap: 0.75rem;
+}
+.settings-action {
+    display: grid;
+    grid-template-columns: 2.5rem minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 0.75rem;
+    min-height: 56px;
+    padding: 0.55rem 0.8rem;
+    color: white;
+    border: 1px solid #ffffff24;
+    border-radius: 14px;
+    background: #ffffff0a;
+    text-decoration: none;
+}
+.settings-action:hover,
+.settings-action:focus-visible {
+    border-color: var(--scene-c);
+    background: #ffffff12;
+}
+.settings-action-icon {
+    display: grid;
+    place-items: center;
+    width: 2.5rem;
+    height: 2.5rem;
+    color: #17132d;
+    border-radius: 50%;
+    background: var(--scene-c);
+    font-weight: 850;
+}
+.settings-action-arrow {
+    font-size: 1.5rem;
+}
+.notification-toast {
+    position: fixed;
+    z-index: 70;
+    top: max(1rem, env(safe-area-inset-top));
+    left: 50%;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 0.75rem;
+    width: min(30rem, calc(100vw - 2rem));
+    padding: 0.75rem;
+    color: white;
+    border: 1px solid #78d8ff66;
+    border-radius: 16px;
+    background: #171f3af2;
+    box-shadow: 0 18px 55px #05020daa;
+    transform: translateX(-50%);
+}
+.notification-icon {
+    display: grid;
+    place-items: center;
+    width: 2rem;
+    height: 2rem;
+    border-radius: 50%;
+    color: #17132d;
+    background: #78d8ff;
+    font-weight: 850;
+}
+.notification-toast.notification-error {
+    border-color: #ff729588;
+    background: #391827f5;
+}
+.notification-toast.notification-error .notification-icon {
+    color: white;
+    background: #d94368;
+}
+.notification-toast.notification-success {
+    border-color: #65d1c588;
+}
+.notification-toast.notification-success .notification-icon {
+    background: #65d1c5;
 }
 .settings-join-info {
     display: grid;
@@ -1061,5 +1274,64 @@ button:not(:disabled):not(.text-action):not(.text-button):not(.icon):active,
     .device-player-editor label {
         grid-template-columns: 1fr;
         gap: 0.25rem;
+    }
+    .group-list-row {
+        grid-template-columns: minmax(0, 1fr) auto;
+    }
+}
+@media (min-width: 721px) {
+    main.playing {
+        width: min(1400px, 100%);
+        height: 100svh;
+        min-height: 0;
+        padding: clamp(0.75rem, 1.8vh, 1.4rem) clamp(1rem, 3vw, 3rem);
+        overflow: hidden;
+    }
+    main.playing > .game-shell {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        height: 100%;
+        min-height: 0;
+        gap: clamp(0.4rem, 1.25vh, 1rem);
+    }
+    main.playing .status,
+    main.playing .active-player,
+    main.playing .live-players,
+    main.playing .actions,
+    main.playing .result {
+        flex: 0 0 auto;
+    }
+    main.playing .active-player {
+        margin: 0;
+        font-size: clamp(1.45rem, 3.8vh, 2.7rem);
+    }
+    main.playing .live-players {
+        padding-block: 0.5rem;
+    }
+    main.playing .game-card {
+        flex: 1 1 min(52vh, 520px);
+        align-self: center;
+        width: min(900px, 88vw);
+        min-height: 0;
+        height: min(52vh, 520px);
+        max-height: min(52vh, 520px);
+        margin-block: auto;
+        padding: clamp(1rem, 3vh, 2.5rem) clamp(1.5rem, 5vw, 4rem);
+    }
+    main.playing .game-card p {
+        margin: clamp(0.5rem, 1.5vh, 1.4rem) 0;
+        font-size: clamp(1.5rem, min(3.8vw, 5vh), 3.5rem);
+    }
+    main.playing .actions {
+        min-height: 44px;
+    }
+}
+@media (max-width: 420px) {
+    .group-list-row {
+        grid-template-columns: 1fr;
+    }
+    .group-list-row > .text-action {
+        justify-self: start;
     }
 }

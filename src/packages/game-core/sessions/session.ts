@@ -33,6 +33,7 @@ export type Player = { id: string; name: string };
 export type Vote = "YES" | "NO";
 export type GameSessionOptions = {
     id: string;
+    startedAt?: number;
     mode: GameMode;
     players: readonly Player[];
     profile: GameProfile;
@@ -44,6 +45,7 @@ export type GameSessionOptions = {
 export type GameSessionRuntimeState = {
     version: 1;
     id: string;
+    startedAt: number;
     mode: GameMode;
     players: Player[];
     profile: {
@@ -88,14 +90,17 @@ export class StaleSessionRevisionError extends Error {
         readonly expected: number,
         readonly received: number,
     ) {
-        super(`Expected Session revision ${expected}, received ${received}`);
+        super(MESSAGE_KEYS.GAME_STALE_REVISION);
         this.name = "StaleSessionRevisionError";
     }
 }
 export class InvalidGameStateError extends Error {
     readonly code = "INVALID_GAME_STATE";
-    constructor(state: SessionState, command: string) {
-        super(`${command} is invalid in state ${state}`);
+    constructor(
+        readonly state: SessionState,
+        readonly command: string,
+    ) {
+        super(MESSAGE_KEYS.GAME_INVALID_STATE);
         this.name = "InvalidGameStateError";
     }
 }
@@ -108,6 +113,7 @@ const EMPTY_BOUNDARIES: PlayerBoundaries = {
 
 export class GameSession {
     readonly id: string;
+    readonly startedAt: number;
     readonly mode: GameMode;
     readonly profile: GameProfile;
     readonly sessionHistory: CardAppearance[] = [];
@@ -131,11 +137,14 @@ export class GameSession {
     constructor(
         options: GameSessionOptions,
         private readonly random: RandomSource,
+        restoring = false,
     ) {
-        if (options.players.length < 2) throw new Error(MESSAGE_KEYS.GAME_MINIMUM_PLAYERS);
+        if (!restoring && options.players.length < 2)
+            throw new Error(MESSAGE_KEYS.GAME_MINIMUM_PLAYERS);
         if (new Set(options.players.map((player) => player.id)).size !== options.players.length)
             throw new Error(MESSAGE_KEYS.GAME_PLAYER_IDS_UNIQUE);
         this.id = options.id;
+        this.startedAt = options.startedAt ?? Date.now();
         this.mode = options.mode;
         this.players = [...options.players];
         this.profile = options.profile;
@@ -143,7 +152,10 @@ export class GameSession {
         this.maximumIntensity = options.maximumIntensity ?? options.profile.maximumIntensity;
         this.groupHistoryCardIds = options.groupHistoryCardIds ?? new Set();
         this.boundariesByPlayer = options.boundariesByPlayer ?? new Map();
-        this.activePlayerIndex = random.nextInt(this.players.length);
+        // A restored, ended Session can legitimately have no players after the
+        // final participant leaves. New Sessions are still rejected above unless
+        // they have at least two players.
+        this.activePlayerIndex = this.players.length ? random.nextInt(this.players.length) : 0;
         this.state =
             options.mode === GAME_MODES.CLASSIC
                 ? SESSION_STATES.CHOOSING_CARD_TYPE
@@ -174,6 +186,7 @@ export class GameSession {
         const session = new GameSession(
             {
                 id: runtime.id,
+                startedAt: runtime.startedAt,
                 mode: runtime.mode,
                 players: runtime.players,
                 profile,
@@ -183,6 +196,7 @@ export class GameSession {
                 cardLocale: runtime.cardLocale,
             },
             random,
+            true,
         );
         session.revision = runtime.revision;
         session.state = runtime.state;
@@ -206,6 +220,7 @@ export class GameSession {
         return {
             version: 1,
             id: this.id,
+            startedAt: this.startedAt,
             mode: this.mode,
             players: this.players.map((player) => ({ ...player })),
             profile: {
@@ -296,6 +311,19 @@ export class GameSession {
             this.votes.size === this.players.length
         )
             this.state = SESSION_STATES.SHOWING_RESULTS;
+        this.revision++;
+    }
+
+    /** Adds newly connected Room players without restarting or recreating the Session. */
+    addPlayers(expectedRevision: number, players: readonly Player[]): void {
+        this.assertRevision(expectedRevision);
+        if (this.state === SESSION_STATES.ENDED) return;
+        const existing = new Set(this.players.map(({ id }) => id));
+        const added = players.filter(({ id }) => !existing.has(id));
+        if (!added.length) return;
+        if (new Set(added.map(({ id }) => id)).size !== added.length)
+            throw new Error(MESSAGE_KEYS.GAME_PLAYER_IDS_UNIQUE);
+        this.players = [...this.players, ...added.map((player) => ({ ...player }))];
         this.revision++;
     }
 

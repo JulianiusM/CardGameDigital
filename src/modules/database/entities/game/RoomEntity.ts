@@ -12,8 +12,11 @@ export class RoomEntity {
     @Column("text", { name: "game_settings_json" }) gameSettingsJson!: string;
     @Column("varchar", { name: "settings_updated_by", length: 36, nullable: true })
     settingsUpdatedByParticipantId!: string | null;
+    @Column("varchar", { name: "current_session_id", length: 36, nullable: true })
+    currentSessionId!: string | null;
     @Column("datetime", { name: "created_at" }) createdAt!: Date;
     @Column("datetime", { name: "expires_at" }) expiresAt!: Date;
+    @Column("datetime", { name: "closed_at", nullable: true }) closedAt!: Date | null;
     @OneToMany(() => RoomParticipantEntity, (participant) => participant.room)
     participants!: RoomParticipantEntity[];
 }

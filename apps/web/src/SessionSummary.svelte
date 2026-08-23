@@ -4,6 +4,10 @@
     export let roundNumber: number;
     export let elapsedMinutes: number;
     export let onAnotherRound: (() => void) | undefined;
+    export let onNewGame: (() => void) | undefined;
+    export let onExit: (() => void) | undefined;
+    export let exitLabel = "";
+    export let exitDanger = false;
 </script>
 
 <section class="session-summary card-panel">
@@ -21,13 +25,17 @@
                 {messages.end.anotherRound}
             </button>
         {/if}
-        <a
-            class:primary={!onAnotherRound}
-            class:secondary={Boolean(onAnotherRound)}
-            class="button-link"
-            href="/play/"
-        >
-            {messages.end.newGame}
-        </a>
+        {#if onNewGame}<button
+                class:primary={!onAnotherRound}
+                class:secondary={Boolean(onAnotherRound)}
+                on:click={onNewGame}>{messages.end.newGame}</button
+            >{:else if !onAnotherRound}<p class="waiting-for-host">
+                {messages.end.waitingForHost}
+            </p>{/if}
+        {#if onExit}<button
+                class:danger={exitDanger}
+                class:secondary={!exitDanger}
+                on:click={onExit}>{exitLabel}</button
+            >{/if}
     </div>
 </section>

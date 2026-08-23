@@ -5,6 +5,9 @@
     import { presentation } from "./presentation";
     import { loadServerInfo } from "./multiplayer";
     import ResponsiveTabs from "./ResponsiveTabs.svelte";
+    import SettingsAction from "./SettingsAction.svelte";
+    import GameSettingsSummary from "./GameSettingsSummary.svelte";
+    import type { GameProfileSummary, VersionedRoomGameSettings } from "./multiplayer";
 
     export let open = false;
     export let showContent = false;
@@ -15,20 +18,42 @@
     export let onShowPlayers: (() => void) | undefined;
     export let onEnd: (() => void) | undefined;
     export let onLeave: (() => void) | undefined;
+    export let onCloseRoom: (() => void) | undefined;
+    export let currentGameSettings: VersionedRoomGameSettings | undefined;
+    export let gameProfiles: readonly GameProfileSummary[] = [];
     export let roomCode = "";
     export let qr = "";
     let preferences = presentation.preferences;
-    let tab: "game" | "audio" | "display" | "content" | "session" | "services" | "advanced" =
-        showGame ? "game" : "audio";
+    let tab:
+        | "game"
+        | "currentGame"
+        | "audio"
+        | "display"
+        | "content"
+        | "session"
+        | "services"
+        | "advanced" = showGame ? "game" : "audio";
+    let wasOpen = false;
     let authenticationAvailable = false;
     $: if (!showGame && tab === "game") tab = "audio";
     $: if (!showAdvanced && tab === "advanced") tab = "audio";
+    $: if (!currentGameSettings && tab === "currentGame") tab = "audio";
+    $: if (open && !wasOpen) {
+        tab = showGame ? "game" : "audio";
+        wasOpen = true;
+    }
+    $: if (!open) wasOpen = false;
     $: availableTabs = [
         ...(showGame ? [{ id: "game", label: messages.settings.game, icon: "♠" }] : []),
+        ...(currentGameSettings
+            ? [{ id: "currentGame", label: messages.room.currentSettings, icon: "♣" }]
+            : []),
         { id: "audio", label: messages.settings.audio, icon: "♫" },
         { id: "display", label: messages.settings.display, icon: "✦" },
         ...(showContent ? [{ id: "content", label: messages.settings.content, icon: "◇" }] : []),
-        ...(onEnd ? [{ id: "session", label: messages.settings.session, icon: "•••" }] : []),
+        ...(onEnd || onCloseRoom
+            ? [{ id: "session", label: messages.settings.session, icon: "•••" }]
+            : []),
         { id: "services", label: messages.settings.services, icon: "?" },
         ...(showAdvanced
             ? [{ id: "advanced", label: messages.settings.advanced, icon: "•••" }]
@@ -45,6 +70,14 @@
 
     function update(key: keyof typeof preferences, value: boolean | number): void {
         preferences = presentation.update({ [key]: value });
+    }
+    function endSession(): void {
+        onEnd?.();
+        open = false;
+    }
+    function closeRoom(): void {
+        onCloseRoom?.();
+        open = false;
     }
 </script>
 
@@ -80,6 +113,8 @@
             <div class="modal-content">
                 {#if tab === "game"}
                     <slot name="game" />
+                {:else if tab === "currentGame" && currentGameSettings}
+                    <GameSettingsSummary settings={currentGameSettings} profiles={gameProfiles} />
                 {:else if tab === "audio"}
                     <label class="setting-row"
                         ><span
@@ -147,8 +182,17 @@
                             >{messages.settings.managePlayers}</button
                         >{/if}
                 {:else if tab === "session"}
-                    <p>{messages.settings.endHint}</p>
-                    <button class="danger wide" on:click={onEnd}>{messages.common.end}</button>
+                    {#if onEnd}<p>{messages.settings.endHint}</p>
+                        <button class="danger wide" on:click={endSession}
+                            >{messages.common.end}</button
+                        >{/if}
+                    {#if onCloseRoom}<div class="danger-zone room-close-zone">
+                            <strong>{messages.settings.closeRoom}</strong>
+                            <p>{messages.settings.closeRoomHint}</p>
+                            <button class="danger wide" on:click={closeRoom}
+                                >{messages.settings.closeRoom}</button
+                            >
+                        </div>{/if}
                 {:else if tab === "services"}
                     {#if roomCode}<div class="settings-join-info">
                             <strong>{messages.setup.roomCode}: {roomCode}</strong>
@@ -158,16 +202,17 @@
                                 />{/if}
                         </div>{/if}
                     <div class="service-actions">
-                        <a
-                            class="secondary button-link action-link"
+                        <SettingsAction
                             href="/play/help"
-                            target="_blank"
-                            rel="noopener noreferrer">{messages.settings.help}</a
-                        >
-                        {#if authenticationAvailable}<a
-                                class="secondary button-link"
-                                href="/play/account">{messages.settings.account}</a
-                            >{/if}
+                            label={messages.settings.help}
+                            icon="?"
+                            newTab
+                        />
+                        {#if authenticationAvailable}<SettingsAction
+                                href="/play/account"
+                                label={messages.settings.account}
+                                icon="☺"
+                            />{/if}
                     </div>
                     {#if onLeave}<p>{messages.settings.leaveHint}</p>
                         <button class="danger wide" on:click={onLeave}

@@ -203,7 +203,21 @@ export function attachWebSocketServer(
                 // recipient then receives its own capability/private-state projection.
                 const roomId = context.participant.roomId;
                 const leaving = command.type === "command.leaveRoom";
+                const closing = command.type === "command.closeRoom";
                 await service.execute(roomId, context.participant, command);
+                if (closing) {
+                    orphanedRooms.delete(roomId);
+                    for (const peer of [...sockets]) {
+                        if (peer.participant.roomId !== roomId) continue;
+                        const timer = disconnectTimers.get(peer.participant.id);
+                        if (timer) clearTimeout(timer);
+                        disconnectTimers.delete(peer.participant.id);
+                        peer.intentionalLeave = true;
+                        sockets.delete(peer);
+                        peer.socket.close(4001, "room closed");
+                    }
+                    return;
+                }
                 if (leaving) {
                     for (const peer of [...sockets]) {
                         if (peer.participant.id !== context.participant.id) continue;

@@ -65,6 +65,29 @@ const commonQuestions = [
     QUESTION_CATEGORIES.FRIENDSHIP,
 ] as const;
 const playfulDares = [DARE_TYPES.SILLY, DARE_TYPES.OTHER] as const;
+const externalSubstanceFlags = [
+    OPERATIONAL_FLAGS.INVOLVES_THIRD_PARTY,
+    OPERATIONAL_FLAGS.INVOLVES_ALCOHOL,
+    OPERATIONAL_FLAGS.INVOLVES_RECREATIONAL_DRUGS,
+] as const;
+const colleaguesBlockedFlags = [
+    ...externalSubstanceFlags,
+    OPERATIONAL_FLAGS.REQUIRES_PHYSICAL_CONTACT,
+    OPERATIONAL_FLAGS.REQUIRES_PRIVATE_SPACE,
+    OPERATIONAL_FLAGS.REMOVES_CLOTHING,
+    OPERATIONAL_FLAGS.REQUIRES_NUDITY,
+] as const;
+const friendsBlockedFlags = [
+    ...externalSubstanceFlags,
+    OPERATIONAL_FLAGS.REQUIRES_PRIVATE_SPACE,
+    OPERATIONAL_FLAGS.REMOVES_CLOTHING,
+    OPERATIONAL_FLAGS.REQUIRES_NUDITY,
+] as const;
+const closeFriendsBlockedFlags = [
+    ...externalSubstanceFlags,
+    OPERATIONAL_FLAGS.REQUIRES_PRIVATE_SPACE,
+    OPERATIONAL_FLAGS.REQUIRES_NUDITY,
+] as const;
 
 export const BUILT_IN_GAME_PROFILES: readonly BuiltInGameProfile[] = [
     profile({
@@ -73,7 +96,7 @@ export const BUILT_IN_GAME_PROFILES: readonly BuiltInGameProfile[] = [
         descriptionKey: MESSAGE_KEYS.PROFILE_COLLEAGUES_DESCRIPTION,
         questions: commonQuestions,
         dares: playfulDares,
-        blockedFlags: [OPERATIONAL_FLAGS.INVOLVES_THIRD_PARTY],
+        blockedFlags: colleaguesBlockedFlags,
         maximumIntensity: 2,
     }),
     profile({
@@ -82,6 +105,7 @@ export const BUILT_IN_GAME_PROFILES: readonly BuiltInGameProfile[] = [
         descriptionKey: MESSAGE_KEYS.PROFILE_FRIENDS_DESCRIPTION,
         questions: [...commonQuestions, QUESTION_CATEGORIES.RELATIONSHIP, QUESTION_CATEGORIES.BODY],
         dares: [...playfulDares, DARE_TYPES.TOUCH, DARE_TYPES.KISS, DARE_TYPES.CLOTHING],
+        blockedFlags: friendsBlockedFlags,
         maximumIntensity: 3,
     }),
     profile({
@@ -103,6 +127,7 @@ export const BUILT_IN_GAME_PROFILES: readonly BuiltInGameProfile[] = [
             DARE_TYPES.KISS_SPICY,
             DARE_TYPES.CLOTHING,
         ],
+        blockedFlags: closeFriendsBlockedFlags,
         maximumIntensity: 4,
     }),
     profile({
@@ -129,6 +154,7 @@ export const BUILT_IN_GAME_PROFILES: readonly BuiltInGameProfile[] = [
             DARE_TYPES.NUDITY,
             DARE_TYPES.SEXUAL_TENSION,
         ],
+        blockedFlags: externalSubstanceFlags,
         maximumIntensity: 4,
     }),
     profile({
@@ -137,6 +163,7 @@ export const BUILT_IN_GAME_PROFILES: readonly BuiltInGameProfile[] = [
         descriptionKey: MESSAGE_KEYS.PROFILE_COUPLES_SPICY_DESCRIPTION,
         questions: Object.values(QUESTION_CATEGORIES),
         dares: Object.values(DARE_TYPES),
+        blockedFlags: externalSubstanceFlags,
         maximumIntensity: 5,
         randomQuestionRatio: 0.5,
         requiresAdultConfirmation: true,

@@ -25,6 +25,7 @@
     export let onStart: () => void;
     export let onSaveBoundaries: (boundaries: BoundarySelection) => void;
     export let onOpenSettings: () => void;
+    export let onViewSettings: () => void;
     export let onLeave: () => void;
 
     $: players = participants.filter(
@@ -60,9 +61,14 @@
                     {messages.common.dare}</small
                 >
             </div>
-            {#if effectiveRole === "HOST"}<button class="secondary" on:click={onOpenSettings}
-                    >{messages.room.editSettings}</button
-                >{/if}
+            <div class="room-settings-actions">
+                <button class="secondary" on:click={onViewSettings}
+                    >{messages.room.viewSettings}</button
+                >
+                {#if effectiveRole === "HOST"}<button class="text-action" on:click={onOpenSettings}
+                        >{messages.room.editSettings}</button
+                    >{/if}
+            </div>
         </section>
 
         {#each participants as participant}

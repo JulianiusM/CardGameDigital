@@ -1,5 +1,6 @@
 export type Snapshot = {
     id: string;
+    startedAt: number;
     mode: string;
     revision: number;
     state: string;

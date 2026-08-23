@@ -286,6 +286,4 @@ src.zip
 /uploads/
 test_output.txt
 /.tmp/
-/data/card-game.sqlite
-/data/card-game.sqlite-shm
-/data/card-game.sqlite-wal
+/data/

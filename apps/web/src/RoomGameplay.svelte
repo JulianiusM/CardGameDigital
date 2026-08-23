@@ -2,38 +2,33 @@
     import GameCard from "./GameCard.svelte";
     import SessionSummary from "./SessionSummary.svelte";
     import { messages } from "./i18n";
+    import { elapsedMinutes as minutesSince } from "./elapsedTime";
     import type { Participant, Presence, Role, SessionView } from "./multiplayer";
 
     export let session: SessionView;
     export let role: Role;
-    export let startedAt: number;
     export let onCommand: (type: string, payload?: object) => void;
     export let onOpenSettings: () => void;
+    export let onNewGame: (() => void) | undefined;
+    export let onSummaryExit: () => void;
+    export let summaryExitLabel: string;
+    export let summaryExitDanger = false;
     export let participants: Participant[];
     export let presence: Presence[];
     export let roomCode: string;
     export let exhausted: boolean;
 
     $: actions = new Set(session.availableActions);
-    $: elapsedMinutes = Math.max(1, Math.round((Date.now() - startedAt) / 60_000));
+    $: elapsedMinutes = minutesSince(session.startedAt);
     $: pendingVotes = session.controllablePlayers.filter((player) => !player.hasVoted);
 </script>
 
 <section class="game-shell">
-    <button
-        class="settings-trigger in-game"
-        aria-label={messages.settings.title}
-        on:click={onOpenSettings}
-    >
-        <span class="gear-icon" aria-hidden="true">⚙</span>
-    </button>
-
     <div class="status">
         <span>{messages.common.round} {session.roundNumber}</span>
         <span>{session.cardsShown} {messages.common.cards}</span>
         <span class="live">{messages.room.live}</span>
     </div>
-
     <details class="live-players">
         <summary>{messages.settings.players} · {session.players.length}</summary>
         <div class="participant-list">
@@ -77,6 +72,10 @@
             cardsShown={session.cardsShown}
             roundNumber={session.roundNumber}
             {elapsedMinutes}
+            {onNewGame}
+            onExit={onSummaryExit}
+            exitLabel={summaryExitLabel}
+            exitDanger={summaryExitDanger}
         />
     {:else if session.state === "CHOOSING_CARD_TYPE"}
         <div class="choice card-panel">

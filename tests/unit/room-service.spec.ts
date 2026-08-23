@@ -103,6 +103,18 @@ class MemoryRooms implements RealtimeRoomRepository {
         current.role = "PLAYER";
         next.role = "HOST";
     }
+    async closeRoom(roomId: string, hostParticipantId: string) {
+        const host = this.participants.find(
+            (participant) =>
+                participant.id === hostParticipantId &&
+                participant.roomId === roomId &&
+                participant.role === "HOST" &&
+                participant.connectionStatus !== "LEFT",
+        );
+        if (!host) throw Object.assign(new Error("not authorized"), { code: "NOT_AUTHORIZED" });
+        for (const participant of this.participants)
+            if (participant.roomId === roomId) participant.connectionStatus = "LEFT";
+    }
     async loadSettings(roomId: string) {
         return this.settings.get(roomId)!;
     }
@@ -146,6 +158,12 @@ class MemoryRooms implements RealtimeRoomRepository {
             throw Object.assign(new Error("stale"), { code: "STALE_SESSION_REVISION" });
         this.commits++;
         this.runtimes.set(roomId, runtime);
+    }
+    async clearEndedRuntime(roomId: string, sessionId: string, revision: number) {
+        const current = this.runtimes.get(roomId);
+        if (current?.id !== sessionId || current.revision !== revision || current.state !== "ENDED")
+            throw Object.assign(new Error("invalid reset"), { code: "INVALID_GAME_STATE" });
+        this.runtimes.delete(roomId);
     }
 }
 const cards: CardRepository = {
@@ -221,7 +239,7 @@ describe("RoomService", () => {
         ).toBeNull();
     });
 
-    it("serializes same-Room commands and rejects the stale second command", async () => {
+    it("makes concurrent duplicate EndSession commands idempotent", async () => {
         const repository = new MemoryRooms();
         const service = new RoomService(repository, cards, new SequenceRandomSource([0]));
         const joined = await service.createRoom("Host");
@@ -246,8 +264,198 @@ describe("RoomService", () => {
                 payload: {},
             }),
         ]);
-        expect(results.map((result) => result.status)).toEqual(["fulfilled", "rejected"]);
+        expect(results.map((result) => result.status)).toEqual(["fulfilled", "fulfilled"]);
         expect(repository.commits).toBe(2);
+    });
+
+    it("resets only an ended Session and starts another Session in the same Room", async () => {
+        const repository = new MemoryRooms();
+        const service = new RoomService(repository, cards, new SequenceRandomSource([0]));
+        const joined = await service.createRoom("Host");
+        const playerJoin = await service.joinRoom(joined.roomCode, "Player", "PLAYER");
+        const host = (await service.authenticate(joined.roomCode, joined.participantCredential))!;
+        await service.authenticate(joined.roomCode, playerJoin.participantCredential);
+        const first = await service.execute(joined.roomId, host, {
+            type: "command.startSession",
+            revision: null,
+            payload: {},
+        });
+        await service.execute(joined.roomId, host, {
+            type: "command.endSession",
+            revision: first.session!.revision,
+            payload: {},
+        });
+        const lobby = await service.execute(joined.roomId, host, {
+            type: "command.resetSession",
+            revision: first.session!.revision + 1,
+            payload: {},
+        });
+        expect(lobby.session).toBeNull();
+        expect(lobby.participants).toHaveLength(2);
+        const second = await service.execute(joined.roomId, host, {
+            type: "command.startSession",
+            revision: null,
+            payload: {},
+        });
+        expect(second.session?.id).not.toBe(first.session?.id);
+        expect(second.participants.map(({ id }) => id)).toEqual(
+            expect.arrayContaining([joined.participantId, playerJoin.participantId]),
+        );
+    });
+
+    it("ends an active Session and invalidates every participant when the Host closes the Room", async () => {
+        const repository = new MemoryRooms();
+        const service = new RoomService(repository, cards, new SequenceRandomSource([0]));
+        const joined = await service.createRoom("Host");
+        const playerJoin = await service.joinRoom(joined.roomCode, "Player", "PLAYER");
+        const host = (await service.authenticate(joined.roomCode, joined.participantCredential))!;
+        await service.authenticate(joined.roomCode, playerJoin.participantCredential);
+        const started = await service.execute(joined.roomId, host, {
+            type: "command.startSession",
+            revision: null,
+            payload: {},
+        });
+
+        const closed = await service.execute(joined.roomId, host, {
+            type: "command.closeRoom",
+            revision: started.session!.revision,
+            payload: {},
+        });
+
+        expect(closed.session?.state).toBe("ENDED");
+        expect(closed.participants).toEqual([]);
+        expect(repository.runtimes.get(joined.roomId)?.state).toBe("ENDED");
+        expect(
+            await service.authenticate(joined.roomCode, joined.participantCredential),
+        ).toBeNull();
+        expect(
+            await service.authenticate(joined.roomCode, playerJoin.participantCredential),
+        ).toBeNull();
+    });
+
+    it.each(["command.endSession", "command.closeRoom", "command.leaveRoom"] as const)(
+        "allows the last Host to execute %s after every other player leaves",
+        async (type) => {
+            const repository = new MemoryRooms();
+            const service = new RoomService(repository, cards, new SequenceRandomSource([0]));
+            const joined = await service.createRoom("Host");
+            const playerJoin = await service.joinRoom(joined.roomCode, "Player", "PLAYER");
+            const host = (await service.authenticate(
+                joined.roomCode,
+                joined.participantCredential,
+            ))!;
+            const player = (await service.authenticate(
+                joined.roomCode,
+                playerJoin.participantCredential,
+            ))!;
+            const started = await service.execute(joined.roomId, host, {
+                type: "command.startSession",
+                revision: null,
+                payload: {},
+            });
+            const onePlayer = await service.execute(joined.roomId, player, {
+                type: "command.leaveRoom",
+                revision: started.session!.revision,
+                payload: {},
+            });
+            expect(onePlayer.session?.players.map(({ id }) => id)).toEqual([host.id]);
+
+            const result = await service.execute(joined.roomId, host, {
+                type,
+                revision: onePlayer.session!.revision,
+                payload: {},
+            });
+            if (type === "command.leaveRoom") expect(result.participants).toEqual([]);
+            else expect(result.session?.state).toBe("ENDED");
+        },
+    );
+
+    it("adds a newly connected participant to an active Session exactly once", async () => {
+        const repository = new MemoryRooms();
+        const service = new RoomService(repository, cards, new SequenceRandomSource([0]));
+        const joined = await service.createRoom("Host");
+        const firstJoin = await service.joinRoom(joined.roomCode, "First", "PLAYER");
+        const host = (await service.authenticate(joined.roomCode, joined.participantCredential))!;
+        const first = (await service.authenticate(
+            joined.roomCode,
+            firstJoin.participantCredential,
+        ))!;
+        const started = await service.execute(joined.roomId, host, {
+            type: "command.startSession",
+            revision: null,
+            payload: {},
+        });
+        await service.execute(joined.roomId, first, {
+            type: "command.leaveRoom",
+            revision: started.session!.revision,
+            payload: {},
+        });
+        const lateJoin = await service.joinRoom(joined.roomCode, "Late", "PLAYER");
+        await service.authenticate(joined.roomCode, lateJoin.participantCredential);
+        await service.authenticate(joined.roomCode, lateJoin.participantCredential);
+
+        const synchronized = await service.snapshot(joined.roomId, host);
+        expect(synchronized.session?.players.map(({ name }) => name)).toEqual(["Host", "Late"]);
+        expect(repository.runtimes.get(joined.roomId)?.players).toHaveLength(2);
+    });
+
+    it("does not project Skip after Never Have I Ever voting has completed", async () => {
+        const repository = new MemoryRooms();
+        const yesNoCards: CardRepository = {
+            ...cards,
+            listActive: async () => [
+                card({ id: "never-question" as never, yesNoAnswerPossible: true }),
+            ],
+        };
+        const service = new RoomService(repository, yesNoCards, new SequenceRandomSource([0]));
+        const joined = await service.createRoom("Host", null, {
+            ...defaultRoomGameSettings(),
+            mode: "NEVER_HAVE_I_EVER",
+        });
+        const playerJoin = await service.joinRoom(joined.roomCode, "Player", "PLAYER");
+        const host = (await service.authenticate(joined.roomCode, joined.participantCredential))!;
+        const player = (await service.authenticate(
+            joined.roomCode,
+            playerJoin.participantCredential,
+        ))!;
+        await service.execute(joined.roomId, host, {
+            type: "command.startSession",
+            revision: null,
+            payload: {},
+        });
+        await service.execute(joined.roomId, host, {
+            type: "command.startTurn",
+            revision: 0,
+            payload: {},
+        });
+        await service.execute(joined.roomId, host, {
+            type: "command.submitVote",
+            revision: 1,
+            payload: { playerId: host.id, vote: "YES" },
+        });
+        const results = await service.execute(joined.roomId, player, {
+            type: "command.submitVote",
+            revision: 2,
+            payload: { playerId: player.id, vote: "NO" },
+        });
+
+        expect(results.session?.state).toBe("SHOWING_RESULTS");
+        expect((await service.snapshot(joined.roomId, host)).session?.availableActions).toContain(
+            "ADVANCE_SESSION",
+        );
+        expect(
+            (await service.snapshot(joined.roomId, host)).session?.availableActions,
+        ).not.toContain("SKIP_CARD");
+        await expect(
+            service.execute(joined.roomId, host, {
+                type: "command.skipCard",
+                revision: results.session!.revision,
+                payload: {},
+            }),
+        ).rejects.toMatchObject({
+            code: "INVALID_GAME_STATE",
+            message: "game.invalidState",
+        });
     });
 
     it("does not expose an active player's private choice to another participant", async () => {

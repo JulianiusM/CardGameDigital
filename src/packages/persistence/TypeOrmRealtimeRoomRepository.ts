@@ -58,8 +58,10 @@ export class TypeOrmRealtimeRoomRepository implements RealtimeRoomRepository {
                 settingsRevision: 0,
                 gameSettingsJson: JSON.stringify(input.settings),
                 settingsUpdatedByParticipantId: input.participant.id,
+                currentSessionId: null,
                 createdAt: new Date(),
                 expiresAt: input.expiresAt,
+                closedAt: null,
             });
             await manager.getRepository(RoomParticipantEntity).insert({
                 ...input.participant,
@@ -75,7 +77,7 @@ export class TypeOrmRealtimeRoomRepository implements RealtimeRoomRepository {
     ): Promise<void> {
         const room = await this.source
             .getRepository(RoomEntity)
-            .findOneBy({ code: input.roomCode });
+            .findOneBy({ code: input.roomCode, closedAt: IsNull() });
         if (!room || room.expiresAt <= new Date())
             throw Object.assign(new Error("Room not found"), { code: "ROOM_NOT_FOUND" });
         await this.source.getRepository(RoomParticipantEntity).insert({
@@ -97,6 +99,7 @@ export class TypeOrmRealtimeRoomRepository implements RealtimeRoomRepository {
             .innerJoin(RoomEntity, "room", "room.id = participant.roomId")
             .where("room.code = :roomCode", { roomCode })
             .andWhere("room.expiresAt > :now", { now: new Date() })
+            .andWhere("room.closedAt IS NULL")
             .andWhere("participant.credentialHash = :credentialHash", { credentialHash })
             .andWhere("participant.connectionStatus != :left", { left: "LEFT" })
             .getOne();
@@ -170,6 +173,33 @@ export class TypeOrmRealtimeRoomRepository implements RealtimeRoomRepository {
             current.role = "PLAYER";
             next.role = "HOST";
             await repository.save([current, next]);
+        });
+    }
+    async closeRoom(roomId: string, hostParticipantId: string): Promise<void> {
+        await this.source.transaction(async (manager) => {
+            const participants = manager.getRepository(RoomParticipantEntity);
+            const host = await participants.findOneBy({
+                id: hostParticipantId,
+                roomId,
+                role: "HOST",
+                connectionStatus: Not("LEFT"),
+            });
+            if (!host)
+                throw Object.assign(new Error("Only the current Host can close the Room"), {
+                    code: "NOT_AUTHORIZED",
+                });
+            const now = new Date();
+            const closed = await manager
+                .getRepository(RoomEntity)
+                .update({ id: roomId, closedAt: IsNull() }, { closedAt: now });
+            if (closed.affected !== 1)
+                throw Object.assign(new Error("Room is already closed"), {
+                    code: "INVALID_GAME_STATE",
+                });
+            await participants.update(
+                { roomId, connectionStatus: Not("LEFT") },
+                { connectionStatus: "LEFT", leftAt: now, lastSeenAt: now },
+            );
         });
     }
     async loadSettings(roomId: string): Promise<VersionedRoomGameSettings> {
@@ -305,7 +335,11 @@ export class TypeOrmRealtimeRoomRepository implements RealtimeRoomRepository {
         });
     }
     async loadRuntime(roomId: string): Promise<GameSessionRuntimeState | null> {
-        const record = await this.source.getRepository(GameSessionEntity).findOneBy({ roomId });
+        const room = await this.source.getRepository(RoomEntity).findOneByOrFail({ id: roomId });
+        if (!room.currentSessionId) return null;
+        const record = await this.source
+            .getRepository(GameSessionEntity)
+            .findOneBy({ id: room.currentSessionId, roomId });
         if (!record) return null;
         const parsed = JSON.parse(record.runtimeStateJson) as GameSessionRuntimeState;
         if (
@@ -325,6 +359,10 @@ export class TypeOrmRealtimeRoomRepository implements RealtimeRoomRepository {
             const room = await manager.getRepository(RoomEntity).findOneByOrFail({ id: roomId });
             const sessions = manager.getRepository(GameSessionEntity);
             if (previousRevision === null) {
+                if (room.currentSessionId)
+                    throw Object.assign(new Error("Room already has a current Session"), {
+                        code: "INVALID_GAME_STATE",
+                    });
                 await sessions.insert({
                     id: runtime.id,
                     roomId,
@@ -333,12 +371,26 @@ export class TypeOrmRealtimeRoomRepository implements RealtimeRoomRepository {
                     revision: runtime.revision,
                     runtimeStateVersion: runtime.version,
                     runtimeStateJson: JSON.stringify(runtime),
-                    startedAt: new Date(),
+                    startedAt: new Date(runtime.startedAt),
                     endedAt: runtime.state === "ENDED" ? new Date() : null,
                 });
+                const activated = await manager
+                    .getRepository(RoomEntity)
+                    .update(
+                        { id: roomId, currentSessionId: IsNull() },
+                        { currentSessionId: runtime.id },
+                    );
+                if (activated.affected !== 1)
+                    throw Object.assign(new Error("Room already has a current Session"), {
+                        code: "INVALID_GAME_STATE",
+                    });
             } else {
+                if (room.currentSessionId !== runtime.id)
+                    throw Object.assign(new Error("Stale current Session"), {
+                        code: "STALE_SESSION_REVISION",
+                    });
                 const updated = await sessions.update(
-                    { roomId, revision: previousRevision },
+                    { id: runtime.id, roomId, revision: previousRevision },
                     {
                         revision: runtime.revision,
                         runtimeStateVersion: runtime.version,
@@ -371,6 +423,24 @@ export class TypeOrmRealtimeRoomRepository implements RealtimeRoomRepository {
                     }),
                 );
             }
+        });
+    }
+
+    async clearEndedRuntime(roomId: string, sessionId: string, revision: number): Promise<void> {
+        await this.source.transaction(async (manager) => {
+            const sessions = manager.getRepository(GameSessionEntity);
+            const session = await sessions.findOneBy({ id: sessionId, roomId, revision });
+            if (!session || !session.endedAt)
+                throw Object.assign(new Error("Session cannot be reset in its current state"), {
+                    code: "INVALID_GAME_STATE",
+                });
+            const cleared = await manager
+                .getRepository(RoomEntity)
+                .update({ id: roomId, currentSessionId: sessionId }, { currentSessionId: null });
+            if (cleared.affected !== 1)
+                throw Object.assign(new Error("Stale current Session"), {
+                    code: "STALE_SESSION_REVISION",
+                });
         });
     }
 

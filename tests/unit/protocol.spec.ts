@@ -69,6 +69,30 @@ describe("protocol v2 boundary", () => {
         ).toBe(true);
     });
 
+    it("accepts the Host-only ended-Session reset as a revisioned command", () => {
+        expect(
+            roomCommandEnvelopeSchema.safeParse({
+                protocol: PROTOCOL_VERSION,
+                type: "command.resetSession",
+                requestId: "new-game",
+                revision: 4,
+                payload: {},
+            }).success,
+        ).toBe(true);
+    });
+
+    it("accepts the Host-only Room closure command", () => {
+        expect(
+            roomCommandEnvelopeSchema.safeParse({
+                protocol: PROTOCOL_VERSION,
+                type: "command.closeRoom",
+                requestId: "close-room",
+                revision: 4,
+                payload: {},
+            }).success,
+        ).toBe(true);
+    });
+
     it("accepts canonical Room settings but rejects private boundaries in the public payload", () => {
         const command = {
             protocol: PROTOCOL_VERSION,

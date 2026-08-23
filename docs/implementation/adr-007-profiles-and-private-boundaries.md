@@ -10,6 +10,12 @@ Accepted for Phase 7.
   DareType, operational-flag, intensity, ratio, streak, and meta-card settings.
 - Built-in selections are immutable, reviewed application data and carry the
   production `PUBLISHED` editorial status.
+- Built-in operational defaults are conservative and stored with each profile.
+  All presets block third-party, alcohol, and recreational-drug requirements.
+  Colleagues also blocks contact, private-space, clothing-removal, and nudity
+  requirements; Friends and Best Friends progressively permit contact-related
+  rules; Couples presets permit consensual private/contact rules that match their
+  content range. `PROFILE_CUSTOM` begins with every operational rule blocked.
 - The explicit `PROFILE_COUPLES_SPICY` profile requires a deliberate adult-content
   confirmation at both the browser and application-service boundaries.
 - Each authenticated Room participant submits boundaries privately over the

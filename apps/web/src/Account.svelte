@@ -3,6 +3,7 @@
     import { messages } from "./i18n";
     import { accountApi, type AccountConfiguration, type AccountSnapshot } from "./accountApi";
     import { navigate } from "./router";
+    import { dismissNotification, showNotification } from "./notifications";
 
     type Screen = "login" | "register" | "forgot" | "reset" | "dashboard";
     let screen: Screen = "login";
@@ -15,8 +16,6 @@
     let confirmation = "";
     let dataSpaceName = "";
     let deleteConfirmation = "";
-    let message = "";
-    let error = "";
     let busy = false;
     const query = new URLSearchParams(location.search);
 
@@ -31,7 +30,7 @@
         try {
             if (activation) {
                 await accountApi.activate(activation);
-                message = messages.account.activated;
+                showNotification(messages.account.activated, "success");
             }
             if (reset) screen = "reset";
             account = await accountApi.current();
@@ -43,12 +42,14 @@
 
     async function perform(action: () => Promise<void>): Promise<void> {
         busy = true;
-        error = "";
-        message = "";
+        dismissNotification();
         try {
             await action();
         } catch (cause) {
-            error = cause instanceof Error ? cause.message : messages.account.requestFailed;
+            showNotification(
+                cause instanceof Error ? cause.message : messages.account.requestFailed,
+                "error",
+            );
         } finally {
             busy = false;
         }
@@ -66,7 +67,7 @@
         return perform(async () => {
             if (password !== confirmation) throw new Error(messages.account.passwordsMismatch);
             await accountApi.register({ username, displayName, email, password });
-            message = messages.account.activationSent;
+            showNotification(messages.account.activationSent, "success");
             screen = "login";
         });
     }
@@ -75,7 +76,7 @@
         return perform(async () => {
             if (password !== confirmation) throw new Error(messages.account.passwordsMismatch);
             await accountApi.reset(query.get("reset") ?? "", password);
-            message = messages.account.passwordChanged;
+            showNotification(messages.account.passwordChanged, "success");
             screen = "login";
         });
     }
@@ -92,9 +93,6 @@
     </nav>
     <section class="card-panel account-panel">
         <span class="eyebrow">{messages.account.title}</span>
-        {#if message}<p class="notice" role="status">{message}</p>{/if}
-        {#if error}<p class="error" role="alert">{error}</p>{/if}
-
         {#if screen === "dashboard" && account}
             <h1>{messages.account.greeting(account.user.name)}</h1>
             <p>{account.user.email}</p>
@@ -215,7 +213,7 @@
                 on:submit|preventDefault={() =>
                     perform(async () => {
                         await accountApi.requestReset(username);
-                        message = messages.account.resetRequested;
+                        showNotification(messages.account.resetRequested, "success");
                     })}
             >
                 <label

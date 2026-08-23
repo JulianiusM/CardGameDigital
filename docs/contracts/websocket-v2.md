@@ -14,28 +14,34 @@ A reload reconnects the same RoomParticipant; it does not create another partici
 
 ## Commands
 
-| Type                         | Revision        | Payload/meaning                                                                |
-| ---------------------------- | --------------- | ------------------------------------------------------------------------------ |
-| `room.snapshot.request`      | current or null | `{}`                                                                           |
-| `command.updateRoomSettings` | `null`          | `{expectedRevision,settings}`; Host-only, pre-session optimistic update.       |
-| `command.startSession`       | `null`          | `{}`; Host-only. Uses persisted authoritative Room settings.                   |
-| `command.startTurn`          | current         | `{}`                                                                           |
-| `command.chooseCardType`     | current         | `{cardType:"QUESTION"                                                          | "DARE"}`                                                      |
-| `command.skipCard`           | current         | `{}`                                                                           |
-| `command.vetoCard`           | current         | `{}`                                                                           |
-| `command.advanceSession`     | current         | `{}`                                                                           |
-| `command.submitVote`         | current         | `{vote:"YES"                                                                   | "NO",playerId?}` for a player controlled by this participant. |
-| `command.setBoundaries`      | `null`          | Private category, DareType, and operational-flag exclusions; pre-session only. |
-| `command.setDevicePlayers`   | `null`          | `{names:[...]}`; pre-session only.                                             |
-| `command.transferHost`       | current or null | `{participantId}`; current Host only.                                          |
-| `command.endSession`         | current         | `{}`; Host only.                                                               |
-| `command.leaveRoom`          | current or null | `{}`; authoritative leave and reconnect-credential invalidation.               |
+| Type                         | Revision        | Payload/meaning                                                                             |
+| ---------------------------- | --------------- | ------------------------------------------------------------------------------------------- |
+| `room.snapshot.request`      | current or null | `{}`                                                                                        |
+| `command.updateRoomSettings` | `null`          | `{expectedRevision,settings}`; Host-only, pre-session optimistic update.                    |
+| `command.startSession`       | `null`          | `{}`; Host-only. Uses persisted authoritative Room settings.                                |
+| `command.startTurn`          | current         | `{}`                                                                                        |
+| `command.chooseCardType`     | current         | `{cardType:"QUESTION"                                                                       | "DARE"}`                                                      |
+| `command.skipCard`           | current         | `{}`                                                                                        |
+| `command.vetoCard`           | current         | `{}`                                                                                        |
+| `command.advanceSession`     | current         | `{}`                                                                                        |
+| `command.submitVote`         | current         | `{vote:"YES"                                                                                | "NO",playerId?}` for a player controlled by this participant. |
+| `command.setBoundaries`      | `null`          | Private category, DareType, and operational-flag exclusions; pre-session only.              |
+| `command.setDevicePlayers`   | `null`          | `{names:[...]}`; pre-session only.                                                          |
+| `command.transferHost`       | current or null | `{participantId}`; current Host only.                                                       |
+| `command.endSession`         | current         | `{}`; Host only.                                                                            |
+| `command.resetSession`       | current ended   | `{}`; Host only. Clears the current Session pointer while retaining the Room.               |
+| `command.closeRoom`          | current or null | `{}`; Host only. Ends active play, invalidates all membership, and closes all Room sockets. |
+| `command.leaveRoom`          | current or null | `{}`; authoritative leave and reconnect-credential invalidation.                            |
 
 Room settings use the canonical engine configuration: mode, profile ID, optional Group,
 adult confirmation, card locale, enabled Question Categories, enabled DareTypes, blocked
 operational flags, maximum intensity, random question ratio, maximum type streak, and
 Let's Talk meta interval. Room snapshots expose versioned public settings to every
 participant. They never expose private participant boundaries.
+
+An active Session projection includes `startedAt`, expressed as Unix epoch milliseconds.
+It is the authoritative start instant persisted with the Session; clients derive elapsed
+play time from it instead of starting a local timer when they first observe the Session.
 
 ## Synchronization and lifecycle
 
@@ -49,6 +55,12 @@ during the grace period restores `CONNECTED` and preserves role. After expiry th
 participant becomes `LEFT`; a disconnected Host may then be reassigned to an eligible
 connected Player. Explicit Host transfer updates server authorization immediately and
 broadcasts `room.roleChanged` plus fresh snapshots.
+
+A PLAYER participant that authenticates while a Session is active is added once to the
+authoritative Session roster, together with any people represented by that device. A
+reconnect never duplicates an existing Session player, and DISPLAY participants are not
+game players. The committed Session revision and fresh snapshots make the expanded roster
+visible to every client.
 
 Server messages are `server.hello`, `room.snapshot`, `room.presence`,
 `room.roleChanged`, and `error`. Error `code` is stable; localized `message` is not a

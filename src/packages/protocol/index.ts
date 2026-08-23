@@ -147,6 +147,11 @@ export const roomCommandEnvelopeSchema = z.union([
         payload: z.object({ participantId: z.string().uuid() }).strict(),
     }),
     revisionedCommand("command.endSession", emptyPayloadSchema),
+    revisionedCommand("command.resetSession", emptyPayloadSchema),
+    envelopeSchema.extend({
+        type: z.literal("command.closeRoom"),
+        payload: emptyPayloadSchema,
+    }),
     envelopeSchema.extend({
         type: z.literal("command.leaveRoom"),
         payload: emptyPayloadSchema,

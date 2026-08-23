@@ -1403,7 +1403,14 @@ Canonical profile concepts include:
 - Paare – Spicy;
 - Custom.
 
-Exact defaults require editorial validation against real content.
+The current release uses conservative, data-driven operational defaults. Every
+built-in profile blocks third-party, alcohol, and recreational-drug requirements.
+Colleagues additionally blocks contact, private-space, clothing-removal, and
+nudity requirements. Friends and Best Friends progressively permit consensual
+contact-related rules. Couples presets permit the private/contact rules that fit
+their declared content range. Custom starts neutral with every additional rule
+blocked until the Host explicitly enables it. These values remain catalog data
+and should be reviewed alongside each production Card release.
 
 ---
 

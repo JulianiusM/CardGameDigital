@@ -27,6 +27,7 @@ export type CreateCouchSession = {
 
 export type CouchSessionSnapshot = {
     id: string;
+    startedAt: number;
     mode: GameMode;
     revision: number;
     state: string;
@@ -95,6 +96,7 @@ export class CouchSessionService {
         const session = new GameSession(
             {
                 id: randomUUID(),
+                startedAt: Date.now(),
                 mode: input.mode,
                 profile: gameProfile,
                 players: input.players.map((player) => ({
@@ -209,6 +211,7 @@ export class CouchSessionService {
     private snapshot(session: GameSession): CouchSessionSnapshot {
         return {
             id: session.id,
+            startedAt: session.startedAt,
             mode: session.mode,
             revision: session.revision,
             state: session.state,

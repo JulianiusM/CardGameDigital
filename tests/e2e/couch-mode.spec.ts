@@ -46,6 +46,48 @@ test("Couch Mode runs all four modes through the server-authoritative engine", a
     }
 });
 
+test("card text remains centered on a narrow, short viewport", async ({ page }) => {
+    await page.setViewportSize({ width: 360, height: 640 });
+    await createGame(page, "Wahrheit oder Pflicht");
+    await page.getByRole("button", { name: "Wahrheit", exact: true }).click();
+    const card = page.locator(".game-card");
+    const text = card.locator("p");
+    await expect(text).toBeVisible();
+    const cardBox = (await card.boundingBox())!;
+    const textBox = (await text.boundingBox())!;
+    const cardCenter = cardBox.y + cardBox.height / 2;
+    const textCenter = textBox.y + textBox.height / 2;
+    expect(Math.abs(textCenter - cardCenter)).toBeLessThan(cardBox.height * 0.2);
+});
+
+test("game card and actions fit medium and TV viewports without document scrolling", async ({
+    browser,
+}) => {
+    for (const viewport of [
+        { width: 1024, height: 768 },
+        { width: 1920, height: 1080 },
+    ]) {
+        const context = await browser.newContext({ viewport });
+        const page = await context.newPage();
+        await createGame(page, "Wahrheit oder Pflicht");
+        await page.getByRole("button", { name: "Wahrheit", exact: true }).click();
+        await expect(page.locator(".game-card")).toBeVisible();
+        await expect(page.getByRole("button", { name: "Überspringen" })).toBeVisible();
+        const viewportUsage = await page.evaluate(() => ({
+            height: window.innerHeight,
+            scrollHeight: document.scrollingElement?.scrollHeight ?? 0,
+        }));
+        expect(viewportUsage.scrollHeight).toBeLessThanOrEqual(viewportUsage.height);
+        const actionBox = (await page.locator(".actions").boundingBox())!;
+        expect(actionBox.y + actionBox.height).toBeLessThanOrEqual(viewport.height);
+        const cardBox = (await page.locator(".game-card").boundingBox())!;
+        expect(cardBox.width).toBeLessThanOrEqual(900);
+        expect(cardBox.width / cardBox.height).toBeGreaterThan(1.45);
+        expect(Math.abs(cardBox.x + cardBox.width / 2 - viewport.width / 2)).toBeLessThan(3);
+        await context.close();
+    }
+});
+
 test("main setup exposes Host, Join and Display and guards direct Host URLs", async ({ page }) => {
     await page.goto("/play/");
     await expect(page.getByRole("button", { name: /Spiel hosten/ })).toBeVisible();
@@ -61,6 +103,7 @@ test("main setup exposes Host, Join and Display and guards direct Host URLs", as
 test("Group step has exactly three choices and a new Group is immediately selected", async ({
     page,
 }) => {
+    await page.setViewportSize({ width: 360, height: 740 });
     await page.goto("/play/");
     await page.getByRole("button", { name: /Spiel hosten/ }).click();
     await expect(page.getByRole("button", { name: /Keine Gruppe/ })).toBeVisible();
@@ -71,11 +114,18 @@ test("Group step has exactly three choices and a new Group is immediately select
     await page.getByLabel("Gruppenname").fill(name);
     await page.getByLabel("Namen, durch Kommas getrennt").fill("Anna, Ben");
     await page.getByRole("button", { name: "Gruppe speichern" }).click();
-    await expect(page.locator(".group-option.selected")).toContainText(name);
+    await expect(page.locator(".group-list-row.selected")).toContainText(name);
+    const groupAction = page.getByRole("button", { name: new RegExp(name) });
+    await groupAction.hover();
+    await expect(groupAction).toHaveCSS("transform", "none");
+    await expect(groupAction).toHaveCSS("box-shadow", "none");
+    expect((await page.locator(".group-list").boundingBox())!.width).toBeLessThanOrEqual(
+        (await page.locator(".wizard").boundingBox())!.width,
+    );
     await expect(page.getByRole("button", { name: /Gruppe auswählen/ })).toHaveClass(/selected/);
     await page.getByRole("button", { name: /Zurück/ }).click();
     await page.getByRole("button", { name: new RegExp(`Gruppe fortsetzen: ${name}`) }).click();
-    await expect(page.locator(".group-option.selected")).toContainText(name);
+    await expect(page.locator(".group-list-row.selected")).toContainText(name);
     await expect(page.getByRole("button", { name: /^Weiter/ })).toBeEnabled();
 });
 
@@ -84,6 +134,7 @@ test("Custom profile exposes the full shared customization editor", async ({ pag
     await page.getByRole("button", { name: /Spiel hosten/ }).click();
     await page.getByRole("button", { name: /Keine Gruppe/ }).click();
     await page.getByRole("button", { name: /^Weiter/ }).click();
+    await expect(page.getByRole("button", { name: "Überspringen" })).toHaveCount(0);
     await page.getByRole("button", { name: /Wahrheit oder Pflicht/ }).click();
     await page.getByRole("button", { name: /^Weiter/ }).click();
     await page.getByRole("button", { name: /^Custom/ }).click();
@@ -93,6 +144,91 @@ test("Custom profile exposes the full shared customization editor", async ({ pag
     await expect(page.getByRole("heading", { name: /Zusätzliche Inhaltsregeln/ })).toBeVisible();
     await expect(page.getByRole("button", { name: "ALLTAG" })).toBeVisible();
     await expect(page.getByRole("button", { name: "KUSS", exact: true })).toBeVisible();
+});
+
+test("built-in profiles offer a validation-preserving Customize shortcut", async ({ page }) => {
+    await page.goto("/play/");
+    await page.getByRole("button", { name: /Spiel hosten/ }).click();
+    await page.getByRole("button", { name: /Keine Gruppe/ }).click();
+    await page.getByRole("button", { name: /^Weiter/ }).click();
+    await page.getByRole("button", { name: /^Weiter/ }).click();
+    await page.getByRole("button", { name: /^Freunde / }).click();
+    await page.getByRole("button", { name: /^Weiter/ }).click();
+    const skip = page.getByRole("button", { name: /Überspringen/ });
+    const next = page.getByRole("button", { name: /^Weiter/ });
+    const styles = async (locator: typeof skip) =>
+        locator.evaluate((element) => {
+            const style = getComputedStyle(element);
+            return {
+                background: style.backgroundColor,
+                borderRadius: style.borderRadius,
+                fontWeight: style.fontWeight,
+                height: element.getBoundingClientRect().height,
+                width: element.getBoundingClientRect().width,
+            };
+        });
+    expect(await styles(skip)).toEqual(await styles(next));
+    await skip.click();
+    await expect(page.getByRole("heading", { name: /Bildschirme/ })).toBeVisible();
+});
+
+test("Couch lobby has canonical Settings and zero-card start stays with a warning", async ({
+    page,
+}) => {
+    await page.goto("/play/");
+    await page.getByRole("button", { name: /Spiel hosten/ }).click();
+    await page.getByRole("button", { name: /Keine Gruppe/ }).click();
+    await page.getByRole("button", { name: /^Weiter/ }).click();
+    await page.getByRole("button", { name: /Wahrheit oder Pflicht/ }).click();
+    await page.getByRole("button", { name: /^Weiter/ }).click();
+    await page.getByRole("button", { name: /^Custom/ }).click();
+    await page.getByRole("button", { name: /^Weiter/ }).click();
+    await page.getByRole("button", { name: /^Weiter/ }).click();
+    await page.getByRole("button", { name: /Nur dieser Bildschirm/ }).click();
+    await page.getByRole("button", { name: /Weiter zur Lobby/ }).click();
+    await expect(page.getByLabel("Einstellungen")).toBeVisible();
+    const backToMain = page.getByRole("button", { name: /Zurück zum Hauptmenü/ });
+    await expect(backToMain).toBeVisible();
+    await expect(backToMain).toHaveClass(/text-action/);
+    await expect(backToMain).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+    const backBox = (await backToMain.boundingBox())!;
+    const setupBox = (await page.locator(".player-setup").boundingBox())!;
+    expect(backBox.y + backBox.height).toBeLessThanOrEqual(setupBox.y);
+    const addPlayer = page.getByRole("button", { name: /Person hinzufügen/ });
+    const start = page.getByRole("button", { name: /Spiel starten/ });
+    const addBox = (await addPlayer.boundingBox())!;
+    const startBox = (await start.boundingBox())!;
+    expect(startBox.y - (addBox.y + addBox.height)).toBeGreaterThanOrEqual(12);
+    await page.getByRole("button", { name: /Spiel starten/ }).click();
+    await expect(page.getByRole("alert")).toContainText(
+        "Mit dem aktuellen Profil und den Einstellungen sind keine Karten verfügbar.",
+    );
+    await expect(page.getByRole("heading", { name: "Wer spielt mit?" })).toBeVisible();
+});
+
+test("Couch end summary offers a clean return to the main menu", async ({ page }) => {
+    await createGame(page, "Wahrheit oder Pflicht");
+    await page.getByRole("button", { name: "Einstellungen", exact: true }).click();
+    await page.getByRole("tab", { name: "Session" }).click();
+    await page.getByRole("button", { name: "Spiel beenden" }).click();
+    await expect(page.getByRole("heading", { name: /Gute Nacht/ })).toBeVisible();
+    await page.getByRole("button", { name: "Zurück zum Hauptmenü" }).click();
+    await expect(page).toHaveURL(/\/play\/?$/);
+    await expect(page.getByRole("button", { name: /Spiel hosten/ })).toBeVisible();
+});
+
+test("same-device Couch player actions stay aligned on a narrow phone", async ({ page }) => {
+    await page.setViewportSize({ width: 320, height: 700 });
+    await reachCouch(page, "Wahrheit oder Pflicht");
+    await page.getByRole("button", { name: /Person hinzufügen/ }).click();
+    const row = page.locator(".playful-list label").last();
+    await row.getByRole("textbox").fill("Eine sehr lange Person mit langem Namen");
+    const input = (await row.getByRole("textbox").boundingBox())!;
+    const remove = (await row.getByRole("button").boundingBox())!;
+    expect(Math.abs(input.y + input.height / 2 - (remove.y + remove.height / 2))).toBeLessThan(4);
+    expect((await row.boundingBox())!.width).toBeLessThanOrEqual(
+        (await page.locator(".player-setup").boundingBox())!.width,
+    );
 });
 
 test("shared tabs and wizard progress stay within a narrow viewport", async ({ page }) => {
@@ -119,6 +255,36 @@ test("shared tabs and wizard progress stay within a narrow viewport", async ({ p
     const after = await displayTab.boundingBox();
     expect(Math.abs(after!.width - before!.width)).toBeLessThan(2);
     expect(Math.abs(after!.height - before!.height)).toBeLessThan(2);
+    const viewport = page.locator(".responsive-tabs");
+    const scrollBefore = await viewport.evaluate((element) => element.scrollLeft);
+    const nextArrow = page.locator(".tab-scroll-arrow.next");
+    await expect(nextArrow).toHaveCSS("box-shadow", "none");
+    await expect(nextArrow).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+    if (await nextArrow.isVisible()) {
+        await nextArrow.click();
+        await expect
+            .poll(() => viewport.evaluate((element) => element.scrollLeft))
+            .toBeGreaterThan(scrollBefore);
+    }
+});
+
+test("Help topic tabs stay inside their article and support arrow scrolling", async ({ page }) => {
+    await page.setViewportSize({ width: 320, height: 700 });
+    await page.goto("/play/help");
+    const panel = page.locator(".article-panel");
+    const shell = page.locator(".responsive-tabs-shell");
+    await expect(shell).toBeVisible();
+    expect((await shell.boundingBox())!.width).toBeLessThanOrEqual(
+        (await panel.boundingBox())!.width,
+    );
+    const viewport = page.locator(".responsive-tabs");
+    const next = page.locator(".tab-scroll-arrow.next");
+    if (await next.isVisible()) {
+        await next.click();
+        await expect
+            .poll(() => viewport.evaluate((element) => element.scrollLeft))
+            .toBeGreaterThan(0);
+    }
 });
 
 test("Help opens in a new tab and AUTH_MODE=none hides Account", async ({ page }) => {

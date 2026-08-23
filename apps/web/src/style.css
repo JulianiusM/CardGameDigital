@@ -183,14 +183,6 @@ h2 {
 .start span {
     float: right;
 }
-.error {
-    background: #541f37;
-    border: 1px solid #ff7295;
-    border-radius: 14px;
-    padding: 1rem;
-    margin: 0 auto 1.3rem;
-    max-width: 760px;
-}
 .game-shell {
     display: grid;
     gap: 1.25rem;
@@ -234,7 +226,8 @@ h2 {
     min-height: 320px;
     padding: clamp(1.5rem, 6vw, 4rem);
     display: grid;
-    align-content: space-between;
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    align-items: center;
     text-align: center;
     position: relative;
     overflow: hidden;
@@ -275,6 +268,7 @@ h2 {
     margin: 2rem 0;
     position: relative;
     z-index: 1;
+    align-self: center;
 }
 .dots {
     letter-spacing: 0.25rem;
@@ -327,6 +321,12 @@ h2 {
     }
     .players label span {
         grid-column: 1/-1;
+    }
+    .players.playful-list label {
+        grid-template-columns: 2.8rem minmax(0, 1fr) 44px;
+    }
+    .players.playful-list label .avatar {
+        grid-column: auto;
     }
     .voting > div {
         grid-template-columns: 1fr 1fr;
