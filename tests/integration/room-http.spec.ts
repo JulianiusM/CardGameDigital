@@ -74,6 +74,13 @@ describe("Room HTTP API", () => {
     it("reports that Account UI is unavailable for AUTH_MODE=none", async () => {
         const response = await request(app).get("/api/v1/server-info").expect(200);
         expect(response.body.authenticationAvailable).toBe(false);
+        expect(response.headers["x-content-type-options"]).toBe("nosniff");
+        expect(response.headers["x-frame-options"]).toBe("DENY");
+        expect(response.headers["content-security-policy"]).toContain("script-src 'self'");
+        expect(response.headers["cache-control"]).toBe("no-store");
+        expect(response.headers["x-request-id"]).toMatch(
+            /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+        );
     });
 
     it("serves built-in GameProfiles plus an explicit neutral Custom option", async () => {
@@ -124,6 +131,23 @@ describe("Room HTTP API", () => {
         ]);
         expect(siblings.body.roomId).not.toBe(friends.body.roomId);
         expect(siblings.body.roomCode).not.toBe(friends.body.roomCode);
+    });
+    it("rejects joins after the Room participant capacity is reached", async () => {
+        const host = await request(app)
+            .post("/api/v1/rooms")
+            .send({ displayName: "Capacity host" })
+            .expect(201);
+        for (let index = 1; index < 20; index++) {
+            await request(app)
+                .post(`/api/v1/rooms/${host.body.roomCode}/participants`)
+                .send({ displayName: `Player ${index}`, role: "PLAYER" })
+                .expect(201);
+        }
+        const response = await request(app)
+            .post(`/api/v1/rooms/${host.body.roomCode}/participants`)
+            .send({ displayName: "Player 20", role: "PLAYER" })
+            .expect(409);
+        expect(response.body.error.code).toBe("ROOM_FULL");
     });
     it("validates create and join payloads", async () => {
         await request(app)

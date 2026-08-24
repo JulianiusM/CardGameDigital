@@ -110,21 +110,29 @@ describe("Couch HTTP application adapter", () => {
             .post(`/api/v1/couch/sessions/${created.body.id}/choose`)
             .send({ revision: 0, cardType: "QUESTION" })
             .expect(200);
+        const advanced = await request(app)
+            .post(`/api/v1/couch/sessions/${created.body.id}/advance`)
+            .send({ revision: shown.body.revision })
+            .expect(200);
         await request(app)
             .post(`/api/v1/couch/sessions/${created.body.id}/end`)
-            .send({ revision: shown.body.revision })
+            .send({ revision: advanced.body.revision })
             .expect(200)
             .expect(({ body }) => expect(body.state).toBe("ENDED"));
         await expect(
             AppDataSource.getRepository(CouchGameSessionEntity).findOneByOrFail({
                 id: created.body.id,
             }),
-        ).resolves.toMatchObject({ endedAt: expect.any(Date), revision: 2 });
-        expect(
-            await AppDataSource.getRepository(CouchCardAppearanceEntity).countBy({
-                sessionId: created.body.id,
-            }),
-        ).toBe(1);
+        ).resolves.toMatchObject({ endedAt: expect.any(Date), revision: 3 });
+        const appearances = await AppDataSource.getRepository(CouchCardAppearanceEntity).findBy({
+            sessionId: created.body.id,
+        });
+        expect(appearances).toHaveLength(1);
+        expect(appearances[0]).toMatchObject({
+            skipped: false,
+            completed: true,
+            vetoed: false,
+        });
     });
 
     it("applies named reveal without leaking Couch answers during collection", async () => {

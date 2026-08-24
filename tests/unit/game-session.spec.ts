@@ -6,12 +6,13 @@ import {
     GameSession,
     InvalidGameStateError,
     NEVER_HAVE_I_EVER_REVEAL_MODES,
+    OPERATIONAL_FLAGS,
     QUESTION_CATEGORIES,
     SESSION_STATES,
     SequenceRandomSource,
     StaleSessionRevisionError,
 } from "../../src/packages/game-core";
-import { card, profile } from "../support/game";
+import { boundaries, card, profile } from "../support/game";
 
 const players = [
     { id: "a", name: "Anna" },
@@ -36,8 +37,17 @@ describe("shared GameSession state machine", () => {
         session.chooseCardType(0, CARD_TYPES.QUESTION, [repeatQuestion]);
         expect(session.state).toBe(SESSION_STATES.SHOWING_CARD);
         session.skipCard(1, [card({ id: "replacement" as never })]);
-        expect(session.sessionHistory[0].skipped).toBe(true);
+        expect(session.sessionHistory[0]).toMatchObject({
+            skipped: true,
+            completed: false,
+            vetoed: false,
+        });
         session.advance(2);
+        expect(session.sessionHistory[1]).toMatchObject({
+            skipped: false,
+            completed: true,
+            vetoed: false,
+        });
         expect(session.activePlayer?.id).toBe("b");
         session.chooseCardType(3, CARD_TYPES.DARE, [repeatDare]);
         session.advance(4);
@@ -69,6 +79,21 @@ describe("shared GameSession state machine", () => {
         expect(session.revision).toBe(1);
         expect(session.sessionHistory).toHaveLength(1);
         expect(session.sessionHistory[0].skipped).toBe(false);
+    });
+
+    it("records private veto separately from an ordinary skip", () => {
+        const session = new GameSession(
+            { id: "s", mode: GAME_MODES.CLASSIC, players, profile: profile(), cardLocale: "en-GB" },
+            new SequenceRandomSource([0]),
+        );
+        session.chooseCardType(0, CARD_TYPES.QUESTION, [repeatQuestion]);
+        session.vetoCard(1, [card({ id: "veto-replacement" as never })]);
+
+        expect(session.sessionHistory[0]).toMatchObject({
+            skipped: false,
+            completed: false,
+            vetoed: true,
+        });
     });
 
     it("runs Never Have I Ever with only yes/no questions and synchronized aggregate voting", () => {
@@ -217,5 +242,46 @@ describe("shared GameSession state machine", () => {
             /game.cardPoolExhausted/,
         );
         expect(session.revision).toBe(0);
+    });
+
+    it("applies every player's private boundaries to Let's Talk conversation cards", () => {
+        const session = new GameSession(
+            {
+                id: "lets-talk-boundaries",
+                mode: GAME_MODES.LETS_TALK,
+                players,
+                profile: profile({ letsTalkMetaInterval: 1 }),
+                boundariesByPlayer: new Map([
+                    [
+                        "b",
+                        boundaries({
+                            blockedOperationalFlags: new Set([
+                                OPERATIONAL_FLAGS.REQUIRES_PHYSICAL_CONTACT,
+                            ]),
+                        }),
+                    ],
+                ]),
+                cardLocale: "en-GB",
+            },
+            new SequenceRandomSource([0]),
+        );
+        const question = card({ id: "question" as never, repeatableInSession: true });
+        const blockedConversation = card({
+            id: "blocked-conversation" as never,
+            cardType: CARD_TYPES.CONVERSATION,
+            questionCategoryId: null,
+            operationalFlags: [OPERATIONAL_FLAGS.REQUIRES_PHYSICAL_CONTACT],
+        });
+        const allowedConversation = card({
+            id: "allowed-conversation" as never,
+            cardType: CARD_TYPES.CONVERSATION,
+            questionCategoryId: null,
+        });
+
+        session.startTurn(0, [question, blockedConversation, allowedConversation]);
+        session.advance(1);
+        session.startTurn(2, [question, blockedConversation, allowedConversation]);
+
+        expect(session.currentCard?.id).toBe(allowedConversation.id);
     });
 });

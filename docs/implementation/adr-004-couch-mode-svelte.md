@@ -1,15 +1,15 @@
-# ADR-004: Svelte Couch Mode beside the Blueprint UI
+# ADR-004: Svelte Couch Mode on the shared browser client
 
 ## Status
 
-Implemented; Playwright execution awaits an environment with a browser binary.
+Implemented. The later Phase 10 cleanup made Svelte the sole browser presentation.
 
 ## Decision
 
-The first Svelte/Vite client lives in `apps/web` and is emitted to `dist/web`.
-The retained Express application serves it at `/play`; existing Pug account and
-administrative pages continue to operate. This is a strangler migration, not a
-replacement server or a duplicate client-side engine.
+The Svelte/Vite client lives in `apps/web`, is emitted to `dist/web`, and is served by
+the retained Express application under `/play`. Couch, Room, account, and help flows
+now use this one client; the former Pug pages and renderer were removed during Phase 10.
+This remains a presentation adapter, not a duplicate client-side engine.
 
 The browser sends setup and command DTOs to `/api/v1/couch`. Zod validates every
 request. `CouchSessionService` creates and owns the authoritative `GameSession`,
@@ -30,8 +30,10 @@ The Couch UI supports:
 
 ## Authority and privacy
 
-Runtime state lives in the server process for this vertical slice, not browser
-storage. Commands include the current revision and stale revisions are rejected.
+Runtime state is server-authoritative and durably stored through the Couch Session
+repository, never browser storage. Commands include the current revision and stale
+revisions are rejected. Proposed mutations are persisted before the in-memory cache is
+replaced, and same-Session commands are serialized.
 Snapshots use the shared application voting projection. They expose every required
 voter's Pending/Voted completion without answer values during collection. Anonymous
 results remain aggregate-only; named values appear together only after completion.

@@ -6,3 +6,8 @@ export function isTrustedOrigin(originOrReferer: string | undefined, publicUrl: 
         return false;
     }
 }
+
+export function requestPathForLog(url: string | undefined): string {
+    if (!url) return "-";
+    return url.split(/[?#]/, 1)[0] || "/";
+}

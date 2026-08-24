@@ -150,7 +150,7 @@ describe("global Card intensity", () => {
         expect(session.roundNumber).toBe(2);
         expect(session.currentMaximumIntensityScore).toBe(5);
         expect(session.toRuntimeState()).toMatchObject({
-            version: 2,
+            version: 3,
             profile: {
                 startingIntensity: 1,
                 maximumIntensity: 2,

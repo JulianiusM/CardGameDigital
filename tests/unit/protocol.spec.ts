@@ -5,11 +5,19 @@ import {
     clientHelloEnvelopeSchema,
     participantLeftEventPayloadSchema,
     PROTOCOL_VERSION,
+    protocolErrorCodeSchema,
     roomCommandEnvelopeSchema,
 } from "../../src/packages/protocol";
 import { defaultRoomGameSettings } from "../../src/packages/application/roomGameSettings";
 
 describe("protocol v2 boundary", () => {
+    it("declares every stable application error emitted over WebSocket", () => {
+        expect(protocolErrorCodeSchema.parse("CARD_LOCALE_UNAVAILABLE")).toBe(
+            "CARD_LOCALE_UNAVAILABLE",
+        );
+        expect(protocolErrorCodeSchema.parse("ROOM_FULL")).toBe("ROOM_FULL");
+    });
+
     it("validates the unauthenticated client hello envelope", () => {
         const result = clientHelloEnvelopeSchema.safeParse({
             protocol: PROTOCOL_VERSION,
@@ -160,15 +168,18 @@ describe("protocol v2 boundary", () => {
         const settings = defaultRoomGameSettings();
         const legacyShape = { ...settings } as Record<string, unknown>;
         delete legacyShape.neverHaveIEverRevealMode;
-        expect(
-            roomCommandEnvelopeSchema.parse({
-                protocol: PROTOCOL_VERSION,
-                type: "command.updateRoomSettings",
-                requestId: "default-reveal",
-                revision: null,
-                payload: { expectedRevision: 0, settings: legacyShape },
-            }).payload.settings.neverHaveIEverRevealMode,
-        ).toBe("ANONYMOUS_AGGREGATE");
+        const parsedLegacy = roomCommandEnvelopeSchema.parse({
+            protocol: PROTOCOL_VERSION,
+            type: "command.updateRoomSettings",
+            requestId: "default-reveal",
+            revision: null,
+            payload: { expectedRevision: 0, settings: legacyShape },
+        });
+        if (parsedLegacy.type !== "command.updateRoomSettings") throw new Error("wrong command");
+        const parsedLegacyPayload = parsedLegacy.payload as {
+            settings: ReturnType<typeof defaultRoomGameSettings>;
+        };
+        expect(parsedLegacyPayload.settings.neverHaveIEverRevealMode).toBe("ANONYMOUS_AGGREGATE");
         expect(
             roomCommandEnvelopeSchema.safeParse({
                 protocol: PROTOCOL_VERSION,
@@ -197,7 +208,12 @@ describe("protocol v2 boundary", () => {
             revision: null,
             payload: { expectedRevision: 0, settings: { ...settings, configuration } },
         });
-        expect(parsed.payload.settings.configuration).toMatchObject({
+        if (parsed.type !== "command.updateRoomSettings") throw new Error("wrong command");
+        const parsedPayload = parsed.payload as {
+            expectedRevision: number;
+            settings: ReturnType<typeof defaultRoomGameSettings>;
+        };
+        expect(parsedPayload.settings.configuration).toMatchObject({
             startingIntensity: 1,
             intensityProgressionUnit: "CARDS",
             intensityProgressionInterval: 2,
@@ -207,11 +223,11 @@ describe("protocol v2 boundary", () => {
             roomCommandEnvelopeSchema.safeParse({
                 ...parsed,
                 payload: {
-                    ...parsed.payload,
+                    ...parsedPayload,
                     settings: {
-                        ...parsed.payload.settings,
+                        ...parsedPayload.settings,
                         configuration: {
-                            ...parsed.payload.settings.configuration,
+                            ...parsedPayload.settings.configuration,
                             startingIntensity: 4,
                             maximumIntensity: 3,
                         },

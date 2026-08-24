@@ -28,6 +28,12 @@ export class AllowMultipleRoomSessions1787340000000 implements MigrationInterfac
         );
 
         const sessions = await queryRunner.getTable("game_sessions");
+        // MariaDB/MySQL require an index to remain available for the room_id
+        // foreign key while its original unique index is removed.
+        await queryRunner.createIndex(
+            "game_sessions",
+            new TableIndex({ name: "IDX_game_session_room", columnNames: ["room_id"] }),
+        );
         const uniqueRoom = sessions?.uniques.find(
             ({ columnNames }) => columnNames.length === 1 && columnNames[0] === "room_id",
         );
@@ -37,21 +43,12 @@ export class AllowMultipleRoomSessions1787340000000 implements MigrationInterfac
                 isUnique && columnNames.length === 1 && columnNames[0] === "room_id",
         );
         if (uniqueIndex) await queryRunner.dropIndex("game_sessions", uniqueIndex);
-        await queryRunner.createIndex(
-            "game_sessions",
-            new TableIndex({ name: "IDX_game_session_room", columnNames: ["room_id"] }),
-        );
     }
 
     async down(queryRunner: QueryRunner): Promise<void> {
-        await queryRunner.dropIndex("game_sessions", "IDX_game_session_room");
-        const rooms = await queryRunner.getTable("rooms");
-        const currentSessionForeignKey = rooms?.foreignKeys.find(({ columnNames }) =>
-            columnNames.includes("current_session_id"),
-        );
-        if (currentSessionForeignKey)
-            await queryRunner.dropForeignKey("rooms", currentSessionForeignKey);
-        await queryRunner.dropColumn("rooms", "current_session_id");
+        // Establish the replacement index first for the same FK requirement as up().
+        // This also fails safely before removing anything if duplicate room sessions
+        // make the downgrade impossible.
         await queryRunner.createIndex(
             "game_sessions",
             new TableIndex({
@@ -60,5 +57,13 @@ export class AllowMultipleRoomSessions1787340000000 implements MigrationInterfac
                 isUnique: true,
             }),
         );
+        await queryRunner.dropIndex("game_sessions", "IDX_game_session_room");
+        const rooms = await queryRunner.getTable("rooms");
+        const currentSessionForeignKey = rooms?.foreignKeys.find(({ columnNames }) =>
+            columnNames.includes("current_session_id"),
+        );
+        if (currentSessionForeignKey)
+            await queryRunner.dropForeignKey("rooms", currentSessionForeignKey);
+        await queryRunner.dropColumn("rooms", "current_session_id");
     }
 }

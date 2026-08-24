@@ -16,8 +16,8 @@
 
 import { createHash } from "node:crypto";
 import { EntityManager, MoreThan, Repository } from "typeorm";
-import type { OidcClaims, UserInfo } from "../../../types/UserTypes";
-import { coerceLimit, generateUniqueToken, maskEmail, SQL_ALLOW_LIST } from "../../lib/util";
+import type { OidcClaims } from "../../../types/UserTypes";
+import { generateUniqueToken } from "../../lib/util";
 import { AppDataSource } from "../dataSource";
 import { DataSpace } from "../entities/user/DataSpace";
 import { User } from "../entities/user/User";
@@ -25,6 +25,25 @@ import { hashPassword, verifyPasswordHash } from "../../passwordHash";
 
 function hashOneTimeToken(token: string): string {
     return createHash("sha256").update(token).digest("hex");
+}
+
+function oidcIdentityHash(issuer: string, sub: string): string {
+    return createHash("sha256").update(`${issuer}\0${sub}`).digest("hex");
+}
+
+function syntheticOidcEmail(issuer: string, sub: string): string {
+    return `${oidcIdentityHash(issuer, sub)}@no-email.invalid`;
+}
+
+function isUniqueConstraintError(error: unknown): boolean {
+    const candidate = error as { code?: unknown; message?: unknown };
+    return (
+        candidate.code === "ER_DUP_ENTRY" ||
+        candidate.code === "23505" ||
+        String(candidate.message ?? "")
+            .toUpperCase()
+            .includes("UNIQUE")
+    );
 }
 
 export async function registerUser(
@@ -129,18 +148,6 @@ export async function verifyActivationToken(token: string) {
     });
 }
 
-export async function activateUser(userId: number) {
-    const repo = AppDataSource.getRepository(User);
-    await repo.update(
-        { id: userId },
-        {
-            isActive: true,
-            activationTokenHash: null,
-            activationTokenExpiration: null,
-        },
-    );
-}
-
 export async function consumeActivationToken(token: string): Promise<boolean> {
     const result = await AppDataSource.getRepository(User)
         .createQueryBuilder()
@@ -187,19 +194,6 @@ export async function verifyPasswordResetToken(token: string) {
     });
 }
 
-export async function resetPassword(username: string, newPassword: string) {
-    const repo = AppDataSource.getRepository(User);
-    const hashed = await hashPassword(newPassword);
-    await repo.update(
-        { username },
-        {
-            password: hashed,
-            resetTokenHash: null,
-            resetTokenExpiration: null,
-        },
-    );
-}
-
 export async function consumePasswordResetToken(
     token: string,
     newPassword: string,
@@ -233,16 +227,15 @@ async function toUniqueUsername(base: string): Promise<string> {
         base
             .toLowerCase()
             .replace(/[^a-z0-9._-]/g, "")
-            .slice(0, 30) || "user";
+            .slice(0, 50) || "user";
     if (!(await usernameExists(sanitized))) return sanitized;
 
-    // add numeric suffix
     for (let i = 1; i < 10_000; i++) {
-        const candidate = `${sanitized}-${i}`;
+        const suffix = `-${i}`;
+        const candidate = `${sanitized.slice(0, 50 - suffix.length)}${suffix}`;
         if (!(await usernameExists(candidate))) return candidate;
     }
-    // fallback (should never happen)
-    return `${sanitized}-${Date.now()}`;
+    throw new Error("Could not allocate a unique OIDC username");
 }
 
 /**
@@ -263,15 +256,6 @@ export async function getUserByOidc(oidcIssuer: string, oidcSub: string) {
             dataSpaces: true,
         },
     });
-}
-
-/**
- * Link an existing local user to an OIDC identity.
- * Useful if you want a one-time “Connect SSO” button.
- */
-export async function linkUserToOidc(userId: number, oidcIssuer: string, oidcSub: string) {
-    const repo = AppDataSource.getRepository(User);
-    await repo.update({ id: userId }, { oidcIssuer, oidcSub });
 }
 
 /**
@@ -306,142 +290,81 @@ export async function findOrCreateUserFromOidc(
     }
 
     // 3) If still not found: create a new local user (JIT provisioning)
-    // inside findOrCreateUserFromOidc, in the "3) If still not found: create a new local user" block
     if (!user) {
-        const baseUsername =
+        const rawBaseUsername =
             preferred_username || (email ? email.split("@")[0] : `oidc_${sub.slice(0, 8)}`);
-        const uniqueUsername = await toUniqueUsername(baseUsername);
+        const identityHash = oidcIdentityHash(oidcIssuer, sub);
+        const baseUsername =
+            rawBaseUsername
+                .toLowerCase()
+                .replace(/[^a-z0-9._-]/g, "")
+                .slice(0, 40) || "user";
+        const uniqueUsername = await toUniqueUsername(
+            `${baseUsername}-${identityHash.slice(0, 8)}`,
+        );
 
         // Ensure we don't violate unique(email)
-        let emailToUse = email_verified === true && email ? email : `${sub}@no-email.local`;
+        let emailToUse =
+            email_verified === true && email ? email : syntheticOidcEmail(oidcIssuer, sub);
 
         // If linkByEmail is disabled OR the email is already taken, use a synthetic email
         if (email_verified === true && email) {
             const emailTaken = await repo.exists({ where: { email } });
             if (!linkByEmail || emailTaken) {
-                emailToUse = `${sub}@no-email.local`;
+                emailToUse = syntheticOidcEmail(oidcIssuer, sub);
             }
         }
 
-        return await AppDataSource.transaction(async (em) => {
-            const newUsr = em.getRepository(User).create({
-                username: uniqueUsername,
-                name: name || baseUsername,
-                email: emailToUse,
-                password: null,
-                isActive: true,
-                oidcIssuer,
-                oidcSub: sub,
-            });
-            const newDataSpace = em.getRepository(DataSpace).create({
-                name: newUsr.name,
-                defaultForOwner: true,
-                user: newUsr,
-            });
-            const savedDataSpace = await em.getRepository(DataSpace).save(newDataSpace);
-            user = await handleUserSaving(newUsr, sub, em.getRepository(User));
-            if (!user.dataSpaces || user.dataSpaces.length === 0) {
+        try {
+            return await AppDataSource.transaction(async (em) => {
+                const users = em.getRepository(User);
+                const newUser = users.create({
+                    username: uniqueUsername,
+                    name: name || baseUsername.slice(0, 50),
+                    email: emailToUse,
+                    password: null,
+                    isActive: true,
+                    oidcIssuer,
+                    oidcSub: sub,
+                });
+                user = await saveOidcUser(newUser, oidcIssuer, sub, users);
+                const savedDataSpace = await em.getRepository(DataSpace).save(
+                    em.getRepository(DataSpace).create({
+                        name: user.name,
+                        defaultForOwner: true,
+                        user,
+                    }),
+                );
                 user.dataSpaces = [savedDataSpace];
+                return user;
+            });
+        } catch (error) {
+            if (isUniqueConstraintError(error)) {
+                const concurrentUser = await getUserByOidc(oidcIssuer, sub);
+                if (concurrentUser) return concurrentUser;
             }
-
-            return user;
-        });
-    }
-
-    return user;
-}
-
-async function handleUserSaving(user: User, sub: string, repo?: Repository<User>) {
-    repo ??= AppDataSource.getRepository(User);
-    try {
-        user = await repo.save(user);
-    } catch (err: any) {
-        // Last-chance fallback for race conditions (MySQL/PG/SQLite)
-        const message = String(err?.message || "");
-        if (
-            err?.code === "ER_DUP_ENTRY" || // MySQL/MariaDB
-            err?.code === "23505" || // Postgres
-            message.includes("UNIQUE") // SQLite/others
-        ) {
-            user.email = `${sub}@no-email.local`;
-            user = await repo.save(user);
-        } else {
-            throw err;
+            throw error;
         }
     }
+
     return user;
 }
 
-/**
- * Optional: remove OIDC link (keeps the local account).
- */
-export async function unlinkOidc(userId: number) {
-    const repo = AppDataSource.getRepository(User);
-    await repo.update({ id: userId }, { oidcIssuer: null, oidcSub: null });
-}
-
-/**
- * Resolve by id | email | username.
- * Use only behind a permission check to avoid enumeration leaks.
- */
-export async function findUserByNameOrEmail(identifier: string | number): Promise<User | null> {
-    const repo = AppDataSource.getRepository(User);
-    const raw = String(identifier).trim();
-
-    if (/^\d+$/.test(raw)) {
-        return await repo.findOne({ where: { id: Number(raw) } });
+async function saveOidcUser(
+    user: User,
+    issuer: string,
+    sub: string,
+    repository: Repository<User>,
+): Promise<User> {
+    try {
+        return await repository.save(user);
+    } catch (error) {
+        if (!isUniqueConstraintError(error)) throw error;
+        user.email = syntheticOidcEmail(issuer, sub);
+        return repository.save(user);
     }
-
-    if (raw.includes("@")) {
-        // case-insensitive email; avoid LOWER() on column to keep indexes usable where possible
-        return await repo
-            .createQueryBuilder("u")
-            .where("u.email = :email", { email: raw })
-            .orWhere("u.email LIKE :emailCase", { emailCase: raw }) // fallback for case-insensitive collations
-            .orWhere("u.username = :username", { username: raw })
-            .getOne();
-    }
-
-    // username exact, email fallback
-    return await repo
-        .createQueryBuilder("u")
-        .where("u.username = :username", { username: raw })
-        .orWhere("u.email = :email", { email: raw })
-        .getOne();
 }
 
-/**
- * Prefix search for username/email (index-friendly). Validates the query.
- * Returns { id, username, emailMasked } (no raw email by default).
- */
-export async function searchUsersSecure(query: string, limit = 10): Promise<Array<UserInfo>> {
-    const repo = AppDataSource.getRepository(DataSpace);
-    const q = (query || "").trim();
-
-    if (!SQL_ALLOW_LIST.test(q)) return []; // too short / invalid chars -> no results
-    const lim = coerceLimit(limit, 10, 25);
-
-    const likePrefix = `${q}%`;
-
-    const rows = await repo
-        .createQueryBuilder("p")
-        .innerJoinAndSelect("p.user", "u")
-        .where("p.name LIKE :pfx", { pfx: likePrefix })
-        .orWhere("u.email LIKE :pfx", { pfx: likePrefix })
-        .orWhere("u.username LIKE :pfx", { pfx: likePrefix })
-        .orderBy("p.name", "ASC")
-        .limit(lim)
-        .getMany();
-
-    return rows.map((p) => ({
-        id: p.id,
-        username: p.user?.username ?? "-",
-        email: maskEmail(p.user?.email),
-        name: p.name,
-    }));
-}
-
-/** Optional helpers you might find useful elsewhere */
 export async function getUserById(id: number): Promise<User | null> {
     return await AppDataSource.getRepository(User).findOne({
         where: { id },

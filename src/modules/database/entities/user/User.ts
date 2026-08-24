@@ -21,6 +21,7 @@ import { DataSpace } from "./DataSpace";
 
 @Index("email", ["email"], { unique: true })
 @Index("username", ["username"], { unique: true })
+@Index("UQ_users_oidc_identity", ["oidcIssuer", "oidcSub"], { unique: true })
 @Entity("users")
 export class User extends NumericBase {
     @Column("varchar", { name: "username", unique: true, length: 50 })

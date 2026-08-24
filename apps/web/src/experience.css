@@ -1173,10 +1173,10 @@ button:not(:disabled):not(.text-action):not(.text-button):not(.icon):active,
     transition: width 460ms cubic-bezier(0.2, 0.75, 0.2, 1);
 }
 .aggregate-yes {
-    background: linear-gradient(90deg, #fff0b8, #e4ba61);
+    background: linear-gradient(90deg, #e4ba61, #c98e2f);
 }
 .aggregate-no {
-    background: linear-gradient(90deg, #9f6558, #643a37);
+    background: linear-gradient(90deg, #c58a72, #9f6558);
 }
 .aggregate-metric {
     display: grid;
@@ -1594,7 +1594,7 @@ button:not(:disabled):not(.text-action):not(.text-button):not(.icon):active,
     background: var(--color-muted-cocoa);
 }
 .stage-player i.online {
-    background: var(--color-result-honey);
+    background: var(--color-status-active);
 }
 .stage-player strong {
     overflow: hidden;

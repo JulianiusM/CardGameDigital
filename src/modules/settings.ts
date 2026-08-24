@@ -13,6 +13,14 @@ const booleanValue = z
     .union([z.boolean(), z.enum(["1", "0", "true", "false", "yes", "no", "on", "off"])])
     .transform((value) => (typeof value === "boolean" ? value : /^(1|true|yes|on)$/i.test(value)));
 const numberValue = z.union([z.number(), z.string()]).transform(Number).pipe(z.number().finite());
+const trustProxyString = z
+    .string()
+    .regex(/^(?:true|false|yes|no|on|off|\d+)$/i)
+    .transform((value) => {
+        if (/^\d+$/.test(value)) return Number(value);
+        return /^(?:true|yes|on)$/i.test(value);
+    });
+const trustProxyValue = z.union([z.boolean(), z.number().int().nonnegative(), trustProxyString]);
 
 export const settingsSchema = z
     .object({
@@ -36,12 +44,12 @@ export const settingsSchema = z
         smtpPool: booleanValue,
         smtpSecure: booleanValue,
         oidcEnabled: booleanValue,
-        oidcIssuer: z.string(),
+        oidcIssuer: z.string().max(255),
         oidcClientId: z.string(),
         oidcClientSecret: z.string(),
         oidcRedirectUrl: z.string(),
         oidcName: z.string(),
-        trustProxy: z.union([booleanValue, numberValue.pipe(z.number().int().nonnegative())]),
+        trustProxy: trustProxyValue,
         logLevel: z.enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"]),
         sessionSecret: z.string().min(16),
         imprintUrl: z.string(),
@@ -49,9 +57,10 @@ export const settingsSchema = z
         cardMissingTranslation: z.enum(["EXCLUDE", "FALLBACK"]),
         cardFallbackLocale: z.string().min(2).max(35),
         file: z.string(),
+        testMode: z.boolean(),
     })
     .superRefine((value, context) => {
-        if (value.deploymentMode === "local" && value.dbType !== "sqlite") {
+        if (value.deploymentMode === "local" && value.dbType !== "sqlite" && !value.testMode) {
             context.addIssue({
                 code: "custom",
                 path: ["dbType"],
@@ -72,6 +81,56 @@ export const settingsSchema = z
                 message: "public deployment requires account authentication",
             });
         }
+        if (value.deploymentMode === "public") {
+            const publicUrl = new URL(value.publicUrl);
+            if (
+                publicUrl.protocol !== "https:" ||
+                publicUrl.username ||
+                publicUrl.password ||
+                publicUrl.pathname !== "/" ||
+                publicUrl.search ||
+                publicUrl.hash
+            ) {
+                context.addIssue({
+                    code: "custom",
+                    path: ["publicUrl"],
+                    message: "public deployment requires a credential-free HTTPS origin PUBLIC_URL",
+                });
+            }
+            if (!value.dbUser.trim() || !value.dbPassword) {
+                context.addIssue({
+                    code: "custom",
+                    path: ["dbUser"],
+                    message: "public deployment requires database credentials",
+                });
+            }
+            if (value.sessionSecret.startsWith("local-") || value.sessionSecret.length < 32) {
+                context.addIssue({
+                    code: "custom",
+                    path: ["sessionSecret"],
+                    message: "public deployment requires an explicit 32-character SESSION_SECRET",
+                });
+            }
+            if (
+                !value.smtpHost.trim() ||
+                !value.smtpUser.trim() ||
+                !value.smtpPassword ||
+                !z.email().safeParse(value.smtpEmail).success
+            ) {
+                context.addIssue({
+                    code: "custom",
+                    path: ["smtpHost"],
+                    message: "public deployment requires complete SMTP configuration",
+                });
+            }
+            if (typeof value.trustProxy !== "number" || value.trustProxy < 1) {
+                context.addIssue({
+                    code: "custom",
+                    path: ["trustProxy"],
+                    message: "public deployment requires a positive TRUST_PROXY hop count",
+                });
+            }
+        }
         if (value.oidcEnabled && value.authMode !== "account") {
             context.addIssue({
                 code: "custom",
@@ -79,16 +138,49 @@ export const settingsSchema = z
                 message: "OIDC requires account authentication",
             });
         }
+        if (value.oidcEnabled) {
+            const requiredOidcValues = [
+                value.oidcIssuer,
+                value.oidcClientId,
+                value.oidcClientSecret,
+                value.oidcRedirectUrl,
+                value.oidcName,
+            ];
+            if (requiredOidcValues.some((entry) => !entry.trim())) {
+                context.addIssue({
+                    code: "custom",
+                    path: ["oidcEnabled"],
+                    message: "enabled OIDC requires complete provider configuration",
+                });
+            }
+            const redirect = z.url().safeParse(value.oidcRedirectUrl);
+            const issuer = z.url().safeParse(value.oidcIssuer);
+            if (!redirect.success || !issuer.success) {
+                context.addIssue({
+                    code: "custom",
+                    path: ["oidcRedirectUrl"],
+                    message: "OIDC issuer and redirect must be valid URLs",
+                });
+            }
+            if (value.deploymentMode === "public" && redirect.success && issuer.success) {
+                const expectedRedirect = new URL("/api/v1/account/oidc/callback", value.publicUrl)
+                    .href;
+                if (
+                    new URL(value.oidcRedirectUrl).protocol !== "https:" ||
+                    new URL(value.oidcIssuer).protocol !== "https:" ||
+                    value.oidcRedirectUrl !== expectedRedirect
+                ) {
+                    context.addIssue({
+                        code: "custom",
+                        path: ["oidcRedirectUrl"],
+                        message: "public OIDC requires HTTPS URLs and the canonical callback URL",
+                    });
+                }
+            }
+        }
     });
 
-export type Settings = z.infer<typeof settingsSchema> & {
-    initialized: boolean;
-    // Compatibility names retained while account/UI callers migrate.
-    appPort: number;
-    rootUrl: string;
-    localLoginEnabled: boolean;
-    oidcIssuerBaseUrl: string;
-};
+export type Settings = z.infer<typeof settingsSchema> & { initialized: boolean };
 
 const defaults = {
     deploymentMode: "local",
@@ -124,6 +216,7 @@ const defaults = {
     cardMissingTranslation: "EXCLUDE",
     cardFallbackLocale: "de-DE",
     file: "./settings.csv",
+    testMode: false,
 } satisfies z.input<typeof settingsSchema>;
 
 const keyMap: Record<string, keyof typeof defaults> = {
@@ -194,14 +287,11 @@ export function resolveSettings(
         ...fromFile,
         ...fromEnvironment,
         file: configFile,
+        testMode: environment.NODE_ENV === "e2e",
     });
     return {
         ...parsed,
         initialized: true,
-        appPort: parsed.httpPort,
-        rootUrl: parsed.publicUrl,
-        localLoginEnabled: parsed.authMode === "account",
-        oidcIssuerBaseUrl: parsed.oidcIssuer,
     };
 }
 

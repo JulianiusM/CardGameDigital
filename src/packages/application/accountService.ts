@@ -9,7 +9,7 @@ import { DataSpaceGameSettingsEntity } from "../../modules/database/entities/gam
 import * as users from "../../modules/database/services/UserService";
 import mailer from "../../modules/email";
 import { ExpectedError } from "../../modules/lib/errors";
-import { persistSession } from "../../modules/lib/session";
+import { destroySession, persistSession, regenerateSession } from "../../modules/lib/session";
 import * as oidc from "../../modules/oidc";
 import settings from "../../modules/settings";
 
@@ -37,15 +37,11 @@ export async function register(locale: Locale, input: Registration): Promise<voi
     await mailer.sendActivationEmail(
         locale,
         input.email,
-        `${settings.value.rootUrl}/play/account?activate=${token}`,
+        `${settings.value.publicUrl}/play/account?activate=${token}`,
     );
 }
 
-export async function login(
-    username: string,
-    password: string,
-    session: Request["session"],
-): Promise<void> {
+export async function login(username: string, password: string, request: Request): Promise<void> {
     const user = await users.getUserByUsername(username);
     if (!user || !(await users.verifyPassword(user.id, password))) {
         throw new ExpectedError(MESSAGE_KEYS.ACCOUNT_INVALID_CREDENTIALS, "error", 401);
@@ -53,6 +49,7 @@ export async function login(
     if (!user.isActive) {
         throw new ExpectedError(MESSAGE_KEYS.ACCOUNT_NOT_ACTIVATED, "error", 403);
     }
+    const session = await regenerateSession(request);
     session.auth = { user };
     session.dataSpace = defaultDataSpace(user.dataSpaces);
     await persistSession(session);
@@ -72,7 +69,7 @@ export async function requestPasswordReset(locale: Locale, identifier: string): 
     await mailer.sendPasswordResetEmail(
         locale,
         user.email,
-        `${settings.value.rootUrl}/play/account?reset=${token}`,
+        `${settings.value.publicUrl}/play/account?reset=${token}`,
     );
 }
 
@@ -83,7 +80,7 @@ export async function resetPassword(token: string, password: string): Promise<vo
 }
 
 export async function logout(session: Request["session"]): Promise<void> {
-    await oidc.logout(session);
+    await destroySession(session);
 }
 
 export async function deleteAccount(

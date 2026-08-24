@@ -1,18 +1,12 @@
 {
-  "extends": "./tsconfig.json",
-  "compilerOptions": {
-    "rootDir": ".",
-    "allowSyntheticDefaultImports": true,
-    "isolatedModules": true,
-    "types": [
-      "@playwright/test",
-      "node",
-      "jquery"
-    ]
-  },
-  "include": [
-    "src/**/*.ts",
-    "tests/**/*.ts",
-    "tests/**/*.d.ts"
-  ]
+    "extends": "./tsconfig.json",
+    "compilerOptions": {
+        "rootDir": ".",
+        "module": "ESNext",
+        "moduleResolution": "Bundler",
+        "allowSyntheticDefaultImports": true,
+        "isolatedModules": true,
+        "types": ["@playwright/test", "node"]
+    },
+    "include": ["src/**/*.ts", "tests/**/*.ts", "tests/**/*.d.ts"]
 }

@@ -219,7 +219,7 @@ test("Golden Mischief uses warm local surfaces and a motion-aware adaptive backd
 
     const visualState = await page.evaluate(() => {
         const tile = document.querySelectorAll<HTMLElement>(".menu-tile")[1];
-        const trigger = document.querySelector<HTMLElement>(".settings-trigger");
+        const trigger = document.querySelector<HTMLElement>(".settings-trigger")!;
         const symbol = document.querySelector<SVGElement>(
             ".incoming-symbol[data-gradient-color][data-adaptive-color]",
         )!;

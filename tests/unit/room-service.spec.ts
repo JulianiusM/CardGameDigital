@@ -32,10 +32,29 @@ class MemoryRooms implements RealtimeRoomRepository {
             updatedByParticipantId: input.participant.id,
         });
     }
-    async joinRoom(input: Parameters<RealtimeRoomRepository["joinRoom"]>[0]) {
+    async joinRoom(
+        input: Parameters<RealtimeRoomRepository["joinRoom"]>[0],
+        capacity: Parameters<RealtimeRoomRepository["joinRoom"]>[1],
+    ) {
         const room = [...this.rooms.values()].find(
             (candidate) => candidate.code === input.roomCode,
-        )!;
+        );
+        if (!room) throw Object.assign(new Error("not found"), { code: "ROOM_NOT_FOUND" });
+        const active = this.participants.filter(
+            (participant) =>
+                participant.roomId === room.id && participant.connectionStatus !== "LEFT",
+        );
+        const playerCount = active.reduce(
+            (total, participant) =>
+                total + (participant.role === "DISPLAY" ? 0 : 1 + participant.devicePlayers.length),
+            0,
+        );
+        if (
+            active.length >= capacity.maximumParticipants ||
+            playerCount + (input.role === "PLAYER" ? 1 : 0) > capacity.maximumPlayers
+        ) {
+            throw Object.assign(new Error("full"), { code: "ROOM_FULL" });
+        }
         this.participants.push({ ...input, roomId: room.id });
     }
     async authenticate(code: string, hash: string) {
@@ -215,6 +234,39 @@ describe("RoomService", () => {
         expect(
             await service.authenticate(host.roomCode, player.participantCredential),
         ).toMatchObject({ role: "PLAYER", displayName: "Player" });
+    });
+
+    it("caps represented Room players across every connected device", async () => {
+        const repository = new MemoryRooms();
+        const service = new RoomService(repository, cards, new SequenceRandomSource([0]));
+        const joined = await service.createRoom("Host");
+        const playerJoin = await service.joinRoom(joined.roomCode, "Player", "PLAYER");
+        const host = (await service.authenticate(joined.roomCode, joined.participantCredential))!;
+        const player = (await service.authenticate(
+            joined.roomCode,
+            playerJoin.participantCredential,
+        ))!;
+        await service.execute(joined.roomId, host, {
+            type: "command.setDevicePlayers",
+            revision: null,
+            payload: { names: Array.from({ length: 17 }, (_, index) => `Host ${index}`) },
+        });
+        await service.execute(joined.roomId, player, {
+            type: "command.setDevicePlayers",
+            revision: null,
+            payload: { names: ["Guest"] },
+        });
+
+        await expect(
+            service.execute(joined.roomId, player, {
+                type: "command.setDevicePlayers",
+                revision: null,
+                payload: { names: ["Guest", "One too many"] },
+            }),
+        ).rejects.toMatchObject({ code: "ROOM_FULL" });
+        expect(
+            repository.participants.find(({ id }) => id === player.id)?.devicePlayers,
+        ).toHaveLength(1);
     });
 
     it("restores a temporarily disconnected participant and expires only stale disconnects", async () => {

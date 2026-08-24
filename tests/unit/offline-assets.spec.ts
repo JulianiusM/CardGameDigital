@@ -27,10 +27,9 @@ describe("offline gameplay assets", () => {
         expect(browserSources).not.toContain("Google Fonts");
     });
 
-    it("bundles the complete Golden Mischief motif family without legacy scene styling", () => {
+    it("bundles every runtime card motif without unused scene-only files", () => {
         const motifs = [
             "general",
-            "lobby",
             "curiosity",
             "inner-self",
             "connection",
@@ -45,7 +44,6 @@ describe("offline gameplay assets", () => {
             "heat",
             "generic-dare",
             "conversation",
-            "end",
         ];
         for (const name of motifs) {
             const svg = fs.readFileSync(path.join("apps/web/public/motifs", `${name}.svg`), "utf8");
@@ -53,6 +51,8 @@ describe("offline gameplay assets", () => {
             expect(svg).not.toContain("<text");
             expect(svg.match(/<(?:path|circle|rect|ellipse)\b/g)?.length).toBeGreaterThanOrEqual(4);
         }
+        expect(fs.existsSync("apps/web/public/motifs/lobby.svg")).toBe(false);
+        expect(fs.existsSync("apps/web/public/motifs/end.svg")).toBe(false);
         const uiIcons = fs.readFileSync("apps/web/public/motifs/ui-icons.svg", "utf8");
         expect(uiIcons.match(/<symbol\b/g)?.length).toBeGreaterThanOrEqual(20);
         const backgroundSymbols = fs.readFileSync(
@@ -91,9 +91,14 @@ describe("offline gameplay assets", () => {
         expect(presentationStyles).not.toContain("conic-gradient");
         expect(presentationStyles).not.toContain("backdrop-filter");
         expect(presentationStyles).not.toMatch(/#(?:17132d|211a3b|100c22|65d1c5|78d8ff)/i);
-        expect(presentationStyles).toContain("#fff0b8");
         expect(presentationStyles).toContain("#e4ba61");
+        expect(presentationStyles).toContain("#c98e2f");
+        expect(presentationStyles).toContain("#c58a72");
         expect(presentationStyles).toContain("#9f6558");
-        expect(presentationStyles).toContain("#643a37");
+        expect(presentationStyles).not.toContain("var(--color-result-honey)");
+
+        const index = fs.readFileSync("apps/web/index.html", "utf8");
+        expect(index).toContain('name="theme-color" content="#ffd166"');
+        expect(index).not.toContain("#17132d");
     });
 });

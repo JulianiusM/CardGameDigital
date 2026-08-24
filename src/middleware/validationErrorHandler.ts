@@ -1,6 +1,9 @@
 import { MESSAGE_KEYS } from "../packages/localization/keys";
 import type { NextFunction, Request, Response } from "express";
 import { ZodError } from "zod";
+import { APIError, ExpectedError, ValidationError } from "../modules/lib/errors";
+import settings from "../modules/settings";
+import { logEvent, safeErrorName } from "../modules/structuredLogger";
 import { detectLocale, translate, translateError } from "../packages/localization/messages";
 
 export function wrapErrorApi(
@@ -10,16 +13,46 @@ export function wrapErrorApi(
     _next: NextFunction,
 ): void {
     const validation = error instanceof ZodError;
-    response.status(validation ? 400 : (error.status ?? 500)).json({
+    const status = validation ? 400 : (error.status ?? 500);
+    const serverFailure = status >= 500;
+    const expected =
+        error instanceof APIError ||
+        error instanceof ExpectedError ||
+        error instanceof ValidationError;
+    if (serverFailure) {
+        logEvent(
+            "error",
+            "http.api_unhandled_error",
+            {
+                requestId: response.locals.requestId,
+                errorName: safeErrorName(error),
+            },
+            settings.value.logLevel,
+        );
+    }
+    response.status(status).json({
         error: {
-            code: validation ? "VALIDATION_ERROR" : error.name.toUpperCase(),
+            code: validation
+                ? "VALIDATION_ERROR"
+                : serverFailure
+                  ? "INTERNAL_ERROR"
+                  : ((error as { code?: string }).code ?? "INTERNAL_ERROR"),
             message: validation
                 ? translate(
                       detectLocale(request.get("accept-language")),
                       MESSAGE_KEYS.REQUEST_INVALID,
                   )
-                : translateError(detectLocale(request.get("accept-language")), error.message),
-            data: validation ? error.flatten() : (error.data ?? {}),
+                : serverFailure
+                  ? translate(
+                        detectLocale(request.get("accept-language")),
+                        MESSAGE_KEYS.REQUEST_INTERNAL,
+                    )
+                  : translateError(detectLocale(request.get("accept-language")), error.message),
+            data: validation
+                ? error.flatten()
+                : expected && !serverFailure
+                  ? (error.data ?? {})
+                  : {},
         },
     });
 }

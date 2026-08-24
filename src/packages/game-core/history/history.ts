@@ -6,6 +6,8 @@ export type CardAppearance = {
     roundNumber: number;
     playerId: string | null;
     skipped: boolean;
+    completed: boolean;
+    vetoed: boolean;
 };
 
 export function isAllowedByHistory(

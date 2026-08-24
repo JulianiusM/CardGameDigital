@@ -8,6 +8,7 @@ import settings from "../../src/modules/settings";
 import { TypeOrmRealtimeRoomRepository } from "../../src/packages/persistence";
 import { DARE_TYPES, OPERATIONAL_FLAGS, QUESTION_CATEGORIES } from "../../src/packages/game-core";
 import { defaultRoomGameSettings } from "../../src/packages/application/roomGameSettings";
+import { ROOM_CAPACITY } from "../../src/packages/application/roomService";
 
 let directory: string;
 let repository: TypeOrmRealtimeRoomRepository;
@@ -75,15 +76,18 @@ describe("private boundary persistence", () => {
 
         expect(await repository.listParticipants(roomId)).toEqual([]);
         await expect(
-            repository.joinRoom({
-                id: randomUUID(),
-                roomCode: "SAFE23",
-                role: "PLAYER",
-                displayName: "Late joiner",
-                devicePlayers: [],
-                connectionStatus: "CONNECTED",
-                credentialHash: "b".repeat(64),
-            }),
+            repository.joinRoom(
+                {
+                    id: randomUUID(),
+                    roomCode: "SAFE23",
+                    role: "PLAYER",
+                    displayName: "Late joiner",
+                    devicePlayers: [],
+                    connectionStatus: "CONNECTED",
+                    credentialHash: "b".repeat(64),
+                },
+                ROOM_CAPACITY,
+            ),
         ).rejects.toMatchObject({ code: "ROOM_NOT_FOUND" });
     });
 });

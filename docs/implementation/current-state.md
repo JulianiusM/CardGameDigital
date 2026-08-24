@@ -32,7 +32,11 @@ are not part of this product.
 
 ## Deliberate external release gates
 
-MariaDB, SMTP, an actual OIDC provider, HTTPS proxy behavior, browser screenshots and
-cross-platform native packages still require their respective CI or staging systems.
-The canonical production card database is also still required before the complete
-Core Release can be labelled verified.
+MariaDB 10.11 migration, catalog-lock, and browser checks pass and are wired into CI.
+SMTP, an actual OIDC provider, HTTPS proxy behavior, and public browser account flows
+still require their respective staging systems. Portable server archives
+must be built on every supported operating system because their Node dependencies have
+platform-specific native bindings. Kodi and Android-family native clients are deferred
+from the current release scope; the responsive web client covers Couch, Personal, and
+Party Screen device modes. The canonical production Card catalog is still required
+before the complete Core Release can be labelled verified.

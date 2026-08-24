@@ -4,6 +4,7 @@ import path from "node:path";
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { AppDataSource, initDataSource } from "../../src/modules/database/dataSource";
+import { AccountSession } from "../../src/modules/database/entities/session/AccountSession";
 import {
     consumeActivationToken,
     generateActivationToken,
@@ -57,6 +58,7 @@ describe("native account API", () => {
         expect(exported.headers["content-disposition"]).toContain("attachment");
 
         await agent.post("/api/v1/account/logout").expect(204);
+        expect(await AppDataSource.getRepository(AccountSession).count()).toBe(0);
         await agent.get("/api/v1/account/me").expect(401);
     });
 
@@ -68,5 +70,17 @@ describe("native account API", () => {
             .expect(400);
         expect(response.body.error.code).toBe("VALIDATION_ERROR");
         expect(response.body.error.message).toBe("Invalid input.");
+
+        const credentials = await request(app)
+            .post("/api/v1/account/login")
+            .send({ username: "anna", password: "wrong-password" })
+            .expect(401);
+        expect(credentials.body.error.code).toBe("ACCOUNT_INVALID_CREDENTIALS");
+
+        const missing = await request(app).get("/api/v1/does-not-exist").expect(404);
+        expect(missing.body.error).toMatchObject({
+            code: "REQUEST_NOT_FOUND",
+            message: "Not found.",
+        });
     });
 });

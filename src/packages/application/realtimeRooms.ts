@@ -19,6 +19,10 @@ export type RoomJoinResult = {
     participantCredential: string;
     role: RoomRole;
 };
+export type RoomCapacity = {
+    maximumParticipants: number;
+    maximumPlayers: number;
+};
 export interface RealtimeRoomRepository {
     roomCodeExists(code: string): Promise<boolean>;
     createRoom(input: {
@@ -31,6 +35,7 @@ export interface RealtimeRoomRepository {
     }): Promise<void>;
     joinRoom(
         input: Omit<RoomParticipant, "roomId"> & { roomCode: string; credentialHash: string },
+        capacity: RoomCapacity,
     ): Promise<void>;
     authenticate(roomCode: string, credentialHash: string): Promise<RoomParticipant | null>;
     getParticipant(roomId: string, participantId: string): Promise<RoomParticipant | null>;

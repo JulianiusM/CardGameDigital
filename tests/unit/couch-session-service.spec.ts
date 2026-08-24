@@ -1,7 +1,15 @@
 import { describe, expect, it } from "vitest";
 import { CouchSessionService } from "../../src/packages/application/couchSessionService";
-import type { CardRepository } from "../../src/packages/application/repositories";
-import { CARD_TYPES, GAME_MODES, SequenceRandomSource } from "../../src/packages/game-core";
+import type {
+    CardRepository,
+    CouchSessionRepository,
+} from "../../src/packages/application/repositories";
+import {
+    CARD_TYPES,
+    GAME_MODES,
+    SequenceRandomSource,
+    type GameSessionRuntimeState,
+} from "../../src/packages/game-core";
 import { card } from "../support/game";
 import { effectiveSettingsFromProfile } from "../../src/packages/application/roomGameSettings";
 
@@ -120,5 +128,56 @@ describe("CouchSessionService", () => {
                 adultContentConfirmed: true,
             }),
         ).toMatchObject({ revision: 0 });
+    });
+
+    it("keeps the cached Session unchanged when persistence rejects a command", async () => {
+        let stored: GameSessionRuntimeState | null = null;
+        let rejectNextSave = false;
+        const persistence: CouchSessionRepository = {
+            load: async () => stored,
+            groupHistory: async () => new Set(),
+            save: async (runtime) => {
+                if (rejectNextSave) {
+                    rejectNextSave = false;
+                    throw new Error("persistence unavailable");
+                }
+                stored = structuredClone(runtime);
+            },
+        };
+        const service = new CouchSessionService(
+            repository,
+            new SequenceRandomSource([0]),
+            undefined,
+            persistence,
+        );
+        const created = await service.create(input(GAME_MODES.CLASSIC));
+        rejectNextSave = true;
+
+        await expect(
+            service.chooseCardType(created.id, created.revision, CARD_TYPES.QUESTION),
+        ).rejects.toThrow("persistence unavailable");
+        expect(await service.get(created.id)).toEqual(created);
+        expect((stored as GameSessionRuntimeState | null)?.revision).toBe(created.revision);
+
+        const committed = await service.chooseCardType(
+            created.id,
+            created.revision,
+            CARD_TYPES.QUESTION,
+        );
+        expect(committed.revision).toBe(created.revision + 1);
+    });
+
+    it("serializes concurrent commands for the same Couch Session", async () => {
+        const service = new CouchSessionService(repository, new SequenceRandomSource([0]));
+        const created = await service.create(input(GAME_MODES.RANDOM));
+
+        const results = await Promise.allSettled([
+            service.startTurn(created.id, created.revision),
+            service.startTurn(created.id, created.revision),
+        ]);
+
+        expect(results.filter(({ status }) => status === "fulfilled")).toHaveLength(1);
+        expect(results.filter(({ status }) => status === "rejected")).toHaveLength(1);
+        expect((await service.get(created.id)).revision).toBe(created.revision + 1);
     });
 });

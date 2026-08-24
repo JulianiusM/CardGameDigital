@@ -7,8 +7,9 @@ import { DataSource, DataSourceOptions } from "typeorm";
 import settings, { Settings } from "../settings";
 import { entities, migrations, subscribers } from "./__index__";
 import { DataSpace } from "./entities/user/DataSpace";
-import { applyBundledCardCatalog } from "./bundledCardCatalog";
+import { applyBundledCardCatalog, bundledCardCatalogArtifact } from "./bundledCardCatalog";
 import { LocaleEntity } from "./entities/card/LocaleEntity";
+import { logEvent } from "../structuredLogger";
 
 export function dataSourceOptions(config: Settings): DataSourceOptions {
     const common = {
@@ -38,11 +39,13 @@ export function dataSourceOptions(config: Settings): DataSourceOptions {
 
 export let AppDataSource: DataSource;
 
-async function backupSqliteBeforeUpgrade(config: Settings): Promise<void> {
+async function backupSqliteBeforeUpgrade(config: Settings, catalogSequence: number): Promise<void> {
     if (config.dbType !== "sqlite" || config.dbFile === ":memory:") return;
     const database = path.resolve(config.dbFile);
     if (!fs.existsSync(database) || fs.statSync(database).size === 0) return;
-    const backup = `${database}.pre-catalog-v1.bak`;
+    const migrationName = migrations.at(-1)?.name ?? "schema";
+    const schemaVersion = migrationName.match(/\d{13}$/)?.[0] ?? "unknown";
+    const backup = `${database}.pre-schema-${schemaVersion}-catalog-${catalogSequence}.bak`;
     if (fs.existsSync(backup)) return;
     const connection = new Database(database, { readonly: true });
     try {
@@ -55,15 +58,16 @@ async function backupSqliteBeforeUpgrade(config: Settings): Promise<void> {
 export async function initDataSource(): Promise<DataSource> {
     if (AppDataSource?.isInitialized) return AppDataSource;
     if (!settings.value.initialized) await settings.read();
-    await backupSqliteBeforeUpgrade(settings.value);
+    const catalogArtifact = bundledCardCatalogArtifact(settings.value.deploymentMode);
+    await backupSqliteBeforeUpgrade(settings.value, catalogArtifact.catalog.sequence);
     AppDataSource = new DataSource(dataSourceOptions(settings.value));
     await AppDataSource.initialize();
     if (settings.value.dbType === "sqlite") {
         await AppDataSource.query("PRAGMA foreign_keys = ON");
     }
     await AppDataSource.runMigrations({ transaction: "all" });
-    const catalogResult = await applyBundledCardCatalog(AppDataSource);
-    console.log(`Card catalog startup result: ${catalogResult}`);
+    const catalogResult = await applyBundledCardCatalog(AppDataSource, catalogArtifact);
+    logEvent("info", "catalog.startup", { result: catalogResult }, settings.value.logLevel);
     if (settings.value.cardMissingTranslation === "FALLBACK") {
         const fallbackAvailable = await AppDataSource.getRepository(LocaleEntity).existsBy({
             id: settings.value.cardFallbackLocale,

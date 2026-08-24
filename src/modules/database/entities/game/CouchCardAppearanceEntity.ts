@@ -12,4 +12,6 @@ export class CouchCardAppearanceEntity {
     @Column("int", { name: "round_number" }) roundNumber!: number;
     @Column("int") sequence!: number;
     @Column("boolean", { default: false }) skipped!: boolean;
+    @Column("boolean", { default: false }) completed!: boolean;
+    @Column("boolean", { default: false }) vetoed!: boolean;
 }

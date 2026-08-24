@@ -37,7 +37,11 @@ afterAll(async () => {
 
 describe("bundled catalog startup", () => {
     it("backs up existing SQLite, migrates, and applies the offline catalog before ready", async () => {
-        const backupFile = `${databaseFile}.pre-catalog-v1.bak`;
+        const backupName = fs
+            .readdirSync(directory)
+            .find((name) => name.startsWith("game.sqlite.pre-schema-") && name.endsWith(".bak"));
+        expect(backupName).toBeDefined();
+        const backupFile = path.join(directory, backupName!);
         expect(fs.existsSync(backupFile)).toBe(true);
         const backup = new Database(backupFile, { readonly: true });
         expect(backup.prepare("SELECT value FROM pre_upgrade_marker").get()).toEqual({

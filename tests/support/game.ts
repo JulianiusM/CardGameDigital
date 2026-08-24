@@ -7,8 +7,9 @@ import {
 } from "../../src/packages/game-core";
 
 export function card(overrides: Partial<PlayableCard> & Pick<PlayableCard, "id">): PlayableCard {
+    const { id, ...properties } = overrides;
     return {
-        id: overrides.id,
+        id,
         cardText: "Card",
         locale: "en-GB",
         cardType: CARD_TYPES.QUESTION,
@@ -23,7 +24,7 @@ export function card(overrides: Partial<PlayableCard> & Pick<PlayableCard, "id">
         weight: 1,
         active: true,
         operationalFlags: [],
-        ...overrides,
+        ...properties,
     };
 }
 

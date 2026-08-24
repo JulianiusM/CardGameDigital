@@ -495,7 +495,7 @@ export class RoomSocket {
     private browserOffline = (): void => {
         if (this.socket) this.reconnectFrom(this.socket);
         else {
-            this.markReconnecting();
+            this.markReconnecting("OFFLINE");
             this.scheduleReconnect();
         }
     };

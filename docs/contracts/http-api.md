@@ -20,8 +20,12 @@ Successful bodies are JSON unless the status is `204`. Errors use:
 }
 ```
 
-`code`, not `message`, is the stable programmatic value. Validation responses may add
-`details`. Account-sensitive endpoints are rate-limited.
+`code`, not `message`, is the stable programmatic value. Validation responses put Zod's
+flattened issue structure in `data`. Business errors derive stable codes such as
+`ACCOUNT_INVALID_CREDENTIALS`; an unknown endpoint returns `REQUEST_NOT_FOUND`, and
+unexpected failures return `INTERNAL_ERROR` without serializing internal error data.
+Account-sensitive endpoints are rate-limited. Every API response uses
+`Cache-Control: no-store` and includes a server-generated `X-Request-ID`.
 
 ## Discovery and operations
 
@@ -96,7 +100,9 @@ Returns `201` with `roomId`, six-character `roomCode`, `participantId`,
 Role is `PLAYER` or `DISPLAY`; HTTP cannot create another host. Returns the same join
 credential shape with `201`. The room code is public and suitable for QR codes. The
 participant credential is secret and must only be stored on the joining device.
-Realtime play continues over WebSocket.
+Realtime play continues over WebSocket. A Room accepts at most 20 active device
+participants and 20 represented players; excess joins return `409 ROOM_FULL`. Public
+deployments rate-limit Room creation and joins per source address.
 
 ## Couch sessions
 
@@ -154,7 +160,8 @@ Local account endpoints may be disabled by deployment configuration.
 | DELETE | `/account/me`                            | yes            | Delete account after username confirmation.         |
 
 Activation/reset tokens are one-time bearer values sent by email. Stored values are
-hashed; clients must not persist them after use.
+hashed; the browser removes them from the visible URL/history immediately after reading
+the link, and clients must not persist them after use.
 
 ## DataSpace resources
 

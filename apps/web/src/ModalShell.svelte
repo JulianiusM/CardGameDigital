@@ -1,10 +1,32 @@
 <script lang="ts">
     import { cubicOut } from "svelte/easing";
+    import { onDestroy, tick } from "svelte";
     import { fade, type TransitionConfig } from "svelte/transition";
 
     export let open = false;
     export let labelledBy: string;
     export let className = "";
+
+    let backdrop: HTMLElement;
+    let dialog: HTMLElement;
+    let wasOpen = false;
+    let returnFocus: HTMLElement | null = null;
+    let outsideState: Array<{
+        element: HTMLElement;
+        inert: boolean;
+        ariaHidden: string | null;
+    }> = [];
+
+    $: if (open && !wasOpen) {
+        wasOpen = true;
+        void activateModal();
+    }
+    $: if (!open && wasOpen) {
+        wasOpen = false;
+        restoreOutside();
+        returnFocus?.focus();
+        returnFocus = null;
+    }
 
     function reducedMotion(): boolean {
         return (
@@ -37,7 +59,76 @@
         open = false;
     }
     function keydown(event: KeyboardEvent): void {
-        if (open && event.key === "Escape") close();
+        if (!open) return;
+        if (event.key === "Escape") {
+            event.preventDefault();
+            close();
+            return;
+        }
+        if (event.key !== "Tab") return;
+        const focusable = [...dialog.querySelectorAll<HTMLElement>(focusableSelector())].filter(
+            (element) => element.getClientRects().length > 0,
+        );
+        if (!focusable.length) {
+            event.preventDefault();
+            dialog.focus();
+            return;
+        }
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+        if (event.shiftKey && document.activeElement === first) {
+            event.preventDefault();
+            last.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+            event.preventDefault();
+            first.focus();
+        }
+    }
+    function focusableSelector(): string {
+        return [
+            "button:not([disabled])",
+            "a[href]",
+            "input:not([disabled])",
+            "select:not([disabled])",
+            "textarea:not([disabled])",
+            '[tabindex]:not([tabindex="-1"])',
+        ].join(",");
+    }
+    async function activateModal(): Promise<void> {
+        returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+        await tick();
+        if (!open || !backdrop || !dialog) return;
+        disableOutside(backdrop);
+        const first = [...dialog.querySelectorAll<HTMLElement>(focusableSelector())].find(
+            (element) => element.getClientRects().length > 0,
+        );
+        (first ?? dialog).focus();
+    }
+    function disableOutside(branch: HTMLElement): void {
+        restoreOutside();
+        let current: HTMLElement | null = branch;
+        while (current?.parentElement) {
+            for (const sibling of current.parentElement.children) {
+                if (sibling === current || !(sibling instanceof HTMLElement)) continue;
+                outsideState.push({
+                    element: sibling,
+                    inert: sibling.inert,
+                    ariaHidden: sibling.getAttribute("aria-hidden"),
+                });
+                sibling.inert = true;
+                sibling.setAttribute("aria-hidden", "true");
+            }
+            current = current.parentElement;
+            if (current === document.body) break;
+        }
+    }
+    function restoreOutside(): void {
+        for (const state of outsideState) {
+            state.element.inert = state.inert;
+            if (state.ariaHidden === null) state.element.removeAttribute("aria-hidden");
+            else state.element.setAttribute("aria-hidden", state.ariaHidden);
+        }
+        outsideState = [];
     }
     function deactivateDuringOutro(event: Event): void {
         const backdrop = event.currentTarget as HTMLElement;
@@ -49,12 +140,14 @@
         backdrop.inert = false;
         backdrop.setAttribute("aria-hidden", "false");
     }
+    onDestroy(restoreOutside);
 </script>
 
 <svelte:window on:keydown={keydown} />
 
 {#if open}
     <div
+        bind:this={backdrop}
         class="modal-backdrop"
         role="presentation"
         aria-hidden={!open}
@@ -67,6 +160,7 @@
         <!-- Dialog consumes pointer events so only the backdrop dismisses it. -->
         <!-- svelte-ignore a11y_no_noninteractive_element_to_interactive_role a11y_click_events_have_key_events -->
         <div
+            bind:this={dialog}
             class={`settings-modal ${className}`.trim()}
             role="dialog"
             tabindex="-1"

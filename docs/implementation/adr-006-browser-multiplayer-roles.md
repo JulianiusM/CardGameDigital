@@ -6,7 +6,11 @@ Accepted for Phase 6.
 
 ## Decision
 
-- The existing Svelte application now provides `/play/host`, `/play/display`, `/play/mobile`, and `/play/couch` presentations rather than introducing device-specific applications.
+- The Svelte application provides canonical `/play/room` and `/play/couch`
+  presentations rather than introducing topology-specific web bundles. The browser
+  derives HOST, PLAYER, or DISPLAY presentation from its credential-authenticated Room
+  snapshot. Historical `/play/host`, `/play/mobile`, and `/play/display` URLs redirect
+  inside the client to `/play/room`.
 - Room creation and joining remain HTTP operations. Active presence, commands, private controls, snapshots, and reconnect use the Phase 5 WebSocket connection.
 - The server projects an authoritative snapshot separately for each participant. Only the active participant receives the Classic choice control and displays receive no command capabilities. Never-Have-I-Ever completion is public, but answer values are withheld during collection and broadcast only after completion when the Session's immutable reveal mode is `NAMED_ANSWERS`.
 - A vote is attributed from the authenticated participant credential rather than a client-supplied player identifier. Private veto messages contain no participant identity in the public snapshot.

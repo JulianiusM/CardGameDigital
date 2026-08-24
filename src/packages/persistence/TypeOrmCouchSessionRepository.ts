@@ -100,6 +100,8 @@ export class TypeOrmCouchSessionRepository implements CouchSessionRepository {
                         roundNumber: appearance.roundNumber,
                         sequence: appearance.sequence,
                         skipped: appearance.skipped,
+                        completed: appearance.completed,
+                        vetoed: appearance.vetoed,
                     }),
                 );
             }

@@ -39,6 +39,7 @@ import {
 import { projectNeverHaveIEverVoting } from "./neverHaveIEverVoting";
 
 const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+export const ROOM_CAPACITY = Object.freeze({ maximumParticipants: 50, maximumPlayers: 100 });
 const roleCapabilities: Record<RoomRole, ReadonlySet<string>> = {
     HOST: new Set([
         "DISPLAY_SESSION",
@@ -197,15 +198,18 @@ export class RoomService {
         const participantId = randomUUID();
         const credential = randomBytes(32).toString("base64url");
         // The repository resolves the non-secret code to the real Room ID.
-        await this.repository.joinRoom({
-            id: participantId,
-            roomCode,
-            role,
-            displayName,
-            devicePlayers: [],
-            connectionStatus: "TEMPORARILY_DISCONNECTED",
-            credentialHash: this.hashCredential(credential),
-        });
+        await this.repository.joinRoom(
+            {
+                id: participantId,
+                roomCode,
+                role,
+                displayName,
+                devicePlayers: [],
+                connectionStatus: "TEMPORARILY_DISCONNECTED",
+                credentialHash: this.hashCredential(credential),
+            },
+            ROOM_CAPACITY,
+        );
         const participant = await this.repository.authenticate(
             roomCode,
             this.hashCredential(credential),
@@ -400,6 +404,18 @@ export class RoomService {
                     code: "INVALID_GAME_STATE",
                 });
             }
+            const participants = await this.repository.listParticipants(roomId);
+            const playerCount = participants.reduce((total, current) => {
+                if (current.role === "DISPLAY") return total;
+                const devicePlayerCount =
+                    current.id === participant.id
+                        ? command.payload.names.length
+                        : current.devicePlayers.length;
+                return total + 1 + devicePlayerCount;
+            }, 0);
+            if (playerCount > ROOM_CAPACITY.maximumPlayers) {
+                throw Object.assign(new Error(MESSAGE_KEYS.ROOM_FULL), { code: "ROOM_FULL" });
+            }
             await this.repository.saveDevicePlayers(
                 participant.id,
                 command.payload.names.map((name) => ({ id: randomUUID(), name: name.trim() })),
@@ -558,8 +574,8 @@ export class RoomService {
         if (command.type === "command.startTurn") proposed.startTurn(command.revision, cards);
         else if (command.type === "command.chooseCardType")
             proposed.chooseCardType(command.revision, command.payload.cardType, cards);
-        else if (command.type === "command.skipCard" || command.type === "command.vetoCard")
-            proposed.skipCard(command.revision, cards);
+        else if (command.type === "command.skipCard") proposed.skipCard(command.revision, cards);
+        else if (command.type === "command.vetoCard") proposed.vetoCard(command.revision, cards);
         else if (command.type === "command.advanceSession") proposed.advance(command.revision);
         else if (command.type === "command.submitVote") {
             const voterId = command.payload.playerId ?? participant.id;

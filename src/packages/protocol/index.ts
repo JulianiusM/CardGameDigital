@@ -7,6 +7,7 @@ export const protocolErrorCodeSchema = z.enum([
     "AUTHENTICATION_ERROR",
     "ROOM_NOT_FOUND",
     "ROOM_FULL",
+    "CARD_LOCALE_UNAVAILABLE",
     "INVALID_GAME_STATE",
     "NOT_ACTIVE_PLAYER",
     "CARD_POOL_EXHAUSTED",

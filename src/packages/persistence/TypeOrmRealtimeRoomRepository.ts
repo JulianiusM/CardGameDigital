@@ -4,6 +4,7 @@ import type { CardId, GameSessionRuntimeState, PlayerBoundaries } from "../game-
 import type {
     DevicePlayer,
     RealtimeRoomRepository,
+    RoomCapacity,
     RoomParticipant,
 } from "../application/realtimeRooms";
 import {
@@ -78,22 +79,48 @@ export class TypeOrmRealtimeRoomRepository implements RealtimeRoomRepository {
     }
     async joinRoom(
         input: Omit<RoomParticipant, "roomId"> & { roomCode: string; credentialHash: string },
+        capacity: RoomCapacity,
     ): Promise<void> {
-        const room = await this.source
-            .getRepository(RoomEntity)
-            .findOneBy({ code: input.roomCode, closedAt: IsNull() });
-        if (!room || room.expiresAt <= new Date())
-            throw Object.assign(new Error("Room not found"), { code: "ROOM_NOT_FOUND" });
-        await this.source.getRepository(RoomParticipantEntity).insert({
-            id: input.id,
-            roomId: room.id,
-            role: input.role,
-            displayName: input.displayName,
-            credentialHash: input.credentialHash,
-            devicePlayersJson: JSON.stringify(input.devicePlayers),
-            createdAt: new Date(),
-            lastSeenAt: new Date(),
-            leftAt: null,
+        await this.source.transaction(async (manager) => {
+            const roomQuery = manager
+                .getRepository(RoomEntity)
+                .createQueryBuilder("room")
+                .where("room.code = :code", { code: input.roomCode })
+                .andWhere("room.closedAt IS NULL");
+            if (this.source.options.type === "mariadb" || this.source.options.type === "mysql") {
+                roomQuery.setLock("pessimistic_write");
+            }
+            const room = await roomQuery.getOne();
+            if (!room || room.expiresAt <= new Date())
+                throw Object.assign(new Error("Room not found"), { code: "ROOM_NOT_FOUND" });
+            const participantRepository = manager.getRepository(RoomParticipantEntity);
+            const participants = await participantRepository.findBy({
+                roomId: room.id,
+                connectionStatus: Not("LEFT"),
+            });
+            const currentPlayers = participants.reduce((total, participant) => {
+                if (participant.role === "DISPLAY") return total;
+                const devicePlayers = JSON.parse(participant.devicePlayersJson) as DevicePlayer[];
+                return total + 1 + devicePlayers.length;
+            }, 0);
+            const joiningPlayers = input.role === "PLAYER" ? 1 : 0;
+            if (
+                participants.length >= capacity.maximumParticipants ||
+                currentPlayers + joiningPlayers > capacity.maximumPlayers
+            ) {
+                throw Object.assign(new Error("Room is full"), { code: "ROOM_FULL" });
+            }
+            await participantRepository.insert({
+                id: input.id,
+                roomId: room.id,
+                role: input.role,
+                displayName: input.displayName,
+                credentialHash: input.credentialHash,
+                devicePlayersJson: JSON.stringify(input.devicePlayers),
+                createdAt: new Date(),
+                lastSeenAt: new Date(),
+                leftAt: null,
+            });
         });
     }
     async authenticate(roomCode: string, credentialHash: string): Promise<RoomParticipant | null> {
@@ -422,8 +449,8 @@ export class TypeOrmRealtimeRoomRepository implements RealtimeRoomRepository {
                         roundNumber: appearance.roundNumber,
                         sequence: appearance.sequence,
                         skipped: appearance.skipped,
-                        completed: false,
-                        vetoed: false,
+                        completed: appearance.completed,
+                        vetoed: appearance.vetoed,
                     }),
                 );
             }

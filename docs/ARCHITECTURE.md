@@ -9,7 +9,7 @@ roles, or persistence commits.
 ```text
 Svelte clients
   ├─ HTTP /api/v1 ───────────────┐
-  └─ WebSocket /ws (protocol 1) ─┤
+  └─ WebSocket /ws (protocol 2) ─┤
                                   ▼
 Express / WebSocket adapters
                                   ▼

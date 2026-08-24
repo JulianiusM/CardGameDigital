@@ -54,11 +54,11 @@ presence updates. Unsupported versions fail with `PROTOCOL_VERSION_UNSUPPORTED`.
 | `room.snapshot.request`    | current or null | `{}`; request fresh viewer projection.                                                                |
 | `command.startSession`     | `null`          | Mode, profile/group, adult confirmation, intensity, ratios, interval, BCP 47 `cardLocale`. Host only. |
 | `command.startTurn`        | current         | `{}`                                                                                                  |
-| `command.chooseCardType`   | current         | `{cardType:"QUESTION"                                                                                 | "DARE"}`                                               |
+| `command.chooseCardType`   | current         | `{cardType:"QUESTION" or "DARE"}`                                                                     |
 | `command.skipCard`         | current         | `{}`                                                                                                  |
 | `command.vetoCard`         | current         | `{}`                                                                                                  |
 | `command.advanceSession`   | current         | `{}`                                                                                                  |
-| `command.submitVote`       | current         | `{vote:"YES"                                                                                          | "NO",playerId?}`; player must be controlled by device. |
+| `command.submitVote`       | current         | `{vote:"YES" or "NO",playerId?}`; player must be controlled by device.                                |
 | `command.setBoundaries`    | `null`          | Arrays of stable category, dare-type, and operational-flag codes. Pre-game only.                      |
 | `command.setDevicePlayers` | `null`          | `{names:[...]}`; pre-game only.                                                                       |
 | `command.transferHost`     | current or null | `{participantId}`; current host only.                                                                 |

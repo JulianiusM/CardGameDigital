@@ -51,7 +51,7 @@ export type GameSessionOptions = {
     neverHaveIEverRevealMode?: NeverHaveIEverRevealMode;
 };
 export type GameSessionRuntimeState = {
-    version: 2;
+    version: 3;
     id: string;
     startedAt: number;
     mode: GameMode;
@@ -178,7 +178,7 @@ export class GameSession {
     }
 
     static restore(runtime: GameSessionRuntimeState, random: RandomSource): GameSession {
-        if (runtime.version !== 2)
+        if (runtime.version !== 3)
             throw new Error(`Unsupported GameSession runtime version ${runtime.version}`);
         // JSON cannot represent Set and Map. Rehydrate those domain collections
         // explicitly so persistence remains an adapter concern, not a domain dependency.
@@ -238,7 +238,7 @@ export class GameSession {
     toRuntimeState(): GameSessionRuntimeState {
         // Keep this representation versioned and JSON-safe for restart/reconnect recovery.
         return {
-            version: 2,
+            version: 3,
             id: this.id,
             startedAt: this.startedAt,
             mode: this.mode,
@@ -421,20 +421,32 @@ export class GameSession {
     }
 
     skipCard(expectedRevision: number, cards: readonly PlayableCard[]): Card {
+        return this.replaceCard(expectedRevision, cards, "skipCard", "SKIPPED");
+    }
+
+    vetoCard(expectedRevision: number, cards: readonly PlayableCard[]): Card {
+        return this.replaceCard(expectedRevision, cards, "vetoCard", "VETOED");
+    }
+
+    private replaceCard(
+        expectedRevision: number,
+        cards: readonly PlayableCard[],
+        command: "skipCard" | "vetoCard",
+        reason: "SKIPPED" | "VETOED",
+    ): Card {
         this.assertRevision(expectedRevision);
-        this.assertState(
-            "skipCard",
-            SESSION_STATES.SHOWING_CARD,
-            SESSION_STATES.COLLECTING_ANSWERS,
-        );
-        if (!this.pendingCardType) throw new InvalidGameStateError(this.state, "skipCard");
+        this.assertState(command, SESSION_STATES.SHOWING_CARD, SESSION_STATES.COLLECTING_ANSWERS);
+        if (!this.pendingCardType) throw new InvalidGameStateError(this.state, command);
         const requireYesNo = this.mode === GAME_MODES.NEVER_HAVE_I_EVER;
         const selected = selectWeighted(
             this.pool(cards, this.pendingCardType, requireYesNo),
             this.random,
         );
         const appearance = this.sessionHistory[this.sessionHistory.length - 1];
-        if (appearance) appearance.skipped = true;
+        if (appearance) {
+            appearance.skipped = reason === "SKIPPED";
+            appearance.vetoed = reason === "VETOED";
+        }
         this.votes.clear();
         return this.commitShown(selected);
     }
@@ -461,6 +473,8 @@ export class GameSession {
     advance(expectedRevision: number): void {
         this.assertRevision(expectedRevision);
         this.assertState("advance", SESSION_STATES.SHOWING_CARD, SESSION_STATES.SHOWING_RESULTS);
+        const appearance = this.sessionHistory[this.sessionHistory.length - 1];
+        if (appearance && !appearance.skipped && !appearance.vetoed) appearance.completed = true;
         this.currentCard = null;
         this.pendingCardType = null;
         this.votes.clear();
@@ -490,7 +504,9 @@ export class GameSession {
         requireYesNo: boolean,
     ): readonly PlayableCard[] {
         const boundaries =
-            cardType === CARD_TYPES.DARE || this.mode === GAME_MODES.NEVER_HAVE_I_EVER
+            cardType === CARD_TYPES.DARE ||
+            cardType === CARD_TYPES.CONVERSATION ||
+            this.mode === GAME_MODES.NEVER_HAVE_I_EVER
                 ? this.players.map(
                       (player) => this.boundariesByPlayer.get(player.id) ?? EMPTY_BOUNDARIES,
                   )
@@ -515,6 +531,8 @@ export class GameSession {
             roundNumber: this.roundNumber,
             playerId: this.activePlayer?.id ?? null,
             skipped: false,
+            completed: false,
+            vetoed: false,
         });
         if (card.cardType === CARD_TYPES.QUESTION || card.cardType === CARD_TYPES.DARE) {
             this.shownTypeCounts[card.cardType]++;

@@ -76,6 +76,7 @@ export class CouchSessionNotFoundError extends Error {
 
 export class CouchSessionService {
     private readonly sessions = new Map<string, GameSession>();
+    private readonly queues = new Map<string, Promise<unknown>>();
     constructor(
         private readonly cards: CardRepository,
         private readonly random: RandomSource,
@@ -141,13 +142,13 @@ export class CouchSessionService {
                 code: "CARD_POOL_EXHAUSTED",
             });
         }
-        this.sessions.set(session.id, session);
         await this.repository?.save(
             session.toRuntimeState(),
             input.dataSpaceId
                 ? { dataSpaceId: input.dataSpaceId, groupId: input.groupId ?? null }
                 : undefined,
         );
+        this.sessions.set(session.id, session);
         return this.snapshot(session);
     }
 
@@ -156,51 +157,47 @@ export class CouchSessionService {
     }
 
     async startTurn(id: string, revision: number): Promise<CouchSessionSnapshot> {
-        const session = await this.require(id);
-        session.startTurn(
-            revision,
-            await this.cards.listActive({
-                locale: session.cardLocale,
-                ...this.cardTranslationPolicy,
-            }),
-        );
-        await this.persist(session);
-        return this.snapshot(session);
+        return this.mutate(id, async (session) => {
+            session.startTurn(
+                revision,
+                await this.cards.listActive({
+                    locale: session.cardLocale,
+                    ...this.cardTranslationPolicy,
+                }),
+            );
+        });
     }
     async chooseCardType(
         id: string,
         revision: number,
         cardType: typeof CARD_TYPES.QUESTION | typeof CARD_TYPES.DARE,
     ): Promise<CouchSessionSnapshot> {
-        const session = await this.require(id);
-        session.chooseCardType(
-            revision,
-            cardType,
-            await this.cards.listActive({
-                locale: session.cardLocale,
-                ...this.cardTranslationPolicy,
-            }),
-        );
-        await this.persist(session);
-        return this.snapshot(session);
+        return this.mutate(id, async (session) => {
+            session.chooseCardType(
+                revision,
+                cardType,
+                await this.cards.listActive({
+                    locale: session.cardLocale,
+                    ...this.cardTranslationPolicy,
+                }),
+            );
+        });
     }
     async skip(id: string, revision: number): Promise<CouchSessionSnapshot> {
-        const session = await this.require(id);
-        session.skipCard(
-            revision,
-            await this.cards.listActive({
-                locale: session.cardLocale,
-                ...this.cardTranslationPolicy,
-            }),
-        );
-        await this.persist(session);
-        return this.snapshot(session);
+        return this.mutate(id, async (session) => {
+            session.skipCard(
+                revision,
+                await this.cards.listActive({
+                    locale: session.cardLocale,
+                    ...this.cardTranslationPolicy,
+                }),
+            );
+        });
     }
     async advance(id: string, revision: number): Promise<CouchSessionSnapshot> {
-        const session = await this.require(id);
-        session.advance(revision);
-        await this.persist(session);
-        return this.snapshot(session);
+        return this.mutate(id, (session) => {
+            session.advance(revision);
+        });
     }
     async vote(
         id: string,
@@ -208,16 +205,14 @@ export class CouchSessionService {
         playerId: string,
         vote: "YES" | "NO",
     ): Promise<CouchSessionSnapshot> {
-        const session = await this.require(id);
-        session.submitVote(revision, playerId, vote);
-        await this.persist(session);
-        return this.snapshot(session);
+        return this.mutate(id, (session) => {
+            session.submitVote(revision, playerId, vote);
+        });
     }
     async end(id: string, revision: number): Promise<CouchSessionSnapshot> {
-        const session = await this.require(id);
-        session.end(revision);
-        await this.persist(session);
-        return this.snapshot(session);
+        return this.mutate(id, (session) => {
+            session.end(revision);
+        });
     }
 
     private async require(id: string): Promise<GameSession> {
@@ -228,6 +223,30 @@ export class CouchSessionService {
         const restored = GameSession.restore(runtime, this.random);
         this.sessions.set(id, restored);
         return restored;
+    }
+    private mutate(
+        id: string,
+        change: (session: GameSession) => void | Promise<void>,
+    ): Promise<CouchSessionSnapshot> {
+        return this.serialize(id, async () => {
+            const current = await this.require(id);
+            const proposed = GameSession.restore(current.toRuntimeState(), this.random);
+            await change(proposed);
+            await this.persist(proposed);
+            this.sessions.set(id, proposed);
+            return this.snapshot(proposed);
+        });
+    }
+    private serialize<T>(id: string, action: () => Promise<T>): Promise<T> {
+        const prior = this.queues.get(id) ?? Promise.resolve();
+        const next = prior.catch(() => undefined).then(action);
+        const tracked = next
+            .catch(() => undefined)
+            .finally(() => {
+                if (this.queues.get(id) === tracked) this.queues.delete(id);
+            });
+        this.queues.set(id, tracked);
+        return next;
     }
     private async persist(session: GameSession): Promise<void> {
         await this.repository?.save(session.toRuntimeState());

@@ -17,16 +17,25 @@
 import { MESSAGE_KEYS } from "../packages/localization/keys";
 import type { Request } from "express";
 import * as oidc from "openid-client";
+import { z } from "zod";
 import { findOrCreateUserFromOidc } from "./database/services/UserService";
 import { ExpectedError } from "./lib/errors";
-import { persistSession } from "./lib/session";
+import { persistSession, regenerateSession } from "./lib/session";
 import settings from "./settings";
 
 let config: oidc.Configuration;
 
+const oidcIdentityClaimsSchema = z.object({
+    sub: z.string().min(1).max(255),
+    email: z.email().max(100).optional(),
+    email_verified: z.boolean().optional(),
+    preferred_username: z.string().min(1).max(100).optional(),
+    name: z.string().min(1).max(50).optional(),
+});
+
 export async function initOIDC() {
     if (!settings.value.initialized) await settings.read();
-    const server = new URL(settings.value.oidcIssuerBaseUrl);
+    const server = new URL(settings.value.oidcIssuer);
     const clientId = settings.value.oidcClientId;
     const clientSecret = settings.value.oidcClientSecret;
 
@@ -34,11 +43,11 @@ export async function initOIDC() {
     return config;
 }
 
-function getCurrentUrlFromRequest(req: Request) {
-    // Builds the full callback URL exactly as received
-    const proto = (req.headers["x-forwarded-proto"] as string) || req.protocol;
-    const host = (req.headers["x-forwarded-host"] as string) || req.get("host");
-    return new URL(`${proto}://${host}${req.originalUrl || req.url}`);
+export function canonicalOidcCallbackUrl(originalUrl: string, configuredRedirect: string): URL {
+    const incoming = new URL(originalUrl, configuredRedirect);
+    const callback = new URL(configuredRedirect);
+    callback.search = incoming.search;
+    return callback;
 }
 
 export async function startLogin(session: Request["session"]) {
@@ -72,6 +81,7 @@ export async function startLogin(session: Request["session"]) {
         parameters.nonce = nonce;
     }
 
+    await persistSession(session);
     const redirectTo = oidc.buildAuthorizationUrl(config, parameters);
     return redirectTo.href;
 }
@@ -85,7 +95,10 @@ export async function callback(req: Request) {
         throw new ExpectedError(MESSAGE_KEYS.ACCOUNT_INVALID_OIDC_SESSION);
     }
 
-    const currentUrl = getCurrentUrlFromRequest(req);
+    const currentUrl = canonicalOidcCallbackUrl(
+        req.originalUrl || req.url,
+        settings.value.oidcRedirectUrl,
+    );
 
     // Exchange the authorization code for tokens (ID Token expected)
     const tokens = await oidc.authorizationCodeGrant(config, currentUrl, {
@@ -96,12 +109,13 @@ export async function callback(req: Request) {
     });
 
     // tokens.claims() are the ID Token claims (already verified)
-    const claims = tokens.claims()!;
+    const claims = tokens.claims();
+    if (!claims) throw new ExpectedError(MESSAGE_KEYS.ACCOUNT_INVALID_OIDC_SESSION);
     const issuer = String(config.serverMetadata().issuer);
 
     // Optionally fetch userinfo (sometimes includes richer profile)
     // You can skip this if ID Token already has what you need.
-    let userInfo: Record<string, any> | undefined;
+    let userInfo: Record<string, unknown> | undefined;
     if (tokens.access_token && claims.sub) {
         try {
             userInfo = await oidc.fetchUserInfo(config, tokens.access_token, claims.sub);
@@ -113,58 +127,27 @@ export async function callback(req: Request) {
     // Prefer userInfo claims if present, otherwise ID Token claims
     // UserInfo can omit email_verified. Merge it over the verified ID-token claims
     // so an absent UserInfo field never downgrades the linking decision.
-    const identityClaims = { ...claims, ...(userInfo ?? {}) } as any;
+    const parsedClaims = oidcIdentityClaimsSchema.safeParse({ ...claims, ...(userInfo ?? {}) });
+    if (!parsedClaims.success) {
+        throw new ExpectedError(MESSAGE_KEYS.ACCOUNT_INVALID_OIDC_SESSION);
+    }
+    const identityClaims = parsedClaims.data;
+    if (identityClaims.sub !== claims.sub) {
+        throw new ExpectedError(MESSAGE_KEYS.ACCOUNT_INVALID_OIDC_SESSION);
+    }
 
     // JIT-provision or load your local user
     // Persist your standard session identity (same model as manual login)
     const user = await findOrCreateUserFromOidc(issuer, identityClaims, {
         linkByEmail: identityClaims.email_verified === true,
     });
-    req.session.auth = { user };
-    req.session.dataSpace =
+    const authenticatedSession = await regenerateSession(req);
+    authenticatedSession.auth = { user };
+    authenticatedSession.dataSpace =
         user.dataSpaces.find((space) => space.defaultForOwner) ?? user.dataSpaces[0];
 
-    // Optionally keep tokens for logout/API calls
-    req.session.tokens = {
-        id_token: tokens.id_token,
-        access_token: tokens.access_token,
-        refresh_token: tokens.refresh_token,
-        expires_at: tokens.expires_at, // epoch seconds if present
-        token_type: tokens.token_type,
-    };
-
     // Clear transient OIDC artifacts
-    req.session.oidc = undefined;
+    authenticatedSession.oidc = undefined;
 
-    await persistSession(req.session);
-}
-
-export async function logout(session: Request["session"]) {
-    const id_token_hint = session.tokens?.id_token;
-    const isOidc = !!session.tokens;
-
-    // Clear local session first
-    session.auth = undefined;
-    session.dataSpace = undefined;
-    session.tokens = undefined;
-
-    await persistSession(session);
-
-    // Only initialize OIDC if this is an OIDC session
-    if (isOidc) {
-        if (!config) await initOIDC();
-
-        const meta = config.serverMetadata();
-        const endSession = meta.end_session_endpoint;
-        const postLogoutRedirectUri = settings.value.rootUrl;
-
-        if (endSession) {
-            const url = new URL(endSession);
-            if (id_token_hint) url.searchParams.set("id_token_hint", id_token_hint);
-            url.searchParams.set("post_logout_redirect_uri", postLogoutRedirectUri);
-            return url.toString();
-        }
-    }
-
-    return settings.value.rootUrl;
+    await persistSession(authenticatedSession);
 }

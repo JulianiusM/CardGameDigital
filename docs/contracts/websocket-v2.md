@@ -9,6 +9,10 @@ The server authenticates the credential and ignores claimed role/capability auth
 It returns `server.hello` with the authoritative participant ID and role, followed by a
 viewer-specific `room.snapshot` and presence.
 
+Messages are JSON text, processed sequentially per socket, and limited to 64 KiB.
+Binary messages are rejected and WebSocket compression is disabled. These transport
+limits are independent from the participant-stable command and pairing rate limits.
+
 Participant credentials are bearer secrets. They are never valid in URLs or QR codes.
 A reload reconnects the same RoomParticipant; it does not create another participant.
 
@@ -27,11 +31,11 @@ participant disconnect grace period.
 | `command.updateRoomSettings` | `null`          | `{expectedRevision,settings}`; Host-only, pre-session optimistic update.                    |
 | `command.startSession`       | `null`          | `{}`; Host-only. Uses persisted authoritative Room settings.                                |
 | `command.startTurn`          | current         | `{}`                                                                                        |
-| `command.chooseCardType`     | current         | `{cardType:"QUESTION"                                                                       | "DARE"}`                                                      |
+| `command.chooseCardType`     | current         | `{cardType:"QUESTION" or "DARE"}`                                                           |
 | `command.skipCard`           | current         | `{}`                                                                                        |
 | `command.vetoCard`           | current         | `{}`                                                                                        |
 | `command.advanceSession`     | current         | `{}`                                                                                        |
-| `command.submitVote`         | current         | `{vote:"YES"                                                                                | "NO",playerId?}` for a player controlled by this participant. |
+| `command.submitVote`         | current         | `{vote:"YES" or "NO",playerId?}` for a player controlled by this participant.               |
 | `command.setBoundaries`      | `null`          | Private category, DareType, and operational-flag exclusions; pre-session only.              |
 | `command.setDevicePlayers`   | `null`          | `{names:[...]}`; pre-session only.                                                          |
 | `command.transferHost`       | current or null | `{participantId}`; current Host only.                                                       |
@@ -81,7 +85,7 @@ play time from it instead of starting a local timer when they first observe the 
 Every successful Room command commits before the server broadcasts viewer-specific
 snapshots. Settings use their own optimistic `expectedRevision`; game commands use the
 Session revision. Stable failures include `STALE_SESSION_REVISION`, `NOT_AUTHORIZED`,
-`INVALID_GAME_STATE`, and `CARD_POOL_EXHAUSTED`.
+`INVALID_GAME_STATE`, `ROOM_FULL`, `CARD_LOCALE_UNAVAILABLE`, and `CARD_POOL_EXHAUSTED`.
 
 Socket loss changes the participant to `TEMPORARILY_DISCONNECTED`. Reauthentication
 during the grace period restores `CONNECTED` and preserves role. After expiry the

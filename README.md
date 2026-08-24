@@ -73,21 +73,22 @@ the file.
 
 Common settings:
 
-| Variable                                                  | Default                   | Purpose                                                            |
-| --------------------------------------------------------- | ------------------------- | ------------------------------------------------------------------ |
-| `DEPLOYMENT_MODE`                                         | `local`                   | `local` uses SQLite; `public` requires MariaDB/MySQL and accounts. |
-| `AUTH_MODE`                                               | `none`                    | `none` or `account`; public mode requires `account`.               |
-| `HTTP_BIND` / `HTTP_PORT`                                 | `127.0.0.1` / `3000`      | Listen address and port.                                           |
-| `PUBLIC_URL`                                              | `http://localhost:3000`   | Canonical origin for links and origin checks.                      |
-| `DB_TYPE`                                                 | `sqlite`                  | `sqlite`, `mariadb`, or `mysql`.                                   |
-| `DB_FILE`                                                 | `./data/card-game.sqlite` | SQLite database path.                                              |
-| `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD` | varies                    | Public database connection.                                        |
-| `SESSION_SECRET`                                          | generated locally         | Set a stable secret of at least 16 characters in deployments.      |
-| `CARD_MISSING_TRANSLATION`                                | `EXCLUDE`                 | `EXCLUDE` or explicit cross-language `FALLBACK`.                   |
-| `CARD_FALLBACK_LOCALE`                                    | `de-DE`                   | Card locale used only when fallback is enabled.                    |
-| `SMTP_*`                                                  | empty                     | Account activation, reset, and deletion mail transport.            |
-| `OIDC_*`                                                  | disabled                  | Optional OpenID Connect provider settings.                         |
-| `TRUST_PROXY`                                             | `false`                   | Express proxy trust; configure to match the actual reverse proxy.  |
+| Variable                                                  | Default                   | Purpose                                                                   |
+| --------------------------------------------------------- | ------------------------- | ------------------------------------------------------------------------- |
+| `DEPLOYMENT_MODE`                                         | `local`                   | `local` uses SQLite; `public` requires MariaDB/MySQL and accounts.        |
+| `AUTH_MODE`                                               | `none`                    | `none` or `account`; public mode requires `account`.                      |
+| `HTTP_BIND` / `HTTP_PORT`                                 | `127.0.0.1` / `3000`      | Listen address and port.                                                  |
+| `PUBLIC_URL`                                              | `http://localhost:3000`   | Canonical origin for links and origin checks.                             |
+| `DB_TYPE`                                                 | `sqlite`                  | `sqlite`, `mariadb`, or `mysql`.                                          |
+| `DB_FILE`                                                 | `./data/card-game.sqlite` | SQLite database path.                                                     |
+| `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD` | varies                    | Public database connection.                                               |
+| `SESSION_SECRET`                                          | generated locally         | Public mode requires an explicit stable secret of at least 32 characters. |
+| `CARD_MISSING_TRANSLATION`                                | `EXCLUDE`                 | `EXCLUDE` or explicit cross-language `FALLBACK`.                          |
+| `CARD_FALLBACK_LOCALE`                                    | `de-DE`                   | Card locale used only when fallback is enabled.                           |
+| `SMTP_*`                                                  | empty                     | Account activation, reset, and deletion mail transport.                   |
+| `OIDC_*`                                                  | disabled                  | Optional OpenID Connect provider settings.                                |
+| `TRUST_PROXY`                                             | `false`                   | Public mode requires the reverse proxy's positive hop count.              |
+| `LOG_LEVEL`                                               | `info`                    | Structured server log threshold, or `silent`.                             |
 
 All settings and validation rules are defined in
 [`src/modules/settings.ts`](./src/modules/settings.ts).
@@ -110,6 +111,9 @@ Builds package the exact validated bytes. Startup validates them again and appli
 newer immutable FULL snapshot transactionally before readiness. Producer UUIDs are
 stored unchanged; missing Cards, locales, and localizations are soft-disabled. See the
 [bundled Card catalog contract](./docs/contracts/card-catalog-v1.md).
+
+The checked-in four-Card catalog is a development fixture. Public startup deliberately
+refuses it; replace it with the producer-approved production artifact before deployment.
 
 ## Testing and quality checks
 
@@ -150,7 +154,8 @@ tests/                       Unit, integration, simulation, E2E, architecture te
 
 - [External contract index](./docs/contracts/README.md)
 - [HTTP API v1](./docs/contracts/http-api.md)
-- [WebSocket protocol v1](./docs/contracts/websocket-v1.md)
+- [WebSocket protocol v2](./docs/contracts/websocket-v2.md)
+- [Retired WebSocket protocol v1](./docs/contracts/websocket-v1.md)
 - [Bundled Card catalog](./docs/contracts/card-catalog-v1.md)
 - [Infrastructure integrations](./docs/contracts/infrastructure.md)
 

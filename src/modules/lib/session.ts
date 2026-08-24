@@ -14,7 +14,33 @@
  * limitations under the License.
  */
 
-import type {Request} from 'express';
+import type { Request } from "express";
+
+type ExpressSession = Request["session"];
+
+export function regenerateSession(request: Request): Promise<ExpressSession> {
+    return new Promise((resolve, reject) => {
+        request.session.regenerate((error) => {
+            if (error) {
+                reject(error);
+                return;
+            }
+            resolve(request.session);
+        });
+    });
+}
+
+export function destroySession(session: ExpressSession): Promise<void> {
+    return new Promise((resolve, reject) => {
+        session.destroy((error) => {
+            if (error) {
+                reject(error);
+                return;
+            }
+            resolve();
+        });
+    });
+}
 
 /**
  * Persist the current session state before continuing the response cycle.
@@ -26,7 +52,7 @@ import type {Request} from 'express';
  * make sure the session data has been committed and is visible to the next
  * HTTP request.
  */
-export function persistSession(session: Request['session']): Promise<void> {
+export function persistSession(session: ExpressSession): Promise<void> {
     return new Promise((resolve, reject) => {
         const save = session.save?.bind(session);
         if (!save) {
@@ -43,4 +69,3 @@ export function persistSession(session: Request['session']): Promise<void> {
         });
     });
 }
-

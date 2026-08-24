@@ -183,6 +183,31 @@ let server: http.Server | undefined;
 afterEach(() => new Promise<void>((resolve) => server?.close(() => resolve()) ?? resolve()));
 
 describe("Room WebSocket protocol", () => {
+    it("rejects binary protocol messages", async () => {
+        const service = new RoomService(new Repo(), cards, new SequenceRandomSource([0]));
+        server = http.createServer();
+        const wss = attachWebSocketServer(server, service);
+        await new Promise<void>((resolve) => server!.listen(0, "127.0.0.1", resolve));
+        const port = (server.address() as { port: number }).port;
+        const socket = new WebSocket(`ws://127.0.0.1:${port}/ws`);
+        const messages: Array<{ type: string; payload: { code?: string } }> = [];
+        socket.on("message", (raw) => messages.push(JSON.parse(raw.toString())));
+        await new Promise<void>((resolve, reject) => {
+            socket.once("open", resolve);
+            socket.once("error", reject);
+        });
+        socket.send(Buffer.from("{}"));
+
+        await waitFor(() =>
+            messages.some(
+                (message) =>
+                    message.type === "error" && message.payload.code === "VALIDATION_ERROR",
+            ),
+        );
+        socket.terminate();
+        await new Promise<void>((resolve) => wss.close(() => resolve()));
+    });
+
     it("rejects retired protocol versions with the stable negotiation error", async () => {
         const service = new RoomService(new Repo(), cards, new SequenceRandomSource([0]));
         server = http.createServer();
@@ -890,6 +915,11 @@ describe("Room WebSocket protocol", () => {
             const actor = actorRole === "HOST" ? clients[0] : clients[1];
             send(actor, commandType, 1);
             await waitFor(() => repository.runtime?.currentCard?.id !== firstCardId);
+            expect(repository.runtime?.sessionHistory[0]).toMatchObject({
+                skipped: commandType === "command.skipCard",
+                completed: false,
+                vetoed: commandType === "command.vetoCard",
+            });
             await waitFor(() =>
                 clients.every((client) =>
                     client.messages.some(

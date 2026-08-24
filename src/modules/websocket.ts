@@ -1,6 +1,6 @@
 import { MESSAGE_KEYS } from "../packages/localization/keys";
 import type http from "node:http";
-import { WebSocket, WebSocketServer } from "ws";
+import { WebSocket, WebSocketServer, type RawData } from "ws";
 import {
     clientPingEnvelopeSchema,
     clientHelloEnvelopeSchema,
@@ -16,6 +16,7 @@ import type { RoomCommand, RoomService } from "../packages/application/roomServi
 import settings from "./settings";
 import { isTrustedOrigin } from "./requestSecurity";
 import { detectLocale, translate, translateError } from "../packages/localization/messages";
+import { FixedWindowRateLimiter } from "./fixedWindowRateLimiter";
 
 type Context = {
     socket: WebSocket;
@@ -26,15 +27,43 @@ type Context = {
 export function attachWebSocketServer(
     server: http.Server,
     service: RoomService,
-    options: { hostDisconnectGraceMs?: number; heartbeatIntervalMs?: number } = {},
+    options: {
+        hostDisconnectGraceMs?: number;
+        heartbeatIntervalMs?: number;
+        participantCommandRateLimit?: { windowMs: number; limit: number };
+        devicePairingRateLimit?: { windowMs: number; limit: number };
+        maxPayloadBytes?: number;
+    } = {},
 ): WebSocketServer {
     const sockets = new Set<Context>();
     const disconnectTimers = new Map<string, NodeJS.Timeout>();
     const orphanedRooms = new Map<string, string>();
     const hostDisconnectGraceMs = options.hostDisconnectGraceMs ?? 15_000;
     const heartbeatIntervalMs = options.heartbeatIntervalMs ?? 5_000;
+    const maxPayloadBytes = options.maxPayloadBytes ?? 64 * 1024;
+    const participantCommandRateLimit = options.participantCommandRateLimit ?? {
+        windowMs: 60_000,
+        limit: 120,
+    };
+    const devicePairingRateLimit = options.devicePairingRateLimit ?? {
+        windowMs: 15 * 60_000,
+        limit: 10,
+    };
+    const participantCommands = new FixedWindowRateLimiter(
+        participantCommandRateLimit.windowMs,
+        participantCommandRateLimit.limit,
+    );
+    const devicePairings = new FixedWindowRateLimiter(
+        devicePairingRateLimit.windowMs,
+        devicePairingRateLimit.limit,
+    );
     const lifecycleReady = service.initializeConnectionLifecycle();
-    const wss = new WebSocketServer({ server, path: "/ws" });
+    const wss = new WebSocketServer({
+        server,
+        path: "/ws",
+        maxPayload: maxPayloadBytes,
+        perMessageDeflate: false,
+    });
     const responsiveSockets = new WeakSet<WebSocket>();
     const heartbeat = setInterval(() => {
         for (const socket of wss.clients) {
@@ -133,10 +162,13 @@ export function attachWebSocketServer(
             () => socket.close(4401, translate(locale, MESSAGE_KEYS.REALTIME_HANDSHAKE_REQUIRED)),
             5_000,
         );
-        socket.on("message", async (raw) => {
+        const processMessage = async (raw: RawData, isBinary: boolean): Promise<void> => {
             let requestId: string | null = null;
             try {
                 await lifecycleReady;
+                if (isBinary) {
+                    throw coded("VALIDATION_ERROR", MESSAGE_KEYS.REALTIME_INVALID_MESSAGE);
+                }
                 const value: unknown = JSON.parse(raw.toString());
                 const receivedProtocol =
                     typeof value === "object" && value !== null && "protocol" in value
@@ -147,13 +179,6 @@ export function attachWebSocketServer(
                         "PROTOCOL_VERSION_UNSUPPORTED",
                         MESSAGE_KEYS.REALTIME_PROTOCOL_UNSUPPORTED,
                     );
-                if (Date.now() - commandWindowStarted > 10_000) {
-                    commandWindowStarted = Date.now();
-                    commandsInWindow = 0;
-                }
-                if (++commandsInWindow > 30) {
-                    throw coded("NOT_AUTHORIZED", MESSAGE_KEYS.REALTIME_RATE_EXCEEDED);
-                }
                 const base = envelopeSchema.parse(value);
                 requestId = base.requestId;
                 if (!context) {
@@ -228,6 +253,15 @@ export function attachWebSocketServer(
                     return;
                 }
                 const command = roomCommandEnvelopeSchema.parse(value) as RoomCommand;
+                if (!participantCommands.consume(context.participant.id)) {
+                    throw coded("NOT_AUTHORIZED", MESSAGE_KEYS.REALTIME_RATE_EXCEEDED);
+                }
+                if (
+                    command.type === "command.setDevicePlayers" &&
+                    !devicePairings.consume(context.participant.id)
+                ) {
+                    throw coded("NOT_AUTHORIZED", MESSAGE_KEYS.REALTIME_RATE_EXCEEDED);
+                }
                 // RoomService returns only after the transition has committed. Each
                 // recipient then receives its own capability/private-state projection.
                 const roomId = context.participant.roomId;
@@ -276,6 +310,23 @@ export function attachWebSocketServer(
                     ),
                 });
             }
+        };
+        let messageQueue = Promise.resolve();
+        socket.on("message", (raw, isBinary) => {
+            if (Date.now() - commandWindowStarted > 10_000) {
+                commandWindowStarted = Date.now();
+                commandsInWindow = 0;
+            }
+            if (++commandsInWindow > 30) {
+                send(socket, "error", null, null, {
+                    code: "NOT_AUTHORIZED",
+                    message: translate(locale, MESSAGE_KEYS.REALTIME_RATE_EXCEEDED),
+                });
+                return;
+            }
+            messageQueue = messageQueue
+                .then(() => processMessage(raw, isBinary))
+                .catch(() => socket.terminate());
         });
         socket.on("close", async () => {
             clearTimeout(deadline);
@@ -296,6 +347,8 @@ export function attachWebSocketServer(
         for (const timer of disconnectTimers.values()) clearTimeout(timer);
         disconnectTimers.clear();
         orphanedRooms.clear();
+        participantCommands.clear();
+        devicePairings.clear();
     });
     return wss;
 }
@@ -306,6 +359,7 @@ function send(
     revision: number | null,
     payload: unknown,
 ): void {
+    if (socket.readyState !== WebSocket.OPEN) return;
     socket.send(JSON.stringify({ protocol: PROTOCOL_VERSION, type, requestId, revision, payload }));
 }
 function coded(code: string, message: string): Error {

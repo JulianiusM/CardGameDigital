@@ -51,8 +51,13 @@ Cards, avoiding a four-point band jump. Never Have I Ever advances a round after
 completed all-player Card; Card pacing uses displayed appearance count. Exhaustion never
 advances progression early.
 
-Persisted GameSession runtime is version 2 because progression policy is frozen into the
-Session profile. Runtime version 1 is rejected rather than inferred with hidden defaults.
+Persisted GameSession runtime is version 3. Version 2 introduced progression policy
+inside the frozen Session profile; version 3 records `completed`, `skipped`, and
+`vetoed` as separate authoritative CardAppearance outcomes. The accompanying database
+migration upgrades stored active runtimes and appearance rows instead of inferring old
+versions during normal gameplay. Because version 2 encoded both skip and veto as
+`skipped`, migrated historical vetoes remain classified as skips; version 3 records all
+new outcomes exactly.
 
 `AlwaysEligible` ignores Group history only. `RepeatableInSession` is required
 for same-Session repetition. Cooldown counts other displayed cards since the

@@ -16,6 +16,8 @@
 
 import express, { NextFunction } from "express";
 import { wrapErrorApi } from "../middleware/validationErrorHandler";
+import { ExpectedError } from "../modules/lib/errors";
+import { MESSAGE_KEYS } from "../packages/localization/keys";
 
 import settings from "../modules/settings";
 import couchRouter from "./api/couch";
@@ -48,7 +50,7 @@ router.use("/v1/catalog", catalogRouter);
 
 // catch 404 and forward to error handler
 router.use(function (req: express.Request, res: express.Response, next: NextFunction) {
-    next(Object.assign(new Error("API endpoint not found"), { status: 404 }));
+    next(new ExpectedError(MESSAGE_KEYS.REQUEST_NOT_FOUND, "error", 404));
 });
 router.use(wrapErrorApi);
 

@@ -3,6 +3,7 @@ import {
     CARD_TYPES,
     CardPoolExhaustedError,
     DARE_TYPES,
+    type EligibilityRequest,
     eligibilityReasons,
     eligibleCards,
     OPERATIONAL_FLAGS,
@@ -12,7 +13,7 @@ import {
 } from "../../src/packages/game-core";
 import { boundaries, card, profile } from "../support/game";
 
-const request = () => ({
+const request = (): EligibilityRequest => ({
     cardType: CARD_TYPES.QUESTION,
     profile: profile(),
     boundaries: [boundaries()],
@@ -113,6 +114,8 @@ describe("composable card eligibility", () => {
             roundNumber: 1,
             playerId: "p",
             skipped: true,
+            completed: false,
+            vetoed: false,
         };
         expect(
             eligibleCards([normal], { ...request(), sessionHistory: [appearance] }),

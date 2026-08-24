@@ -2,14 +2,20 @@
 
 ## Status
 
-Accepted for Phase 5.
+Implemented. Protocol v1 was later retired when Room settings ownership changed;
+protocol v2 is the current transport contract.
 
 ## Decision
 
 - Temporary Rooms, participants, game Sessions, and committed card appearances are persisted with TypeORM migrations.
 - A Room code identifies a Room but does not authorize it. Joining creates an independent participant credential; only its SHA-256 hash is stored, while the raw high-entropy credential is returned once.
-- `ws` attaches to the same Node HTTP server as Express at `/ws`. A socket accepts only `client.hello` until its participant credential and declared role are verified.
-- Version 1 envelopes and commands are validated with Zod at the WebSocket boundary. Reconnect and explicit resynchronization return a complete authoritative Room snapshot.
+- `ws` attaches to the same Node HTTP server as Express at `/ws`. A socket accepts only
+  `client.hello` until its Room and participant credential are verified. Role and
+  capabilities come from persisted participant state; the client role field is not
+  authoritative.
+- Version 2 envelopes and commands are validated with Zod at the WebSocket boundary.
+  Reconnect and explicit resynchronization return a complete authoritative Room
+  snapshot. The retired v1 contract remains only as historical documentation.
 - `RoomService` serializes commands per Room. It restores a proposed `GameSession`, validates and transitions it, commits the runtime and card appearances transactionally, then publishes the new runtime for broadcast. Failed persistence never becomes visible to clients.
 - The persisted runtime has an explicit serialization version. Domain `Set` and `Map` values are converted to arrays rather than relying on implicit JSON behavior.
 - A Room stores an explicit nullable `currentSessionId`. Ended Session rows and

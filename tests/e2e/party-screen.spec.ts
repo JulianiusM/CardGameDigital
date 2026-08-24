@@ -358,7 +358,7 @@ test("hosted players see Card intensity and shared game/modal transitions", asyn
     const settingsButton = host.getByRole("button", { name: "Einstellungen", exact: true });
     await host.emulateMedia({ reducedMotion: "no-preference" });
     const modalDurations = await settingsButton.evaluate(async (button) => {
-        button.click();
+        (button as HTMLElement).click();
         await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
         const backdrop = document.querySelector(".modal-backdrop");
         return (
@@ -368,7 +368,11 @@ test("hosted players see Card intensity and shared game/modal transitions", asyn
         );
     });
     await expect(host.locator(".settings-modal")).toBeVisible();
+    await expect(host.locator(".settings-modal button").first()).toBeFocused();
     expect(modalDurations.some((duration) => duration >= 160)).toBe(true);
+    await host.keyboard.press("Escape");
+    await expect(host.locator(".settings-modal")).toBeHidden();
+    await expect(settingsButton).toBeFocused();
 
     await hostContext.close();
     await playerContext.close();
@@ -494,11 +498,11 @@ test("anonymous Never Have I Ever uses a compact aggregate on a short display", 
     await expect(display.locator(".aggregate-total")).toContainText("2");
     await expect(display.locator(".aggregate-yes")).toHaveCSS(
         "background-image",
-        "linear-gradient(90deg, rgb(255, 240, 184), rgb(228, 186, 97))",
+        "linear-gradient(90deg, rgb(228, 186, 97), rgb(201, 142, 47))",
     );
     await expect(display.locator(".aggregate-no")).toHaveCSS(
         "background-image",
-        "linear-gradient(90deg, rgb(159, 101, 88), rgb(100, 58, 55))",
+        "linear-gradient(90deg, rgb(197, 138, 114), rgb(159, 101, 88))",
     );
     await expect(display.locator(".aggregate-metric").first().locator("strong")).toHaveCSS(
         "color",

@@ -76,6 +76,15 @@ function respondOrNext(
         });
         return;
     }
+    if ((error as { code?: string }).code === "ROOM_FULL") {
+        res.status(409).json({
+            error: {
+                code: "ROOM_FULL",
+                message: translate(locale, MESSAGE_KEYS.ROOM_FULL),
+            },
+        });
+        return;
+    }
     if ((error as { code?: string }).code === "CARD_LOCALE_UNAVAILABLE") {
         res.status(400).json({
             error: {

@@ -19,22 +19,57 @@ import { TypeormStore } from "connect-typeorm";
 import express, { NextFunction, Request, Response } from "express";
 import { rateLimit } from "express-rate-limit";
 import session from "express-session";
-import logger from "morgan";
 import path from "node:path";
 import { logout, validateSession } from "./packages/application/accountService";
 import { handleGenericError } from "./middleware/genericErrorHandler";
 import { AppDataSource } from "./modules/database/dataSource";
 import { AccountSession } from "./modules/database/entities/session/AccountSession";
 import { asyncHandler } from "./modules/lib/asyncHandler";
+import { ExpectedError } from "./modules/lib/errors";
 import settings from "./modules/settings";
 import { isTrustedOrigin } from "./modules/requestSecurity";
+import { structuredRequestLogger } from "./modules/structuredLogger";
 import { detectLocale, translate } from "./packages/localization/messages";
 import apiRouter from "./routes/api";
 
 const app = express();
 app.disable("x-powered-by");
 
-app.use(logger("dev"));
+app.use(structuredRequestLogger(() => settings.value.logLevel));
+app.use((_request, response, next) => {
+    const publicUrl = new URL(settings.value.publicUrl);
+    const websocketOrigin = new URL(settings.value.publicUrl);
+    websocketOrigin.protocol = publicUrl.protocol === "https:" ? "wss:" : "ws:";
+    response.setHeader("X-Content-Type-Options", "nosniff");
+    response.setHeader("X-Frame-Options", "DENY");
+    response.setHeader("Referrer-Policy", "no-referrer");
+    response.setHeader(
+        "Permissions-Policy",
+        "camera=(), microphone=(), geolocation=(), payment=(), usb=()",
+    );
+    response.setHeader("Cross-Origin-Opener-Policy", "same-origin");
+    response.setHeader("Cross-Origin-Resource-Policy", "same-origin");
+    response.setHeader(
+        "Content-Security-Policy",
+        [
+            "default-src 'self'",
+            "base-uri 'none'",
+            `connect-src 'self' ${websocketOrigin.origin}`,
+            "font-src 'self'",
+            "form-action 'self'",
+            "frame-ancestors 'none'",
+            "img-src 'self' data:",
+            "media-src 'self'",
+            "object-src 'none'",
+            "script-src 'self'",
+            "style-src 'self' 'unsafe-inline'",
+        ].join("; "),
+    );
+    if (settings.value.deploymentMode === "public") {
+        response.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
+    }
+    next();
+});
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use("/play", express.static(path.join(__dirname, "web")));
@@ -66,6 +101,11 @@ app.use(
     }),
 );
 
+app.use("/api", (_request, response, next) => {
+    response.setHeader("Cache-Control", "no-store");
+    next();
+});
+
 // Public deployments use same-origin checks as the CSRF boundary for all
 // state-changing browser requests. Local LAN gameplay remains account-free.
 app.use((req: Request, res: Response, next: NextFunction) => {
@@ -90,7 +130,40 @@ app.use((req: Request, res: Response, next: NextFunction) => {
     next();
 });
 
-const accountLimiter = rateLimit({ windowMs: 15 * 60_000, limit: 20, standardHeaders: true });
+const localizedRateLimitHandler = (req: Request, res: Response) => {
+    res.status(429).json({
+        error: {
+            code: "RATE_LIMITED",
+            message: translate(
+                detectLocale(req.get("accept-language")),
+                MESSAGE_KEYS.REQUEST_RATE_EXCEEDED,
+            ),
+        },
+    });
+};
+const accountLimiter = rateLimit({
+    windowMs: 15 * 60_000,
+    limit: 20,
+    standardHeaders: true,
+    legacyHeaders: false,
+    handler: localizedRateLimitHandler,
+});
+const roomCreationLimiter = rateLimit({
+    windowMs: 15 * 60_000,
+    limit: 10,
+    standardHeaders: true,
+    legacyHeaders: false,
+    skip: () => settings.value.deploymentMode !== "public",
+    handler: localizedRateLimitHandler,
+});
+const roomJoinLimiter = rateLimit({
+    windowMs: 15 * 60_000,
+    limit: 30,
+    standardHeaders: true,
+    legacyHeaders: false,
+    skip: () => settings.value.deploymentMode !== "public",
+    handler: localizedRateLimitHandler,
+});
 app.use(
     [
         "/api/v1/account/login",
@@ -100,6 +173,8 @@ app.use(
     ],
     accountLimiter,
 );
+app.post("/api/v1/rooms", roomCreationLimiter);
+app.post("/api/v1/rooms/:roomCode/participants", roomJoinLimiter);
 
 // Validate session on each request
 app.use(
@@ -108,7 +183,13 @@ app.use(
             // Session is not valid anymore --> force logout
             await logout(req.session);
             res.status(401).json({
-                error: { code: "SESSION_EXPIRED", message: "Session expired" },
+                error: {
+                    code: "SESSION_EXPIRED",
+                    message: translate(
+                        detectLocale(req.get("accept-language")),
+                        MESSAGE_KEYS.ACCOUNT_SESSION_EXPIRED,
+                    ),
+                },
             });
             return;
         }
@@ -130,7 +211,7 @@ app.get(
 
 // catch 404 and forward to error handler
 app.use(function (req: Request, res: Response, next: NextFunction) {
-    next(Object.assign(new Error("Not found"), { status: 404 }));
+    next(new ExpectedError(MESSAGE_KEYS.REQUEST_NOT_FOUND, "error", 404));
 });
 
 // error handler

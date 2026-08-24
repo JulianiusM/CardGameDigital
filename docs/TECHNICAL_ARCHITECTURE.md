@@ -1035,7 +1035,7 @@ displayed Cards. The increment accepts half-steps from 0.5 through 4 and never r
 ceiling above `maximumIntensity × 4`. Built-ins use one point every two displayed Cards,
 which crosses overlapping taxonomy thresholds gradually. Never Have I Ever treats one
 completed all-player Card as a round; Card-based pacing uses authoritative CardAppearance
-count. This calculation lives in `game-core`, is serialized in runtime version 2, and is
+count. This calculation lives in `game-core`, is serialized in runtime version 3, and is
 shared by every topology.
 
 ---

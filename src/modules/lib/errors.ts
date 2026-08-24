@@ -17,7 +17,7 @@
 // lib/errors.js
 // Custom error types for centralized error handling in Express routes
 
-import type {Severity} from "../../types/ErrorTypes";
+import type { Severity } from "../../types/ErrorTypes";
 
 /**
  * Represents a validation or business logic error that should render
@@ -38,7 +38,7 @@ export class ValidationError extends Error {
      */
     constructor(template: string, message: string, data: object = {}, options?: ErrorOptions) {
         super(message, options);
-        this.name = 'ValidationError';
+        this.name = "ValidationError";
         this.template = template;
         this.data = data;
         if (Error.captureStackTrace) {
@@ -66,7 +66,7 @@ export class APIError extends Error {
      */
     constructor(message: string, data: object = {}, status: number = 500, options?: ErrorOptions) {
         super(message, options);
-        this.name = 'APIError';
+        this.name = "APIError";
         this.data = data;
         this.status = status;
         if (Error.captureStackTrace) {
@@ -85,6 +85,7 @@ export class APIError extends Error {
  * @param {ErrorOptions} options - ErrorOptions
  */
 export class ExpectedError extends Error {
+    code: string;
     data: object;
     severity: Severity;
     status: number;
@@ -96,9 +97,19 @@ export class ExpectedError extends Error {
      * @param {object} data - Data to re-populate the form or context.
      * @param {ErrorOptions} options - ErrorOptions
      */
-    constructor(message: string, severity: Severity = 'error', status: number = 400, data: object = {}, options?: ErrorOptions) {
+    constructor(
+        message: string,
+        severity: Severity = "error",
+        status: number = 400,
+        data: object = {},
+        options?: ErrorOptions,
+    ) {
         super(message, options);
-        this.name = 'ExpectedError';
+        this.name = "ExpectedError";
+        this.code = message
+            .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
+            .replace(/[^a-zA-Z0-9]+/g, "_")
+            .toUpperCase();
         this.severity = severity;
         this.data = data;
         this.status = status;

@@ -14,8 +14,6 @@
  * limitations under the License.
  */
 
-import type * as userService from "../modules/database/services/UserService";
-
 export type OidcClaims = {
     sub: string;
     email?: string;
@@ -24,11 +22,4 @@ export type OidcClaims = {
     name?: string;
     // add whatever custom claims you mapped in authentik (e.g., groups)
     groups?: string[];
-};
-
-export type UserInfo = {
-    id: string;
-    username: string;
-    email: string;
-    name: string;
 };

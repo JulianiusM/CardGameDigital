@@ -45,10 +45,13 @@ Implemented for Phase 9; platform archives remain CI-verified.
   only protocol/state identifiers and non-editorial technical values.
 - Portable and public artifacts are generated from the same `dist` output and
   locked production dependency graph. Portable output includes the current Node
-  runtime, native Argon2 and SQLite bindings, launchers, local configuration, and
-  writable data directory. Public output omits the embedded runtime.
+  runtime, native Argon2 and SQLite bindings, the launcher for its build platform,
+  local configuration, and writable data directory. Public output omits the embedded
+  runtime and refuses the development Card fixture.
 - Release smoke checks assert the server, Svelte bundle, lockfile, native
-  dependencies, and portable runtime/data/config layout before archives upload.
+  dependencies, license, CycloneDX SBOM, protocol schemas, and portable
+  runtime/data/config layout before archives upload. Version tags are pushed only after
+  both editions build, pass their smoke checks, and have been archived successfully.
 
 ## Remaining platform gate
 

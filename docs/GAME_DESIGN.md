@@ -708,22 +708,22 @@ friendly personal content with explicit sexual dares.
 
 | Question Category | Offset | Question Category | Offset |
 | ----------------- | -----: | ----------------- | -----: |
-| `EVERYDAY`        |    0.0 | `CHILDHOOD`       |    0.5 |
+| `EVERYDAY`        |    0.0 | `CHILDHOOD`       |    1.0 |
 | `SCENARIO`        |    1.0 | `PERSONALITY`     |    2.5 |
 | `FRIENDSHIP`      |    3.0 | `INTOXICATION`    |    4.5 |
-| `RELATIONSHIP`    |    5.0 | `BODY`            |    5.5 |
+| `RELATIONSHIP`    |    5.0 | `BODY`            |    6.0 |
 | `SEXUALITY`       |    7.0 | `SEX_OPENNESS`    |    7.5 |
-| `SEX_TENSION`     |    9.5 | `SEX_EXPERIENCE`  |   10.0 |
+| `SEX_TENSION`     |    9.0 | `SEX_EXPERIENCE`  |   10.0 |
 
 | DareType      | Offset | DareType         | Offset |
 | ------------- | -----: | ---------------- | -----: |
 | `SILLY`       |    0.0 | `OTHER`          |    1.0 |
 | `THIRD_PARTY` |    3.0 | `TOUCH`          |    3.5 |
-| `KISS`        |    5.0 | `CLOTHING`       |    5.5 |
-| `TOUCH_SPICY` |    6.0 | `KISS_SPICY`     |    6.5 |
-| `NUDITY`      |    8.0 | `SEXUAL_TENSION` |    8.5 |
-| `TOUCH_SEXY`  |    9.5 | `BORDERLINE_SEX` |   10.5 |
-| `SEX`         |   12.0 |                  |        |
+| `KISS`        |    5.0 | `TOUCH_SPICY`    |    6.0 |
+| `KISS_SPICY`  |    7.0 | `CLOTHING`       |    8.0 |
+| `NUDITY`      |   10.0 | `SEXUAL_TENSION` |   11.0 |
+| `TOUCH_SEXY`  |   12.0 | `BORDERLINE_SEX` |   13.5 |
+| `SEX`         |   14.5 |                  |        |
 
 Conversation/meta Cards have no primary taxonomy and use offset 0.
 

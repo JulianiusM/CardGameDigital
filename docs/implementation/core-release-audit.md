@@ -22,18 +22,23 @@ required service/platform is unavailable in this repository environment.
   game Session persistence are distinct.
 - Local SQLite uses migrations, WAL and foreign keys. Gameplay UI, QR logic,
   JavaScript, styles and audiovisual assets are bundled locally.
+- The complete migration chain, catalog advisory lock, and browser gameplay suite pass
+  against MariaDB 10.11 as well as SQLite.
 - Public account login/reset, Argon2id, hash-only one-time tokens, OIDC linking
   checks and DataSpace-scoped groups/settings are retained behind one server.
 
 ## External verification gates
 
-- MariaDB repository/migration contracts require a MariaDB service.
 - SMTP delivery, a real OIDC provider, HTTPS reverse proxy behavior and public
   browser account flows require staging infrastructure.
-- Playwright browser workflows and screenshots require an installed browser; the
-  browser CDN is unavailable in the current execution environment.
-- Portable native archives must be produced independently on every supported OS
-  and architecture.
+- Playwright browser workflows must pass in release CI; public account, OIDC, and proxy
+  browser flows additionally require staging configuration.
+- Portable server archives must be produced independently on every supported OS and
+  architecture because native Node bindings cannot be cross-packaged safely.
+
+Kodi and Android-family native clients remain part of the longer-term architecture but
+are explicitly deferred from this release. The responsive browser client covers all
+three initial device modes: Couch, Personal, and Party Screen.
 
 ## Canonical content blocker
 

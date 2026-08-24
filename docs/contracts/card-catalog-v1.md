@@ -54,8 +54,9 @@ acquires the database catalog lock, and applies it before readiness.
 For a given `catalogId`, equal sequence/equal digest is a no-op; equal sequence with a
 different digest fails; a greater sequence applies; an older bundled sequence never
 downgrades a newer database. MariaDB/MySQL use `GET_LOCK` across the decision and
-transaction. A persistent SQLite database receives a one-time pre-upgrade backup
-before migrations.
+transaction. A persistent SQLite database receives one safe pre-upgrade backup for each
+new schema/catalog target before migrations. Public startup refuses the repository's
+development fixture; deployment requires a producer-approved catalog ID and version.
 
 FULL reconciliation is transactional. Incoming rows are upserted; flag sets are
 replaced exactly. Missing Cards, locales, and per-Card localizations are soft-disabled,

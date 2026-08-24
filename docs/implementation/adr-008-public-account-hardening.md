@@ -17,7 +17,11 @@ the TAD's lower-dependency scrypt preference for this implementation detail.
   raw token columns are removed from the schema entirely.
 - OIDC retains state, PKCE, and nonce handling. Automatic email linking is
   allowed only when the provider's verified claims contain
-  `email_verified=true`; unverified addresses receive a synthetic local address.
+  `email_verified=true`; unverified addresses receive a stable hash-derived synthetic
+  local address. Claims are schema-validated, callbacks use the configured canonical
+  URL rather than forwarded host input, issuer/subject is database-unique, and JIT
+  provisioning creates its owned DataSpace in the same transaction. Provider access,
+  refresh, and ID tokens are not retained after the local session is established.
 - Public state-changing HTTP requests require the configured public Origin (or
   Referer fallback). Sensitive account routes are rate-limited. Logout is POST,
   not a state-changing GET.
@@ -39,6 +43,6 @@ DataSpace-owned Group/settings schema and the Room-to-Group relationship.
 
 ## Remaining release gates
 
-MariaDB execution, public reverse-proxy/browser E2E, SMTP delivery, provider-
-specific OIDC integration, and legal/policy review for explicit content must run
+Public reverse-proxy/account browser E2E, SMTP delivery, provider-specific OIDC
+integration, and legal/policy review for explicit content must run
 in the deployment CI/staging environment before Phase 8 is marked VERIFIED.

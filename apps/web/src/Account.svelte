@@ -4,6 +4,7 @@
     import { accountApi, type AccountConfiguration, type AccountSnapshot } from "./accountApi";
     import { navigate } from "./router";
     import { dismissNotification, showNotification } from "./notifications";
+    import { extractAccountLinkTokens } from "./accountLinkTokens";
 
     type Screen = "login" | "register" | "forgot" | "reset" | "dashboard";
     let screen: Screen = "login";
@@ -16,23 +17,26 @@
     let confirmation = "";
     let dataSpaceName = "";
     let deleteConfirmation = "";
+    let resetToken = "";
     let busy = false;
-    const query = new URLSearchParams(location.search);
 
     onMount(async () => {
+        const link = extractAccountLinkTokens(new URL(location.href));
+        resetToken = link.resetToken ?? "";
+        if (link.activationToken || link.resetToken) {
+            history.replaceState(history.state, "", link.sanitizedPath);
+        }
         configuration = await accountApi.configuration();
         if (!configuration.localLoginEnabled && !configuration.oidcEnabled) {
             navigate("/play/", { replace: true, force: true });
             return;
         }
-        const activation = query.get("activate");
-        const reset = query.get("reset");
         try {
-            if (activation) {
-                await accountApi.activate(activation);
+            if (link.activationToken) {
+                await accountApi.activate(link.activationToken);
                 showNotification(messages.account.activated, "success");
             }
-            if (reset) screen = "reset";
+            if (link.resetToken) screen = "reset";
             account = await accountApi.current();
             screen = "dashboard";
         } catch {
@@ -75,7 +79,8 @@
     function resetPassword(): Promise<void> {
         return perform(async () => {
             if (password !== confirmation) throw new Error(messages.account.passwordsMismatch);
-            await accountApi.reset(query.get("reset") ?? "", password);
+            await accountApi.reset(resetToken, password);
+            resetToken = "";
             showNotification(messages.account.passwordChanged, "success");
             screen = "login";
         });

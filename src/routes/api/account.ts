@@ -21,14 +21,14 @@ const dataSpaceInput = z.object({
 });
 
 function localLoginRequired(): void {
-    if (!settings.value.localLoginEnabled) {
+    if (settings.value.authMode !== "account") {
         throw new ExpectedError(MESSAGE_KEYS.ACCOUNT_LOCAL_DISABLED, "error", 404);
     }
 }
 
 router.get("/configuration", (_request, response) => {
     response.json({
-        localLoginEnabled: settings.value.localLoginEnabled,
+        localLoginEnabled: settings.value.authMode === "account",
         oidcEnabled: settings.value.oidcEnabled,
         oidcName: settings.value.oidcName,
     });
@@ -46,7 +46,7 @@ router.post("/register", async (request, response) => {
 router.post("/login", async (request, response) => {
     localLoginRequired();
     const input = credentials.parse(request.body);
-    await account.login(input.username, input.password, request.session);
+    await account.login(input.username, input.password, request);
     response.json(await account.accountSnapshot(request.session));
 });
 

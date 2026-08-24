@@ -14,7 +14,8 @@
 
 - [External interface contracts](contracts/README.md)
 - [HTTP API v1](contracts/http-api.md)
-- [WebSocket protocol v1](contracts/websocket-v1.md)
+- [WebSocket protocol v2](contracts/websocket-v2.md)
+- [Retired WebSocket protocol v1](contracts/websocket-v1.md)
 - [Bundled Card catalog](contracts/card-catalog-v1.md)
 - [Infrastructure integrations](contracts/infrastructure.md)
 

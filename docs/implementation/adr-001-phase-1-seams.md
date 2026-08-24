@@ -28,5 +28,5 @@ reserved for gameplay presets. The account-session class becomes
 - Old `profiles` data is renamed rather than dropped.
 - Orphan Surveyor abstract types may retain historical filenames until Phase 10;
   they are not used as the new Room authorization or game persistence model.
-- Full MariaDB migration execution remains a CI verification requirement before
-  Phase 1 can be marked `VERIFIED`.
+- The full migration chain passes on MariaDB 10.11 and SQLite; CI repeats both
+  production-database and browser contract checks for each release candidate.

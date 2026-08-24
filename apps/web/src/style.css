@@ -27,13 +27,13 @@
     --color-berry: #9d315b;
     --color-result-honey: #d5a03b;
     --color-result-clay: #a96b5a;
+    --color-status-active: var(--color-golden-orange);
     --color-selection: #e4ba61;
     --color-selection-edge: #b77920;
     --color-canvas: #ffd166;
     --color-surface: rgb(255 248 232 / 96%);
     --color-raised-surface: rgb(255 241 199 / 94%);
     --color-accent: var(--color-selection-edge);
-    --color-success: var(--color-result-honey);
     --color-edge: rgb(59 36 22 / 13%);
     --color-edge-strong: rgb(120 70 25 / 38%);
     --color-focus: #8f4514;
@@ -363,7 +363,7 @@ input[type="range"] {
     background: var(--color-muted-cocoa);
 }
 .participant > span.online {
-    background: var(--color-result-honey);
+    background: var(--color-status-active);
 }
 .participant small {
     color: var(--color-muted-cocoa);
