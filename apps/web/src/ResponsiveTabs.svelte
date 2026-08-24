@@ -1,6 +1,7 @@
 <script lang="ts">
     import { onMount, tick } from "svelte";
     import { messages } from "./i18n";
+    import UiIcon from "./UiIcon.svelte";
 
     export type ResponsiveTab = { id: string; label: string; icon?: string };
     export let tabs: readonly ResponsiveTab[];
@@ -98,7 +99,7 @@
                 on:click={() => select(tab.id)}
                 on:keydown={(event) => keydown(event, index)}
             >
-                {#if tab.icon}<span aria-hidden="true">{tab.icon}</span>{/if}
+                {#if tab.icon}<span aria-hidden="true"><UiIcon name={tab.icon} /></span>{/if}
                 <span>{tab.label}</span>
             </button>
         {/each}

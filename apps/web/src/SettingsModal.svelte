@@ -39,23 +39,25 @@
     let wasOpen = false;
     let authenticationAvailable = false;
     $: availableTabs = [
-        ...(showGame ? [{ id: "game", label: messages.settings.game, icon: "♠" }] : []),
+        ...(showGame ? [{ id: "game", label: messages.settings.game, icon: "host" }] : []),
         ...(currentGameSettings
-            ? [{ id: "currentGame", label: messages.room.currentSettings, icon: "♣" }]
+            ? [{ id: "currentGame", label: messages.room.currentSettings, icon: "content" }]
             : []),
-        { id: "audio", label: messages.settings.audio, icon: "♫" },
-        { id: "display", label: messages.settings.display, icon: "✦" },
-        ...(showContent ? [{ id: "content", label: messages.settings.content, icon: "◇" }] : []),
+        { id: "audio", label: messages.settings.audio, icon: "audio" },
+        { id: "display", label: messages.settings.display, icon: "display" },
+        ...(showContent
+            ? [{ id: "content", label: messages.settings.content, icon: "content" }]
+            : []),
         ...(onEnd || onCloseRoom
-            ? [{ id: "session", label: messages.settings.session, icon: "•••" }]
+            ? [{ id: "session", label: messages.settings.session, icon: "session" }]
             : []),
         {
             id: "services",
             label: roomCode ? messages.settings.roomDetails : messages.settings.services,
-            icon: roomCode ? "⌂" : "?",
+            icon: roomCode ? "host" : "service",
         },
         ...(showAdvanced
-            ? [{ id: "advanced", label: messages.settings.advanced, icon: "•••" }]
+            ? [{ id: "advanced", label: messages.settings.advanced, icon: "session" }]
             : []),
     ];
     $: if (!availableTabs.some(({ id }) => id === tab)) {
@@ -199,11 +201,16 @@
                     {#if qr}<img src={qr} alt={messages.accessibility.roomQrCode(roomCode)} />{/if}
                 </div>{/if}
             <div class="service-actions">
-                <SettingsAction href="/play/help" label={messages.settings.help} icon="?" newTab />
+                <SettingsAction
+                    href="/play/help"
+                    label={messages.settings.help}
+                    icon="service"
+                    newTab
+                />
                 {#if authenticationAvailable}<SettingsAction
                         href="/play/account"
                         label={messages.settings.account}
-                        icon="☺"
+                        icon="account"
                     />{/if}
             </div>
             {#if onLeave}<p>{messages.settings.leaveHint}</p>

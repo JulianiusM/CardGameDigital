@@ -3,8 +3,10 @@
 ## Product and architecture
 
 - [Repository overview](../README.md)
-- [Game Design Document](../Multiplayer%20Party%20Card%20Game%20%E2%80%94%20Game%20Design%20Document%281%29.md)
-- [Technical Architecture Document](../Multiplayer%20Party%20Card%20Game%20%E2%80%94%20Technical%20Architecture%20Document.md)
+- [Game Design Document](GAME_DESIGN.md)
+- [Technical Architecture Document](TECHNICAL_ARCHITECTURE.md)
+- [Visual & Interaction Design](VISUAL_INTERACTION_DESIGN.md)
+- [Golden Mischief web migration guide](VISUAL_STYLE_MIGRATION_GUIDE.md)
 - [Implementation ADRs and progress](implementation/)
 - [Core release audit](implementation/core-release-audit.md)
 
@@ -27,6 +29,7 @@ coverage. The Svelte Help screen discovers documents through the API.
 - [Repository instructions](../AGENTS.md)
 - [Code style and architectural rules](implementation/code-style.md)
 - [Testing guide](TESTING_GUIDE.md)
+- [AI coding-agent visual migration prompt](AI_AGENT_VISUAL_MIGRATION_PROMPT.md)
 
 Documentation is part of each contract. Update it in the same change as behavior,
 configuration, transport schemas, or player workflows.

@@ -1,13 +1,37 @@
 <script lang="ts">
-    import { fade, fly } from "svelte/transition";
+    import { cubicOut } from "svelte/easing";
+    import { fade, type TransitionConfig } from "svelte/transition";
 
     export let open = false;
     export let labelledBy: string;
     export let className = "";
 
+    function reducedMotion(): boolean {
+        return (
+            document.documentElement.dataset.reducedMotion === "true" ||
+            window.matchMedia("(prefers-reduced-motion: reduce)").matches
+        );
+    }
     function duration(normal: number): number {
-        if (document.documentElement.dataset.reducedMotion === "true") return 0;
-        return window.matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : normal;
+        return reducedMotion() ? 200 : normal;
+    }
+    function modalIn(): TransitionConfig {
+        if (reducedMotion()) return { duration: 200, css: (t) => `opacity: ${t}` };
+        return {
+            duration: 260,
+            easing: cubicOut,
+            css: (t) =>
+                `opacity: ${t}; transform: translateY(${(1 - t) * 20}px) scale(${0.97 + t * 0.03})`,
+        };
+    }
+    function modalOut(): TransitionConfig {
+        if (reducedMotion()) return { duration: 200, css: (t) => `opacity: ${t}` };
+        return {
+            duration: 180,
+            easing: cubicOut,
+            css: (t) =>
+                `opacity: ${t}; transform: translateY(${(1 - t) * 12}px) scale(${0.98 + t * 0.02})`,
+        };
     }
     function close(): void {
         open = false;
@@ -20,6 +44,11 @@
         backdrop.inert = true;
         backdrop.setAttribute("aria-hidden", "true");
     }
+    function activateDuringIntro(event: Event): void {
+        const backdrop = event.currentTarget as HTMLElement;
+        backdrop.inert = false;
+        backdrop.setAttribute("aria-hidden", "false");
+    }
 </script>
 
 <svelte:window on:keydown={keydown} />
@@ -30,6 +59,7 @@
         role="presentation"
         aria-hidden={!open}
         on:click={close}
+        on:introstart={activateDuringIntro}
         on:outrostart={deactivateDuringOutro}
         in:fade={{ duration: duration(180) }}
         out:fade={{ duration: duration(160) }}
@@ -44,8 +74,8 @@
             aria-labelledby={labelledBy}
             inert={!open}
             on:click|stopPropagation
-            in:fly={{ y: 20, duration: duration(260) }}
-            out:fly={{ y: 12, duration: duration(180) }}
+            in:modalIn
+            out:modalOut
         >
             <slot />
         </div>

@@ -81,7 +81,7 @@
         justify-content: center;
         gap: 0.55rem;
         min-height: 22px;
-        color: #bdb4ca;
+        color: var(--color-muted-cocoa);
         font-size: 0.72rem;
     }
     .auto-page-dots {
@@ -92,10 +92,10 @@
         width: 0.3rem;
         height: 0.3rem;
         border-radius: 50%;
-        background: #ffffff38;
+        background: rgb(59 36 22 / 22%);
     }
     .auto-page-dots i.active {
-        background: var(--scene-c);
+        background: var(--color-selection-edge);
     }
     @keyframes page-crossfade {
         from {
@@ -105,7 +105,15 @@
     }
     @media (prefers-reduced-motion: reduce) {
         .auto-page-content {
-            animation: none;
+            animation: page-opacity 200ms ease both;
+        }
+    }
+    :global(:root[data-reduced-motion="true"]) .auto-page-content {
+        animation: page-opacity 200ms ease both;
+    }
+    @keyframes page-opacity {
+        from {
+            opacity: 0;
         }
     }
 </style>

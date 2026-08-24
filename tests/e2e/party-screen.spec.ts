@@ -268,6 +268,11 @@ test("a player joining during active play enters the authoritative Session roste
     await late.getByRole("button", { name: "Raum beitreten" }).click();
 
     await expect(late.getByText("Runde 1")).toBeVisible();
+    for (const page of [host, first]) {
+        await expect(page.locator(".notification-toast")).toContainText(
+            "Carla ist dem laufenden Spiel beigetreten.",
+        );
+    }
     for (const page of [host, first, late]) {
         await expect(page.locator(".live-players summary")).toContainText("3");
         await page.locator(".live-players summary").click();
@@ -293,10 +298,28 @@ test("network loss enters reconnecting immediately and restores the same partici
     await expect(host.locator(".participant:not(.device-player)")).toHaveCount(2);
 
     await playerContext.setOffline(true);
-    await expect(player.locator(".reconnect-panel")).toContainText(
-        "Verbindung wird wiederhergestellt",
-        { timeout: 2_000 },
-    );
+    const reconnectPanel = player.locator(".reconnect-panel");
+    await expect(reconnectPanel).toContainText("Verbindung unterbrochen", { timeout: 2_000 });
+    await expect(reconnectPanel).toContainText("Du bist offline");
+    await expect(
+        reconnectPanel.getByRole("button", { name: "Jetzt erneut versuchen" }),
+    ).toBeVisible();
+    await expect(
+        reconnectPanel.getByRole("button", { name: "Wiederverbindung stoppen" }),
+    ).toBeVisible();
+    const reconnectLayout = await reconnectPanel.evaluate((panel) => {
+        const heading = panel.querySelector("h1")!;
+        const status = panel.querySelector<HTMLElement>(".reconnect-status")!;
+        const panelStyle = getComputedStyle(panel);
+        return {
+            headingSize: Number.parseFloat(getComputedStyle(heading).fontSize),
+            horizontalPadding: Number.parseFloat(panelStyle.paddingLeft),
+            statusWidth: status.getBoundingClientRect().width,
+        };
+    });
+    expect(reconnectLayout.headingSize).toBeLessThanOrEqual(48);
+    expect(reconnectLayout.horizontalPadding).toBeGreaterThanOrEqual(24);
+    expect(reconnectLayout.statusWidth).toBeGreaterThan(250);
     await playerContext.setOffline(false);
     await expect(player.getByRole("heading", { name: "Lobby" })).toBeVisible({ timeout: 5_000 });
     await expect(host.locator(".participant:not(.device-player)")).toHaveCount(2);
@@ -394,6 +417,19 @@ test("named Never Have I Ever synchronizes private progress then public answer c
         await expect(page.locator(".yes-column")).toContainText("Host Anna");
         await expect(page.locator(".no-column")).toContainText("Ben");
     }
+    const namedRowStyles = await display.evaluate(() => {
+        const yes = getComputedStyle(
+            document.querySelector<HTMLElement>(".yes-column .answer-name")!,
+        );
+        const no = getComputedStyle(
+            document.querySelector<HTMLElement>(".no-column .answer-name")!,
+        );
+        return {
+            yes: [yes.color, yes.backgroundColor, yes.borderColor],
+            no: [no.color, no.backgroundColor, no.borderColor],
+        };
+    });
+    expect(namedRowStyles.yes).toEqual(namedRowStyles.no);
     await expect
         .poll(async () => {
             const cardBox = await display.locator(".game-card").boundingBox();
@@ -456,6 +492,18 @@ test("anonymous Never Have I Ever uses a compact aggregate on a short display", 
         await expect(page.locator(".answer-name-list")).toHaveCount(0);
     }
     await expect(display.locator(".aggregate-total")).toContainText("2");
+    await expect(display.locator(".aggregate-yes")).toHaveCSS(
+        "background-image",
+        "linear-gradient(90deg, rgb(255, 240, 184), rgb(228, 186, 97))",
+    );
+    await expect(display.locator(".aggregate-no")).toHaveCSS(
+        "background-image",
+        "linear-gradient(90deg, rgb(159, 101, 88), rgb(100, 58, 55))",
+    );
+    await expect(display.locator(".aggregate-metric").first().locator("strong")).toHaveCSS(
+        "color",
+        "rgb(59, 36, 22)",
+    );
     await expectCompactResultCard(display);
     expect(
         await display.evaluate(

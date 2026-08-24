@@ -229,8 +229,14 @@ type ServerEnvelope = {
     payload: unknown;
 };
 
+export type ReconnectPhase =
+    "CONNECTED" | "CONNECTING" | "WAITING" | "OFFLINE" | "STOPPED" | "EXHAUSTED";
+
+const MAX_RECONNECT_ATTEMPTS = 5;
+const CONNECT_TIMEOUT_MS = 5_000;
+
 export class RoomSocket {
-    socket!: WebSocket;
+    socket: WebSocket | undefined;
     snapshot: RoomSnapshot | null = null;
     presence: Presence[] = [];
     error = "";
@@ -242,8 +248,14 @@ export class RoomSocket {
     roomNoticeId = 0;
     cardReplacementSequence = 0;
     cardReplacementReason: "SKIPPED" | "VETOED" | "" = "";
+    reconnectPhase: ReconnectPhase = "CONNECTING";
+    reconnectAttempt = 0;
+    reconnectSeconds = 0;
+    readonly reconnectMaximum = MAX_RECONNECT_ATTEMPTS;
     role: Role;
     private retry: number | undefined;
+    private retryCountdown: number | undefined;
+    private connectTimeout: number | undefined;
     private heartbeat: number | undefined;
     private lastServerActivity = 0;
     private leaving = false;
@@ -267,14 +279,19 @@ export class RoomSocket {
     private connect(): void {
         if (this.leaving || this.disposed) return;
         if (typeof navigator !== "undefined" && navigator.onLine === false) {
-            this.markReconnecting();
+            this.markReconnecting("OFFLINE");
             return;
         }
-        if (this.retry) window.clearTimeout(this.retry);
-        this.retry = undefined;
+        this.clearRetryTimers();
+        this.reconnectPhase = "CONNECTING";
+        this.reconnectSeconds = 0;
+        this.changed();
         const scheme = location.protocol === "https:" ? "wss" : "ws";
         const socket = new WebSocket(`${scheme}://${location.host}/ws?locale=${locale}`);
         this.socket = socket;
+        this.connectTimeout = window.setTimeout(() => {
+            if (this.socket === socket && !this.authenticated) this.reconnectFrom(socket);
+        }, CONNECT_TIMEOUT_MS);
         socket.onopen = () => {
             if (this.socket !== socket || this.disposed) return;
             this.lastServerActivity = Date.now();
@@ -297,6 +314,9 @@ export class RoomSocket {
             if (message.type === "server.pong") return;
             if (message.type === "room.snapshot") {
                 const next = message.payload as RoomSnapshot;
+                const previousParticipantIds = new Set(
+                    this.snapshot?.participants.map(({ id }) => id) ?? [],
+                );
                 const previousCardId = this.snapshot?.session?.currentCard?.id;
                 const nextCardId = next.session?.currentCard?.id;
                 const previousRevision = this.snapshot?.settings.revision;
@@ -314,6 +334,17 @@ export class RoomSocket {
                     this.pendingCardReplacement = null;
                 } else if (previousCardId !== nextCardId) {
                     this.cardReplacementReason = "";
+                }
+                if (this.snapshot?.session && next.session?.state !== "ENDED") {
+                    const joinedPlayers = next.participants.filter(
+                        ({ id, role }) => role === "PLAYER" && !previousParticipantIds.has(id),
+                    );
+                    if (joinedPlayers.length) {
+                        this.roomNotice = messages.room.participantJoined(
+                            joinedPlayers.map(({ displayName }) => displayName).join(", "),
+                        );
+                        this.roomNoticeId++;
+                    }
                 }
                 this.snapshot = next;
                 this.error = "";
@@ -349,6 +380,7 @@ export class RoomSocket {
                 const payload = message.payload as { participantId: string; role: Role };
                 this.authenticated = payload.participantId === this.joined.participantId;
                 this.role = payload.role;
+                if (this.authenticated) this.markConnected();
             }
             if (message.type === "error") {
                 const payload = message.payload as { code: string; message: string };
@@ -371,6 +403,7 @@ export class RoomSocket {
         };
         socket.onclose = (event) => {
             if (this.socket !== socket || this.disposed) return;
+            this.clearConnectTimeout();
             this.stopHeartbeat();
             this.authenticated = false;
             if (event.code === 4001) {
@@ -381,7 +414,7 @@ export class RoomSocket {
                 this.left(this.terminalReason);
                 return;
             }
-            this.markReconnecting();
+            this.markReconnecting("WAITING");
             this.scheduleReconnect();
         };
     }
@@ -402,22 +435,62 @@ export class RoomSocket {
     }
     private reconnectFrom(socket: WebSocket): void {
         if (this.socket !== socket || this.leaving || this.disposed) return;
+        this.clearConnectTimeout();
         this.stopHeartbeat();
-        this.markReconnecting();
+        this.markReconnecting("WAITING");
         socket.close();
         this.scheduleReconnect();
     }
-    private markReconnecting(): void {
+    private markReconnecting(phase: "WAITING" | "OFFLINE"): void {
         this.authenticated = false;
-        this.error = messages.common.reconnecting;
+        this.error = "";
+        this.errorCode = "";
+        this.reconnectPhase = phase;
+        if (phase === "OFFLINE") this.reconnectSeconds = 0;
         this.changed();
     }
     private scheduleReconnect(): void {
         if (this.retry || this.leaving || this.disposed) return;
+        if (this.reconnectAttempt >= MAX_RECONNECT_ATTEMPTS) {
+            this.reconnectPhase = "EXHAUSTED";
+            this.reconnectSeconds = 0;
+            this.changed();
+            return;
+        }
+        const nextAttempt = this.reconnectAttempt + 1;
+        const delaySeconds = nextAttempt;
+        const retryAt = Date.now() + delaySeconds * 1_000;
+        this.reconnectPhase = "WAITING";
+        this.reconnectSeconds = delaySeconds;
+        this.changed();
+        this.retryCountdown = window.setInterval(() => {
+            const seconds = Math.max(0, Math.ceil((retryAt - Date.now()) / 1_000));
+            if (seconds === this.reconnectSeconds) return;
+            this.reconnectSeconds = seconds;
+            this.changed();
+        }, 250);
         this.retry = window.setTimeout(() => {
-            this.retry = undefined;
+            this.clearRetryTimers();
+            this.reconnectAttempt = nextAttempt;
             this.connect();
-        }, 1_000);
+        }, delaySeconds * 1_000);
+    }
+    private markConnected(): void {
+        this.clearRetryTimers();
+        this.clearConnectTimeout();
+        this.reconnectPhase = "CONNECTED";
+        this.reconnectAttempt = 0;
+        this.reconnectSeconds = 0;
+    }
+    private clearRetryTimers(): void {
+        if (this.retry) window.clearTimeout(this.retry);
+        if (this.retryCountdown) window.clearInterval(this.retryCountdown);
+        this.retry = undefined;
+        this.retryCountdown = undefined;
+    }
+    private clearConnectTimeout(): void {
+        if (this.connectTimeout) window.clearTimeout(this.connectTimeout);
+        this.connectTimeout = undefined;
     }
     private browserOffline = (): void => {
         if (this.socket) this.reconnectFrom(this.socket);
@@ -428,12 +501,12 @@ export class RoomSocket {
     };
     private browserOnline = (): void => {
         if (this.authenticated || this.leaving || this.disposed) return;
-        if (this.retry) window.clearTimeout(this.retry);
-        this.retry = undefined;
+        if (["STOPPED", "EXHAUSTED"].includes(this.reconnectPhase)) return;
+        this.clearRetryTimers();
         this.connect();
     };
     send(type: string, revision: number | null, payload: object = {}): void {
-        if (this.socket.readyState === WebSocket.OPEN) {
+        if (this.socket?.readyState === WebSocket.OPEN) {
             this.socket.send(
                 JSON.stringify({
                     protocol: 2,
@@ -453,8 +526,32 @@ export class RoomSocket {
         this.settingsNotice = "";
         this.changed();
     }
+    retryNow(): void {
+        if (this.authenticated || this.leaving || this.disposed) return;
+        this.clearRetryTimers();
+        this.clearConnectTimeout();
+        this.reconnectAttempt = 0;
+        this.reconnectPhase = "CONNECTING";
+        const previous = this.socket;
+        this.socket = undefined;
+        previous?.close();
+        this.connect();
+    }
+    stopReconnecting(): void {
+        if (this.authenticated || this.leaving || this.disposed) return;
+        this.clearRetryTimers();
+        this.clearConnectTimeout();
+        this.stopHeartbeat();
+        this.reconnectPhase = "STOPPED";
+        this.reconnectSeconds = 0;
+        const previous = this.socket;
+        this.socket = undefined;
+        previous?.close();
+        this.changed();
+    }
     dispose(): void {
-        if (this.retry) window.clearTimeout(this.retry);
+        this.clearRetryTimers();
+        this.clearConnectTimeout();
         this.stopHeartbeat();
         this.disposed = true;
         this.leaving = true;

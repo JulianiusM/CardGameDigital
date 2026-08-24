@@ -51,14 +51,14 @@
         grid-template-columns: 2.75rem minmax(4rem, 5.25rem) 2.75rem;
         align-items: stretch;
         overflow: hidden;
-        border: 1px solid #ffffff29;
+        border: 1px solid var(--color-edge-strong);
         border-radius: 14px;
-        background: #100c22;
+        background: rgb(255 248 232 / 98%);
     }
     button,
     input {
         min-height: 44px;
-        color: #fff;
+        color: var(--color-espresso);
         border: 0;
         background: transparent;
     }
@@ -71,15 +71,15 @@
         transform: none !important;
     }
     button:first-child {
-        border-right: 1px solid #ffffff1f;
+        border-right: 1px solid var(--color-edge);
     }
     button:last-child {
-        border-left: 1px solid #ffffff1f;
+        border-left: 1px solid var(--color-edge);
     }
     button:not(:disabled):hover,
     button:not(:disabled):active {
-        color: #17132d;
-        background: var(--scene-c);
+        color: var(--color-espresso);
+        background: var(--color-sunflower);
         box-shadow: none;
         transform: none !important;
     }
@@ -96,6 +96,6 @@
         appearance: none;
     }
     .number-input:focus-within {
-        border-color: var(--scene-c);
+        border-color: var(--color-selection-edge);
     }
 </style>

@@ -1,13 +1,16 @@
 <script lang="ts">
     import { messages } from "./i18n";
-    import type { PresentedCard } from "./presentationMapping";
+    import { atmosphereFor, type PresentedCard } from "./presentationMapping";
 
     export let card: PresentedCard;
     export let showIntensity = false;
     export let replacementDraw = false;
     export let compact = false;
 
-    const symbols: Record<string, string> = { QUESTION: "?", DARE: "↝", CONVERSATION: "◌" };
+    $: atmosphere = atmosphereFor(card);
+    $: motifUrl = atmosphere
+        ? `/play/motifs/${atmosphere.family.toLowerCase().replaceAll("_", "-")}.svg`
+        : "/play/motifs/general.svg";
     $: classificationId = card.questionCategoryId ?? card.dareTypeId;
     $: classification = classificationId
         ? (messages.taxonomy[classificationId] ?? classificationId)
@@ -20,8 +23,8 @@
     class="game-card"
     data-type={card.cardType}
 >
-    <div class="card-shine"></div>
-    <span class="card-symbol" aria-hidden="true">{symbols[card.cardType] ?? "◇"}</span>
+    <span class="card-symbol" aria-hidden="true" style={`--card-motif-url: url('${motifUrl}')`}
+    ></span>
     <span class="card-type">
         {messages.cardTypes[card.cardType]}
         {#if classification}<i>·</i>{classification}{/if}

@@ -115,6 +115,48 @@ describe("authoritative multiplayer client events", () => {
         connection.dispose();
     });
 
+    it("announces a player added to an already active Session", async () => {
+        installBrowserGlobals();
+        const { RoomSocket } = await import("../../apps/web/src/multiplayer");
+        const connection = new RoomSocket(
+            {
+                roomId: "00000000-0000-4000-8000-000000000010",
+                roomCode: "ABC234",
+                participantId: "00000000-0000-4000-8000-000000000011",
+                participantCredential: "credential".repeat(5),
+                role: "HOST",
+            },
+            () => undefined,
+        );
+        const socket = FakeWebSocket.instances[0];
+        const host = {
+            id: "00000000-0000-4000-8000-000000000011",
+            role: "HOST",
+            displayName: "Anna",
+        };
+        socket.receive("room.snapshot", {
+            participants: [host],
+            settings: { revision: 0, updatedByParticipantId: null },
+            session: { state: "WAITING_FOR_PLAYER", currentCard: null },
+        });
+        socket.receive("room.snapshot", {
+            participants: [
+                host,
+                {
+                    id: "00000000-0000-4000-8000-000000000012",
+                    role: "PLAYER",
+                    displayName: "Carla",
+                },
+            ],
+            settings: { revision: 0, updatedByParticipantId: null },
+            session: { state: "WAITING_FOR_PLAYER", currentCard: null },
+        });
+
+        expect(connection.roomNotice).toBe("Carla ist dem laufenden Spiel beigetreten.");
+        expect(connection.roomNoticeId).toBe(1);
+        connection.dispose();
+    });
+
     it("enters reconnecting state and opens a new socket when a heartbeat goes unanswered", async () => {
         vi.useFakeTimers();
         installBrowserGlobals();
@@ -140,7 +182,8 @@ describe("authoritative multiplayer client events", () => {
 
         vi.advanceTimersByTime(15_001);
         expect(connection.authenticated).toBe(false);
-        expect(connection.error).toContain("wiederhergestellt");
+        expect(connection.reconnectPhase).toBe("WAITING");
+        expect(connection.reconnectSeconds).toBe(1);
         expect(changes).toBeGreaterThan(1);
         vi.advanceTimersByTime(1_000);
         expect(FakeWebSocket.instances).toHaveLength(2);
@@ -171,9 +214,53 @@ describe("authoritative multiplayer client events", () => {
         socket.onerror?.();
 
         expect(connection.authenticated).toBe(false);
-        expect(connection.error).toContain("wiederhergestellt");
+        expect(connection.reconnectPhase).toBe("WAITING");
+        expect(connection.reconnectSeconds).toBe(1);
         vi.advanceTimersByTime(1_000);
         expect(FakeWebSocket.instances).toHaveLength(2);
+        connection.dispose();
+    });
+
+    it("counts down bounded retries and supports stopping or manually restarting them", async () => {
+        vi.useFakeTimers();
+        installBrowserGlobals();
+        const { RoomSocket } = await import("../../apps/web/src/multiplayer");
+        const connection = new RoomSocket(
+            {
+                roomId: "00000000-0000-4000-8000-000000000010",
+                roomCode: "ABC234",
+                participantId: "00000000-0000-4000-8000-000000000011",
+                participantCredential: "credential".repeat(5),
+                role: "PLAYER",
+            },
+            () => undefined,
+        );
+
+        FakeWebSocket.instances[0].onerror?.();
+        expect(connection.reconnectSeconds).toBe(1);
+        vi.advanceTimersByTime(1_000);
+        expect(connection.reconnectAttempt).toBe(1);
+        FakeWebSocket.instances[1].onerror?.();
+        expect(connection.reconnectSeconds).toBe(2);
+
+        connection.stopReconnecting();
+        vi.advanceTimersByTime(30_000);
+        expect(connection.reconnectPhase).toBe("STOPPED");
+        expect(FakeWebSocket.instances).toHaveLength(2);
+
+        connection.retryNow();
+        expect(connection.reconnectPhase).toBe("CONNECTING");
+        expect(connection.reconnectAttempt).toBe(0);
+        expect(FakeWebSocket.instances).toHaveLength(3);
+
+        for (let attempt = 1; attempt <= connection.reconnectMaximum; attempt++) {
+            FakeWebSocket.instances.at(-1)?.onerror?.();
+            expect(connection.reconnectSeconds).toBe(attempt);
+            vi.advanceTimersByTime(attempt * 1_000);
+            expect(connection.reconnectAttempt).toBe(attempt);
+        }
+        FakeWebSocket.instances.at(-1)?.onerror?.();
+        expect(connection.reconnectPhase).toBe("EXHAUSTED");
         connection.dispose();
     });
 

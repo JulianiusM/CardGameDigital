@@ -41,7 +41,20 @@ export const de = {
         intensityLabel: "Intensität",
         requestFailed: "Anfrage fehlgeschlagen",
         connectionFailed: "Verbindung fehlgeschlagen",
-        reconnecting: "Verbindung getrennt – Verbindung wird wiederhergestellt …",
+        reconnecting: "Verbindung wird wiederhergestellt …",
+        connectionLostTitle: "Verbindung unterbrochen",
+        connectionLostBody:
+            "Dein Spielstand bleibt erhalten. Wir versuchen, dich mit demselben Platz wieder zu verbinden.",
+        reconnectWaiting: (seconds: number, attempt: number, maximum: number) =>
+            `Nächster Versuch in ${seconds} s · Versuch ${attempt} von ${maximum}`,
+        reconnectAttempting: (attempt: number, maximum: number) =>
+            `Verbindung wird hergestellt · Versuch ${attempt} von ${maximum}`,
+        reconnectOffline: "Du bist offline. Sobald das Netzwerk wieder da ist, geht es weiter.",
+        reconnectStopped: "Die automatische Wiederverbindung wurde angehalten.",
+        reconnectExhausted:
+            "Die automatische Wiederverbindung wurde nach mehreren Versuchen beendet.",
+        retryNow: "Jetzt erneut versuchen",
+        stopReconnecting: "Wiederverbindung stoppen",
         result: (yes: number, total: number) => `${yes} von ${total} sagen „Trifft zu“.`,
     },
     couch: {
@@ -109,6 +122,7 @@ export const de = {
         answerReveal: "Anzeige der Antworten",
         settingsError: "Einstellungen konnten nicht gespeichert werden",
         settingsChanged: "Der Host hat die Spieleinstellungen geändert.",
+        participantJoined: (name: string) => `${name} ist dem laufenden Spiel beigetreten.`,
         participantLeft: (name: string) => `${name} hat den Raum verlassen.`,
         participantRemoved: (name: string) =>
             `${name} wurde nach dem Verbindungsabbruch aus dem Raum entfernt.`,
@@ -275,9 +289,9 @@ export const de = {
         step: (current: number, total: number) => `SCHRITT ${current} VON ${total}`,
         progress: (current: number, total: number) => `Schritt ${current} von ${total}`,
         deviceOptions: [
-            ["couch", "▣", "Nur dieser Bildschirm", "Alle Aktionen auf einem Gerät"],
-            ["personal", "◫", "Alle mit eigenem Gerät", "Karten und Aktionen auf jedem Handy"],
-            ["party", "▰", "TV + Smartphones", "Große Bühne, private Steuerung"],
+            ["couch", "couch", "Nur dieser Bildschirm", "Alle Aktionen auf einem Gerät"],
+            ["personal", "phone", "Alle mit eigenem Gerät", "Karten und Aktionen auf jedem Handy"],
+            ["party", "party", "TV + Smartphones", "Große Bühne, private Steuerung"],
         ],
         profiles: [
             ["PROFILE_COLLEAGUES", "Kollegen", "Locker und unverfänglich"],
@@ -294,9 +308,9 @@ export const de = {
         typeStreak: "Maximale Kartenfolge desselben Typs",
         talkInterval: "Gesprächsimpuls nach Fragen",
         groupOptions: [
-            ["quick", "⚡", "Schnelle Runde", "Ohne gespeicherten Verlauf"],
-            ["existing", "◎", "Gespeicherte Gruppe", "Gemeinsamen Verlauf fortsetzen"],
-            ["new", "+", "Neue Gruppe", "Diese Runde später fortsetzen"],
+            ["quick", "quick", "Schnelle Runde", "Ohne gespeicherten Verlauf"],
+            ["existing", "group", "Gespeicherte Gruppe", "Gemeinsamen Verlauf fortsetzen"],
+            ["new", "add", "Neue Gruppe", "Diese Runde später fortsetzen"],
         ],
     },
     settings: {

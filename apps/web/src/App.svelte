@@ -1,6 +1,7 @@
 <script lang="ts">
     import { onMount } from "svelte";
     import QRCode from "qrcode";
+    import AdaptiveBackdrop from "./AdaptiveBackdrop.svelte";
     import Account from "./Account.svelte";
     import type { BoundarySelection } from "./BoundarySetup.svelte";
     import Couch from "./Couch.svelte";
@@ -26,6 +27,7 @@
         type GameProfileSummary,
         type CardLocaleSummary,
         type Join,
+        type ReconnectPhase,
         type Role,
         type RoomGameSettings,
     } from "./multiplayer";
@@ -81,6 +83,16 @@
     $: roomPresence = (updateCounter, connection?.presence ?? []);
     $: connectionError = (updateCounter, connection?.error ?? "");
     $: connectionErrorCode = (updateCounter, connection?.errorCode ?? "");
+    $: reconnectPhase = (updateCounter, connection?.reconnectPhase ?? "CONNECTING");
+    $: reconnectAttempt = (updateCounter, connection?.reconnectAttempt ?? 0);
+    $: reconnectSeconds = (updateCounter, connection?.reconnectSeconds ?? 0);
+    $: reconnectMaximum = connection?.reconnectMaximum ?? 5;
+    $: reconnectStatus = reconnectStatusText(
+        reconnectPhase,
+        reconnectAttempt,
+        reconnectSeconds,
+        reconnectMaximum,
+    );
     $: settingsNotice = (updateCounter, connection?.settingsNotice ?? "");
     $: settingsNoticeId = (updateCounter, connection?.settingsNoticeId ?? 0);
     $: roomNotice = (updateCounter, connection?.roomNotice ?? "");
@@ -170,7 +182,7 @@
         qr = await QRCode.toDataURL(`${location.origin}/play/?room=${value.roomCode}`, {
             margin: 1,
             width: 260,
-            color: { dark: "#17132d", light: "#ffffff" },
+            color: { dark: "#3b2416", light: "#fff8e8" },
         });
         const [loadedProfiles, loadedLocales] = await Promise.all([
             loadGameProfiles(),
@@ -223,6 +235,35 @@
         if (role === "PLAYER") return "content";
         if (role === "DISPLAY") return "services";
         return "audio";
+    }
+
+    function reconnectStatusText(
+        phase: ReconnectPhase,
+        attempt: number,
+        seconds: number,
+        maximum: number,
+    ): string {
+        if (phase === "OFFLINE") return messages.common.reconnectOffline;
+        if (phase === "STOPPED") return messages.common.reconnectStopped;
+        if (phase === "EXHAUSTED") return messages.common.reconnectExhausted;
+        if (phase === "WAITING")
+            return messages.common.reconnectWaiting(
+                seconds,
+                Math.min(attempt + 1, maximum),
+                maximum,
+            );
+        return messages.common.reconnectAttempting(Math.max(1, attempt), maximum);
+    }
+
+    function returnToMenuFromReconnect(): void {
+        const value = joined;
+        connection?.dispose();
+        if (value) clearJoin(value);
+        resetRoomOverlays();
+        joined = null;
+        connection = null;
+        resetSetup("intent");
+        navigate("/play/", { force: true });
     }
 
     function command(type: string, payload: object = {}): void {
@@ -283,6 +324,7 @@
     }
 </script>
 
+<AdaptiveBackdrop />
 {#if route === "home" || route === "account" || route === "help"}<PresentationControls />{/if}
 {#if $notification}<NotificationToast
         message={$notification.message}
@@ -309,7 +351,30 @@
             >
                 {#if recoveringRoom || !snapshot || !effectiveRole}
                     <section class="card-panel reconnect-panel" aria-live="polite">
-                        <h1>{messages.common.reconnecting}</h1>
+                        <div class="reconnect-copy">
+                            <span class="eyebrow">{messages.common.connectionFailed}</span>
+                            <h1>{messages.common.connectionLostTitle}</h1>
+                            <p>{messages.common.connectionLostBody}</p>
+                            <p class="reconnect-status">{reconnectStatus}</p>
+                        </div>
+                        <div class="reconnect-actions">
+                            {#if reconnectPhase !== "CONNECTING"}<button
+                                    class="primary"
+                                    on:click={() => connection?.retryNow()}
+                                    >{messages.common.retryNow}</button
+                                >{/if}
+                            {#if reconnectPhase !== "STOPPED" && reconnectPhase !== "EXHAUSTED"}
+                                <button
+                                    class="secondary"
+                                    on:click={() => connection?.stopReconnecting()}
+                                    >{messages.common.stopReconnecting}</button
+                                >
+                            {:else}
+                                <button class="secondary" on:click={returnToMenuFromReconnect}
+                                    >{messages.common.backToMain}</button
+                                >
+                            {/if}
+                        </div>
                     </section>
                 {:else}
                     {#if !session || session.state === "ENDED"}<header>

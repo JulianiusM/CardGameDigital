@@ -1,6 +1,7 @@
 <script lang="ts">
     import { onMount } from "svelte";
     import GameSettingsEditor from "./GameSettingsEditor.svelte";
+    import UiIcon from "./UiIcon.svelte";
     import { gameModes, messages } from "./i18n";
     import {
         createGroup,
@@ -43,6 +44,7 @@
     let roomCode = query.get("room")?.toUpperCase() ?? "";
     let busy = false;
     const hostSteps: SetupStep[] = ["group", "mode", "profile", "customize", "screen"];
+    const modeIcons = ["classic", "random", "vote", "talk"];
     $: currentIndex = hostSteps.indexOf(setup.step);
     $: progressSteps = hostSteps.map((step) => messages.setup.stepLabels[step]);
     $: presentation.setScene(screen === "menu" ? "MENU" : "LOBBY");
@@ -262,7 +264,9 @@
 
 <main class="home-shell">
     <header class="hero">
-        <span class="spark" aria-hidden="true">✦</span><span class="eyebrow">{messages.brand}</span>
+        <span class="spark" aria-hidden="true"><UiIcon name="spark" /></span><span class="eyebrow"
+            >{messages.brand}</span
+        >
         <h1>{messages.menu.title}</h1>
         <p>{messages.menu.subtitle}</p>
     </header>
@@ -271,24 +275,30 @@
             {#if screen === "menu"}
                 <nav class="main-menu entry-menu" aria-label={messages.menu.title}>
                     <button class="menu-tile primary-tile" on:click={() => openIntent("HOST")}
-                        ><span class="tile-symbol" aria-hidden="true">⌂</span><strong
-                            >{messages.menu.hostGame}</strong
-                        ><small>{messages.setup.hostHint}</small></button
+                        ><span class="tile-symbol" aria-hidden="true"><UiIcon name="host" /></span
+                        ><strong>{messages.menu.hostGame}</strong><small
+                            >{messages.setup.hostHint}</small
+                        ></button
                     >
                     <button class="menu-tile" on:click={() => openIntent("JOIN")}
-                        ><span aria-hidden="true">→</span><strong>{messages.menu.joinGame}</strong
-                        ><small>{messages.setup.joinHint}</small></button
+                        ><span class="tile-symbol" aria-hidden="true"><UiIcon name="join" /></span
+                        ><strong>{messages.menu.joinGame}</strong><small
+                            >{messages.setup.joinHint}</small
+                        ></button
                     >
                     <button class="menu-tile" on:click={() => openIntent("DISPLAY")}
-                        ><span aria-hidden="true">▰</span><strong
-                            >{messages.menu.displayOnly}</strong
-                        ><small>{messages.menu.displayOnlyHint}</small></button
+                        ><span class="tile-symbol" aria-hidden="true"
+                            ><UiIcon name="display" /></span
+                        ><strong>{messages.menu.displayOnly}</strong><small
+                            >{messages.menu.displayOnlyHint}</small
+                        ></button
                     >
                     {#if groups.length}<button
                             class="menu-tile continue-tile"
                             on:click={continueGroup}
-                            ><span aria-hidden="true">◎</span><strong
-                                >{messages.menu.continueGroup}: {groups[0].name}</strong
+                            ><span class="tile-symbol" aria-hidden="true"
+                                ><UiIcon name="group" /></span
+                            ><strong>{messages.menu.continueGroup}: {groups[0].name}</strong
                             ></button
                         >{/if}
                 </nav>
@@ -341,7 +351,7 @@
                                 class:selected={setup.groupChoice === "NONE"}
                                 class="option-card"
                                 on:click={() => chooseGroup(null)}
-                                ><span class="option-symbol">⚡</span><strong
+                                ><span class="option-symbol"><UiIcon name="quick" /></span><strong
                                     >{messages.setup.noGroup}</strong
                                 ><small>{messages.setup.quickGroupHint}</small></button
                             >
@@ -349,7 +359,7 @@
                                 class:selected={setup.groupChoice === "SELECT"}
                                 class="option-card"
                                 on:click={() => persist({ groupChoice: "SELECT" })}
-                                ><span class="option-symbol">◎</span><strong
+                                ><span class="option-symbol"><UiIcon name="group" /></span><strong
                                     >{messages.setup.selectGroup}</strong
                                 ><small>{messages.setup.selectGroupHint}</small></button
                             >
@@ -357,7 +367,7 @@
                                 class:selected={setup.groupChoice === "NEW"}
                                 class="option-card"
                                 on:click={() => persist({ groupChoice: "NEW", groupId: null })}
-                                ><span class="option-symbol">+</span><strong
+                                ><span class="option-symbol"><UiIcon name="add" /></span><strong
                                     >{messages.setup.newGroup}</strong
                                 ><small>{messages.setup.newGroupHint}</small></button
                             >
@@ -409,7 +419,7 @@
                                     class="option-card"
                                     on:click={() => persist({ mode: item[0] })}
                                     ><span class="option-symbol"
-                                        >{["?", "↝", "✋", "◌"][index]}</span
+                                        ><UiIcon name={modeIcons[index]} /></span
                                     ><strong>{item[1]}</strong><small>{item[2]}</small></button
                                 >{/each}
                         </div>
@@ -460,9 +470,8 @@
                                     class:selected={setup.deviceMode === item[0]}
                                     class="option-card"
                                     on:click={() => persist({ deviceMode: item[0] })}
-                                    ><span class="option-symbol">{item[1]}</span><strong
-                                        >{item[2]}</strong
-                                    ><small>{item[3]}</small></button
+                                    ><span class="option-symbol"><UiIcon name={item[1]} /></span
+                                    ><strong>{item[2]}</strong><small>{item[3]}</small></button
                                 >{/each}
                         </div>
                         {#if setup.deviceMode !== "couch"}<label class="host-name-field"

@@ -7,6 +7,7 @@
     import SessionSummary from "./SessionSummary.svelte";
     import NeverHaveIEverVoting from "./NeverHaveIEverVoting.svelte";
     import PlayerNameRow from "./PlayerNameRow.svelte";
+    import UiIcon from "./UiIcon.svelte";
     import { presentation } from "./presentation";
     import { atmosphereFor, effectForCommand, sceneFor } from "./presentationMapping";
     import { messages, gameModes } from "./i18n";
@@ -186,7 +187,7 @@
             />
         </div>
     {:else}
-        <section class="game-shell" data-atmosphere={cardAtmosphere}>
+        <section class="game-shell">
             <div class="status">
                 <span>{messages.common.round} {session.roundNumber}</span><span
                     >{session.cardsShown} {messages.common.cards}</span
@@ -204,7 +205,7 @@
                 </div>
             {:else if session.state === "CHOOSING_CARD_TYPE"}
                 <div class="choice card-panel game-phase">
-                    <span class="choice-symbol">↝</span>
+                    <span class="choice-symbol"><UiIcon name="dare" /></span>
                     <h2>{messages.common.truthOrDare}</h2>
                     <div>
                         <button
@@ -220,7 +221,7 @@
                 </div>
             {:else if session.state === "WAITING_FOR_PLAYER"}
                 <div class="card-panel center turn-ready game-phase">
-                    <span class="orbit-symbol">✦</span>
+                    <span class="orbit-symbol"><UiIcon name="spark" /></span>
                     <h2>{messages.common.ready}</h2>
                     <button class="primary" disabled={busy} on:click={() => command("start")}
                         >{messages.common.reveal}</button

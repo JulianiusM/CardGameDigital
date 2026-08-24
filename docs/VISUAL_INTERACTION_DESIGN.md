@@ -7,11 +7,11 @@ Warm, playful, card-first, and adaptive. A golden-orange visual universe that ch
 |                     |                                                                                 |
 | ------------------- | ------------------------------------------------------------------------------- |
 | **Document status** | Canonical visual and interaction design reference                               |
-| **Version**         | 1.1                                                                             |
-| **Date**            | 22 August 2026                                                                  |
+| **Version**         | 1.2                                                                             |
+| **Date**            | 23 August 2026                                                                  |
 | **Scope**           | Look, feel, visual hierarchy, iconography, motion, and interaction presentation |
 
-_Companion references: Game Design Document v1.3 for gameplay/product behavior; Technical Architecture Document v1.2 for implementation constraints. This document is authoritative within its visual-design scope._
+_Companion references: Game Design Document v1.4 for gameplay/product behavior; Technical Architecture Document v1.2 for implementation constraints. This document is authoritative within its visual-design scope._
 
 # 1. Authority and scope
 
@@ -84,10 +84,23 @@ the animated atmosphere lives behind them.
 | **Coral**         |            | #FF6F61 | Intimate/flirt bridge          |
 | **Raspberry**     |            | #E84769 | Spicy/intimate accent          |
 | **Berry**         |            | #9D315B | Deepest standard hot state     |
+| **Result Honey**  |            | #D5A03B | Post-reveal `YES` comparison   |
+| **Result Clay**   |            | #A96B5A | Post-reveal `NO` comparison    |
 
 **Color rule:** avoid introducing cool blue, teal, or corporate violet
 as category identities. Neutral accessibility states may use grayscale,
 but the expressive game identity remains warm.
+
+**Utility feedback.** Information, confirmation, warning, and error
+states must be identified by text and iconography rather than color
+alone. Informational and confirmation treatments use cream, gold, or
+burnt orange. Error and destructive treatments may use Berry. Green,
+teal, and blue are not default utility-state colors for this identity.
+
+**Result-color rule.** Result Honey and Result Clay are neutral
+post-reveal comparison accents, not success/failure states. They must
+never be reused as generic confirmation, warning, error, or player-status
+colors.
 
 # 4. Typography
 
@@ -148,12 +161,31 @@ colors, or any visual hint of the submitted value before reveal.
 and during voting as a small but explicit text treatment such as **Anonymous result** or
 **Answers revealed**. It may not rely on color alone.
 
-**Anonymous result.** After voting completes, show aggregate `YES`/`NO` totals as the
-primary result. Do not show names beside either answer.
+**Answer-associated color.** Answer colors appear only after the final required vote has
+been received. They are most prominent in anonymous aggregate results and may be used
+sparingly in named-result column headings. They are never used on vote controls,
+Pending/Voted progress, individual player names, or pre-reveal states.
 
-**Named-answer result.** After voting completes, show each player's name and answer in
-the Session player order. An aggregate summary may remain above the list. Use neutral,
-equally weighted answer chips; avoid moralizing green/red success/failure styling.
+**Anonymous result.** After voting completes, show aggregate `YES`/`NO` totals as the
+primary result. The existing two-segment percentage-bar principle is canonical and may
+continue. Use these equally weighted warm comparison gradients:
+
+- `YES`: Result Honey, **#E4BA61 → #C98E2F**;
+- `NO`: Result Clay, **#C58A72 → #9F6558**.
+
+The bar sits on a Soft Cream or low-opacity espresso track. Explicit `YES`/`NO` labels,
+counts, and percentages remain visible; color is never the only distinction. Main metric
+text remains Espresso Ink rather than being fully recolored. Do not show names beside
+either answer, and do not use green/red or teal/rose success/failure semantics.
+
+**Named-answer result.** After voting completes, show two equally weighted columns:
+`YES` and `NO`. Every player appears exactly once, and names retain Session player order
+within their respective column. An aggregate summary may remain visible. The column
+headings and count badges may use Result Honey and Result Clay as restrained accents—
+roughly 12-16% tinted fill and 35-45% border/mark opacity—but the column surfaces and all
+name rows stay neutral Warm Paper/Soft Cream with Espresso text. Do not color individual
+names or render answer-colored player chips. On passive displays, headings and totals
+remain fixed while only the variable name rows auto-page.
 
 # 6. Buttons, choices, and wizard behavior
 
@@ -305,9 +337,9 @@ or imply the answer value.
 
 **Never Have I Ever result reveal.** When the final required vote arrives, transition
 from the voting roster to the result over approximately 280-360 ms. Anonymous mode
-reveals aggregate totals. Named-answer mode reveals the player-answer rows together as
-one deliberate result state rather than animating answers one by one, which could
-suggest an order or ranking that does not exist.
+reveals aggregate totals and its two-segment comparison bar. Named-answer mode reveals
+both answer columns together as one deliberate result state rather than animating names
+one by one, which could suggest an order or ranking that does not exist.
 
 **Celebration/end.** Confetti/star motifs may appear, but remain within
 the warm palette and do not become a full-screen particle storm.
@@ -370,6 +402,7 @@ labels remain readable.
 | Use a few large choices and hide complexity behind the wizard/settings model. | Fill the screen with persistent navigation, toolbars, or dense configuration. |
 | Make intimate states suggestive, abstract, and mature.                        | Use graphic sexual imagery or platform emoji as the visual identity.          |
 | Preserve graceful crossfades between atmospheres.                             | Hard-switch colors/icons when a new card appears.                             |
+| Use Honey/Clay only for explicit post-reveal answer comparison.               | Use green/red or teal/rose to imply that one answer is better or worse.       |
 
 # 16. Acceptance summary
 
@@ -400,8 +433,11 @@ following are true:
 - Never-Have-I-Ever voting visibly distinguishes Pending from Voted for every current
   voter without exposing answer values before the reveal.
 
-- Anonymous and named-answer results are visually distinct by explicit labels and
-  content structure, not by color alone.
+- Anonymous results retain a clearly labelled Honey/Clay percentage bar; color is not
+  the only carrier of `YES`/`NO` identity.
+
+- Named-answer results use two equally weighted columns, preserve Session player order
+  within each column, and keep individual player rows visually neutral.
 
 - Reduced-motion presentation remains complete and visually coherent.
 

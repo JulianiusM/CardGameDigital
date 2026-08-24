@@ -1,5 +1,6 @@
 <script lang="ts">
     import { messages } from "./i18n";
+    import UiIcon from "./UiIcon.svelte";
     export let cardsShown: number;
     export let roundNumber: number;
     export let elapsedMinutes: number;
@@ -11,7 +12,7 @@
 </script>
 
 <section class="session-summary card-panel">
-    <span class="summary-spark" aria-hidden="true">✦</span>
+    <span class="summary-spark" aria-hidden="true"><UiIcon name="spark" /></span>
     <h1>{messages.end.title}</h1>
     <p>{messages.end.subtitle}</p>
     <div class="summary-stats">

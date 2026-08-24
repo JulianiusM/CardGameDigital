@@ -1,7 +1,7 @@
 # Multiplayer Party Card Game — Game Design Document
 
 **Document status:** Canonical design reference / single source of truth  
-**Version:** 1.3
+**Version:** 1.4
 **Working title:** TBD  
 **Primary source language:** German (`de-DE`)  
 **Game type:** Multiplayer social, party and conversation card game  
@@ -1274,17 +1274,21 @@ No association between a player and their answer is revealed.
 
 During collection, answer values remain private exactly as in anonymous mode.
 
-After all required votes have been submitted, the reveal shows every player's name and
-answer. The aggregate totals may remain visible as a summary.
+After all required votes have been submitted, the reveal groups the public result into
+two equally weighted answer columns: `YES` and `NO`. Every player appears exactly once
+in the column matching their answer. Within each column, names retain Session player
+order. Aggregate totals may remain visible as a summary.
 
 Example:
 
 ```text
-Anna     Ja
-Ben      Nein
-Lea      Ja
-Chris    Nein
+JA              NEIN
+Anna            Ben
+Lea             Chris
 ```
+
+The grouping is a public result presentation, not a ranking. No player is visually
+emphasized or de-emphasized because of their answer.
 
 Named answers are public Session state after the reveal. They are still ephemeral game
 data and are not persisted as long-term player-history or analytics records by default.
@@ -2243,7 +2247,7 @@ The following are canonical:
 17. Gespräch Cards use pacing logic rather than ordinary random selection.
 18. `Ich hab noch nie` uses one Game Mode with a pre-Session Answer Reveal Mode setting.
 19. During `Ich hab noch nie` voting, player completion status is public but answer values remain private until reveal.
-20. `NAMED_ANSWERS` reveals each player's answer only after all required votes are submitted.
+20. `NAMED_ANSWERS` reveals two equally weighted answer columns only after all required votes are submitted; names retain Session order within their respective column.
 21. The `Ich hab noch nie` reveal mode cannot change during an active Session.
 22. Phones are supporting controllers in Party Screen Mode.
 23. The server remains authoritative.
@@ -2271,6 +2275,7 @@ The design is correctly implemented when:
 - producer catalog releases preserve stable Card UUIDs while runtime FULL reconciliation soft-disables removed content;
 - `Ich hab noch nie` defaults to anonymous aggregate reveal;
 - named-answer reveal exposes every player's answer only after all required votes are submitted;
+- named-answer results use two equally weighted answer columns and retain Session player order within each column;
 - while voting, every player is visibly marked `PENDING` or `VOTED`;
 - vote progress never reveals `YES`/`NO` values before the reveal;
 - the reveal mode is visible before voting and cannot change during an active Session;
