@@ -26,12 +26,15 @@ import {
 import { NEVER_HAVE_I_EVER_REVEAL_MODES, type NeverHaveIEverRevealMode } from "../game-core";
 
 export type CreateCouchSession = {
+    persistence: "EPHEMERAL" | "DATASPACE";
     mode: GameMode;
     players: readonly { name: string }[];
     configuration: EffectiveGameSettings;
     profileId: string;
     adultContentConfirmed: boolean;
     cardLocale: string;
+    cardFallbackEnabled?: boolean;
+    cardFallbackLocales?: readonly string[];
     neverHaveIEverRevealMode?: NeverHaveIEverRevealMode;
     groupId?: string | null;
     dataSpaceId?: DataSpaceId;
@@ -58,10 +61,13 @@ export type CouchSessionSnapshot = {
     voteResult: { yes: number; no: number; total: number };
     votedPlayerIds: readonly string[];
     neverHaveIEverVoting: NeverHaveIEverVotingProjection | null;
+    persistence: "EPHEMERAL" | "DATASPACE";
     settings: {
         mode: GameMode;
         profileId: string;
         cardLocale: string;
+        cardFallbackEnabled: boolean;
+        cardFallbackLocales: readonly string[];
         neverHaveIEverRevealMode: NeverHaveIEverRevealMode;
         configuration: EffectiveGameSettings;
     };
@@ -76,13 +82,14 @@ export class CouchSessionNotFoundError extends Error {
 
 export class CouchSessionService {
     private readonly sessions = new Map<string, GameSession>();
+    private readonly owners = new Map<string, DataSpaceId | null>();
     private readonly queues = new Map<string, Promise<unknown>>();
     constructor(
         private readonly cards: CardRepository,
         private readonly random: RandomSource,
         private readonly cardTranslationPolicy: Pick<
             CardLocalizationPolicy,
-            "missingTranslation" | "fallbackLocale"
+            "missingTranslation" | "fallbackLocales"
         > = DEFAULT_CARD_TRANSLATION_POLICY,
         private readonly repository?: CouchSessionRepository,
     ) {}
@@ -92,10 +99,42 @@ export class CouchSessionService {
     }
 
     async create(input: CreateCouchSession): Promise<CouchSessionSnapshot> {
+        if (input.persistence === "DATASPACE" && (!input.dataSpaceId || !this.repository)) {
+            throw Object.assign(new Error(MESSAGE_KEYS.ACCOUNT_AUTHENTICATION_REQUIRED), {
+                code: "NOT_AUTHORIZED",
+            });
+        }
+        if (input.persistence === "EPHEMERAL" && (input.dataSpaceId || input.groupId)) {
+            throw Object.assign(new Error(MESSAGE_KEYS.ACCOUNT_AUTHENTICATION_REQUIRED), {
+                code: "NOT_AUTHORIZED",
+            });
+        }
         if (!(await this.cards.isLocaleActive(input.cardLocale))) {
             throw Object.assign(new Error(MESSAGE_KEYS.CARD_LOCALE_UNAVAILABLE), {
                 code: "CARD_LOCALE_UNAVAILABLE",
             });
+        }
+        if (input.cardFallbackEnabled && !input.cardFallbackLocales?.length) {
+            throw Object.assign(new Error(MESSAGE_KEYS.CARD_LOCALE_UNAVAILABLE), {
+                code: "CARD_LOCALE_UNAVAILABLE",
+            });
+        }
+        const fallbackLocales = [...(input.cardFallbackLocales ?? [])];
+        const normalizedFallbacks = fallbackLocales.map((entry) => entry.toLowerCase());
+        if (
+            new Set(normalizedFallbacks).size !== normalizedFallbacks.length ||
+            normalizedFallbacks.includes(input.cardLocale.toLowerCase())
+        ) {
+            throw Object.assign(new Error(MESSAGE_KEYS.CARD_LOCALE_UNAVAILABLE), {
+                code: "CARD_LOCALE_UNAVAILABLE",
+            });
+        }
+        for (const fallbackLocale of fallbackLocales) {
+            if (!(await this.cards.isLocaleActive(fallbackLocale))) {
+                throw Object.assign(new Error(MESSAGE_KEYS.CARD_LOCALE_UNAVAILABLE), {
+                    code: "CARD_LOCALE_UNAVAILABLE",
+                });
+            }
         }
         if (profileRequiresAdultConfirmation(input.profileId) && !input.adultContentConfirmed) {
             throw Object.assign(new Error(MESSAGE_KEYS.GAME_ADULT_CONFIRMATION_REQUIRED), {
@@ -108,6 +147,8 @@ export class CouchSessionService {
             groupId: input.groupId ?? null,
             adultContentConfirmed: input.adultContentConfirmed,
             cardLocale: input.cardLocale,
+            cardFallbackEnabled: input.cardFallbackEnabled ?? false,
+            cardFallbackLocales: fallbackLocales,
             neverHaveIEverRevealMode:
                 input.neverHaveIEverRevealMode ??
                 NEVER_HAVE_I_EVER_REVEAL_MODES.ANONYMOUS_AGGREGATE,
@@ -128,28 +169,38 @@ export class CouchSessionService {
                     name: player.name.trim(),
                 })),
                 cardLocale: input.cardLocale,
+                cardFallbackEnabled: input.cardFallbackEnabled,
+                cardFallbackLocales: fallbackLocales,
                 neverHaveIEverRevealMode: input.neverHaveIEverRevealMode,
                 groupHistoryCardIds,
             },
             this.random,
         );
         const cards = await this.cards.listActive({
-            locale: session.cardLocale,
-            ...this.cardTranslationPolicy,
+            ...this.localizationPolicy(session),
         });
         if (!session.hasEligibleCards(cards)) {
             throw Object.assign(new Error(MESSAGE_KEYS.GAME_CARD_POOL_EXHAUSTED), {
                 code: "CARD_POOL_EXHAUSTED",
             });
         }
-        await this.repository?.save(
-            session.toRuntimeState(),
-            input.dataSpaceId
-                ? { dataSpaceId: input.dataSpaceId, groupId: input.groupId ?? null }
-                : undefined,
-        );
+        if (input.persistence === "DATASPACE" && input.dataSpaceId) {
+            await this.repository?.save(session.toRuntimeState(), {
+                dataSpaceId: input.dataSpaceId,
+                groupId: input.groupId ?? null,
+            });
+        }
         this.sessions.set(session.id, session);
+        this.owners.set(
+            session.id,
+            input.persistence === "DATASPACE" ? (input.dataSpaceId ?? null) : null,
+        );
         return this.snapshot(session);
+    }
+
+    async ownerDataSpaceId(id: string): Promise<DataSpaceId | null> {
+        await this.require(id);
+        return this.owners.get(id) ?? null;
     }
 
     async get(id: string): Promise<CouchSessionSnapshot> {
@@ -161,8 +212,7 @@ export class CouchSessionService {
             session.startTurn(
                 revision,
                 await this.cards.listActive({
-                    locale: session.cardLocale,
-                    ...this.cardTranslationPolicy,
+                    ...this.localizationPolicy(session),
                 }),
             );
         });
@@ -177,8 +227,7 @@ export class CouchSessionService {
                 revision,
                 cardType,
                 await this.cards.listActive({
-                    locale: session.cardLocale,
-                    ...this.cardTranslationPolicy,
+                    ...this.localizationPolicy(session),
                 }),
             );
         });
@@ -188,8 +237,7 @@ export class CouchSessionService {
             session.skipCard(
                 revision,
                 await this.cards.listActive({
-                    locale: session.cardLocale,
-                    ...this.cardTranslationPolicy,
+                    ...this.localizationPolicy(session),
                 }),
             );
         });
@@ -220,8 +268,11 @@ export class CouchSessionService {
         if (session) return session;
         const runtime = await this.repository?.load(id);
         if (!runtime) throw new CouchSessionNotFoundError();
+        const owner = await this.repository?.ownerDataSpaceId(id);
+        if (!owner) throw new CouchSessionNotFoundError();
         const restored = GameSession.restore(runtime, this.random);
         this.sessions.set(id, restored);
+        this.owners.set(id, owner);
         return restored;
     }
     private mutate(
@@ -249,7 +300,7 @@ export class CouchSessionService {
         return next;
     }
     private async persist(session: GameSession): Promise<void> {
-        await this.repository?.save(session.toRuntimeState());
+        if (this.owners.get(session.id)) await this.repository?.save(session.toRuntimeState());
     }
     private snapshot(session: GameSession): CouchSessionSnapshot {
         return {
@@ -275,10 +326,13 @@ export class CouchSessionService {
             voteResult: session.voteResult(),
             votedPlayerIds: [...session.votes.keys()],
             neverHaveIEverVoting: projectNeverHaveIEverVoting(session),
+            persistence: this.owners.get(session.id) ? "DATASPACE" : "EPHEMERAL",
             settings: {
                 mode: session.mode,
                 profileId: session.profile.id,
                 cardLocale: session.cardLocale,
+                cardFallbackEnabled: session.cardFallbackEnabled,
+                cardFallbackLocales: [...session.cardFallbackLocales],
                 neverHaveIEverRevealMode: session.neverHaveIEverRevealMode,
                 configuration: {
                     enabledQuestionCategoryIds: [...session.profile.enabledQuestionCategoryIds],
@@ -295,5 +349,18 @@ export class CouchSessionService {
                 },
             },
         };
+    }
+
+    private localizationPolicy(
+        session: Pick<GameSession, "cardLocale" | "cardFallbackEnabled" | "cardFallbackLocales">,
+    ): CardLocalizationPolicy {
+        if (session.cardFallbackEnabled) {
+            return {
+                locale: session.cardLocale,
+                missingTranslation: "FALLBACK",
+                fallbackLocales: session.cardFallbackLocales,
+            };
+        }
+        return { locale: session.cardLocale, ...this.cardTranslationPolicy };
     }
 }

@@ -50,6 +50,30 @@ afterEach(() => {
 });
 
 describe("authoritative multiplayer client events", () => {
+    it("reports HTTP and realtime connection failures instead of silently ignoring play", async () => {
+        installBrowserGlobals();
+        vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("offline")));
+        const { RoomSocket, rooms } = await import("../../apps/web/src/multiplayer");
+
+        await expect(rooms.join("ABC234", "Ben", "PLAYER")).rejects.toThrow(
+            "Verbindung fehlgeschlagen",
+        );
+        const connection = new RoomSocket(
+            {
+                roomId: "00000000-0000-4000-8000-000000000010",
+                roomCode: "ABC234",
+                participantId: "00000000-0000-4000-8000-000000000011",
+                participantCredential: "credential".repeat(5),
+                role: "PLAYER",
+            },
+            () => undefined,
+        );
+        connection.command("command.startTurn");
+        expect(connection.errorCode).toBe("CONNECTION_UNAVAILABLE");
+        expect(connection.error).toBe("Verbindung fehlgeschlagen");
+        connection.dispose();
+    });
+
     it("maps lifecycle notices and animates the snapshot following a Card replacement", async () => {
         installBrowserGlobals();
         const { RoomSocket } = await import("../../apps/web/src/multiplayer");
@@ -255,8 +279,9 @@ describe("authoritative multiplayer client events", () => {
 
         for (let attempt = 1; attempt <= connection.reconnectMaximum; attempt++) {
             FakeWebSocket.instances.at(-1)?.onerror?.();
-            expect(connection.reconnectSeconds).toBe(attempt);
-            vi.advanceTimersByTime(attempt * 1_000);
+            const delaySeconds = Math.min(attempt, 10);
+            expect(connection.reconnectSeconds).toBe(delaySeconds);
+            vi.advanceTimersByTime(delaySeconds * 1_000);
             expect(connection.reconnectAttempt).toBe(attempt);
         }
         FakeWebSocket.instances.at(-1)?.onerror?.();

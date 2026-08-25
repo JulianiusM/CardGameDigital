@@ -18,6 +18,7 @@ import {
 } from "./repositories";
 import type {
     RealtimeRoomRepository,
+    RoomCapacity,
     RoomJoinResult,
     RoomParticipant,
     RoomRole,
@@ -39,7 +40,10 @@ import {
 import { projectNeverHaveIEverVoting } from "./neverHaveIEverVoting";
 
 const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-export const ROOM_CAPACITY = Object.freeze({ maximumParticipants: 50, maximumPlayers: 100 });
+export const DEFAULT_ROOM_CAPACITY: Readonly<RoomCapacity> = Object.freeze({
+    maximumParticipants: 100,
+    maximumPlayers: 100,
+});
 const roleCapabilities: Record<RoomRole, ReadonlySet<string>> = {
     HOST: new Set([
         "DISPLAY_SESSION",
@@ -124,6 +128,7 @@ export type RoomCommand =
 
 export type RoomSnapshot = {
     roomId: string;
+    capacity: Readonly<RoomCapacity>;
     participants: readonly RoomParticipant[];
     boundaryConfigured: boolean;
     settings: VersionedRoomGameSettings;
@@ -139,8 +144,9 @@ export class RoomService {
         private readonly random: RandomSource,
         private readonly cardTranslationPolicy: Pick<
             CardLocalizationPolicy,
-            "missingTranslation" | "fallbackLocale"
+            "missingTranslation" | "fallbackLocales"
         > = DEFAULT_CARD_TRANSLATION_POLICY,
+        private readonly capacity: Readonly<RoomCapacity> = DEFAULT_ROOM_CAPACITY,
     ) {}
 
     async createRoom(
@@ -208,7 +214,7 @@ export class RoomService {
                 connectionStatus: "TEMPORARILY_DISCONNECTED",
                 credentialHash: this.hashCredential(credential),
             },
-            ROOM_CAPACITY,
+            this.capacity,
         );
         const participant = await this.repository.authenticate(
             roomCode,
@@ -254,11 +260,13 @@ export class RoomService {
     }
 
     async expireDisconnectedParticipant(roomId: string, participantId: string): Promise<boolean> {
-        const participant = await this.repository.getParticipant(roomId, participantId);
-        if (!participant || participant.connectionStatus !== "TEMPORARILY_DISCONNECTED")
-            return false;
-        await this.leaveParticipant(roomId, participant);
-        return true;
+        return this.serialize(roomId, async () => {
+            const participant = await this.repository.getParticipant(roomId, participantId);
+            if (!participant || participant.connectionStatus !== "TEMPORARILY_DISCONNECTED")
+                return false;
+            await this.leaveParticipant(roomId, participant);
+            return true;
+        });
     }
 
     async snapshot(roomId: string, viewer?: RoomParticipant): Promise<RoomSnapshot> {
@@ -270,6 +278,7 @@ export class RoomService {
         ]);
         return {
             roomId,
+            capacity: this.capacity,
             participants,
             boundaryConfigured: viewer ? boundaries.has(viewer.id) : false,
             settings: roomSettings,
@@ -360,6 +369,19 @@ export class RoomService {
             }
         }
         await this.repository.setConnectionStatus(participant.id, "LEFT");
+        if (await this.repository.closeRoomIfNoPlayers(roomId)) {
+            const closingSession = await this.loadSession(roomId);
+            if (closingSession && closingSession.state !== "ENDED") {
+                const ended = GameSession.restore(closingSession.toRuntimeState(), this.random);
+                ended.end(closingSession.revision);
+                await this.repository.commitRuntime(
+                    roomId,
+                    closingSession.revision,
+                    ended.toRuntimeState(),
+                );
+            }
+            this.sessions.delete(roomId);
+        }
     }
 
     private async executeSerialized(
@@ -413,7 +435,7 @@ export class RoomService {
                         : current.devicePlayers.length;
                 return total + 1 + devicePlayerCount;
             }, 0);
-            if (playerCount > ROOM_CAPACITY.maximumPlayers) {
+            if (playerCount > this.capacity.maximumPlayers) {
                 throw Object.assign(new Error(MESSAGE_KEYS.ROOM_FULL), { code: "ROOM_FULL" });
             }
             await this.repository.saveDevicePlayers(
@@ -518,13 +540,14 @@ export class RoomService {
                     boundariesByPlayer,
                     groupHistoryCardIds,
                     cardLocale: settings.cardLocale,
+                    cardFallbackEnabled: settings.cardFallbackEnabled,
+                    cardFallbackLocales: settings.cardFallbackLocales,
                     neverHaveIEverRevealMode: settings.neverHaveIEverRevealMode,
                 },
                 this.random,
             );
             const cards = await this.cards.listActive({
-                locale: proposed.cardLocale,
-                ...this.cardTranslationPolicy,
+                ...this.localizationPolicy(proposed),
             });
             if (!proposed.hasEligibleCards(cards)) {
                 throw Object.assign(new Error(MESSAGE_KEYS.GAME_CARD_POOL_EXHAUSTED), {
@@ -567,8 +590,7 @@ export class RoomService {
             command.type === "command.skipCard" ||
             command.type === "command.vetoCard"
                 ? await this.cards.listActive({
-                      locale: current.cardLocale,
-                      ...this.cardTranslationPolicy,
+                      ...this.localizationPolicy(current),
                   })
                 : [];
         if (command.type === "command.startTurn") proposed.startTurn(command.revision, cards);
@@ -636,6 +658,29 @@ export class RoomService {
                 code: "CARD_LOCALE_UNAVAILABLE",
             });
         }
+        if (settings.cardFallbackEnabled && settings.cardFallbackLocales.length === 0) {
+            throw Object.assign(new Error(MESSAGE_KEYS.CARD_LOCALE_UNAVAILABLE), {
+                code: "CARD_LOCALE_UNAVAILABLE",
+            });
+        }
+        const normalizedFallbacks = settings.cardFallbackLocales.map((entry) =>
+            entry.toLowerCase(),
+        );
+        if (
+            new Set(normalizedFallbacks).size !== normalizedFallbacks.length ||
+            normalizedFallbacks.includes(settings.cardLocale.toLowerCase())
+        ) {
+            throw Object.assign(new Error(MESSAGE_KEYS.CARD_LOCALE_UNAVAILABLE), {
+                code: "CARD_LOCALE_UNAVAILABLE",
+            });
+        }
+        for (const fallbackLocale of settings.cardFallbackLocales) {
+            if (!(await this.cards.isLocaleActive(fallbackLocale))) {
+                throw Object.assign(new Error(MESSAGE_KEYS.CARD_LOCALE_UNAVAILABLE), {
+                    code: "CARD_LOCALE_UNAVAILABLE",
+                });
+            }
+        }
         try {
             roomSettingsGameProfile(settings);
         } catch {
@@ -643,6 +688,18 @@ export class RoomService {
                 code: "VALIDATION_ERROR",
             });
         }
+    }
+    private localizationPolicy(
+        session: Pick<GameSession, "cardLocale" | "cardFallbackEnabled" | "cardFallbackLocales">,
+    ): CardLocalizationPolicy {
+        if (session.cardFallbackEnabled) {
+            return {
+                locale: session.cardLocale,
+                missingTranslation: "FALLBACK",
+                fallbackLocales: session.cardFallbackLocales,
+            };
+        }
+        return { locale: session.cardLocale, ...this.cardTranslationPolicy };
     }
     private hashCredential(credential: string): string {
         return createHash("sha256").update(credential).digest("hex");

@@ -7,18 +7,52 @@ import { ExpectedError } from "../../modules/lib/errors";
 import { detectLocale } from "../../packages/localization/messages";
 
 const router = express.Router();
+const username = z
+    .string()
+    .trim()
+    .min(3)
+    .max(50)
+    .regex(/^[a-zA-Z0-9._-]+$/)
+    .transform((value) => value.toLowerCase());
 const credentials = z.object({
-    username: z.string().min(3).max(50),
+    username,
     password: z.string().min(8).max(200),
 });
 const registration = credentials.extend({
     displayName: z.string().trim().min(1).max(50),
-    email: z.string().email().max(100),
+    email: z
+        .string()
+        .trim()
+        .email()
+        .max(100)
+        .transform((value) => value.toLowerCase()),
 });
 const dataSpaceInput = z.object({
     name: z.string().trim().min(1).max(50),
     isDefault: z.boolean().optional(),
 });
+const languageTag = z
+    .string()
+    .trim()
+    .min(2)
+    .max(35)
+    .regex(/^[A-Za-z]{2,8}(?:-[A-Za-z0-9]{1,8})*$/);
+const languagePreferencesInput = z
+    .object({
+        useSystemLanguage: z.boolean().optional(),
+        interfaceLocale: languageTag.nullable().optional(),
+        cardLocale: languageTag.nullable().optional(),
+        fallbackLocales: z.array(languageTag).max(100).optional(),
+    })
+    .strict()
+    .refine((value) => Object.keys(value).length > 0, "At least one preference is required")
+    .refine(
+        ({ fallbackLocales }) =>
+            !fallbackLocales ||
+            new Set(fallbackLocales.map((entry) => entry.toLowerCase())).size ===
+                fallbackLocales.length,
+        { message: "Fallback locales must be unique", path: ["fallbackLocales"] },
+    );
 
 function localLoginRequired(): void {
     if (settings.value.authMode !== "account") {
@@ -31,6 +65,25 @@ router.get("/configuration", (_request, response) => {
         localLoginEnabled: settings.value.authMode === "account",
         oidcEnabled: settings.value.oidcEnabled,
         oidcName: settings.value.oidcName,
+        imprintUrl: settings.value.imprintUrl,
+        privacyPolicyUrl: settings.value.privacyPolicyUrl,
+    });
+});
+
+router.get("/status", async (request, response) => {
+    const configuration = {
+        authenticationAvailable: settings.value.authMode === "account",
+        localLoginEnabled: settings.value.authMode === "account",
+        oidcEnabled: settings.value.oidcEnabled,
+        oidcName: settings.value.oidcName,
+        imprintUrl: settings.value.imprintUrl,
+        privacyPolicyUrl: settings.value.privacyPolicyUrl,
+        deploymentMode: settings.value.deploymentMode,
+    };
+    response.json({
+        ...configuration,
+        authenticated: Boolean(request.session.account),
+        account: request.session.account ? await account.accountSnapshot(request.session) : null,
     });
 });
 
@@ -69,30 +122,38 @@ router.post("/password-reset-requests", async (request, response) => {
     response.status(202).json({ ok: true });
 });
 
+router.post("/activation-requests", async (request, response) => {
+    localLoginRequired();
+    const { identifier } = z.object({ identifier: z.string().trim().min(1) }).parse(request.body);
+    await account.requestActivation(detectLocale(request.get("accept-language")), identifier);
+    response.status(202).json({ ok: true });
+});
+
 router.post("/password-resets", async (request, response) => {
     localLoginRequired();
     const input = z
         .object({ token: z.string().min(32), password: z.string().min(8).max(200) })
         .parse(request.body);
-    await account.resetPassword(input.token, input.password);
+    const resetUserId = await account.resetPassword(input.token, input.password);
+    if (request.session.account?.userId === resetUserId) await account.logout(request.session);
     response.json({ ok: true });
 });
 
 router.get("/oidc/login", async (request, response) => {
     if (!settings.value.oidcEnabled)
         throw new ExpectedError(MESSAGE_KEYS.ACCOUNT_OIDC_DISABLED, "error", 404);
-    response.redirect(await account.oidcLogin(request.session));
+    const returnTo = safeReturnTo(z.string().optional().parse(request.query.returnTo));
+    response.redirect(await account.oidcLogin(request.session, returnTo));
 });
 
 router.get("/oidc/callback", async (request, response) => {
     if (!settings.value.oidcEnabled)
         throw new ExpectedError(MESSAGE_KEYS.ACCOUNT_OIDC_DISABLED, "error", 404);
-    await account.oidcCallback(request);
-    response.redirect("/play/account");
+    response.redirect(await account.oidcCallback(request));
 });
 
 router.use((request, _response, next) => {
-    account.requireUser(request.session);
+    account.requireAccountIdentity(request.session);
     next();
 });
 
@@ -100,9 +161,19 @@ router.get("/me", async (request, response) => {
     response.json(await account.accountSnapshot(request.session));
 });
 
+router.put("/language-preferences", async (request, response) => {
+    const input = languagePreferencesInput.parse(request.body);
+    response.json(await account.updateLanguagePreferences(request.session, input));
+});
+
 router.post("/data-spaces", async (request, response) => {
     const input = dataSpaceInput.parse(request.body);
     response.status(201).json(await account.createDataSpace(request.session, input.name));
+});
+
+router.delete("/data-spaces/:id", async (request, response) => {
+    const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
+    response.json(await account.deleteDataSpace(request.session, id));
 });
 
 router.put("/data-spaces/current", async (request, response) => {
@@ -129,9 +200,25 @@ router.delete("/sessions/:id", async (request, response) => {
 });
 
 router.get("/export", async (request, response) => {
-    response.attachment(`party-game-account-${request.session.auth!.user!.id}.json`);
+    response.attachment(
+        `party-game-account-${account.requireAccountIdentity(request.session).userId}.json`,
+    );
     response.json(await account.exportAccount(request.session));
 });
+
+function safeReturnTo(value: string | undefined): string {
+    if (!value) return "/play/";
+    try {
+        const parsed = new URL(value, "https://local.invalid");
+        const applicationPath = parsed.pathname === "/play" || parsed.pathname.startsWith("/play/");
+        if (parsed.origin !== "https://local.invalid" || !applicationPath) {
+            return "/play/";
+        }
+        return `${parsed.pathname}${parsed.search}${parsed.hash}`;
+    } catch {
+        return "/play/";
+    }
+}
 
 router.delete("/me", async (request, response) => {
     const { username } = z.object({ username: z.string().min(1) }).parse(request.body);

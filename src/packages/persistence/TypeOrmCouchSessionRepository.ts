@@ -21,6 +21,14 @@ export class TypeOrmCouchSessionRepository implements CouchSessionRepository {
         return runtime;
     }
 
+    async ownerDataSpaceId(id: string): Promise<DataSpaceId | null> {
+        const record = await this.source.getRepository(CouchGameSessionEntity).findOne({
+            where: { id },
+            select: { dataSpaceId: true },
+        });
+        return (record?.dataSpaceId as DataSpaceId | null | undefined) ?? null;
+    }
+
     async groupHistory(dataSpaceId: DataSpaceId, groupId: string): Promise<ReadonlySet<CardId>> {
         const group = await this.source.getRepository(GroupEntity).findOneBy({
             id: groupId,

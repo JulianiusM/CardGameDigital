@@ -48,6 +48,8 @@ export type GameSessionOptions = {
     groupHistoryCardIds?: ReadonlySet<Card["id"]>;
     boundariesByPlayer?: ReadonlyMap<string, PlayerBoundaries>;
     cardLocale: string;
+    cardFallbackEnabled?: boolean;
+    cardFallbackLocales?: readonly string[];
     neverHaveIEverRevealMode?: NeverHaveIEverRevealMode;
 };
 export type GameSessionRuntimeState = {
@@ -94,6 +96,8 @@ export type GameSessionRuntimeState = {
     ][];
     pendingCardType: CardType | null;
     cardLocale: string;
+    cardFallbackEnabled?: boolean;
+    cardFallbackLocales?: string[];
     neverHaveIEverRevealMode?: NeverHaveIEverRevealMode;
 };
 
@@ -131,6 +135,8 @@ export class GameSession {
     readonly profile: GameProfile;
     readonly sessionHistory: CardAppearance[] = [];
     readonly cardLocale: string;
+    readonly cardFallbackEnabled: boolean;
+    readonly cardFallbackLocales: readonly string[];
     readonly neverHaveIEverRevealMode: NeverHaveIEverRevealMode;
     readonly votes = new Map<string, Vote>();
     readonly shownTypeCounts = { [CARD_TYPES.QUESTION]: 0, [CARD_TYPES.DARE]: 0 };
@@ -163,6 +169,8 @@ export class GameSession {
         this.players = [...options.players];
         this.profile = options.profile;
         this.cardLocale = options.cardLocale;
+        this.cardFallbackEnabled = options.cardFallbackEnabled ?? false;
+        this.cardFallbackLocales = [...(options.cardFallbackLocales ?? [])];
         this.neverHaveIEverRevealMode =
             options.neverHaveIEverRevealMode ?? NEVER_HAVE_I_EVER_REVEAL_MODES.ANONYMOUS_AGGREGATE;
         this.groupHistoryCardIds = options.groupHistoryCardIds ?? new Set();
@@ -208,6 +216,8 @@ export class GameSession {
                 groupHistoryCardIds: new Set(runtime.groupHistoryCardIds),
                 boundariesByPlayer,
                 cardLocale: runtime.cardLocale,
+                cardFallbackEnabled: runtime.cardFallbackEnabled,
+                cardFallbackLocales: runtime.cardFallbackLocales,
                 neverHaveIEverRevealMode: runtime.neverHaveIEverRevealMode,
             },
             random,
@@ -272,6 +282,8 @@ export class GameSession {
             ]),
             pendingCardType: this.pendingCardType,
             cardLocale: this.cardLocale,
+            cardFallbackEnabled: this.cardFallbackEnabled,
+            cardFallbackLocales: [...this.cardFallbackLocales],
             neverHaveIEverRevealMode: this.neverHaveIEverRevealMode,
         };
     }

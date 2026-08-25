@@ -17,7 +17,7 @@
 import http from "node:http";
 import { AppDataSource, initDataSource } from "./modules/database/dataSource";
 import settings from "./modules/settings";
-import { logEvent, safeErrorName } from "./modules/structuredLogger";
+import { configuredErrorLogFields, logEvent } from "./modules/structuredLogger";
 
 function closeServer(server: http.Server): Promise<void> {
     return new Promise((resolve, reject) => {
@@ -32,13 +32,30 @@ async function bootstrap() {
     try {
         logEvent("info", "server.database_initializing", {}, settings.value.logLevel);
         await settings.read();
+        if (
+            settings.value.deploymentMode === "public" &&
+            settings.value.publicRuntimeSecurity === "development"
+        ) {
+            logEvent(
+                "warn",
+                "server.public_runtime_security_development",
+                {
+                    publicOrigin: new URL(settings.value.publicUrl).origin,
+                    authenticationEnabled: settings.value.authMode === "account",
+                    databaseType: settings.value.dbType,
+                },
+                settings.value.logLevel,
+            );
+        }
         await initDataSource();
 
         const { default: app } = await require("./app");
         const server = http.createServer(app);
         const { attachWebSocketServer } = await require("./modules/websocket");
         const { getRoomService } = await require("./modules/realtime");
-        const websocketServer = attachWebSocketServer(server, getRoomService());
+        const websocketServer = attachWebSocketServer(server, getRoomService(), {
+            hostDisconnectGraceMs: settings.value.roomReconnectGraceSeconds * 1_000,
+        });
         await new Promise<void>((resolve, reject) => {
             const onError = (error: Error) => reject(error);
             server.once("error", onError);
@@ -80,7 +97,7 @@ async function bootstrap() {
                 logEvent(
                     "error",
                     "server.shutdown_failed",
-                    { errorName: safeErrorName(error) },
+                    configuredErrorLogFields(error, settings.value),
                     settings.value.logLevel,
                 );
                 process.exitCode = 1;
@@ -92,7 +109,7 @@ async function bootstrap() {
         logEvent(
             "fatal",
             "server.startup_failed",
-            { errorName: safeErrorName(err) },
+            configuredErrorLogFields(err, settings.value),
             settings.value.logLevel,
         );
         process.exit(1);

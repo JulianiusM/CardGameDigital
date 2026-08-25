@@ -35,8 +35,13 @@ router.get("/v1/server-info", (_req, res) =>
     res.json({
         version: 1,
         deploymentMode: settings.value.deploymentMode,
+        publicRuntimeSecurity: settings.value.publicRuntimeSecurity,
         authenticationAvailable: settings.value.authMode === "account",
         protocolVersions: [2],
+        roomCapacity: {
+            maximumParticipants: settings.value.roomMaximumParticipants,
+            maximumPlayers: settings.value.roomMaximumPlayers,
+        },
     }),
 );
 router.use("/v1/couch", couchRouter);

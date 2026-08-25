@@ -23,7 +23,10 @@
 
 The localized Markdown in [`user-guide/`](user-guide/) is bundled with releases and
 served by `/api/v1/help`. German and English directories must contain equivalent topic
-coverage. The Svelte Help screen discovers documents through the API.
+coverage. [`user-guide/topics.json`](user-guide/topics.json) is the single registry for
+topic slugs and explicit spaced numeric order. Add one registry entry plus the localized
+Markdown files for a new topic; filenames do not carry ordering and the API/Svelte tabs
+need no edits. The Svelte Help screen discovers documents through the API.
 
 ## Contributors and agents
 

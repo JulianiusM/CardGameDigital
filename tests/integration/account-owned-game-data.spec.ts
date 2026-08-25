@@ -6,6 +6,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { AppDataSource, initDataSource } from "../../src/modules/database/dataSource";
 import { RoomEntity } from "../../src/modules/database/entities/game/RoomEntity";
 import { GroupEntity } from "../../src/modules/database/entities/game/GroupEntity";
+import { DataSpaceGameSettingsEntity } from "../../src/modules/database/entities/game/DataSpaceGameSettingsEntity";
 import settings from "../../src/modules/settings";
 import {
     registerUser,
@@ -13,6 +14,10 @@ import {
 } from "../../src/modules/database/services/UserService";
 import { requireCurrentDataSpace } from "../../src/routes/api/dataSpaceAccess";
 import type { Request } from "express";
+import {
+    defaultRoomGameSettings,
+    effectiveSettingsFromProfile,
+} from "../../src/packages/application/roomGameSettings";
 
 let app: import("express").Express;
 let directory: string;
@@ -94,6 +99,205 @@ describe("DataSpace-owned game data", () => {
         expect(reset.body.historyResetAt).toBeTruthy();
     });
 
+    it("keeps the saved Custom snapshot isolated from other profile customizations", async () => {
+        const customConfiguration = {
+            ...effectiveSettingsFromProfile("PROFILE_CUSTOM"),
+            enabledQuestionCategoryIds: ["CAT_FRIENDSHIP"],
+            enabledDareTypeIds: ["DARE_SILLY"],
+            startingIntensity: 2,
+            maximumIntensity: 4,
+        };
+        await request(app)
+            .put("/api/v1/game-settings")
+            .send({
+                preferredProfileId: "PROFILE_CUSTOM",
+                startingIntensity: 2,
+                maximumIntensity: 4,
+                intensityProgressionUnit: "CARDS",
+                intensityProgressionInterval: 2,
+                intensityProgressionIncrement: 1,
+                randomQuestionRatio: 0.5,
+                letsTalkMetaInterval: 5,
+                defaultGroupId: null,
+                customConfiguration,
+                cardLanguageSettings: {
+                    cardLocale: "de-DE",
+                    cardFallbackEnabled: true,
+                    cardFallbackLocales: ["en-GB"],
+                },
+            })
+            .expect(200);
+        await request(app)
+            .put("/api/v1/game-settings")
+            .send({
+                preferredProfileId: "PROFILE_FRIENDS",
+                startingIntensity: 4,
+                maximumIntensity: 5,
+                intensityProgressionUnit: "ROUNDS",
+                intensityProgressionInterval: 7,
+                intensityProgressionIncrement: 2,
+                randomQuestionRatio: 0.2,
+                letsTalkMetaInterval: 9,
+                defaultGroupId: null,
+            })
+            .expect(200);
+
+        const response = await request(app).get("/api/v1/game-settings").expect(200);
+        expect(response.body.settings.customConfiguration).toEqual(customConfiguration);
+        expect(response.body.settings.cardLanguageSettings).toEqual({
+            cardLocale: "de-DE",
+            cardFallbackEnabled: true,
+            cardFallbackLocales: ["en-GB"],
+        });
+        expect(response.body.settings).toMatchObject({
+            preferredProfileId: "PROFILE_FRIENDS",
+            startingIntensity: 4,
+            maximumIntensity: 5,
+        });
+    });
+
+    it("keeps Custom and Card-language defaults isolated per Group", async () => {
+        const first = await request(app)
+            .post("/api/v1/groups")
+            .send({ name: "German custom group", members: ["Ada", "Lin"] })
+            .expect(201);
+        const second = await request(app)
+            .post("/api/v1/groups")
+            .send({ name: "English custom group", members: ["Sam", "Jo"] })
+            .expect(201);
+        const quickRoundSettings = (await request(app).get("/api/v1/game-settings").expect(200))
+            .body.settings;
+        const firstCustom = {
+            ...effectiveSettingsFromProfile("PROFILE_CUSTOM"),
+            enabledQuestionCategoryIds: ["CAT_FRIENDSHIP"],
+            startingIntensity: 1,
+            maximumIntensity: 2,
+        };
+        const secondCustom = {
+            ...effectiveSettingsFromProfile("PROFILE_CUSTOM"),
+            enabledQuestionCategoryIds: ["CAT_RELATIONSHIP"],
+            startingIntensity: 3,
+            maximumIntensity: 5,
+        };
+
+        await request(app)
+            .put(`/api/v1/groups/${first.body.id}`)
+            .send({
+                name: first.body.name,
+                members: first.body.members,
+                preferredProfileId: "PROFILE_CUSTOM",
+                customConfiguration: firstCustom,
+                cardLanguageSettings: {
+                    cardLocale: "de-DE",
+                    cardFallbackEnabled: true,
+                    cardFallbackLocales: ["en-GB"],
+                },
+            })
+            .expect(200);
+        await request(app)
+            .put(`/api/v1/groups/${second.body.id}`)
+            .send({
+                name: second.body.name,
+                members: second.body.members,
+                preferredProfileId: "PROFILE_CUSTOM",
+                customConfiguration: secondCustom,
+                cardLanguageSettings: {
+                    cardLocale: "en-GB",
+                    cardFallbackEnabled: false,
+                    cardFallbackLocales: ["de-DE"],
+                },
+            })
+            .expect(200);
+
+        const stored = (await request(app).get("/api/v1/groups").expect(200)).body.groups;
+        expect(stored.find(({ id }: { id: string }) => id === first.body.id)).toMatchObject({
+            customConfiguration: firstCustom,
+            cardLanguageSettings: {
+                cardLocale: "de-DE",
+                cardFallbackEnabled: true,
+                cardFallbackLocales: ["en-GB"],
+            },
+        });
+        expect(stored.find(({ id }: { id: string }) => id === second.body.id)).toMatchObject({
+            customConfiguration: secondCustom,
+            cardLanguageSettings: {
+                cardLocale: "en-GB",
+                cardFallbackEnabled: false,
+                cardFallbackLocales: ["de-DE"],
+            },
+        });
+        expect((await request(app).get("/api/v1/game-settings").expect(200)).body.settings).toEqual(
+            quickRoundSettings,
+        );
+
+        await request(app)
+            .put(`/api/v1/groups/${first.body.id}`)
+            .send({
+                name: first.body.name,
+                members: first.body.members,
+                cardLanguageSettings: {
+                    cardLocale: "fr-FR",
+                    cardFallbackEnabled: false,
+                    cardFallbackLocales: [],
+                },
+            })
+            .expect(400);
+    });
+
+    it("fully deletes an owned Group and detaches authoritative defaults and Rooms", async () => {
+        const created = await request(app)
+            .post("/api/v1/groups")
+            .send({ name: "Delete all traces", members: ["A", "B"] })
+            .expect(201);
+        await request(app)
+            .put("/api/v1/game-settings")
+            .send({
+                preferredProfileId: "PROFILE_FRIENDS",
+                startingIntensity: 1,
+                maximumIntensity: 3,
+                intensityProgressionUnit: "CARDS",
+                intensityProgressionInterval: 2,
+                intensityProgressionIncrement: 1,
+                randomQuestionRatio: 0.6,
+                letsTalkMetaInterval: 5,
+                defaultGroupId: created.body.id,
+            })
+            .expect(200);
+        const roomSettings = { ...defaultRoomGameSettings(), groupId: created.body.id };
+        const ownedGroup = await AppDataSource.getRepository(GroupEntity).findOneByOrFail({
+            id: created.body.id,
+        });
+        const roomId = "4fdca0db-3322-4a16-b839-a9d7af0c07cb";
+        await AppDataSource.getRepository(RoomEntity).insert({
+            id: roomId,
+            code: "DEL234",
+            dataSpaceId: ownedGroup.dataSpaceId,
+            groupId: created.body.id,
+            settingsRevision: 0,
+            gameSettingsJson: JSON.stringify(roomSettings),
+            settingsUpdatedByParticipantId: null,
+            currentSessionId: null,
+            createdAt: new Date(),
+            expiresAt: new Date(Date.now() + 60_000),
+            closedAt: null,
+        });
+
+        await request(app).delete(`/api/v1/groups/${created.body.id}`).expect(204);
+
+        await expect(
+            AppDataSource.getRepository(GroupEntity).findOneBy({ id: created.body.id }),
+        ).resolves.toBeNull();
+        await expect(
+            AppDataSource.getRepository(DataSpaceGameSettingsEntity).findOneByOrFail({}),
+        ).resolves.toMatchObject({ defaultGroupId: null });
+        const room = await AppDataSource.getRepository(RoomEntity).findOneByOrFail({
+            id: roomId,
+        });
+        expect(room.groupId).toBeNull();
+        expect(JSON.parse(room.gameSettingsJson).groupId).toBeNull();
+        await request(app).delete(`/api/v1/groups/${created.body.id}`).expect(404);
+    });
+
     it("keeps a saved Group after closing and reopening the database", async () => {
         const created = await request(app)
             .post("/api/v1/groups")
@@ -126,10 +330,10 @@ describe("DataSpace-owned game data", () => {
         settings.value.deploymentMode = "public";
         try {
             const request = {
-                session: { auth: { user: { id: aliceId } }, dataSpace: bobSpace },
+                session: { account: { userId: aliceId, dataSpaceId: bobSpace.id } },
             } as unknown as Request;
             await expect(requireCurrentDataSpace(request)).rejects.toMatchObject({ status: 403 });
-            request.session.dataSpace = aliceSpace;
+            request.session.account = { userId: aliceId, dataSpaceId: aliceSpace.id };
             await expect(requireCurrentDataSpace(request)).resolves.toMatchObject({
                 id: aliceSpace.id,
             });

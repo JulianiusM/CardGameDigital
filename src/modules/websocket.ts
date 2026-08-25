@@ -1,6 +1,7 @@
 import { MESSAGE_KEYS } from "../packages/localization/keys";
 import type http from "node:http";
 import { WebSocket, WebSocketServer, type RawData } from "ws";
+import { ZodError } from "zod";
 import {
     clientPingEnvelopeSchema,
     clientHelloEnvelopeSchema,
@@ -13,10 +14,11 @@ import {
 } from "../packages/protocol";
 import type { RoomParticipant } from "../packages/application/realtimeRooms";
 import type { RoomCommand, RoomService } from "../packages/application/roomService";
-import settings from "./settings";
+import settings, { isPublicRuntimeSecurityEnforced } from "./settings";
 import { isTrustedOrigin } from "./requestSecurity";
 import { detectLocale, translate, translateError } from "../packages/localization/messages";
 import { FixedWindowRateLimiter } from "./fixedWindowRateLimiter";
+import { configuredErrorLogFields, logEvent } from "./structuredLogger";
 
 type Context = {
     socket: WebSocket;
@@ -24,6 +26,18 @@ type Context = {
     roomCode: string;
     intentionalLeave?: boolean;
 };
+const expectedRealtimeErrorCodes = new Set([
+    "VALIDATION_ERROR",
+    "PROTOCOL_VERSION_UNSUPPORTED",
+    "NOT_AUTHORIZED",
+    "NOT_ACTIVE_PLAYER",
+    "ROOM_NOT_FOUND",
+    "ROOM_FULL",
+    "INVALID_GAME_STATE",
+    "STALE_SESSION_REVISION",
+    "CARD_LOCALE_UNAVAILABLE",
+    "CARD_POOL_EXHAUSTED",
+]);
 export function attachWebSocketServer(
     server: http.Server,
     service: RoomService,
@@ -38,7 +52,7 @@ export function attachWebSocketServer(
     const sockets = new Set<Context>();
     const disconnectTimers = new Map<string, NodeJS.Timeout>();
     const orphanedRooms = new Map<string, string>();
-    const hostDisconnectGraceMs = options.hostDisconnectGraceMs ?? 15_000;
+    const hostDisconnectGraceMs = options.hostDisconnectGraceMs ?? 180_000;
     const heartbeatIntervalMs = options.heartbeatIntervalMs ?? 5_000;
     const maxPayloadBytes = options.maxPayloadBytes ?? 64 * 1024;
     const participantCommandRateLimit = options.participantCommandRateLimit ?? {
@@ -87,11 +101,15 @@ export function attachWebSocketServer(
                     participant.roomId,
                     participant.id,
                 );
+                const snapshot = expired ? await service.snapshot(participant.roomId) : null;
                 if (expired && participant.role === "HOST") {
-                    const hasHost = (await service.snapshot(participant.roomId)).participants.some(
-                        ({ role }) => role === "HOST",
+                    const hasHost = snapshot!.participants.some(({ role }) => role === "HOST");
+                    const canRecover = snapshot!.participants.some(
+                        ({ role, connectionStatus }) =>
+                            role !== "DISPLAY" || connectionStatus === "CONNECTED",
                     );
-                    if (!hasHost) orphanedRooms.set(participant.roomId, participant.id);
+                    if (!hasHost && canRecover)
+                        orphanedRooms.set(participant.roomId, participant.id);
                 }
                 if (expired) {
                     broadcastRoomEvent(sockets, participant.roomId, "room.participantLeft", {
@@ -99,10 +117,16 @@ export function attachWebSocketServer(
                         displayName: participant.displayName,
                         reason: "DISCONNECT_EXPIRED",
                     });
-                    await refreshRoom(participant.roomId);
+                    if (snapshot!.participants.length === 0) closeConnectedRoom(participant.roomId);
+                    else await refreshRoom(participant.roomId);
                 }
-            } catch {
-                // Server shutdown or Room expiry can race the grace timer.
+            } catch (error) {
+                logEvent(
+                    "error",
+                    "realtime.disconnect_expiry_failed",
+                    configuredErrorLogFields(error, settings.value),
+                    settings.value.logLevel,
+                );
             }
         }, hostDisconnectGraceMs);
         timer.unref();
@@ -113,8 +137,13 @@ export function attachWebSocketServer(
         .then((participants) => {
             for (const participant of participants) scheduleDisconnectExpiry(participant);
         })
-        .catch(() => {
-            // Startup failure is surfaced by the first handshake and server health checks.
+        .catch((error) => {
+            logEvent(
+                "error",
+                "realtime.lifecycle_initialization_failed",
+                configuredErrorLogFields(error, settings.value),
+                settings.value.logLevel,
+            );
         });
 
     async function refreshRoom(roomId: string, requestId: string | null = null): Promise<void> {
@@ -141,6 +170,18 @@ export function attachWebSocketServer(
         }
         broadcastPresence(sockets, roomId);
     }
+    function closeConnectedRoom(roomId: string): void {
+        orphanedRooms.delete(roomId);
+        for (const peer of [...sockets]) {
+            if (peer.participant.roomId !== roomId) continue;
+            const timer = disconnectTimers.get(peer.participant.id);
+            if (timer) clearTimeout(timer);
+            disconnectTimers.delete(peer.participant.id);
+            peer.intentionalLeave = true;
+            sockets.delete(peer);
+            peer.socket.close(4001, "room closed");
+        }
+    }
     wss.on("connection", (socket, request) => {
         responsiveSockets.add(socket);
         socket.on("pong", () => responsiveSockets.add(socket));
@@ -148,7 +189,7 @@ export function attachWebSocketServer(
             "locale",
         );
         const locale = detectLocale(requestedLocale ?? request.headers["accept-language"]);
-        if (settings.value.deploymentMode === "public") {
+        if (isPublicRuntimeSecurityEnforced(settings.value)) {
             const origin = request.headers.origin;
             if (!isTrustedOrigin(origin, settings.value.publicUrl)) {
                 socket.close(4403, translate(locale, MESSAGE_KEYS.REALTIME_ORIGIN_NOT_ALLOWED));
@@ -253,10 +294,14 @@ export function attachWebSocketServer(
                     return;
                 }
                 const command = roomCommandEnvelopeSchema.parse(value) as RoomCommand;
-                if (!participantCommands.consume(context.participant.id)) {
+                if (
+                    isPublicRuntimeSecurityEnforced(settings.value) &&
+                    !participantCommands.consume(context.participant.id)
+                ) {
                     throw coded("NOT_AUTHORIZED", MESSAGE_KEYS.REALTIME_RATE_EXCEEDED);
                 }
                 if (
+                    isPublicRuntimeSecurityEnforced(settings.value) &&
                     command.type === "command.setDevicePlayers" &&
                     !devicePairings.consume(context.participant.id)
                 ) {
@@ -267,18 +312,9 @@ export function attachWebSocketServer(
                 const roomId = context.participant.roomId;
                 const leaving = command.type === "command.leaveRoom";
                 const closing = command.type === "command.closeRoom";
-                await service.execute(roomId, context.participant, command);
+                const commandSnapshot = await service.execute(roomId, context.participant, command);
                 if (closing) {
-                    orphanedRooms.delete(roomId);
-                    for (const peer of [...sockets]) {
-                        if (peer.participant.roomId !== roomId) continue;
-                        const timer = disconnectTimers.get(peer.participant.id);
-                        if (timer) clearTimeout(timer);
-                        disconnectTimers.delete(peer.participant.id);
-                        peer.intentionalLeave = true;
-                        sockets.delete(peer);
-                        peer.socket.close(4001, "room closed");
-                    }
+                    closeConnectedRoom(roomId);
                     return;
                 }
                 if (leaving) {
@@ -293,6 +329,16 @@ export function attachWebSocketServer(
                         displayName: context.participant.displayName,
                         reason: "LEFT",
                     });
+                    if (commandSnapshot.participants.length === 0) {
+                        closeConnectedRoom(roomId);
+                        return;
+                    }
+                    const hasHost = commandSnapshot.participants.some(
+                        ({ role }) => role === "HOST",
+                    );
+                    if (context.participant.role === "HOST" && !hasHost) {
+                        orphanedRooms.set(roomId, context.participant.id);
+                    }
                 }
                 if (command.type === "command.skipCard" || command.type === "command.vetoCard") {
                     broadcastRoomEvent(sockets, roomId, "session.cardReplaced", {
@@ -302,6 +348,21 @@ export function attachWebSocketServer(
                 await refreshRoom(roomId, requestId);
             } catch (error) {
                 const details = error as { code?: string; message?: string };
+                const expectedCode = details.code
+                    ? expectedRealtimeErrorCodes.has(details.code)
+                    : false;
+                if (
+                    !expectedCode &&
+                    !(error instanceof ZodError) &&
+                    !(error instanceof SyntaxError)
+                ) {
+                    logEvent(
+                        "error",
+                        "realtime.unhandled_error",
+                        { requestId, ...configuredErrorLogFields(error, settings.value) },
+                        settings.value.logLevel,
+                    );
+                }
                 send(socket, "error", requestId, null, {
                     code: details.code ?? "VALIDATION_ERROR",
                     message: translateError(
@@ -317,7 +378,8 @@ export function attachWebSocketServer(
                 commandWindowStarted = Date.now();
                 commandsInWindow = 0;
             }
-            if (++commandsInWindow > 30) {
+            commandsInWindow += 1;
+            if (isPublicRuntimeSecurityEnforced(settings.value) && commandsInWindow > 30) {
                 send(socket, "error", null, null, {
                     code: "NOT_AUTHORIZED",
                     message: translate(locale, MESSAGE_KEYS.REALTIME_RATE_EXCEEDED),

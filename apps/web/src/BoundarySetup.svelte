@@ -1,5 +1,6 @@
 <script lang="ts">
     import { messages } from "./i18n";
+    import BulkSelectionActions from "./BulkSelectionActions.svelte";
     export let onSave: (boundaries: BoundarySelection) => void;
 
     export type BoundarySelection = {
@@ -35,6 +36,10 @@
 
     <fieldset>
         <legend>{messages.boundaries.questions}</legend>
+        <BulkSelectionActions
+            onAll={() => (disabledQuestions = [])}
+            onNone={() => (disabledQuestions = questionCategories.map(([id]) => id))}
+        />
         {#each questionCategories as category}
             <label>
                 <input
@@ -49,6 +54,10 @@
 
     <fieldset>
         <legend>{messages.boundaries.dares}</legend>
+        <BulkSelectionActions
+            onAll={() => (disabledDares = [])}
+            onNone={() => (disabledDares = dareTypes.map(([id]) => id))}
+        />
         {#each dareTypes as dareType}
             <label>
                 <input
@@ -63,6 +72,10 @@
 
     <fieldset>
         <legend>{messages.boundaries.restrictions}</legend>
+        <BulkSelectionActions
+            onAll={() => (blockedFlags = [])}
+            onNone={() => (blockedFlags = operationalFlags.map(([id]) => id))}
+        />
         {#each operationalFlags as flag}
             <label>
                 <input

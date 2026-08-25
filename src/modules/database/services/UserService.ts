@@ -23,6 +23,8 @@ import { DataSpace } from "../entities/user/DataSpace";
 import { User } from "../entities/user/User";
 import { hashPassword, verifyPasswordHash } from "../../passwordHash";
 
+const missingAccountPasswordHash = hashPassword("constant-time-missing-account-password");
+
 function hashOneTimeToken(token: string): string {
     return createHash("sha256").update(token).digest("hex");
 }
@@ -105,7 +107,11 @@ export async function getUserByEmail(email: string) {
     });
 }
 
-export async function verifyPassword(userId: number, password: string) {
+export async function verifyPassword(userId: number | null, password: string) {
+    if (userId === null) {
+        await verifyPasswordHash(password, await missingAccountPasswordHash);
+        return false;
+    }
     const repo = AppDataSource.getRepository(User);
     const user = await repo.findOne({
         where: { id: userId },
@@ -197,19 +203,27 @@ export async function verifyPasswordResetToken(token: string) {
 export async function consumePasswordResetToken(
     token: string,
     newPassword: string,
-): Promise<boolean> {
-    const result = await AppDataSource.getRepository(User)
-        .createQueryBuilder()
-        .update(User)
-        .set({
-            password: await hashPassword(newPassword),
-            resetTokenHash: null,
-            resetTokenExpiration: null,
-        })
-        .where("reset_token_expiration > :now", { now: new Date() })
-        .andWhere("reset_token_hash = :hash", { hash: hashOneTimeToken(token) })
-        .execute();
-    return result.affected === 1;
+): Promise<number | null> {
+    return AppDataSource.transaction(async (manager) => {
+        const repository = manager.getRepository(User);
+        const user = await repository.findOne({
+            where: {
+                resetTokenHash: hashOneTimeToken(token),
+                resetTokenExpiration: MoreThan(new Date()),
+            },
+            select: { id: true },
+        });
+        if (!user) return null;
+        const result = await repository.update(
+            { id: user.id, resetTokenHash: hashOneTimeToken(token) },
+            {
+                password: await hashPassword(newPassword),
+                resetTokenHash: null,
+                resetTokenExpiration: null,
+            },
+        );
+        return result.affected === 1 ? user.id : null;
+    });
 }
 
 /**
@@ -372,6 +386,63 @@ export async function getUserById(id: number): Promise<User | null> {
     });
 }
 
+export type StoredLanguagePreferences = {
+    useSystemLanguage: boolean;
+    interfaceLocale: string | null;
+    cardLocale: string | null;
+    fallbackLocales: string[];
+};
+
+export function languagePreferencesForUser(user: User): StoredLanguagePreferences | null {
+    const manuallyConfigured =
+        user.useSystemLanguage !== null && user.useSystemLanguage !== undefined;
+    if (
+        !manuallyConfigured &&
+        !user.interfaceLocale &&
+        !user.cardLocale &&
+        !user.languageFallbacksJson
+    )
+        return null;
+    let fallbackLocales: string[] = [];
+    if (user.languageFallbacksJson) {
+        const parsed: unknown = JSON.parse(user.languageFallbacksJson);
+        if (!Array.isArray(parsed) || parsed.some((entry) => typeof entry !== "string")) {
+            throw new Error("Stored account language preferences are invalid");
+        }
+        fallbackLocales = parsed;
+    }
+    return {
+        useSystemLanguage: user.useSystemLanguage ?? true,
+        interfaceLocale: user.interfaceLocale ?? null,
+        cardLocale: user.cardLocale ?? null,
+        fallbackLocales,
+    };
+}
+
+export async function updateLanguagePreferences(
+    userId: number,
+    patch: Partial<StoredLanguagePreferences>,
+): Promise<void> {
+    const repository = AppDataSource.getRepository(User);
+    const user = await repository.findOneByOrFail({ id: userId });
+    const current = languagePreferencesForUser(user) ?? {
+        useSystemLanguage: true,
+        interfaceLocale: null,
+        cardLocale: null,
+        fallbackLocales: [],
+    };
+    const next = { ...current, ...patch };
+    await repository.update(
+        { id: userId },
+        {
+            useSystemLanguage: next.useSystemLanguage,
+            interfaceLocale: next.interfaceLocale,
+            cardLocale: next.cardLocale,
+            languageFallbacksJson: JSON.stringify(next.fallbackLocales),
+        },
+    );
+}
+
 export async function getDataSpaceById(id: string) {
     return await AppDataSource.getRepository(DataSpace).findOneBy({ id });
 }
@@ -390,6 +461,42 @@ export async function deleteUser(userId: number) {
 export async function getDataSpacesForUser(userId: number) {
     const repo = AppDataSource.getRepository(DataSpace);
     return await repo.findBy({ user: { id: userId } });
+}
+
+/**
+ * Return an owned DataSpace, creating the account's initial one when old or
+ * externally linked account data predates that invariant.
+ *
+ * Locking the owner row on server databases serializes concurrent repair
+ * requests. better-sqlite3 serializes writes itself and does not support
+ * pessimistic locks.
+ */
+export async function ensureDataSpaceForUser(userId: number): Promise<DataSpace | null> {
+    return AppDataSource.transaction(async (manager) => {
+        const userQuery = manager
+            .getRepository(User)
+            .createQueryBuilder("user")
+            .where("user.id = :userId", { userId });
+        if (AppDataSource.options.type !== "better-sqlite3") {
+            userQuery.setLock("pessimistic_write");
+        }
+        const user = await userQuery.getOne();
+        if (!user) return null;
+
+        const repository = manager.getRepository(DataSpace);
+        const existing = await repository.findBy({ user: { id: userId } });
+        if (existing.length > 0) {
+            return existing.find(({ defaultForOwner }) => defaultForOwner) ?? existing[0];
+        }
+
+        return repository.save(
+            repository.create({
+                name: user.name,
+                defaultForOwner: true,
+                user,
+            }),
+        );
+    });
 }
 
 export async function updateDataSpaceName(dataSpaceId: string, name: string) {
@@ -415,4 +522,41 @@ export async function createDataSpace(userId: number, name: string) {
     const repo = AppDataSource.getRepository(DataSpace);
     const dataSpace = repo.create({ user: { id: userId }, name: name });
     return await repo.save(dataSpace);
+}
+
+export type DeleteDataSpaceResult =
+    | { status: "not-found" }
+    | { status: "last-data-space" }
+    | { status: "deleted"; selectedDataSpaceId: string };
+
+/** Delete only an owned DataSpace and preserve a valid account selection. */
+export async function deleteDataSpace(
+    userId: number,
+    dataSpaceId: string,
+): Promise<DeleteDataSpaceResult> {
+    return AppDataSource.transaction(async (manager) => {
+        const userQuery = manager
+            .getRepository(User)
+            .createQueryBuilder("user")
+            .where("user.id = :userId", { userId });
+        if (AppDataSource.options.type !== "better-sqlite3") {
+            userQuery.setLock("pessimistic_write");
+        }
+        if (!(await userQuery.getOne())) return { status: "not-found" };
+
+        const repository = manager.getRepository(DataSpace);
+        const owned = await repository.findBy({ user: { id: userId } });
+        const target = owned.find(({ id }) => id === dataSpaceId);
+        if (!target) return { status: "not-found" };
+        if (owned.length === 1) return { status: "last-data-space" };
+
+        const remaining = owned.filter(({ id }) => id !== dataSpaceId);
+        let selected = remaining.find(({ defaultForOwner }) => defaultForOwner) ?? remaining[0];
+        if (target.defaultForOwner && !selected.defaultForOwner) {
+            selected.defaultForOwner = true;
+            selected = await repository.save(selected);
+        }
+        await repository.delete({ id: target.id, user: { id: userId } });
+        return { status: "deleted", selectedDataSpaceId: selected.id };
+    });
 }

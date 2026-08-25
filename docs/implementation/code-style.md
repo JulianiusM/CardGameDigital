@@ -30,9 +30,10 @@ User-facing text must live in a locale catalog. Svelte components import the
 locale-neutral `i18n` facade and server adapters translate stable message keys from
 `packages/localization`; neither layer imports a language-specific catalog directly.
 Email subjects and bodies follow the same rule. Locale detection is centralized,
-uses saved browser preference and browser languages on the client, and the
-`Accept-Language` header on the server. Adding a language therefore means registering
-one structurally compatible catalog, not editing components, services, or routes.
+uses explicit local/account preference, browser languages, and an ordered fallback on
+the client, and the `Accept-Language` header on the server. Selectors enumerate the same
+central registry. Adding an interface language therefore means registering one
+structurally compatible catalog, not editing components, services, or routes.
 
 Tests reject language-specific imports outside the localization composition root,
 literal account/help copy in components, and prose passed directly to application

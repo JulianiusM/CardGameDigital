@@ -108,6 +108,16 @@ export const roomGameSettingsSchema = z
         groupId: z.string().uuid().nullable(),
         adultContentConfirmed: z.boolean(),
         cardLocale: z.string().min(2).max(35),
+        cardFallbackEnabled: z.boolean().default(false),
+        cardFallbackLocales: z
+            .array(z.string().min(2).max(35))
+            .max(100)
+            .default([])
+            .refine(
+                (locales) =>
+                    new Set(locales.map((entry) => entry.toLowerCase())).size === locales.length,
+                "Fallback locales must be unique",
+            ),
         neverHaveIEverRevealMode: z
             .enum(["ANONYMOUS_AGGREGATE", "NAMED_ANSWERS"])
             .default("ANONYMOUS_AGGREGATE"),

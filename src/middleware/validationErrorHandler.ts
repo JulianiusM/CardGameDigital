@@ -3,8 +3,20 @@ import type { NextFunction, Request, Response } from "express";
 import { ZodError } from "zod";
 import { APIError, ExpectedError, ValidationError } from "../modules/lib/errors";
 import settings from "../modules/settings";
-import { logEvent, safeErrorName } from "../modules/structuredLogger";
+import { configuredErrorLogFields, logEvent } from "../modules/structuredLogger";
 import { detectLocale, translate, translateError } from "../packages/localization/messages";
+
+export function logApiValidationError(error: ZodError, response: Response): void {
+    logEvent(
+        "warn",
+        "http.api_validation_error",
+        {
+            requestId: response.locals.requestId,
+            ...configuredErrorLogFields(error, settings.value),
+        },
+        settings.value.logLevel,
+    );
+}
 
 export function wrapErrorApi(
     error: Error & { data?: object; status?: number },
@@ -19,13 +31,15 @@ export function wrapErrorApi(
         error instanceof APIError ||
         error instanceof ExpectedError ||
         error instanceof ValidationError;
-    if (serverFailure) {
+    if (validation) {
+        logApiValidationError(error, response);
+    } else if (serverFailure) {
         logEvent(
             "error",
             "http.api_unhandled_error",
             {
                 requestId: response.locals.requestId,
-                errorName: safeErrorName(error),
+                ...configuredErrorLogFields(error, settings.value),
             },
             settings.value.logLevel,
         );

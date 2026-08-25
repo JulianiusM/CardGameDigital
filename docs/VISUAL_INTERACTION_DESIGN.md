@@ -170,8 +170,11 @@ Pending/Voted progress, individual player names, or pre-reveal states.
 primary result. The existing two-segment percentage-bar principle is canonical and may
 continue. Use these equally weighted warm comparison gradients:
 
-- `YES`: Result Honey, **#E4BA61 → #C98E2F**;
-- `NO`: Result Clay, **#C58A72 → #9F6558**.
+- `YES`: Result Honey, **#E4BA61 → #A66812**;
+- `NO`: Result Clay, **#E3B4A5 → #9F6558**.
+
+The darker Honey endpoint and lighter Clay starting point deliberately keep the segment
+boundary distinguishable on small percentage bars.
 
 The bar sits on a Soft Cream or low-opacity espresso track. Explicit `YES`/`NO` labels,
 counts, and percentages remain visible; color is never the only distinction. Main metric
@@ -226,9 +229,59 @@ may vary with context, but the pattern stays stable. The active tab uses
 a golden capsule (#FFD166) with espresso text; inactive tabs are
 transparent/cream with muted cocoa text.
 
+**Language scale.** Interface and Card language controls use the same themed searchable
+list: a warm search field, native/localized names, visible locale code, a bounded scroll
+region, and a clear selected state. Ordered fallback languages use numbered warm rows
+with explicit move/remove controls. Do not render hundreds of equal-weight language
+buttons into the page.
+
+**Hosted people.** Additional people represented by one device autosave after edits and
+flush before Start. A bounded warm status row communicates pending, saving, and saved
+state; there is no detached Save button that can be overlooked.
+
 **Modal motion.** Backdrop fades in over roughly 180 ms. The modal
 arrives over roughly 260 ms from about 20 px lower and 97% scale. Tabs
 themselves do not use the playful button rotation.
+
+## 7.1 Account and authentication surfaces
+
+Account pages are part of the game SPA and use the same Warm Paper surfaces, 20-28 px
+corners, sunflower actions, espresso text, tactile states, and generous sectional
+spacing as setup. Semantic form controls remain accessible but must never retain a
+plain browser-default appearance.
+
+**Authentication choice.** Existing-account login and new-account registration are
+equal, visible ways forward. On wide screens they occupy separate cards divided by a
+vertical rule with “or”; on narrow screens the rule rotates horizontally and the cards
+stack. Registration is a full secondary button, never a quiet text link. Password
+recovery and activation resend remain smaller warm pill actions below the login form.
+
+**OIDC provider.** Provider login is a deliberate full-width action section, separated
+from local credentials by a labelled horizontal divider. It uses an espresso surface,
+warm-paper text, a sunflower icon block, provider name, and a short redirect hint so it
+cannot visually merge into the containing card or appear attached to a corner.
+
+**Account overview.** Authenticated management uses four golden-capsule tabs:
+DataSpaces, Groups, signed-in devices, and data/account actions. The first tab begins with a
+short explanation of what a DataSpace separates and explicitly notes that quick rounds
+remain unsaved. The selected DataSpace is visible in the page header and in its list
+row. Create, rename/default, device revocation, export, sign-out, and destructive actions
+live in individually bounded sections rather than one continuous control list.
+
+**Group management.** The Account Groups tab uses a searchable, paged master/detail
+layout: the bounded list stays quick with hundreds of Groups and the selected Group owns
+the only visible editor. Name/member edits, history reset, and full deletion are
+sectionalized. Reset and deletion use themed inline confirmations; deletion requires the
+exact Group name. The setup wizard retains selection and quick creation but no maintenance
+or destructive actions.
+
+**Destructive actions.** DataSpace and account deletion use raspberry-accented inset
+cards and require typing the affected name. Confirmation controls are part of the themed
+page; do not delegate the core flow to an unstyled browser dialog. Disabled deletion of
+the final DataSpace includes a visible reason.
+
+**Game continuity.** Help and Account destinations launched from in-game settings open
+separately so the active game remains intact in its original tab.
 
 # 8. Adaptive ambient background
 

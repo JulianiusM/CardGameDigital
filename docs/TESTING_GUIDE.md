@@ -26,12 +26,26 @@ npm run test:quick
 npx vitest run tests/unit/card-catalog-contract.spec.ts tests/integration/card-catalog-persistence.spec.ts
 npm run e2e:couch
 npm run e2e
+npm run test:mariadb:reset
+npm run test:mariadb:public
 npm run test:ci
 ```
 
 `npm run test:ci` writes coverage and JUnit output under `artifacts/`. Playwright requires
 installed browser binaries and a prepared database; use the corresponding `e2e:*:init`
 script when running a standalone server.
+
+`test:mariadb:public` uses `TEST_DB_*` process variables or the ignored
+`tests/.env.test.local` profile. It refuses names without `test`/`e2e` and clears every
+object in that exact disposable schema before migrations. The public Playwright account
+scenario requires `E2E_DEPLOYMENT_MODE=public`; explicit E2E mode permits only a
+loopback HTTP origin so CI can exercise public auth/CSRF semantics without relaxing the
+production HTTPS validator.
+
+For interactive administrator testing outside the E2E harness,
+`PUBLIC_RUNTIME_SECURITY=development` intentionally relaxes the public infrastructure
+and runtime gates and emits a startup warning. This is distinct from E2E mode: it is an
+operator-selected unsafe profile and must be confined to a trusted development network.
 
 ## Choosing a test
 

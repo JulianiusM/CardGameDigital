@@ -12,6 +12,9 @@ viewer-specific `room.snapshot` and presence.
 Messages are JSON text, processed sequentially per socket, and limited to 64 KiB.
 Binary messages are rejected and WebSocket compression is disabled. These transport
 limits are independent from the participant-stable command and pairing rate limits.
+The command/pairing rate limits and required configured Origin apply under enforced
+public runtime security; the explicit public development policy disables them for
+administrator testing on a trusted network.
 
 Participant credentials are bearer secrets. They are never valid in URLs or QR codes.
 A reload reconnects the same RoomParticipant; it does not create another participant.
@@ -45,10 +48,14 @@ participant disconnect grace period.
 | `command.leaveRoom`          | current or null | `{}`; authoritative leave and reconnect-credential invalidation.                            |
 
 Room settings use the canonical engine configuration: mode, profile ID, optional Group,
-adult confirmation, card locale, enabled Question Categories, enabled DareTypes, blocked
+adult confirmation, card locale, explicit ordered Card fallback policy, enabled Question Categories, enabled DareTypes, blocked
 operational flags, intensity progression, random question ratio, maximum type streak, and
 Let's Talk meta interval. Room snapshots expose versioned public settings to every
 participant. They never expose private participant boundaries.
+Each snapshot also contains authoritative
+`capacity:{maximumParticipants,maximumPlayers}`. Clients may display the represented
+player count against `maximumPlayers`, but the repository transaction remains the
+enforcement boundary for joins and device-player changes.
 
 Intensity settings include public 1–5 `startingIntensity` and `maximumIntensity`, plus
 `intensityProgressionUnit` (`ROUNDS` or `CARDS`) and a positive
@@ -59,6 +66,11 @@ Card-based pacing every two Cards with an increment of 1, so the addition is
 backward-compatible within protocol v2; snapshots always include them.
 `currentCard.intensity` is the derived global display band rather than the producer's
 relative per-taxonomy position.
+
+`cardFallbackEnabled` and `cardFallbackLocales` are additive protocol-v2 settings and
+default to `false` and `[]` when omitted. Enabling fallback requires a non-empty unique
+order of active Card locales excluding the primary locale. The server, not the client,
+validates the locales and applies that order.
 
 Settings include `neverHaveIEverRevealMode` with values `ANONYMOUS_AGGREGATE` and
 `NAMED_ANSWERS`; omission defaults to anonymous. The Host may change it only before
@@ -88,10 +100,20 @@ Session revision. Stable failures include `STALE_SESSION_REVISION`, `NOT_AUTHORI
 `INVALID_GAME_STATE`, `ROOM_FULL`, `CARD_LOCALE_UNAVAILABLE`, and `CARD_POOL_EXHAUSTED`.
 
 Socket loss changes the participant to `TEMPORARILY_DISCONNECTED`. Reauthentication
-during the grace period restores `CONNECTED` and preserves role. After expiry the
+during the configured grace period (180 seconds by default; never below 120) restores
+`CONNECTED` and preserves role. Browser clients continue automatic retries long enough
+to bridge an ordinary one-to-two-minute outage. After expiry the
 participant becomes `LEFT`; a disconnected Host may then be reassigned to an eligible
 connected Player. Explicit Host transfer updates server authorization immediately and
 broadcasts `room.roleChanged` plus fresh snapshots.
+
+If no active Host or Player remains after an explicit leave or all reconnect grace
+periods expire, the server closes the Room unless a DISPLAY connection is currently
+`CONNECTED`. A connected display keeps the join code live for new Players but never
+receives host authority. The first eligible Player to connect is promoted. Once that
+display also disconnects and exhausts grace, the abandoned Room closes. Transient
+disconnects inside the grace period never trigger cleanup. Durable DataSpace Session
+history is retained; only the live Room becomes unavailable.
 
 A PLAYER participant that authenticates while a Session is active is added once to the
 authoritative Session roster, together with any people represented by that device. A

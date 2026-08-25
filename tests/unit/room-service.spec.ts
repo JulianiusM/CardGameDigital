@@ -134,6 +134,21 @@ class MemoryRooms implements RealtimeRoomRepository {
         for (const participant of this.participants)
             if (participant.roomId === roomId) participant.connectionStatus = "LEFT";
     }
+    async closeRoomIfNoPlayers(roomId: string) {
+        const active = this.participants.filter(
+            (participant) =>
+                participant.roomId === roomId && participant.connectionStatus !== "LEFT",
+        );
+        if (
+            active.some(
+                ({ role, connectionStatus }) =>
+                    role !== "DISPLAY" || connectionStatus === "CONNECTED",
+            )
+        )
+            return false;
+        for (const participant of active) participant.connectionStatus = "LEFT";
+        return true;
+    }
     async loadSettings(roomId: string) {
         return this.settings.get(roomId)!;
     }
@@ -238,8 +253,17 @@ describe("RoomService", () => {
 
     it("caps represented Room players across every connected device", async () => {
         const repository = new MemoryRooms();
-        const service = new RoomService(repository, cards, new SequenceRandomSource([0]));
+        const service = new RoomService(
+            repository,
+            cards,
+            new SequenceRandomSource([0]),
+            undefined,
+            { maximumParticipants: 20, maximumPlayers: 20 },
+        );
         const joined = await service.createRoom("Host");
+        await expect(service.snapshot(joined.roomId)).resolves.toMatchObject({
+            capacity: { maximumParticipants: 20, maximumPlayers: 20 },
+        });
         const playerJoin = await service.joinRoom(joined.roomCode, "Player", "PLAYER");
         const host = (await service.authenticate(joined.roomCode, joined.participantCredential))!;
         const player = (await service.authenticate(
@@ -289,6 +313,34 @@ describe("RoomService", () => {
         expect(
             await service.authenticate(playerJoin.roomCode, playerJoin.participantCredential),
         ).toBeNull();
+    });
+
+    it("keeps an empty-player Room available while its display is connected", async () => {
+        const repository = new MemoryRooms();
+        const service = new RoomService(repository, cards, new SequenceRandomSource([0]));
+        const hostJoin = await service.createRoom("Host");
+        const displayJoin = await service.joinRoom(hostJoin.roomCode, "Screen", "DISPLAY");
+        const host = (await service.authenticate(
+            hostJoin.roomCode,
+            hostJoin.participantCredential,
+        ))!;
+        await service.authenticate(displayJoin.roomCode, displayJoin.participantCredential);
+
+        await service.markTemporarilyDisconnected(host);
+        expect(await service.expireDisconnectedParticipant(host.roomId, host.id)).toBe(true);
+        expect(await service.snapshot(host.roomId)).toMatchObject({
+            participants: [
+                expect.objectContaining({ role: "DISPLAY", connectionStatus: "CONNECTED" }),
+            ],
+        });
+
+        const display = (await service.authenticate(
+            displayJoin.roomCode,
+            displayJoin.participantCredential,
+        ))!;
+        await service.markTemporarilyDisconnected(display);
+        expect(await service.expireDisconnectedParticipant(display.roomId, display.id)).toBe(true);
+        expect(await service.snapshot(host.roomId)).toMatchObject({ participants: [] });
     });
 
     it("makes concurrent duplicate EndSession commands idempotent", async () => {
@@ -707,6 +759,44 @@ describe("RoomService", () => {
         expect(JSON.stringify(updated.settings)).not.toContain("disabledDareTypeIds");
         await expect(service.execute(joined.roomId, host, command)).rejects.toMatchObject({
             code: "STALE_SESSION_REVISION",
+        });
+    });
+
+    it("uses only the server-validated ordered Card fallback policy", async () => {
+        const repository = new MemoryRooms();
+        let localization: Parameters<CardRepository["listActive"]>[0] | undefined;
+        const observingCards: CardRepository = {
+            ...cards,
+            listActive: async (policy) => {
+                localization = policy;
+                return [card({ id: "localized-room-question" as never })];
+            },
+        };
+        const service = new RoomService(repository, observingCards, new SequenceRandomSource([0]));
+        const joined = await service.createRoom("Host");
+        const playerJoin = await service.joinRoom(joined.roomCode, "Player", "PLAYER");
+        const host = (await service.authenticate(joined.roomCode, joined.participantCredential))!;
+        await service.authenticate(joined.roomCode, playerJoin.participantCredential);
+        const settings = {
+            ...defaultRoomGameSettings(),
+            cardLocale: "en-GB",
+            cardFallbackEnabled: true,
+            cardFallbackLocales: ["fr-FR", "de-DE"],
+        };
+        await service.execute(joined.roomId, host, {
+            type: "command.updateRoomSettings",
+            revision: null,
+            payload: { expectedRevision: 0, settings },
+        });
+        await service.execute(joined.roomId, host, {
+            type: "command.startSession",
+            revision: null,
+            payload: {},
+        });
+        expect(localization).toEqual({
+            locale: "en-GB",
+            missingTranslation: "FALLBACK",
+            fallbackLocales: ["fr-FR", "de-DE"],
         });
     });
 

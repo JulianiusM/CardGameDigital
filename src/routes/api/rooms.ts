@@ -5,6 +5,7 @@ import { getRoomService } from "../../modules/realtime";
 import { requireCurrentDataSpace } from "./dataSpaceAccess";
 import { detectLocale, translate } from "../../packages/localization/messages";
 import { roomGameSettingsSchema } from "../../packages/protocol";
+import { logApiValidationError } from "../../middleware/validationErrorHandler";
 
 const router = express.Router();
 const createSchema = z
@@ -58,11 +59,12 @@ function respondOrNext(
 ): void {
     const locale = detectLocale(req.get("accept-language"));
     if (error instanceof ZodError) {
+        logApiValidationError(error, res);
         res.status(400).json({
             error: {
                 code: "VALIDATION_ERROR",
                 message: translate(locale, MESSAGE_KEYS.ROOM_INVALID_REQUEST),
-                details: error.issues,
+                data: error.flatten(),
             },
         });
         return;

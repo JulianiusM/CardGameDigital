@@ -21,13 +21,22 @@ const trustProxyString = z
         return /^(?:true|yes|on)$/i.test(value);
     });
 const trustProxyValue = z.union([z.boolean(), z.number().int().nonnegative(), trustProxyString]);
+const optionalPublicUrl = z.string().refine((value) => {
+    if (!value) return true;
+    const parsed = z.url().safeParse(value);
+    return parsed.success && ["http:", "https:"].includes(new URL(value).protocol);
+}, "must be empty or an HTTP(S) URL");
 
 export const settingsSchema = z
     .object({
         deploymentMode: z.enum(["local", "public"]),
+        publicRuntimeSecurity: z.enum(["enforced", "development"]),
         authMode: z.enum(["none", "account"]),
         httpBind: z.string().min(1),
         httpPort: numberValue.pipe(z.number().int().min(1).max(65_535)),
+        roomMaximumParticipants: numberValue.pipe(z.number().int().min(2).max(1_000)),
+        roomMaximumPlayers: numberValue.pipe(z.number().int().min(2).max(1_000)),
+        roomReconnectGraceSeconds: numberValue.pipe(z.number().int().min(120).max(3_600)),
         publicUrl: z.string().url(),
         dbType: z.enum(["sqlite", "mariadb", "mysql"]),
         dbFile: z.string().min(1),
@@ -51,15 +60,18 @@ export const settingsSchema = z
         oidcName: z.string(),
         trustProxy: trustProxyValue,
         logLevel: z.enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"]),
+        logErrorDetails: z.enum(["standard", "diagnostic"]),
         sessionSecret: z.string().min(16),
-        imprintUrl: z.string(),
-        privacyPolicyUrl: z.string(),
+        imprintUrl: optionalPublicUrl,
+        privacyPolicyUrl: optionalPublicUrl,
         cardMissingTranslation: z.enum(["EXCLUDE", "FALLBACK"]),
         cardFallbackLocale: z.string().min(2).max(35),
         file: z.string(),
         testMode: z.boolean(),
     })
     .superRefine((value, context) => {
+        const publicSecurityEnforced =
+            value.deploymentMode === "public" && value.publicRuntimeSecurity === "enforced";
         if (value.deploymentMode === "local" && value.dbType !== "sqlite" && !value.testMode) {
             context.addIssue({
                 code: "custom",
@@ -67,24 +79,28 @@ export const settingsSchema = z
                 message: "local deployment requires DB_TYPE=sqlite",
             });
         }
-        if (value.deploymentMode === "public" && value.dbType === "sqlite") {
+        if (publicSecurityEnforced && value.dbType === "sqlite") {
             context.addIssue({
                 code: "custom",
                 path: ["dbType"],
                 message: "public deployment requires MariaDB/MySQL",
             });
         }
-        if (value.deploymentMode === "public" && value.authMode !== "account") {
+        if (publicSecurityEnforced && value.authMode !== "account") {
             context.addIssue({
                 code: "custom",
                 path: ["authMode"],
                 message: "public deployment requires account authentication",
             });
         }
-        if (value.deploymentMode === "public") {
+        if (publicSecurityEnforced) {
             const publicUrl = new URL(value.publicUrl);
+            const testLoopbackOrigin =
+                value.testMode &&
+                publicUrl.protocol === "http:" &&
+                ["localhost", "127.0.0.1", "[::1]"].includes(publicUrl.hostname);
             if (
-                publicUrl.protocol !== "https:" ||
+                (publicUrl.protocol !== "https:" && !testLoopbackOrigin) ||
                 publicUrl.username ||
                 publicUrl.password ||
                 publicUrl.pathname !== "/" ||
@@ -94,7 +110,8 @@ export const settingsSchema = z
                 context.addIssue({
                     code: "custom",
                     path: ["publicUrl"],
-                    message: "public deployment requires a credential-free HTTPS origin PUBLIC_URL",
+                    message:
+                        "public deployment requires a credential-free HTTPS origin PUBLIC_URL (HTTP loopback is E2E-only)",
                 });
             }
             if (!value.dbUser.trim() || !value.dbPassword) {
@@ -165,15 +182,17 @@ export const settingsSchema = z
             if (value.deploymentMode === "public" && redirect.success && issuer.success) {
                 const expectedRedirect = new URL("/api/v1/account/oidc/callback", value.publicUrl)
                     .href;
-                if (
-                    new URL(value.oidcRedirectUrl).protocol !== "https:" ||
-                    new URL(value.oidcIssuer).protocol !== "https:" ||
-                    value.oidcRedirectUrl !== expectedRedirect
-                ) {
+                const insecureOidc =
+                    publicSecurityEnforced &&
+                    (new URL(value.oidcRedirectUrl).protocol !== "https:" ||
+                        new URL(value.oidcIssuer).protocol !== "https:");
+                if (insecureOidc || value.oidcRedirectUrl !== expectedRedirect) {
                     context.addIssue({
                         code: "custom",
                         path: ["oidcRedirectUrl"],
-                        message: "public OIDC requires HTTPS URLs and the canonical callback URL",
+                        message: publicSecurityEnforced
+                            ? "public OIDC requires HTTPS URLs and the canonical callback URL"
+                            : "public OIDC requires the canonical callback URL",
                     });
                 }
             }
@@ -182,11 +201,21 @@ export const settingsSchema = z
 
 export type Settings = z.infer<typeof settingsSchema> & { initialized: boolean };
 
+export function isPublicRuntimeSecurityEnforced(
+    value: Pick<Settings, "deploymentMode" | "publicRuntimeSecurity">,
+): boolean {
+    return value.deploymentMode === "public" && value.publicRuntimeSecurity === "enforced";
+}
+
 const defaults = {
     deploymentMode: "local",
+    publicRuntimeSecurity: "enforced",
     authMode: "none",
     httpBind: "127.0.0.1",
     httpPort: 3000,
+    roomMaximumParticipants: 100,
+    roomMaximumPlayers: 100,
+    roomReconnectGraceSeconds: 180,
     publicUrl: "http://localhost:3000",
     dbType: "sqlite",
     dbFile: "./data/card-game.sqlite",
@@ -210,6 +239,7 @@ const defaults = {
     oidcName: "OIDC Provider",
     trustProxy: false,
     logLevel: "info",
+    logErrorDetails: "standard",
     sessionSecret: `local-${crypto.randomBytes(24).toString("base64url")}`,
     imprintUrl: "",
     privacyPolicyUrl: "",
@@ -221,10 +251,14 @@ const defaults = {
 
 const keyMap: Record<string, keyof typeof defaults> = {
     DEPLOYMENT_MODE: "deploymentMode",
+    PUBLIC_RUNTIME_SECURITY: "publicRuntimeSecurity",
     AUTH_MODE: "authMode",
     HTTP_BIND: "httpBind",
     HTTP_PORT: "httpPort",
     APP_PORT: "httpPort",
+    ROOM_MAX_PARTICIPANTS: "roomMaximumParticipants",
+    ROOM_MAX_PLAYERS: "roomMaximumPlayers",
+    ROOM_RECONNECT_GRACE_SECONDS: "roomReconnectGraceSeconds",
     PUBLIC_URL: "publicUrl",
     ROOT_URL: "publicUrl",
     DB_TYPE: "dbType",
@@ -250,6 +284,7 @@ const keyMap: Record<string, keyof typeof defaults> = {
     OIDC_NAME: "oidcName",
     TRUST_PROXY: "trustProxy",
     LOG_LEVEL: "logLevel",
+    LOG_ERROR_DETAILS: "logErrorDetails",
     SESSION_SECRET: "sessionSecret",
     IMPRINT_URL: "imprintUrl",
     PRIVACY_POLICY_URL: "privacyPolicyUrl",

@@ -24,6 +24,8 @@ export default defineConfig({
             HTTP_PORT: String(port),
             PUBLIC_URL: `http://127.0.0.1:${port}`,
             SESSION_SECRET: "couch_e2e_session_secret_123",
+            IMPRINT_URL: "https://legal.example.test/imprint",
+            PRIVACY_POLICY_URL: "https://legal.example.test/privacy",
         },
         url: `http://127.0.0.1:${port}/healthz`,
         reuseExistingServer: false,

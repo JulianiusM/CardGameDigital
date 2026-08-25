@@ -43,6 +43,17 @@ unless a current contract explicitly requires them.
 - Add migrations/entities together and regenerate `src/modules/database/__index__.ts`
   with `npm run generate`.
 
+## UI and UX rules
+
+- Every visible screen and control must use the established Golden Mischief visual
+  system. Keep semantic HTML and accessible native behavior, but never ship a control
+  with an unstyled, browser-default appearance that breaks the game presentation.
+- Every new or changed user-facing flow requires a UX audit at desktop and narrow-phone
+  widths. Check hierarchy, spacing, sectionalization, legible contrast, focus behavior,
+  touch targets, overflow, destructive-action recovery, and navigation continuity.
+- Links opened from an active game's settings must preserve that game unless the action
+  explicitly ends it. Service destinations such as Help and Account open separately.
+
 ## Contract changes
 
 When changing an external contract:

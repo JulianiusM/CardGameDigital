@@ -62,6 +62,7 @@ describe("Couch HTTP application adapter", () => {
             expect(shown.body).toMatchObject({ revision: 1, cardsShown: 1 });
             expect(shown.body.currentCard.cardText).toBeTruthy();
         }
+        expect(await AppDataSource.getRepository(CouchGameSessionEntity).count()).toBe(0);
     });
 
     it("validates payloads and rejects stale commands with stable errors", async () => {
@@ -70,7 +71,14 @@ describe("Couch HTTP application adapter", () => {
             .set("accept-language", "de-DE")
             .send({ mode: "INVALID", players: [] })
             .expect(400)
-            .expect(({ body }) => expect(body.error.code).toBe("VALIDATION_ERROR"));
+            .expect(({ body }) => {
+                expect(body.error.code).toBe("VALIDATION_ERROR");
+                expect(body.error.data.fieldErrors).toMatchObject({
+                    mode: expect.any(Array),
+                    players: expect.any(Array),
+                });
+                expect(body.error.details).toBeUndefined();
+            });
         await request(app)
             .post("/api/v1/couch/sessions")
             .set("accept-language", "de-DE")
@@ -101,6 +109,7 @@ describe("Couch HTTP application adapter", () => {
             .post("/api/v1/couch/sessions")
             .set("accept-language", "de-DE")
             .send({
+                persistence: "DATASPACE",
                 mode: GAME_MODES.CLASSIC,
                 players: [{ name: "Anna" }, { name: "Ben" }],
                 ...canonicalSettings,
@@ -205,6 +214,7 @@ describe("Couch HTTP application adapter", () => {
             .send({ name: "Couch history", members: ["Anna", "Ben"] })
             .expect(201);
         const payload = {
+            persistence: "DATASPACE",
             mode: GAME_MODES.NEVER_HAVE_I_EVER,
             players: [{ name: "Anna" }, { name: "Ben" }],
             ...canonicalSettings,

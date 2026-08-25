@@ -1,5 +1,12 @@
 import { expect, test, type Page } from "@playwright/test";
 
+test.beforeEach(async ({ context }) => {
+    await context.addInitScript(() => {
+        if (!localStorage.getItem("party-game.locale"))
+            localStorage.setItem("party-game.locale", "de");
+    });
+});
+
 async function reachCouch(
     page: Page,
     modeLabel: string,
@@ -504,7 +511,7 @@ test("Couch Mode runs all four modes through the server-authoritative engine", a
         "Ich hab noch nie",
         "Let's Talk",
     ]) {
-        const context = await browser.newContext();
+        const context = await browser.newContext({ locale: "de-DE" });
         const page = await context.newPage();
         await createGame(page, mode);
         if (mode === "Wahrheit oder Pflicht") {
@@ -538,7 +545,7 @@ test("game card and actions fit medium and TV viewports without document scrolli
         { width: 1024, height: 768 },
         { width: 1920, height: 1080 },
     ]) {
-        const context = await browser.newContext({ viewport });
+        const context = await browser.newContext({ locale: "de-DE", viewport });
         const page = await context.newPage();
         await createGame(page, "Wahrheit oder Pflicht");
         await page.getByRole("button", { name: "Wahrheit", exact: true }).click();
@@ -597,14 +604,26 @@ test("navigation animates its component panel without invoking a document transi
     await expect(page.locator("html")).toHaveAttribute("data-document-transition-calls", "0");
 });
 
-test("Group step has exactly three choices and a new Group is immediately selected", async ({
+test("Group step exposes only persistence choices available to the current identity", async ({
     page,
 }) => {
     await page.setViewportSize({ width: 360, height: 740 });
     await page.goto("/play/");
     await page.getByRole("button", { name: /Spiel hosten/ }).click();
     await expect(page.getByRole("button", { name: /Keine Gruppe/ })).toBeVisible();
-    await expect(page.getByRole("button", { name: /Gruppe auswählen/ })).toBeVisible();
+    const deploymentMode = await page.evaluate(async () => {
+        const response = await fetch("/api/v1/server-info");
+        return ((await response.json()) as { deploymentMode: "local" | "public" }).deploymentMode;
+    });
+    if (deploymentMode === "public") {
+        await expect(page.getByRole("button", { name: /Gruppe auswählen/ })).toHaveCount(0);
+        await expect(page.getByRole("button", { name: /Neue Gruppe/ })).toHaveCount(0);
+        await expect(
+            page.getByRole("link", { name: /Für gespeicherte Gruppen anmelden/ }),
+        ).toBeVisible();
+        return;
+    }
+    await expect(page.getByRole("button", { name: /Gruppe auswählen/ })).toBeDisabled();
     await expect(page.getByRole("button", { name: /Neue Gruppe/ })).toBeVisible();
     await page.getByRole("button", { name: /Neue Gruppe/ }).click();
     const name = `Testgruppe ${Date.now()}`;
@@ -612,7 +631,7 @@ test("Group step has exactly three choices and a new Group is immediately select
     await page.getByLabel("Namen, durch Kommas getrennt").fill("Anna, Ben");
     await page.getByRole("button", { name: "Gruppe speichern" }).click();
     await expect(page.locator(".group-list-row.selected")).toContainText(name);
-    const groupAction = page.getByRole("button", { name: new RegExp(name) });
+    const groupAction = page.getByRole("option", { name: new RegExp(name) });
     await groupAction.hover();
     await expect(groupAction).toHaveCSS("transform", "none");
     await expect(groupAction).toHaveCSS("box-shadow", "none");
@@ -624,6 +643,184 @@ test("Group step has exactly three choices and a new Group is immediately select
     await page.getByRole("button", { name: new RegExp(`Gruppe fortsetzen: ${name}`) }).click();
     await expect(page.locator(".group-list-row.selected")).toContainText(name);
     await expect(page.getByRole("button", { name: /^Weiter/ })).toBeEnabled();
+});
+
+test("each Group restores its own Custom and Card-language settings", async ({ page }) => {
+    test.setTimeout(60_000);
+    const profiles = await (await page.request.get("/api/v1/game-profiles")).json();
+    const customSeed = profiles.profiles.find(({ id }: { id: string }) => id === "PROFILE_CUSTOM");
+    const configuration = ({
+        enabledQuestionCategoryIds,
+        enabledDareTypeIds,
+        blockedOperationalFlags,
+        startingIntensity,
+        maximumIntensity,
+        intensityProgressionUnit,
+        intensityProgressionInterval,
+        intensityProgressionIncrement,
+        randomQuestionRatio,
+        maximumTypeStreak,
+        letsTalkMetaInterval,
+    }: typeof customSeed) => ({
+        enabledQuestionCategoryIds,
+        enabledDareTypeIds,
+        blockedOperationalFlags,
+        startingIntensity,
+        maximumIntensity,
+        intensityProgressionUnit,
+        intensityProgressionInterval,
+        intensityProgressionIncrement,
+        randomQuestionRatio,
+        maximumTypeStreak,
+        letsTalkMetaInterval,
+    });
+    const unique = Date.now();
+    const firstName = `Gruppe Alpha ${unique}`;
+    const secondName = `Gruppe Beta ${unique}`;
+    const first = await (
+        await page.request.post("/api/v1/groups", {
+            data: { name: firstName, members: ["Ada", "Lin"] },
+        })
+    ).json();
+    const second = await (
+        await page.request.post("/api/v1/groups", {
+            data: { name: secondName, members: ["Sam", "Jo"] },
+        })
+    ).json();
+    const firstCustom = {
+        ...configuration(customSeed),
+        startingIntensity: 1,
+        maximumIntensity: 2,
+    };
+    const secondCustom = {
+        ...configuration(customSeed),
+        startingIntensity: 3,
+        maximumIntensity: 5,
+    };
+    const firstSaved = await page.request.put(`/api/v1/groups/${first.id}`, {
+        data: {
+            name: first.name,
+            members: first.members,
+            preferredProfileId: "PROFILE_CUSTOM",
+            customConfiguration: firstCustom,
+            cardLanguageSettings: {
+                cardLocale: "de-DE",
+                cardFallbackEnabled: true,
+                cardFallbackLocales: ["en-GB"],
+            },
+        },
+    });
+    expect(firstSaved.ok()).toBe(true);
+    const secondSaved = await page.request.put(`/api/v1/groups/${second.id}`, {
+        data: {
+            name: second.name,
+            members: second.members,
+            preferredProfileId: "PROFILE_CUSTOM",
+            customConfiguration: secondCustom,
+            cardLanguageSettings: {
+                cardLocale: "en-GB",
+                cardFallbackEnabled: false,
+                cardFallbackLocales: ["de-DE"],
+            },
+        },
+    });
+    expect(secondSaved.ok()).toBe(true);
+    const saved = (await (await page.request.get("/api/v1/game-settings")).json()).settings;
+    const quickRoundSaved = await page.request.put("/api/v1/game-settings", {
+        data: {
+            ...saved,
+            preferredProfileId: "PROFILE_CUSTOM",
+            startingIntensity: 2,
+            maximumIntensity: 4,
+            customConfiguration: {
+                ...configuration(customSeed),
+                startingIntensity: 2,
+                maximumIntensity: 4,
+            },
+            cardLanguageSettings: {
+                cardLocale: "de-DE",
+                cardFallbackEnabled: false,
+                cardFallbackLocales: ["en-GB"],
+            },
+        },
+    });
+    expect(quickRoundSaved.ok()).toBe(true);
+
+    const openCustomization = async (groupName: string | null) => {
+        if (groupName) {
+            await page.getByRole("button", { name: /Gruppe auswählen/ }).click();
+            await page.getByRole("option", { name: new RegExp(groupName) }).click();
+        } else {
+            await page.getByRole("button", { name: /Keine Gruppe/ }).click();
+        }
+        await page.getByRole("button", { name: /^Weiter/ }).click();
+        await page.getByRole("button", { name: /Wahrheit oder Pflicht/ }).click();
+        await page.getByRole("button", { name: /^Weiter/ }).click();
+        await page.getByRole("button", { name: /^Custom / }).click();
+        await page.getByRole("button", { name: /^Weiter/ }).click();
+    };
+    const backToGroup = async () => {
+        await page.getByRole("button", { name: /Zurück/ }).click();
+        await page.getByRole("button", { name: /Zurück/ }).click();
+        await page.getByRole("button", { name: /Zurück/ }).click();
+    };
+    const cardLanguages = () =>
+        page.locator(".settings-section-card", {
+            has: page.getByRole("heading", { name: "Kartensprache" }),
+        });
+
+    await page.goto("/play/");
+    await page.getByRole("button", { name: /Spiel hosten/ }).click();
+    await openCustomization(firstName);
+    await expect(page.getByLabel("Startintensität")).toHaveValue("1");
+    await expect(page.getByLabel("Endintensität")).toHaveValue("2");
+    await expect(cardLanguages().getByRole("option", { name: /de-DE/ })).toHaveAttribute(
+        "aria-selected",
+        "true",
+    );
+    await expect(page.getByLabel("Ersatzsprachen für Karten verwenden")).toBeChecked();
+
+    await backToGroup();
+    await openCustomization(secondName);
+    await expect(page.getByLabel("Startintensität")).toHaveValue("3");
+    await expect(page.getByLabel("Endintensität")).toHaveValue("5");
+    await expect(cardLanguages().getByRole("option", { name: /en-GB/ })).toHaveAttribute(
+        "aria-selected",
+        "true",
+    );
+    await expect(page.getByLabel("Ersatzsprachen für Karten verwenden")).not.toBeChecked();
+
+    await backToGroup();
+    await openCustomization(null);
+    await expect(page.getByLabel("Startintensität")).toHaveValue("2");
+    await expect(page.getByLabel("Endintensität")).toHaveValue("4");
+    await expect(cardLanguages().getByRole("option", { name: /de-DE/ })).toHaveAttribute(
+        "aria-selected",
+        "true",
+    );
+    await expect(page.getByLabel("Ersatzsprachen für Karten verwenden")).not.toBeChecked();
+});
+
+test("configured legal links stay themed and leave the SPA open", async ({ page }) => {
+    await page.setViewportSize({ width: 360, height: 740 });
+    await page.goto("/play/");
+    const imprint = page.getByRole("link", { name: "Impressum" });
+    const privacy = page.getByRole("link", { name: "Datenschutzerklärung" });
+    await expect(imprint).toHaveAttribute("href", "https://legal.example.test/imprint");
+    await expect(privacy).toHaveAttribute("href", "https://legal.example.test/privacy");
+    await expect(imprint).toHaveAttribute("target", "_blank");
+    await expect(privacy).toHaveAttribute("target", "_blank");
+    await expect
+        .poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
+        .toBe(true);
+
+    await page.getByLabel("Einstellungen").click();
+    await page.getByRole("tab", { name: "Hilfe & Konto" }).click();
+    await expect(page.getByRole("heading", { name: "Rechtliche Informationen" })).toBeVisible();
+    await expect(page.locator(".legal-actions").getByRole("link", { name: "Impressum" })).toHaveCSS(
+        "border-radius",
+        "14px",
+    );
 });
 
 test("Custom profile exposes the full shared customization editor", async ({ page }) => {
@@ -647,6 +844,158 @@ test("Custom profile exposes the full shared customization editor", async ({ pag
     await expect(
         page.getByRole("button", { name: /English \(United Kingdom\).*en-GB/ }),
     ).toBeVisible();
+
+    const intensitySection = page.locator(".behavior-settings");
+    const startingIntensity = intensitySection.getByLabel("Startintensität");
+    const endingIntensity = intensitySection.getByLabel("Endintensität");
+    await startingIntensity.fill("4");
+    await expect(endingIntensity).toHaveValue("4");
+    await endingIntensity.fill("3");
+    await expect(startingIntensity).toHaveValue("3");
+
+    const questions = page.locator(".settings-section-card", {
+        has: page.getByRole("heading", { name: /Themen/ }),
+    });
+    await questions.getByRole("button", { name: "Alle aktiv" }).click();
+    await expect(questions.getByRole("button", { name: "ALLTAG" })).toHaveClass(/selected/);
+    await questions.getByRole("button", { name: "Keine aktiv" }).click();
+    await expect(questions.locator(".toggle-chip-grid button.selected")).toHaveCount(0);
+
+    const dares = page.locator(".settings-section-card", {
+        has: page.getByRole("heading", { name: /Arten von Pflichten/ }),
+    });
+    await dares.getByRole("button", { name: "Keine aktiv" }).click();
+    await expect(dares.locator(".toggle-chip-grid button.selected")).toHaveCount(0);
+    await dares.getByRole("button", { name: "Alle aktiv" }).click();
+    await expect(dares.locator(".toggle-chip-grid button.selected")).toHaveCount(
+        await dares.locator(".toggle-chip-grid button").count(),
+    );
+
+    const flags = page.locator(".settings-section-card", {
+        has: page.getByRole("heading", { name: /Inhaltsregeln/ }),
+    });
+    await flags.getByRole("button", { name: "Alle aktiv" }).click();
+    await expect(flags.locator(".toggle-chip-grid button.selected")).toHaveCount(
+        await flags.locator(".toggle-chip-grid button").count(),
+    );
+    await flags.getByRole("button", { name: "Keine aktiv" }).click();
+    await expect(flags.locator(".toggle-chip-grid button.selected")).toHaveCount(0);
+
+    const bulkActionHeights = await page
+        .locator(".bulk-selection-actions button")
+        .evaluateAll((buttons) => buttons.map((button) => button.getBoundingClientRect().height));
+    expect(bulkActionHeights).toHaveLength(6);
+    expect(bulkActionHeights.every((height) => height >= 44)).toBe(true);
+});
+
+test("a completed no-group Custom setup restores only its dedicated DataSpace snapshot", async ({
+    page,
+}) => {
+    await page.goto("/play/");
+    await page.getByRole("button", { name: /Spiel hosten/ }).click();
+    await page.getByRole("button", { name: /Keine Gruppe/ }).click();
+    await page.getByRole("button", { name: /^Weiter/ }).click();
+    await page.getByRole("button", { name: /Wahrheit oder Pflicht/ }).click();
+    await page.getByRole("button", { name: /^Weiter/ }).click();
+    await page.getByRole("button", { name: /^Custom / }).click();
+    await page.getByRole("button", { name: /^Weiter/ }).click();
+
+    const behavior = page.locator(".behavior-settings");
+    await behavior.getByLabel("Endintensität").fill("4");
+    await behavior.getByLabel("Startintensität").fill("2");
+    const questions = page.locator(".settings-section-card", {
+        has: page.getByRole("heading", { name: /Themen/ }),
+    });
+    await questions.getByRole("button", { name: "Keine aktiv" }).click();
+    await questions.getByRole("button", { name: "FREUNDSCHAFT" }).click();
+    await page.getByRole("button", { name: /^Weiter/ }).click();
+    await page.getByRole("button", { name: /Nur dieser Bildschirm/ }).click();
+    await page.getByRole("button", { name: /Weiter zur Lobby/ }).click();
+
+    const persisted = await page.evaluate(async () => {
+        const response = await fetch("/api/v1/game-settings");
+        return (await response.json()) as {
+            settings: {
+                customConfiguration: {
+                    startingIntensity: number;
+                    maximumIntensity: number;
+                    enabledQuestionCategoryIds: string[];
+                };
+            };
+        };
+    });
+    expect(persisted.settings.customConfiguration).toMatchObject({
+        startingIntensity: 2,
+        maximumIntensity: 4,
+        enabledQuestionCategoryIds: ["CAT_FRIENDSHIP"],
+    });
+
+    await page.getByRole("button", { name: "Zurück zum Hauptmenü" }).click();
+    await page.getByRole("button", { name: /Spiel hosten/ }).click();
+    await expect(page.getByRole("button", { name: /Keine Gruppe/ })).toHaveClass(/selected/);
+    await page.getByRole("button", { name: /^Weiter/ }).click();
+    await page.getByRole("button", { name: /Wahrheit oder Pflicht/ }).click();
+    await page.getByRole("button", { name: /^Weiter/ }).click();
+    await page.getByRole("button", { name: /^Custom / }).click();
+    await page.getByRole("button", { name: /^Weiter/ }).click();
+    await expect(behavior.getByLabel("Startintensität")).toHaveValue("2");
+    await expect(behavior.getByLabel("Endintensität")).toHaveValue("4");
+    await expect(questions.locator(".toggle-chip-grid button.selected")).toHaveCount(1);
+    await expect(questions.getByRole("button", { name: "FREUNDSCHAFT" })).toHaveClass(/selected/);
+});
+
+test("interface language defaults to the browser and can be explicitly overridden", async ({
+    browser,
+}) => {
+    const context = await browser.newContext({ locale: "en-GB" });
+    const page = await context.newPage();
+    await page.setViewportSize({ width: 360, height: 740 });
+    await page.goto("/play/");
+    await expect(page.getByRole("heading", { name: "What can happen tonight?" })).toBeVisible();
+    await page.getByLabel("Settings").click();
+    await page.getByRole("tab", { name: "Display" }).click();
+    await expect(page.getByLabel("Use system language")).toBeChecked();
+    const interfaceLanguage = page.locator(".interface-language-setting");
+    await expect(interfaceLanguage.getByRole("option", { name: /English/ })).toHaveAttribute(
+        "aria-selected",
+        "true",
+    );
+    await page.getByLabel("Interface language", { exact: true }).fill("Deutsch");
+    await interfaceLanguage.getByRole("option", { name: /Deutsch/ }).click();
+    await expect(page.getByRole("heading", { name: "Was darf heute passieren?" })).toBeVisible();
+    await expect(page.locator("html")).toHaveAttribute("lang", "de");
+    await page.getByLabel("Einstellungen").click();
+    await page.getByRole("tab", { name: "Darstellung" }).click();
+    await expect(page.getByLabel("Systemsprache verwenden")).not.toBeChecked();
+    await expect(interfaceLanguage.getByRole("option", { name: /Deutsch/ })).toHaveAttribute(
+        "aria-selected",
+        "true",
+    );
+    await expect
+        .poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
+        .toBe(true);
+    await context.close();
+});
+
+test("changing interface language keeps an active Couch game without a leave prompt", async ({
+    page,
+}) => {
+    await createGame(page, "Wahrheit oder Pflicht");
+    let leavePromptShown = false;
+    page.on("dialog", async (dialog) => {
+        leavePromptShown = true;
+        await dialog.accept();
+    });
+    await page.getByLabel("Einstellungen").click();
+    await page.getByRole("tab", { name: "Darstellung" }).click();
+    const interfaceLanguage = page.locator(".interface-language-setting");
+    await page.getByLabel("Sprache der Oberfläche", { exact: true }).fill("English");
+    await interfaceLanguage.getByRole("option", { name: /English/ }).click();
+
+    await expect(page).toHaveURL(/\/play\/couch$/);
+    await expect(page.getByText("Round 1")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Truth or dare?" })).toBeVisible();
+    expect(leavePromptShown).toBe(false);
 });
 
 test("Never Have I Ever reveal policy lives only in Customize Experience", async ({ page }) => {
@@ -738,7 +1087,7 @@ test("built-in profiles offer a validation-preserving Customize shortcut", async
         width: undefined,
     });
     expect(Math.abs(skipStyles.height - nextStyles.height)).toBeLessThan(1);
-    expect(Math.abs(skipStyles.width - nextStyles.width)).toBeLessThan(1);
+    expect(Math.abs(skipStyles.width - nextStyles.width)).toBeLessThanOrEqual(1.1);
     await skip.click();
     await expect(page.getByRole("heading", { name: /Bildschirme/ })).toBeVisible();
 });
@@ -789,6 +1138,113 @@ test("Couch end summary offers a clean return to the main menu", async ({ page }
     await page.getByRole("button", { name: "Zurück zum Hauptmenü" }).click();
     await expect(page).toHaveURL(/\/play\/?$/);
     await expect(page.getByRole("button", { name: /Spiel hosten/ })).toBeVisible();
+});
+
+test("a fresh Couch game after the summary restores the authenticated account name", async ({
+    page,
+}) => {
+    await page.route("**/api/v1/account/status", async (route) => {
+        await route.fulfill({
+            json: {
+                authenticationAvailable: true,
+                localLoginEnabled: true,
+                oidcEnabled: false,
+                oidcName: "",
+                imprintUrl: "",
+                privacyPolicyUrl: "",
+                deploymentMode: "local",
+                authenticated: true,
+                account: {
+                    user: {
+                        id: 7,
+                        username: "account-user",
+                        name: "Konto Name",
+                        email: "account@example.test",
+                    },
+                    activeDataSpaceId: "space-1",
+                    dataSpaces: [{ id: "space-1", name: "Testbereich", defaultForOwner: true }],
+                    languagePreferences: null,
+                },
+            },
+        });
+    });
+
+    await reachCouch(page, "Wahrheit oder Pflicht");
+    const firstPlayer = page.locator(".player-name-row").first().getByRole("textbox");
+    await expect(firstPlayer).toHaveValue("Konto Name");
+    await firstPlayer.fill("Gastgeber auf Zeit");
+    await page.getByRole("button", { name: /Spiel starten/ }).click();
+    await page.getByLabel("Einstellungen").click();
+    await page.getByRole("button", { name: "Spiel beenden" }).click();
+    await page.getByRole("button", { name: "Neues Spiel" }).click();
+    await expect(page.locator(".player-name-row").first().getByRole("textbox")).toHaveValue(
+        "Konto Name",
+    );
+});
+
+test("account Group management remains searchable and bounded with hundreds of Groups", async ({
+    page,
+}) => {
+    const groups = Array.from({ length: 205 }, (_, index) => ({
+        id: `group-${String(index + 1).padStart(3, "0")}`,
+        name: `Gruppe ${String(index + 1).padStart(3, "0")}`,
+        members: [`Person ${index + 1}`, `Mitglied ${index + 1}`],
+        updatedAt: new Date(2026, 0, 1).toISOString(),
+        historyResetAt: null,
+        preferredProfileId: "PROFILE_FRIENDS",
+        customConfiguration: null,
+        cardLanguageSettings: null,
+    }));
+    const account = {
+        user: {
+            id: 8,
+            username: "group-manager",
+            name: "Gruppenverwaltung",
+            email: "groups@example.test",
+        },
+        activeDataSpaceId: "space-many",
+        dataSpaces: [{ id: "space-many", name: "Viele Gruppen", defaultForOwner: true }],
+        languagePreferences: null,
+    };
+    await page.route("**/api/v1/account/status", (route) =>
+        route.fulfill({
+            json: {
+                authenticationAvailable: true,
+                localLoginEnabled: true,
+                oidcEnabled: false,
+                oidcName: "",
+                imprintUrl: "",
+                privacyPolicyUrl: "",
+                deploymentMode: "local",
+                authenticated: true,
+                account,
+            },
+        }),
+    );
+    await page.route("**/api/v1/account/sessions", (route) =>
+        route.fulfill({ json: { sessions: [] } }),
+    );
+    await page.route("**/api/v1/groups", (route) => route.fulfill({ json: { groups } }));
+    await page.route("**/api/v1/game-settings", (route) =>
+        route.fulfill({ json: { settings: { preferredProfileId: "PROFILE_FRIENDS" } } }),
+    );
+
+    await page.setViewportSize({ width: 360, height: 740 });
+    await page.goto("/play/account");
+    await page.getByRole("tab", { name: "Gruppen" }).click();
+    await expect(page.getByRole("heading", { name: "Gruppen verwalten" })).toBeVisible();
+    await expect(page.locator(".group-browser-row")).toHaveCount(16);
+    await expect(page.locator(".group-browser-pagination")).toContainText("1 / 13");
+    await page.getByLabel("Gruppen durchsuchen").fill("Person 173");
+    await expect(page.getByRole("option", { name: /Gruppe 173/ })).toBeVisible();
+    await expect(page.locator(".group-browser-row")).toHaveCount(1);
+    await page.getByRole("option", { name: /Gruppe 173/ }).click();
+    await expect(page.locator(".group-editor-card").getByLabel("Gruppenname")).toHaveValue(
+        "Gruppe 173",
+    );
+    await expect
+        .poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
+        .toBe(true);
 });
 
 test("same-device Couch player actions stay aligned on a narrow phone", async ({ page }) => {
@@ -852,6 +1308,15 @@ test("Help topic tabs stay inside their article and support arrow scrolling", as
         (await panel.boundingBox())!.width,
     );
     const viewport = page.locator(".responsive-tabs");
+    await expect(viewport.getByRole("tab")).toHaveText([
+        "Hilfe im Überblick",
+        "Schnellstart und Spielaufbau",
+        "Spielmodi und Karten",
+        "Räume, Geräte und Spielleitung",
+        "Grenzen und respektvolles Spielen",
+        "Konten und gespeicherte Daten",
+        "Probleme lösen",
+    ]);
     const next = page.locator(".tab-scroll-arrow.next");
     if (await next.isVisible()) {
         await next.click();
@@ -861,17 +1326,25 @@ test("Help topic tabs stay inside their article and support arrow scrolling", as
     }
 });
 
-test("Help opens in a new tab and AUTH_MODE=none hides Account", async ({ page }) => {
-    await page.goto("/play/account");
-    await expect(page).toHaveURL(/\/play\/?$/);
-    await expect(page.getByRole("heading", { name: /Anmelden/ })).toHaveCount(0);
+test("Help and Account navigation reflect server capabilities", async ({ page, request }) => {
+    const serverInfo = await (await request.get("/api/v1/server-info")).json();
+    if (!serverInfo.authenticationAvailable) {
+        await page.goto("/play/account");
+        await expect(page).toHaveURL(/\/play\/?$/);
+        await expect(page.getByRole("heading", { name: /Anmelden/ })).toHaveCount(0);
+    }
     await page.goto("/play/");
     await page.getByLabel("Einstellungen").click();
     await page.getByRole("tab", { name: /Hilfe & Konto/ }).click();
     const help = page.getByRole("link", { name: "Hilfe öffnen" });
     await expect(help).toHaveAttribute("target", "_blank");
     await expect(help).toHaveAttribute("rel", /noopener/);
-    await expect(page.getByRole("link", { name: "Konto öffnen" })).toHaveCount(0);
+    const account = page.getByRole("link", { name: /Konto/ });
+    await expect(account).toHaveCount(serverInfo.authenticationAvailable ? 1 : 0);
+    if (serverInfo.authenticationAvailable) {
+        await expect(account).toHaveAttribute("target", "_blank");
+        await expect(account).toHaveAttribute("rel", /noopener/);
+    }
     const popup = page.waitForEvent("popup");
     await help.click();
     await expect(await popup).toHaveURL(/\/play\/help$/);

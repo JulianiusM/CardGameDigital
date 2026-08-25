@@ -13,6 +13,10 @@ export class AccountSession implements ISession {
     @Column("text")
     public json = "";
 
+    @Index("IDX_session_account_user")
+    @Column("int", { name: "account_user_id", nullable: true })
+    public accountUserId: number | null = null;
+
     @DeleteDateColumn()
     public destroyedAt?: Date;
 }

@@ -168,6 +168,8 @@ describe("protocol v2 boundary", () => {
         const settings = defaultRoomGameSettings();
         const legacyShape = { ...settings } as Record<string, unknown>;
         delete legacyShape.neverHaveIEverRevealMode;
+        delete legacyShape.cardFallbackEnabled;
+        delete legacyShape.cardFallbackLocales;
         const parsedLegacy = roomCommandEnvelopeSchema.parse({
             protocol: PROTOCOL_VERSION,
             type: "command.updateRoomSettings",
@@ -180,6 +182,8 @@ describe("protocol v2 boundary", () => {
             settings: ReturnType<typeof defaultRoomGameSettings>;
         };
         expect(parsedLegacyPayload.settings.neverHaveIEverRevealMode).toBe("ANONYMOUS_AGGREGATE");
+        expect(parsedLegacyPayload.settings.cardFallbackEnabled).toBe(false);
+        expect(parsedLegacyPayload.settings.cardFallbackLocales).toEqual([]);
         expect(
             roomCommandEnvelopeSchema.safeParse({
                 protocol: PROTOCOL_VERSION,

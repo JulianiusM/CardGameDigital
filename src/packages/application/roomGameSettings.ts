@@ -44,6 +44,8 @@ export type RoomGameSettings = {
     groupId: string | null;
     adultContentConfirmed: boolean;
     cardLocale: string;
+    cardFallbackEnabled: boolean;
+    cardFallbackLocales: string[];
     neverHaveIEverRevealMode: NeverHaveIEverRevealMode;
     configuration: EffectiveGameSettings;
 };
@@ -90,14 +92,24 @@ export function defaultRoomGameSettings(): RoomGameSettings {
         groupId: null,
         adultContentConfirmed: false,
         cardLocale: "de-DE",
+        cardFallbackEnabled: false,
+        cardFallbackLocales: [],
         neverHaveIEverRevealMode: NEVER_HAVE_I_EVER_REVEAL_MODES.ANONYMOUS_AGGREGATE,
         configuration: effectiveSettingsFromProfile(BUILT_IN_PROFILE_IDS.FRIENDS),
     };
 }
 
 export function normalizeRoomGameSettings(
-    settings: Omit<RoomGameSettings, "neverHaveIEverRevealMode"> &
-        Partial<Pick<RoomGameSettings, "neverHaveIEverRevealMode">>,
+    settings: Omit<
+        RoomGameSettings,
+        "neverHaveIEverRevealMode" | "cardFallbackEnabled" | "cardFallbackLocales"
+    > &
+        Partial<
+            Pick<
+                RoomGameSettings,
+                "neverHaveIEverRevealMode" | "cardFallbackEnabled" | "cardFallbackLocales"
+            >
+        >,
 ): RoomGameSettings {
     return {
         ...settings,
@@ -118,6 +130,8 @@ export function normalizeRoomGameSettings(
         },
         neverHaveIEverRevealMode:
             settings.neverHaveIEverRevealMode ?? NEVER_HAVE_I_EVER_REVEAL_MODES.ANONYMOUS_AGGREGATE,
+        cardFallbackEnabled: settings.cardFallbackEnabled ?? false,
+        cardFallbackLocales: [...(settings.cardFallbackLocales ?? [])],
     };
 }
 

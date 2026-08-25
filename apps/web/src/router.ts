@@ -7,6 +7,7 @@ let listener: RouteListener | null = null;
 let shouldProtect = () => false;
 let confirmNavigation = () => true;
 let currentHref = location.href;
+let suppressNextUnloadPrompt = false;
 
 function isApplicationPath(pathname: string): boolean {
     return pathname === "/play" || pathname.startsWith("/play/");
@@ -50,6 +51,11 @@ export function navigate(path: string, options: NavigateOptions = {}): boolean {
     return true;
 }
 
+export function reloadWithoutNavigationPrompt(): void {
+    suppressNextUnloadPrompt = true;
+    location.reload();
+}
+
 export function startRouter(onRoute: RouteListener): () => void {
     listener = onRoute;
     const popstate = () => {
@@ -79,7 +85,7 @@ export function startRouter(onRoute: RouteListener): () => void {
         navigate(url.href);
     };
     const beforeUnload = (event: BeforeUnloadEvent) => {
-        if (!shouldProtect()) return;
+        if (suppressNextUnloadPrompt || !shouldProtect()) return;
         event.preventDefault();
         event.returnValue = "";
     };

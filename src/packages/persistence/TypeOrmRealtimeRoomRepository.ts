@@ -233,6 +233,40 @@ export class TypeOrmRealtimeRoomRepository implements RealtimeRoomRepository {
             );
         });
     }
+    async closeRoomIfNoPlayers(roomId: string): Promise<boolean> {
+        return this.source.transaction(async (manager) => {
+            const roomQuery = manager
+                .getRepository(RoomEntity)
+                .createQueryBuilder("room")
+                .where("room.id = :roomId", { roomId })
+                .andWhere("room.closedAt IS NULL");
+            if (this.source.options.type === "mariadb" || this.source.options.type === "mysql") {
+                roomQuery.setLock("pessimistic_write");
+            }
+            const room = await roomQuery.getOne();
+            if (!room) return false;
+            const participants = manager.getRepository(RoomParticipantEntity);
+            const activeParticipant = await participants.findOne({
+                where: [
+                    {
+                        roomId,
+                        role: Not("DISPLAY"),
+                        connectionStatus: Not("LEFT"),
+                    },
+                    { roomId, role: "DISPLAY", connectionStatus: "CONNECTED" },
+                ],
+            });
+            if (activeParticipant) return false;
+            const now = new Date();
+            room.closedAt = now;
+            await manager.getRepository(RoomEntity).save(room);
+            await participants.update(
+                { roomId, connectionStatus: Not("LEFT") },
+                { connectionStatus: "LEFT", leftAt: now, lastSeenAt: now },
+            );
+            return true;
+        });
+    }
     async loadSettings(roomId: string): Promise<VersionedRoomGameSettings> {
         const room = await this.source.getRepository(RoomEntity).findOneByOrFail({ id: roomId });
         return {

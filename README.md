@@ -65,6 +65,11 @@ npm run server:dev
 
 The browser bundle must be rebuilt after frontend changes with `npm run build:web`.
 
+In public mode, opening the game does not require an account: Quick Round remains
+available for Couch, Personal-device, and Party Screen play and writes no account-owned
+history. Signing in unlocks the same setup flow plus DataSpaces, saved groups/defaults,
+durable sessions, history, export, and multi-device login management.
+
 ## Configuration
 
 Settings are read from environment variables and optionally from the CSV file named
@@ -73,25 +78,40 @@ the file.
 
 Common settings:
 
-| Variable                                                  | Default                   | Purpose                                                                   |
-| --------------------------------------------------------- | ------------------------- | ------------------------------------------------------------------------- |
-| `DEPLOYMENT_MODE`                                         | `local`                   | `local` uses SQLite; `public` requires MariaDB/MySQL and accounts.        |
-| `AUTH_MODE`                                               | `none`                    | `none` or `account`; public mode requires `account`.                      |
-| `HTTP_BIND` / `HTTP_PORT`                                 | `127.0.0.1` / `3000`      | Listen address and port.                                                  |
-| `PUBLIC_URL`                                              | `http://localhost:3000`   | Canonical origin for links and origin checks.                             |
-| `DB_TYPE`                                                 | `sqlite`                  | `sqlite`, `mariadb`, or `mysql`.                                          |
-| `DB_FILE`                                                 | `./data/card-game.sqlite` | SQLite database path.                                                     |
-| `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD` | varies                    | Public database connection.                                               |
-| `SESSION_SECRET`                                          | generated locally         | Public mode requires an explicit stable secret of at least 32 characters. |
-| `CARD_MISSING_TRANSLATION`                                | `EXCLUDE`                 | `EXCLUDE` or explicit cross-language `FALLBACK`.                          |
-| `CARD_FALLBACK_LOCALE`                                    | `de-DE`                   | Card locale used only when fallback is enabled.                           |
-| `SMTP_*`                                                  | empty                     | Account activation, reset, and deletion mail transport.                   |
-| `OIDC_*`                                                  | disabled                  | Optional OpenID Connect provider settings.                                |
-| `TRUST_PROXY`                                             | `false`                   | Public mode requires the reverse proxy's positive hop count.              |
-| `LOG_LEVEL`                                               | `info`                    | Structured server log threshold, or `silent`.                             |
+| Variable                                                  | Default                   | Purpose                                                                           |
+| --------------------------------------------------------- | ------------------------- | --------------------------------------------------------------------------------- |
+| `DEPLOYMENT_MODE`                                         | `local`                   | `local` or `public` product/runtime behavior.                                     |
+| `PUBLIC_RUNTIME_SECURITY`                                 | `enforced`                | `enforced`, or explicit unsafe `development` override for administrator testing.  |
+| `AUTH_MODE`                                               | `none`                    | `none` or `account`; enforced public mode requires `account`.                     |
+| `HTTP_BIND` / `HTTP_PORT`                                 | `127.0.0.1` / `3000`      | Listen address and port.                                                          |
+| `ROOM_MAX_PARTICIPANTS` / `ROOM_MAX_PLAYERS`              | `100` / `100`             | Active device and represented-player limits per Room (2–1000).                    |
+| `ROOM_RECONNECT_GRACE_SECONDS`                            | `180`                     | Time a disconnected device can reclaim its place (minimum 120 seconds).           |
+| `PUBLIC_URL`                                              | `http://localhost:3000`   | Canonical origin for links and origin checks.                                     |
+| `DB_TYPE`                                                 | `sqlite`                  | `sqlite`, `mariadb`, or `mysql`.                                                  |
+| `DB_FILE`                                                 | `./data/card-game.sqlite` | SQLite database path.                                                             |
+| `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD` | varies                    | Public database connection.                                                       |
+| `SESSION_SECRET`                                          | generated locally         | Enforced public mode requires an explicit stable value of at least 32 characters. |
+| `CARD_MISSING_TRANSLATION`                                | `EXCLUDE`                 | `EXCLUDE` or explicit cross-language `FALLBACK`.                                  |
+| `CARD_FALLBACK_LOCALE`                                    | `de-DE`                   | Card locale used only when fallback is enabled.                                   |
+| `SMTP_*`                                                  | empty                     | Account activation, reset, and deletion mail transport.                           |
+| `OIDC_*`                                                  | disabled                  | Optional OpenID Connect provider settings.                                        |
+| `TRUST_PROXY`                                             | `false`                   | Enforced public mode requires the reverse proxy's positive hop count.             |
+| `LOG_LEVEL`                                               | `info`                    | Structured server log threshold, or `silent`.                                     |
+| `LOG_ERROR_DETAILS`                                       | `standard`                | `diagnostic` adds cause stacks and database/driver codes.                         |
+| `IMPRINT_URL` / `PRIVACY_POLICY_URL`                      | empty                     | Public HTTP(S) legal links shown in the SPA menu and settings.                    |
 
 All settings and validation rules are defined in
 [`src/modules/settings.ts`](./src/modules/settings.ts).
+
+For administrator-controlled development of public behavior, set
+`PUBLIC_RUNTIME_SECURITY=development`. This intentionally permits HTTP, SQLite,
+`AUTH_MODE=none`, the development Card fixture, generated session secrets, incomplete
+SMTP, and no trusted proxy; it also disables public origin checks, HSTS, and public
+HTTP/WebSocket abuse rate limits. `AUTH_MODE=account` can still be selected to exercise the complete
+account and persistence UI (use a local SMTP catcher for email flows). The server emits
+a warning event at every startup in this mode. Do not expose it to an untrusted network
+or use it as a production configuration. Complete OIDC configuration and canonical
+callback validation still apply when OIDC is enabled.
 
 ## Database and cards
 
@@ -112,8 +132,9 @@ newer immutable FULL snapshot transactionally before readiness. Producer UUIDs a
 stored unchanged; missing Cards, locales, and localizations are soft-disabled. See the
 [bundled Card catalog contract](./docs/contracts/card-catalog-v1.md).
 
-The checked-in four-Card catalog is a development fixture. Public startup deliberately
-refuses it; replace it with the producer-approved production artifact before deployment.
+The checked-in four-Card catalog is a development fixture. Enforced public startup and
+public release packaging deliberately refuse it; replace it with the producer-approved
+production artifact before deployment.
 
 ## Testing and quality checks
 
@@ -121,10 +142,19 @@ refuses it; replace it with the producer-approved production artifact before dep
 npm test                 # unit, integration, simulation, and architecture tests
 npm run test:unit
 npm run test:integration
+npm run test:mariadb:public # clean MariaDB public/auth/persistence integration flow
 npm run build
 npm run format:check
 npm run e2e              # requires Playwright browsers
 ```
+
+MariaDB test credentials can live in the ignored `tests/.env.test.local` and `.env.e2e`
+profiles. `npm run test:mariadb:reset` clears only database names containing `test` or
+`e2e`; the configured database user must be able to create and drop objects in those
+schemas. The public MariaDB suite clears its exact disposable schema before use.
+Set `E2E_DB_USE_TEST_PROFILE=1` in `.env.e2e` when one permission-scoped local MariaDB
+account/schema should serve both integration and Playwright runs. Playwright copies the
+ignored `TEST_DB_*` values into its server process without printing or duplicating secrets.
 
 Release layouts can be built and verified with:
 

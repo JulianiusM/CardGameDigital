@@ -3,6 +3,10 @@
     import NumberInput from "./NumberInput.svelte";
     import type { CardLocaleSummary, GameProfileSummary, RoomGameSettings } from "./multiplayer";
     import { dareTypeIds, operationalFlagIds, questionCategoryIds } from "./gameSettingsOptions";
+    import { updateLinkedRange } from "./linkedRange";
+    import BulkSelectionActions from "./BulkSelectionActions.svelte";
+    import LanguageSelector from "./LanguageSelector.svelte";
+    import LanguageOrderEditor from "./LanguageOrderEditor.svelte";
 
     export let settings: RoomGameSettings;
     export let profiles: readonly GameProfileSummary[] = [];
@@ -10,6 +14,7 @@
     export let showMode = true;
     export let showProfile = true;
     export let onChange: (settings: RoomGameSettings) => void;
+    export let onCardLocaleSelect: ((locale: string) => void) | undefined;
 
     const operationalFlagLabels: Record<string, string> = messages.boundaries.flags;
     $: includesDares = ["CLASSIC_TRUTH_OR_DARE", "RANDOM_TRUTH_OR_DARE"].includes(settings.mode);
@@ -43,6 +48,43 @@
                 maximumTypeStreak: profile.maximumTypeStreak,
                 letsTalkMetaInterval: profile.letsTalkMetaInterval,
             },
+        });
+    }
+    function chooseCardLocale(cardLocale: string): void {
+        update({
+            cardLocale,
+            cardFallbackLocales: settings.cardFallbackLocales.filter(
+                (fallback) => fallback !== cardLocale,
+            ),
+        });
+        onCardLocaleSelect?.(cardLocale);
+    }
+
+    function toggleCardFallback(enabled: boolean): void {
+        const existing = settings.cardFallbackLocales.filter(
+            (fallback) => fallback !== settings.cardLocale,
+        );
+        const defaultFallback = localeOptions.find(({ id }) => id !== settings.cardLocale)?.id;
+        update({
+            cardFallbackEnabled: enabled,
+            cardFallbackLocales:
+                enabled && existing.length === 0 && defaultFallback ? [defaultFallback] : existing,
+        });
+    }
+    function changeIntensity(changed: "start" | "end", value: number): void {
+        const range = updateLinkedRange(
+            {
+                start: settings.configuration.startingIntensity,
+                end: settings.configuration.maximumIntensity,
+            },
+            changed,
+            value,
+            1,
+            5,
+        );
+        updateConfiguration({
+            startingIntensity: range.start as 1 | 2 | 3 | 4 | 5,
+            maximumIntensity: range.end as 1 | 2 | 3 | 4 | 5,
         });
     }
 </script>
@@ -86,18 +128,31 @@
 
     <section class="settings-section-card priority-setting">
         <h3>{messages.room.cardLanguage}</h3>
-        <div class="choice-chip-grid compact locale-options">
-            {#each localeOptions as locale}
-                <button
-                    type="button"
-                    class:selected={settings.cardLocale === locale.id}
-                    aria-pressed={settings.cardLocale === locale.id}
-                    on:click={() => update({ cardLocale: locale.id })}
-                >
-                    <strong>{locale.nativeName}</strong><small>{locale.id}</small>
-                </button>
-            {/each}
-        </div>
+        <LanguageSelector
+            options={localeOptions}
+            selected={settings.cardLocale}
+            label={messages.room.cardLanguage}
+            onSelect={chooseCardLocale}
+        />
+        <label class="setting-row card-fallback-toggle">
+            <span
+                ><strong>{messages.settings.cardFallback}</strong><small
+                    >{messages.settings.cardFallbackHint}</small
+                ></span
+            >
+            <input
+                type="checkbox"
+                checked={settings.cardFallbackEnabled}
+                on:change={(event) => toggleCardFallback(event.currentTarget.checked)}
+            />
+        </label>
+        {#if settings.cardFallbackEnabled}
+            <LanguageOrderEditor
+                options={localeOptions.filter(({ id }) => id !== settings.cardLocale)}
+                order={settings.cardFallbackLocales}
+                onChange={(cardFallbackLocales) => update({ cardFallbackLocales })}
+            />
+        {/if}
     </section>
 
     {#if showProfile && profiles.length}
@@ -139,12 +194,9 @@
             <input
                 type="range"
                 min="1"
-                max={settings.configuration.maximumIntensity}
+                max="5"
                 value={settings.configuration.startingIntensity}
-                on:input={(event) =>
-                    updateConfiguration({
-                        startingIntensity: Number(event.currentTarget.value) as 1 | 2 | 3 | 4 | 5,
-                    })}
+                on:input={(event) => changeIntensity("start", Number(event.currentTarget.value))}
             />
         </label>
         <label class="setting-row">
@@ -155,13 +207,10 @@
             >
             <input
                 type="range"
-                min={settings.configuration.startingIntensity}
+                min="1"
                 max="5"
                 value={settings.configuration.maximumIntensity}
-                on:input={(event) =>
-                    updateConfiguration({
-                        maximumIntensity: Number(event.currentTarget.value) as 1 | 2 | 3 | 4 | 5,
-                    })}
+                on:input={(event) => changeIntensity("end", Number(event.currentTarget.value))}
             />
         </label>
         <div class="setting-row progression-setting">
@@ -282,7 +331,16 @@
     </section>
 
     <section class="settings-section-card">
-        <h3>{messages.setup.questionsHeading}</h3>
+        <div class="selection-section-heading">
+            <h3>{messages.setup.questionsHeading}</h3>
+            <BulkSelectionActions
+                onAll={() =>
+                    updateConfiguration({
+                        enabledQuestionCategoryIds: [...questionCategoryIds],
+                    })}
+                onNone={() => updateConfiguration({ enabledQuestionCategoryIds: [] })}
+            />
+        </div>
         <div class="toggle-chip-grid">
             {#each questionCategoryIds as id}
                 <button
@@ -303,7 +361,13 @@
 
     {#if includesDares}
         <section class="settings-section-card">
-            <h3>{messages.setup.daresHeading}</h3>
+            <div class="selection-section-heading">
+                <h3>{messages.setup.daresHeading}</h3>
+                <BulkSelectionActions
+                    onAll={() => updateConfiguration({ enabledDareTypeIds: [...dareTypeIds] })}
+                    onNone={() => updateConfiguration({ enabledDareTypeIds: [] })}
+                />
+            </div>
             <div class="toggle-chip-grid">
                 {#each dareTypeIds as id}
                     <button
@@ -324,7 +388,14 @@
     {/if}
 
     <section class="settings-section-card">
-        <h3>{messages.setup.operationsHeading}</h3>
+        <div class="selection-section-heading">
+            <h3>{messages.setup.operationsHeading}</h3>
+            <BulkSelectionActions
+                onAll={() => updateConfiguration({ blockedOperationalFlags: [] })}
+                onNone={() =>
+                    updateConfiguration({ blockedOperationalFlags: [...operationalFlagIds] })}
+            />
+        </div>
         <div class="toggle-chip-grid">
             {#each operationalFlagIds as id}
                 <button

@@ -49,8 +49,8 @@ export class TypeOrmCardRepository implements CardRepository {
 
     private localizedQuery(localization: CardLocalizationPolicy) {
         const locales = [localization.locale];
-        if (localization.missingTranslation === "FALLBACK" && localization.fallbackLocale) {
-            locales.push(localization.fallbackLocale);
+        if (localization.missingTranslation === "FALLBACK" && localization.fallbackLocales) {
+            locales.push(...localization.fallbackLocales);
         }
         return this.cards
             .createQueryBuilder("card")
@@ -66,9 +66,9 @@ export class TypeOrmCardRepository implements CardRepository {
 
     private toDomain(entity: CardEntity, localization: CardLocalizationPolicy): PlayableCard {
         const exact = entity.localizations.find((entry) => entry.locale === localization.locale);
-        const fallback = entity.localizations.find(
-            (entry) => entry.locale === localization.fallbackLocale,
-        );
+        const fallback = localization.fallbackLocales
+            ?.map((locale) => entity.localizations.find((entry) => entry.locale === locale))
+            .find((entry) => entry !== undefined);
         const localized = exact ?? fallback;
         if (!localized) throw new Error("Localized card query returned no usable localization");
         return cardEntityToDomain(entity, localized);

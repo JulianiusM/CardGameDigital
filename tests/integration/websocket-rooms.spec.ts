@@ -117,6 +117,21 @@ class Repo implements RealtimeRoomRepository {
         for (const participant of this.participants)
             if (participant.roomId === roomId) participant.connectionStatus = "LEFT";
     }
+    async closeRoomIfNoPlayers(roomId: string) {
+        const active = this.participants.filter(
+            (participant) =>
+                participant.roomId === roomId && participant.connectionStatus !== "LEFT",
+        );
+        if (
+            active.some(
+                ({ role, connectionStatus }) =>
+                    role !== "DISPLAY" || connectionStatus === "CONNECTED",
+            )
+        )
+            return false;
+        for (const participant of active) participant.connectionStatus = "LEFT";
+        return true;
+    }
     async loadSettings() {
         return this.settings;
     }
@@ -480,6 +495,51 @@ describe("Room WebSocket protocol", () => {
             "HOST",
         );
 
+        playerClient.socket.terminate();
+        await new Promise<void>((resolve) => wss.close(() => resolve()));
+    });
+
+    it("keeps a connected display open and promotes the next joining player", async () => {
+        const repository = new Repo();
+        const service = new RoomService(repository, cards, new SequenceRandomSource([0]));
+        const host = await service.createRoom("Host");
+        const display = await service.joinRoom(host.roomCode, "Screen", "DISPLAY");
+        server = http.createServer();
+        const wss = attachWebSocketServer(server, service, { hostDisconnectGraceMs: 20 });
+        await new Promise<void>((resolve) => server!.listen(0, "127.0.0.1", resolve));
+        const port = (server.address() as { port: number }).port;
+        const hostClient = await hello(port, host.roomCode, host.participantCredential, host.role);
+        const displayClient = await hello(
+            port,
+            display.roomCode,
+            display.participantCredential,
+            display.role,
+        );
+
+        hostClient.socket.terminate();
+        await waitFor(() =>
+            displayClient.messages.some(
+                (message) =>
+                    message.type === "room.participantLeft" &&
+                    message.payload.participantId === host.participantId,
+            ),
+        );
+        expect(displayClient.socket.readyState).toBe(WebSocket.OPEN);
+
+        const joiningPlayer = await service.joinRoom(host.roomCode, "New host", "PLAYER");
+        const playerClient = await hello(
+            port,
+            joiningPlayer.roomCode,
+            joiningPlayer.participantCredential,
+            joiningPlayer.role,
+        );
+        await waitFor(() =>
+            playerClient.messages.some(
+                (message) => message.type === "server.hello" && message.payload.role === "HOST",
+            ),
+        );
+
+        displayClient.socket.terminate();
         playerClient.socket.terminate();
         await new Promise<void>((resolve) => wss.close(() => resolve()));
     });

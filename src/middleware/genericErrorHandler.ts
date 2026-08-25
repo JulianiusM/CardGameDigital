@@ -2,7 +2,7 @@ import { MESSAGE_KEYS } from "../packages/localization/keys";
 import type { NextFunction, Request, Response } from "express";
 import { APIError, ExpectedError, ValidationError } from "../modules/lib/errors";
 import settings from "../modules/settings";
-import { logEvent, safeErrorName } from "../modules/structuredLogger";
+import { configuredErrorLogFields, logEvent } from "../modules/structuredLogger";
 import { detectLocale, translate, translateError } from "../packages/localization/messages";
 
 export function handleGenericError(
@@ -18,7 +18,7 @@ export function handleGenericError(
             "http.unhandled_error",
             {
                 requestId: response.locals.requestId,
-                errorName: safeErrorName(error),
+                ...configuredErrorLogFields(error, settings.value),
             },
             settings.value.logLevel,
         );

@@ -840,6 +840,10 @@ Every Session has one selected:
 
 This determines which localized Card text is eligible and displayed.
 
+New setup flows initially match Card Language to the effective interface language when
+that language exists in the Card catalog. A Card language that the person explicitly
+selected is remembered separately and takes precedence on later games.
+
 Examples:
 
 ```text id="g41r5w"
@@ -1037,9 +1041,9 @@ de-AT
 
 For Card content, silent fallback is disabled by default.
 
-A deployment or Session may explicitly enable:
+A deployment or Session may explicitly enable an ordered fallback list:
 
-> Missing translations → use configured fallback Card language
+> Missing translations → try configured fallback Card languages in order
 
 but the default is:
 
@@ -1415,6 +1419,9 @@ Rooms have:
 - connected clients;
 - current Session where applicable.
 
+Every Room device always shows the current represented-player count and configured
+maximum while it has an authoritative Room snapshot.
+
 Accounts are not required for ordinary Room participants.
 
 ---
@@ -1436,6 +1443,10 @@ Examples:
 - Anna & Ben
 
 The host deliberately selects which Group history applies.
+
+The owner may fully delete a Group. This removes its name/member list and clears every
+saved default or historical Group association; the underlying Session history remains
+available as ungrouped account history.
 
 ---
 
@@ -1731,10 +1742,44 @@ The canonical Host wizard sequence is:
 4. Customize Experience;
 5. Screen Selection.
 
+**Host Game** always opens this wizard with **No Group** selected. A saved Group is
+preselected only when the host deliberately uses **Continue Group** from the main menu.
+Selecting a built-in GameProfile, including reselecting the currently highlighted
+profile, restores that profile's canonical values before Customize Experience. Custom
+starts from its neutral catalog seed until an authenticated or local player completes
+setup with a Custom configuration in the current setup scope. No Group uses the
+DataSpace's dedicated quick-round snapshot; every saved Group owns a separate Custom
+snapshot. Selecting or continuing a Group restores that Group's snapshot, while returning
+to No Group restores the quick-round snapshot. Configuring any other profile must not
+overwrite either snapshot. Anonymous public quick rounds never write one.
+
+Select Group is disabled while the current DataSpace has no Groups. Deleting the final
+Group immediately returns setup to No Group rather than presenting an empty selector.
+The setup wizard keeps only the frequent in-context actions: select an existing Group or
+quickly create one. Renaming people, resetting Card history, and fully deleting a Group
+belong to the dedicated Groups section of the Account screen. Both selection surfaces
+provide name/member search and bounded pages so hundreds of Groups do not create an
+unbounded setup or management screen.
+
 Customize Experience contains the complete canonical settings editor, including Card
 Language and all mode-specific settings. For `Ich hab noch nie`, this is where the Host
 selects **Anonym** or **Antworten offen**. It is not repeated as a separate wizard page.
 Anonymous aggregate is the default.
+
+Card-language setup follows the same scope boundary. A saved Group and the no-Group
+quick-round scope each remember their primary Card language, whether fallback is enabled,
+and their ordered Card fallback languages. Before the quick-round scope has been saved,
+the account/device Card-language preferences seed it. A grouped round must not overwrite
+those quick-round preferences or defaults.
+
+Both intensity handles retain the full 1–5 range. Crossing the end handle below start
+moves start with it; crossing start above end moves end with it. Category, DareType, and
+operational-rule sections each expose explicit All active and None active actions.
+
+When an account is signed in, its display name prefills Host and joining-player name
+fields. The player may still edit it for the current Room. In Couch mode, **Another
+round** preserves the exact roster, while **New game** returns to player setup and
+restores the account name as the first no-Group player.
 
 After Screen Selection, Couch starts local player setup and the other screen choices
 create a Room. Join Game asks for participant name and Room code; Display Only asks for
@@ -1910,6 +1955,20 @@ The interface should clearly distinguish:
 - Card language
 
 where both are configurable.
+
+Every language selector provides text search by native name, localized name, and locale
+code, so the interaction remains practical when hundreds of languages are installed.
+
+The settings UI provides an explicit interface-language picker and a **Use system
+language** switch. System mode follows the browser's current language list without
+writing an automatic account choice. An explicit interface or Card language selection
+is saved locally and, when authenticated, on the User account. The account also owns an
+ordered language fallback list. Interface resolution tries the requested/system
+languages, the account order, and finally the central registry default deterministically.
+
+Interface language remains separate from the per-Session Card language. Game setup can
+explicitly enable Card fallback and order the active catalog locales to try; it is off by
+default so a game never becomes mixed-language silently.
 
 ---
 

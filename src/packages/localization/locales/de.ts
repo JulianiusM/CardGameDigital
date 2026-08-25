@@ -15,6 +15,7 @@ export const de = {
         "account.invalidReset": "Der Link ist ungültig oder abgelaufen.",
         "account.usernameMismatch": "Der Benutzername stimmt nicht überein.",
         "account.dataSpaceNotFound": "DataSpace nicht gefunden.",
+        "account.lastDataSpace": "Ein Konto muss mindestens einen DataSpace behalten.",
         "account.noDataSpace": "Kein DataSpace ausgewählt.",
         "account.authenticationRequired": "Anmeldung erforderlich.",
         "account.sessionNotFound": "Sitzung nicht gefunden.",

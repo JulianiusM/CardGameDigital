@@ -8,4 +8,8 @@ describe("bundled Card catalog deployment policy", () => {
             /refuses the bundled development Card catalog/,
         );
     });
+
+    it("allows the development fixture only through an explicit runtime override", () => {
+        expect(bundledCardCatalogArtifact("public", true).catalog.catalogId).toBe("development");
+    });
 });

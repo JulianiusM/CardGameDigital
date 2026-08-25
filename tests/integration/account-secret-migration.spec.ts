@@ -61,8 +61,8 @@ describe("account secret migration", () => {
         });
         expect(stored?.resetTokenHash).toHaveLength(64);
         expect(await verifyPasswordResetToken(reset)).toMatchObject({ id: userId });
-        expect(await consumePasswordResetToken(reset, "new-password")).toBe(true);
-        expect(await consumePasswordResetToken(reset, "another-password")).toBe(false);
+        expect(await consumePasswordResetToken(reset, "new-password")).toBe(userId);
+        expect(await consumePasswordResetToken(reset, "another-password")).toBeNull();
         expect(await verifyPasswordResetToken(reset)).toBeNull();
     });
 

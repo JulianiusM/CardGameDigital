@@ -28,12 +28,15 @@ The Couch UI supports:
 - skip, advance, explicit pool exhaustion, and end Session;
 - responsive layout and reduced-motion behavior.
 
-## Authority and privacy
+## Authority, persistence, and privacy
 
-Runtime state is server-authoritative and durably stored through the Couch Session
-repository, never browser storage. Commands include the current revision and stale
-revisions are rejected. Proposed mutations are persisted before the in-memory cache is
-replaced, and same-Session commands are serialized.
+Runtime state is server-authoritative and never browser-authoritative. Creation makes an
+explicit persistence decision. `EPHEMERAL` is the default in every deployment and keeps
+the active Session only in process memory, with no account, Couch Session,
+CardAppearance, or Group-history rows. `DATASPACE` requires the authenticated account's
+current DataSpace; commands are owner-scoped, mutations are persisted transactionally
+before the in-memory cache is replaced, and the Session can recover after restart.
+Same-Session commands are serialized and all commands carry optimistic revisions.
 Snapshots use the shared application voting projection. They expose every required
 voter's Pending/Voted completion without answer values during collection. Anonymous
 results remain aggregate-only; named values appear together only after completion.

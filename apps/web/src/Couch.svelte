@@ -21,10 +21,15 @@
         type CardLocaleSummary,
         type GameProfileSummary,
     } from "./multiplayer";
+    import { authentication, refreshAuthentication } from "./authentication";
 
     const setup = loadSetup();
+    const sessionStorageKey = "party-game:couch-session";
     let mode = (gameModes.find((item) => item[0] === setup.mode) ?? gameModes[0])[0];
-    let playerNames = setup.groupMembers.length >= 2 ? [...setup.groupMembers] : ["Anna", "Ben"];
+    let playerNames =
+        setup.groupMembers.length >= 2
+            ? [...setup.groupMembers]
+            : [setup.hostName.trim() || messages.room.namePlaceholder, "Ben"];
     let session: Snapshot | null = null;
     let busy = false;
     let settingsOpen = false;
@@ -45,12 +50,26 @@
     }
 
     onMount(async () => {
-        const [loadedLocales, loadedProfiles] = await Promise.all([
-            loadCardLocales(),
-            loadGameProfiles(),
-        ]);
-        cardLocales = loadedLocales.locales;
-        profiles = loadedProfiles;
+        try {
+            const storedSessionId = sessionStorage.getItem(sessionStorageKey);
+            const [loadedLocales, loadedProfiles, restoredSession, authenticationStatus] =
+                await Promise.all([
+                    loadCardLocales(),
+                    loadGameProfiles(),
+                    storedSessionId ? couchApi.get(storedSessionId).catch(() => null) : null,
+                    refreshAuthentication(),
+                ]);
+            cardLocales = loadedLocales.locales;
+            profiles = loadedProfiles;
+            if (restoredSession) session = restoredSession;
+            else if (storedSessionId) sessionStorage.removeItem(sessionStorageKey);
+            prefillAccountPlayer(authenticationStatus.account?.user.name ?? "");
+        } catch (cause) {
+            showNotification(
+                cause instanceof Error ? cause.message : messages.common.connectionFailed,
+                "error",
+            );
+        }
     });
 
     function setPlayer(index: number, value: string): void {
@@ -71,6 +90,7 @@
         try {
             const snapshot = await action();
             session = snapshot;
+            sessionStorage.setItem(sessionStorageKey, snapshot.id);
         } catch (cause) {
             if (cause instanceof ApiError && cause.code === "CARD_POOL_EXHAUSTED") {
                 if (session) exhausted = true;
@@ -97,6 +117,8 @@
         presentation.playEffect("confirm");
         void run(() =>
             couchApi.create({
+                persistence:
+                    setup.groupChoice === "SELECT" && setup.groupId ? "DATASPACE" : "EPHEMERAL",
                 mode,
                 players,
                 configuration: {
@@ -116,6 +138,8 @@
                 adultContentConfirmed: setup.adultContentConfirmed,
                 groupId: setup.groupChoice === "SELECT" ? setup.groupId : null,
                 cardLocale: setup.cardLocale,
+                cardFallbackEnabled: setup.cardFallbackEnabled,
+                cardFallbackLocales: setup.cardFallbackLocales,
                 neverHaveIEverRevealMode: setup.neverHaveIEverRevealMode,
             }),
         );
@@ -125,10 +149,33 @@
         if (session) void run(() => couchApi.command(session!, name, payload));
     }
     function backToMain(): void {
+        sessionStorage.removeItem(sessionStorageKey);
         resetSetup("intent");
         navigate("/play/", { force: true });
     }
     $: elapsedMinutes = minutesSince(session?.startedAt ?? Date.now());
+
+    function clearSession(): void {
+        sessionStorage.removeItem(sessionStorageKey);
+        session = null;
+    }
+    function prefillAccountPlayer(accountName: string, force = false): void {
+        const preferredName = accountName.trim();
+        if (!preferredName || (setup.groupChoice === "SELECT" && setup.groupMembers.length >= 2))
+            return;
+        const currentName = playerNames[0]?.trim() ?? "";
+        const setupName = setup.hostName.trim();
+        const replaceable =
+            force ||
+            !currentName ||
+            currentName === messages.room.namePlaceholder ||
+            currentName === setupName;
+        if (replaceable) playerNames = [preferredName, ...playerNames.slice(1)];
+    }
+    function startNewGameSetup(): void {
+        clearSession();
+        prefillAccountPlayer($authentication.account?.user.name ?? "", true);
+    }
 </script>
 
 <main class:playing={session} class="couch-shell">
@@ -178,10 +225,10 @@
                 roundNumber={session.roundNumber}
                 {elapsedMinutes}
                 onAnotherRound={() => {
-                    session = null;
+                    clearSession();
                     createSession();
                 }}
-                onNewGame={() => (session = null)}
+                onNewGame={startNewGameSetup}
                 onExit={backToMain}
                 exitLabel={messages.common.backToMain}
             />

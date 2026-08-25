@@ -18,6 +18,8 @@ beforeAll(async () => {
         DB_TYPE: "sqlite",
         DB_FILE: path.join(directory, "rooms.sqlite"),
         SESSION_SECRET: "room_http_test_secret_123",
+        ROOM_MAX_PARTICIPANTS: "20",
+        ROOM_MAX_PLAYERS: "20",
     });
     await settings.read("/dev/null");
     await initDataSource();
@@ -74,6 +76,11 @@ describe("Room HTTP API", () => {
     it("reports that Account UI is unavailable for AUTH_MODE=none", async () => {
         const response = await request(app).get("/api/v1/server-info").expect(200);
         expect(response.body.authenticationAvailable).toBe(false);
+        expect(response.body.publicRuntimeSecurity).toBe("enforced");
+        expect(response.body.roomCapacity).toEqual({
+            maximumParticipants: 20,
+            maximumPlayers: 20,
+        });
         expect(response.headers["x-content-type-options"]).toBe("nosniff");
         expect(response.headers["x-frame-options"]).toBe("DENY");
         expect(response.headers["content-security-policy"]).toContain("script-src 'self'");
@@ -81,6 +88,32 @@ describe("Room HTTP API", () => {
         expect(response.headers["x-request-id"]).toMatch(
             /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
         );
+    });
+
+    it("allows the explicit public development policy to bypass runtime transport gates", async () => {
+        const originalMode = settings.value.deploymentMode;
+        const originalSecurity = settings.value.publicRuntimeSecurity;
+        settings.value.deploymentMode = "public";
+        settings.value.publicRuntimeSecurity = "enforced";
+        try {
+            const rejected = await request(app)
+                .post("/api/v1/rooms")
+                .send({ displayName: "No origin", persistence: "EPHEMERAL" })
+                .expect(403);
+            expect(rejected.headers["strict-transport-security"]).toBeTruthy();
+
+            settings.value.publicRuntimeSecurity = "development";
+            const created = await request(app)
+                .post("/api/v1/rooms")
+                .send({ displayName: "Developer", persistence: "EPHEMERAL" })
+                .expect(201);
+            expect(created.headers["strict-transport-security"]).toBeUndefined();
+            const info = await request(app).get("/api/v1/server-info").expect(200);
+            expect(info.body.publicRuntimeSecurity).toBe("development");
+        } finally {
+            settings.value.deploymentMode = originalMode;
+            settings.value.publicRuntimeSecurity = originalSecurity;
+        }
     });
 
     it("serves built-in GameProfiles plus an explicit neutral Custom option", async () => {
@@ -154,7 +187,11 @@ describe("Room HTTP API", () => {
             .post("/api/v1/rooms")
             .send({ displayName: "" })
             .expect(400)
-            .expect(({ body }) => expect(body.error.code).toBe("VALIDATION_ERROR"));
+            .expect(({ body }) => {
+                expect(body.error.code).toBe("VALIDATION_ERROR");
+                expect(body.error.data.fieldErrors.displayName).toEqual(expect.any(Array));
+                expect(body.error.details).toBeUndefined();
+            });
         const host = await request(app)
             .post("/api/v1/rooms")
             .send({ displayName: "Only host" })

@@ -47,7 +47,16 @@
             </div>{/if}
         <div>
             <dt>{messages.room.cardLanguage}</dt>
-            <dd>{cardLocale?.nativeName ?? settings.cardLocale} · {settings.cardLocale}</dd>
+            <dd>
+                {cardLocale?.nativeName ?? settings.cardLocale} · {settings.cardLocale}
+                {#if settings.cardFallbackEnabled}
+                    <small
+                        >{messages.settings.cardFallback}: {settings.cardFallbackLocales.join(
+                            " → ",
+                        )}</small
+                    >
+                {/if}
+            </dd>
         </div>
         <div>
             <dt>{messages.room.profile}</dt>

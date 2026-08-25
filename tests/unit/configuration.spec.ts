@@ -21,11 +21,68 @@ describe("deployment configuration", () => {
         const settings = resolveSettings({}, "/definitely/missing/settings.csv");
         expect(settings).toMatchObject({
             deploymentMode: "local",
+            publicRuntimeSecurity: "enforced",
             authMode: "none",
             dbType: "sqlite",
             cardMissingTranslation: "EXCLUDE",
             cardFallbackLocale: "de-DE",
+            roomMaximumParticipants: 100,
+            roomMaximumPlayers: 100,
+            roomReconnectGraceSeconds: 180,
+            logErrorDetails: "standard",
         });
+    });
+
+    it("allows an administrator to run public behavior with explicit development security", () => {
+        const settings = resolveSettings(
+            {
+                DEPLOYMENT_MODE: "public",
+                PUBLIC_RUNTIME_SECURITY: "development",
+                AUTH_MODE: "none",
+                DB_TYPE: "sqlite",
+                PUBLIC_URL: "http://192.0.2.10:3000",
+                TRUST_PROXY: "false",
+                LOG_ERROR_DETAILS: "diagnostic",
+            },
+            "/definitely/missing/settings.csv",
+        );
+        expect(settings).toMatchObject({
+            deploymentMode: "public",
+            publicRuntimeSecurity: "development",
+            authMode: "none",
+            dbType: "sqlite",
+            publicUrl: "http://192.0.2.10:3000",
+            trustProxy: false,
+            logErrorDetails: "diagnostic",
+        });
+    });
+
+    it("allows canonical HTTP OIDC endpoints only under explicit public development security", () => {
+        const environment = {
+            DEPLOYMENT_MODE: "public",
+            PUBLIC_RUNTIME_SECURITY: "development",
+            AUTH_MODE: "account",
+            DB_TYPE: "sqlite",
+            PUBLIC_URL: "http://localhost:3000",
+            OIDC_ENABLED: "true",
+            OIDC_ISSUER: "http://identity.local:8080",
+            OIDC_CLIENT_ID: "party-game",
+            OIDC_CLIENT_SECRET: "development-oidc-secret",
+            OIDC_REDIRECT_URL: "http://localhost:3000/api/v1/account/oidc/callback",
+            OIDC_NAME: "Development Identity",
+        } satisfies NodeJS.ProcessEnv;
+        const settings = resolveSettings(environment, "/definitely/missing/settings.csv");
+        expect(settings).toMatchObject({ oidcEnabled: true, publicRuntimeSecurity: "development" });
+
+        expect(() =>
+            resolveSettings(
+                {
+                    ...environment,
+                    OIDC_REDIRECT_URL: "http://localhost:3000/wrong-callback",
+                },
+                "/definitely/missing/settings.csv",
+            ),
+        ).toThrow(/canonical callback/);
     });
 
     it("allows the explicit E2E runtime to exercise MariaDB without public transport", () => {
@@ -44,6 +101,51 @@ describe("deployment configuration", () => {
         expect(settings).toMatchObject({ testMode: true, dbType: "mariadb" });
     });
 
+    it("allows public semantics over HTTP only on loopback in the explicit E2E runtime", () => {
+        const settings = resolveSettings(
+            {
+                NODE_ENV: "e2e",
+                E2E_DEPLOYMENT_MODE: "public",
+                E2E_AUTH_MODE: "account",
+                E2E_DB_TYPE: "mariadb",
+                E2E_DB_NAME: "party_game_e2e",
+                E2E_DB_USER: "tester",
+                E2E_DB_PASSWORD: "secret",
+                E2E_PUBLIC_URL: "http://127.0.0.1:3001",
+                E2E_SESSION_SECRET: "e2e-session-secret-that-is-at-least-32-characters",
+                E2E_SMTP_HOST: "smtp.example.test",
+                E2E_SMTP_USER: "mailer",
+                E2E_SMTP_PASSWORD: "mail-password",
+                E2E_SMTP_EMAIL: "cards@example.test",
+                E2E_TRUST_PROXY: "1",
+            },
+            "/dev/null",
+        );
+        expect(settings).toMatchObject({
+            deploymentMode: "public",
+            testMode: true,
+            publicUrl: "http://127.0.0.1:3001",
+        });
+    });
+
+    it("does not allow the E2E HTTP exception on a non-loopback public origin", () => {
+        expect(() =>
+            resolveSettings(
+                {
+                    NODE_ENV: "e2e",
+                    ...Object.fromEntries(
+                        Object.entries(safePublicEnvironment).map(([key, value]) => [
+                            `E2E_${key}`,
+                            value,
+                        ]),
+                    ),
+                    E2E_PUBLIC_URL: "http://cards.example",
+                },
+                "/dev/null",
+            ),
+        ).toThrow(/HTTP loopback is E2E-only/);
+    });
+
     it("applies environment variables over the optional configuration file", () => {
         const settings = resolveSettings(
             {
@@ -51,6 +153,9 @@ describe("deployment configuration", () => {
                 HTTP_PORT: "8443",
                 CARD_MISSING_TRANSLATION: "FALLBACK",
                 CARD_FALLBACK_LOCALE: "en-GB",
+                ROOM_MAX_PARTICIPANTS: "250",
+                ROOM_MAX_PLAYERS: "300",
+                ROOM_RECONNECT_GRACE_SECONDS: "240",
             },
             "/definitely/missing/settings.csv",
         );
@@ -59,6 +164,45 @@ describe("deployment configuration", () => {
         expect(settings.trustProxy).toBe(1);
         expect(settings.cardMissingTranslation).toBe("FALLBACK");
         expect(settings.cardFallbackLocale).toBe("en-GB");
+        expect(settings.roomMaximumParticipants).toBe(250);
+        expect(settings.roomMaximumPlayers).toBe(300);
+        expect(settings.roomReconnectGraceSeconds).toBe(240);
+    });
+
+    it("accepts only public HTTP(S) legal links", () => {
+        expect(
+            resolveSettings(
+                {
+                    IMPRINT_URL: "https://legal.example.test/imprint",
+                    PRIVACY_POLICY_URL: "http://legal.example.test/privacy",
+                },
+                "/definitely/missing/settings.csv",
+            ),
+        ).toMatchObject({
+            imprintUrl: "https://legal.example.test/imprint",
+            privacyPolicyUrl: "http://legal.example.test/privacy",
+        });
+        expect(() =>
+            resolveSettings(
+                { IMPRINT_URL: "javascript:alert(1)" },
+                "/definitely/missing/settings.csv",
+            ),
+        ).toThrow(/HTTP\(S\) URL/);
+    });
+
+    it("rejects unknown public-runtime and error-detail policies", () => {
+        expect(() =>
+            resolveSettings(
+                { ...safePublicEnvironment, PUBLIC_RUNTIME_SECURITY: "disabled" },
+                "/definitely/missing/settings.csv",
+            ),
+        ).toThrow();
+        expect(() =>
+            resolveSettings(
+                { ...safePublicEnvironment, LOG_ERROR_DETAILS: "everything" },
+                "/definitely/missing/settings.csv",
+            ),
+        ).toThrow();
     });
 
     it("rejects unsafe deployment/database combinations before initialization", () => {

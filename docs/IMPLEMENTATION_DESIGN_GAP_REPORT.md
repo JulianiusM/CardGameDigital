@@ -23,17 +23,36 @@ tests, assets, and release automation were inspected together.
   real production Card release.
 - The implemented intensity-offset table is the current canonical table and is now
   identical in game-core, the GDD, and its tests.
+- Every publicly served media file has a runtime consumer: scene audio is selected by
+  `presentation.ts`, Card-family SVGs by `GameCard`, and the two symbol sprites by the
+  adaptive backdrop and UI icon components. The offline-assets test compares the exact
+  public directory inventory, so an unreferenced extra or missing expected asset fails.
+- Public mode keeps anonymous Quick Round available for Couch, Personal, and Party
+  Screen play. Durable Couch/Room selection is an explicit authenticated DataSpace
+  decision, and the same themed SPA covers activation recovery, password login/reset,
+  DataSpaces, login sessions, export, logout, and deletion.
+- The clean MariaDB 10.11 public integration suite verifies every game mode without an
+  account plus authenticated persistence, ownership/cascades, activation, reset,
+  session revocation, and privacy-safe export. A public-mode Playwright workflow covers
+  the corresponding browser experience.
+- No-Group quick rounds and every saved Group own separate complete Custom and
+  Card-language defaults. Browser regression coverage switches between two Groups and
+  No Group to prove values do not leak across scopes.
+- Configured imprint and privacy-policy destinations are startup-validated, exposed as
+  public configuration only, and rendered as themed main-menu and Settings actions that
+  do not replace an active SPA game.
 
 ## Open release blockers and external gates
 
 - The repository contains only a four-Card development fixture, not the producer-owned,
-  editorially approved production catalog. Public startup and public packaging refuse
-  that fixture.
+  editorially approved production catalog. Enforced public startup and public packaging
+  refuse that fixture; the explicit unsafe public development runtime accepts it only
+  for administrator testing.
 - The complete migration chain, catalog advisory lock, and browser suite pass against
   MariaDB 10.11; release CI is configured to repeat those checks for each candidate.
 - SMTP delivery, a real OIDC provider, the deployed TLS/reverse-proxy topology, DNS,
-  certificates, firewall policy, backups, monitoring, and public browser account flows
-  require staging/operations verification.
+  certificates, firewall policy, backups, and monitoring require staging/operations
+  verification. The browser account flow itself is automated on public-mode loopback.
 - Portable server archives contain platform-native Node dependencies and must be built
   and smoke-tested on each supported operating system and architecture.
 - Public adult-content policy/legal review and final profile-to-catalog review remain

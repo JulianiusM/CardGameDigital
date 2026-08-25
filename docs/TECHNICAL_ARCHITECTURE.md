@@ -369,6 +369,7 @@ Defines:
 - HTTP DTOs;
 - WebSocket envelopes;
 - protocol versions;
+- configured Room participant/player capacity;
 - capability declarations;
 - machine-readable errors.
 
@@ -399,6 +400,7 @@ Characteristics:
 
 ```text id="3cq3pk"
 DEPLOYMENT_MODE=public
+PUBLIC_RUNTIME_SECURITY=enforced
 ```
 
 Characteristics:
@@ -409,6 +411,15 @@ Characteristics:
 - email;
 - optional OIDC;
 - public abuse controls.
+
+For administrator-controlled testing of the public SPA and server behavior without
+production infrastructure, `PUBLIC_RUNTIME_SECURITY=development` is an explicit unsafe
+override. It permits HTTP, SQLite, account-free quick play, the development Card fixture,
+and incomplete proxy/SMTP/secret configuration, and disables public Origin enforcement,
+HSTS, and HTTP/WebSocket abuse rate limits. Account authentication can remain enabled to exercise
+the full persistent experience. The override does not weaken server-side ownership,
+Room authority, password hashing, input validation, or OIDC callback validation. It must
+not be exposed to an untrusted network.
 
 ---
 
@@ -428,6 +439,7 @@ Important settings include:
 
 ```text id="ctwnbv"
 DEPLOYMENT_MODE
+PUBLIC_RUNTIME_SECURITY
 AUTH_MODE
 DB_TYPE
 DB_FILE
@@ -439,6 +451,8 @@ DB_PASSWORD
 HTTP_BIND
 HTTP_PORT
 PUBLIC_URL
+LOG_LEVEL
+LOG_ERROR_DETAILS
 DEFAULT_UI_LOCALE
 DEFAULT_CARD_LOCALE
 SOURCE_LOCALE
@@ -455,6 +469,7 @@ Portable production may intentionally run via LAN HTTP.
 Security behavior comes from:
 
 - deployment mode;
+- the explicit public runtime security policy;
 - configured public URL;
 - proxy settings;
 - explicit cookie policy.
@@ -771,7 +786,7 @@ Canonical card-content resolution:
 3. require `active=true`;
 4. if unavailable:
     - exclude Card by default;
-    - or apply explicit configured Card fallback policy.
+    - or try the Session's explicit ordered Card fallback locales.
 
 Silent fallback is not the default.
 
@@ -790,6 +805,12 @@ de-AT
 ```
 
 This does not alter Card-content fallback rules.
+
+The web localization composition root is the only registry of supported interface
+languages. Browser negotiation and selectors enumerate that registry; selectors do not
+maintain a second language list. User language preferences are nullable until the first
+manual choice, live on `User` rather than a DataSpace, and contain system/manual mode,
+explicit interface/Card locales, and a stable ordered fallback list.
 
 ---
 
@@ -1093,6 +1114,14 @@ Persistent user-controlled data belongs to a DataSpace.
 Local deployment creates one automatic DataSpace.
 
 Public deployment associates DataSpace with authenticated account ownership.
+
+DataSpace game settings keep the last applied no-Group Custom profile configuration and
+atomic Card-language settings value in dedicated validated snapshots. Each Group keeps
+its own values with the same shape; Card-language settings contain the primary locale,
+fallback switch, and ordered fallback locales. Completing grouped setup updates only that
+Group's values; completing no-Group setup updates only the DataSpace values and
+User/device primary Card-language preference. Built-in profile writes preserve Custom
+snapshots, and anonymous public quick rounds never write persistent setup defaults.
 
 `GameProfile` remains reserved for gameplay presets.
 
@@ -1601,12 +1630,15 @@ Local LAN is trusted less than localhost.
 
 # 79. Public HTTPS
 
-Public deployment requires:
+Enforced public deployment requires:
 
 - HTTPS;
 - WSS;
 - secure account cookies;
 - proxy configuration.
+
+An administrator may explicitly select the public development policy to test over HTTP;
+the runtime announces that unsafe state in its structured startup log.
 
 ---
 
@@ -1640,7 +1672,7 @@ Every external input must be validated:
 
 # 82. Rate Limiting
 
-Public deployment rate-limits:
+Enforced public deployment rate-limits:
 
 - login;
 - registration;
@@ -1649,6 +1681,9 @@ Public deployment rate-limits:
 - device pairing;
 - imports;
 - abusive realtime commands.
+
+The explicit public development security policy disables these abuse controls so an
+administrator can run high-volume/manual test workflows on a trusted network.
 
 ---
 

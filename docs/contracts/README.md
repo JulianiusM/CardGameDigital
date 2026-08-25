@@ -21,6 +21,7 @@ semantics, lifecycle, security, and failure behavior that types alone cannot exp
   requires a new contract version.
 - Error `code` is machine-readable. Localized `message` is for people and must not drive
   client logic.
-- HTTP clients should send `Accept-Language`; card language is a separate game setting.
+- HTTP clients should send `Accept-Language`; initial web setup may match it, but Card
+  language and ordered Card fallback remain explicit game settings.
 - Credentials and participant tokens are bearer secrets and must never appear in URLs,
   QR codes, logs, analytics, or public snapshots.

@@ -1,4 +1,5 @@
 import { locale, messages } from "./i18n";
+import { fetchJsonResponse } from "./http";
 
 export type Role = "HOST" | "PLAYER" | "DISPLAY";
 export type Participant = {
@@ -56,6 +57,7 @@ export type NeverHaveIEverVotingView = {
 };
 export type RoomSnapshot = {
     roomId: string;
+    capacity: { maximumParticipants: number; maximumPlayers: number };
     participants: Participant[];
     boundaryConfigured: boolean;
     settings: VersionedRoomGameSettings;
@@ -80,12 +82,20 @@ export type RoomGameSettings = {
     groupId: string | null;
     adultContentConfirmed: boolean;
     cardLocale: string;
+    cardFallbackEnabled: boolean;
+    cardFallbackLocales: string[];
     neverHaveIEverRevealMode: NeverHaveIEverRevealMode;
     configuration: EffectiveGameSettings;
 };
 export type PublicGameSettings = Pick<
     RoomGameSettings,
-    "mode" | "profileId" | "cardLocale" | "neverHaveIEverRevealMode" | "configuration"
+    | "mode"
+    | "profileId"
+    | "cardLocale"
+    | "cardFallbackEnabled"
+    | "cardFallbackLocales"
+    | "neverHaveIEverRevealMode"
+    | "configuration"
 >;
 export type VersionedRoomGameSettings = RoomGameSettings & {
     revision: number;
@@ -114,8 +124,16 @@ export type GroupSummary = {
     id: string;
     name: string;
     members: string[];
+    updatedAt: string;
     preferredProfileId: string | null;
+    customConfiguration: EffectiveGameSettings | null;
+    cardLanguageSettings: CardLanguageSettings | null;
     historyResetAt?: string | null;
+};
+export type CardLanguageSettings = {
+    cardLocale: string;
+    cardFallbackEnabled: boolean;
+    cardFallbackLocales: string[];
 };
 export type GameSettings = {
     preferredProfileId: string;
@@ -127,6 +145,8 @@ export type GameSettings = {
     randomQuestionRatio: number;
     letsTalkMetaInterval: number;
     defaultGroupId: string | null;
+    customConfiguration: EffectiveGameSettings;
+    cardLanguageSettings: CardLanguageSettings | null;
 };
 export type CardLocaleSummary = { id: string; nativeName: string; coverage: number };
 export type Join = {
@@ -139,11 +159,7 @@ export type Join = {
 type ErrorResponse = { error?: { message?: string } };
 
 async function json<T>(path: string, init: RequestInit): Promise<T> {
-    const response = await fetch(path, {
-        headers: { "accept-language": locale, "content-type": "application/json" },
-        ...init,
-    });
-    const body: unknown = await response.json();
+    const { response, body } = await fetchJsonResponse(path, init);
     if (!response.ok) {
         const error = body as ErrorResponse;
         throw new Error(error.error?.message ?? messages.common.requestFailed);
@@ -183,21 +199,26 @@ export async function loadHostConfiguration(): Promise<{
     settings: GameSettings;
 }> {
     const [groupResult, settingsResult] = await Promise.all([
-        json<{ groups: GroupSummary[] }>("/api/v1/groups", { method: "GET" }),
+        loadGroups().then((groups) => ({ groups })),
         json<{ settings: GameSettings }>("/api/v1/game-settings", { method: "GET" }),
     ]);
     return { groups: groupResult.groups, settings: settingsResult.settings };
 }
-export async function saveGameSettings(settings: GameSettings): Promise<void> {
-    await json<{ settings: GameSettings }>("/api/v1/game-settings", {
+export async function loadGroups(): Promise<GroupSummary[]> {
+    const result = await json<{ groups: GroupSummary[] }>("/api/v1/groups", { method: "GET" });
+    return result.groups;
+}
+export async function saveGameSettings(settings: GameSettings): Promise<GameSettings> {
+    const result = await json<{ settings: GameSettings }>("/api/v1/game-settings", {
         method: "PUT",
         body: JSON.stringify(settings),
     });
+    return result.settings;
 }
 export async function createGroup(
     name: string,
     members: string[],
-    preferredProfileId: string,
+    preferredProfileId?: string,
 ): Promise<GroupSummary> {
     return json<GroupSummary>("/api/v1/groups", {
         method: "POST",
@@ -211,6 +232,8 @@ export async function updateGroup(group: GroupSummary): Promise<GroupSummary> {
             name: group.name,
             members: group.members,
             preferredProfileId: group.preferredProfileId,
+            customConfiguration: group.customConfiguration,
+            cardLanguageSettings: group.cardLanguageSettings,
         }),
     });
 }
@@ -220,8 +243,16 @@ export async function resetGroupHistory(groupId: string): Promise<GroupSummary> 
         body: JSON.stringify({ confirmed: true }),
     });
 }
-export async function loadServerInfo(): Promise<{ authenticationAvailable: boolean }> {
-    return json<{ authenticationAvailable: boolean }>("/api/v1/server-info", { method: "GET" });
+export async function deleteGroup(groupId: string): Promise<void> {
+    await json<void>(`/api/v1/groups/${groupId}`, { method: "DELETE" });
+}
+export async function loadServerInfo(): Promise<{
+    deploymentMode: "local" | "public";
+    publicRuntimeSecurity: "enforced" | "development";
+    authenticationAvailable: boolean;
+    roomCapacity: { maximumParticipants: number; maximumPlayers: number };
+}> {
+    return json("/api/v1/server-info", { method: "GET" });
 }
 
 type ServerEnvelope = {
@@ -232,7 +263,7 @@ type ServerEnvelope = {
 export type ReconnectPhase =
     "CONNECTED" | "CONNECTING" | "WAITING" | "OFFLINE" | "STOPPED" | "EXHAUSTED";
 
-const MAX_RECONNECT_ATTEMPTS = 5;
+const MAX_RECONNECT_ATTEMPTS = 30;
 const CONNECT_TIMEOUT_MS = 5_000;
 
 export class RoomSocket {
@@ -458,7 +489,7 @@ export class RoomSocket {
             return;
         }
         const nextAttempt = this.reconnectAttempt + 1;
-        const delaySeconds = nextAttempt;
+        const delaySeconds = Math.min(nextAttempt, 10);
         const retryAt = Date.now() + delaySeconds * 1_000;
         this.reconnectPhase = "WAITING";
         this.reconnectSeconds = delaySeconds;
@@ -505,22 +536,36 @@ export class RoomSocket {
         this.clearRetryTimers();
         this.connect();
     };
-    send(type: string, revision: number | null, payload: object = {}): void {
+    send(type: string, revision: number | null, payload: object = {}): boolean {
         if (this.socket?.readyState === WebSocket.OPEN) {
-            this.socket.send(
-                JSON.stringify({
-                    protocol: 2,
-                    type,
-                    requestId: crypto.randomUUID(),
-                    revision,
-                    payload,
-                }),
-            );
+            try {
+                this.socket.send(
+                    JSON.stringify({
+                        protocol: 2,
+                        type,
+                        requestId: crypto.randomUUID(),
+                        revision,
+                        payload,
+                    }),
+                );
+                return true;
+            } catch {
+                return false;
+            }
         }
+        return false;
     }
     command(type: string, payload: object = {}): void {
+        if (
+            !this.authenticated ||
+            !this.send(type, this.snapshot?.session?.revision ?? null, payload)
+        ) {
+            this.errorCode = "CONNECTION_UNAVAILABLE";
+            this.error = messages.common.connectionFailed;
+            this.changed();
+            return;
+        }
         if (type === "command.leaveRoom") this.leaving = true;
-        this.send(type, this.snapshot?.session?.revision ?? null, payload);
     }
     clearSettingsNotice(): void {
         this.settingsNotice = "";

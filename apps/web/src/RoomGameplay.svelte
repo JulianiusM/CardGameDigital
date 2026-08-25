@@ -29,30 +29,32 @@
 
 <section
     class:public-stage={role === "DISPLAY"}
-    class:ended-stage={role === "DISPLAY" && session.state === "ENDED"}
+    class:ended-stage={session.state === "ENDED"}
     class="game-shell"
 >
-    <div class="stage-status">
-        <div class="status">
-            <span>{messages.common.round} {session.roundNumber}</span>
-            <span>{session.cardsShown} {messages.common.cards}</span>
-            <span class="live">{messages.room.live}</span>
+    {#if session.state !== "ENDED"}
+        <div class="stage-status">
+            <div class="status">
+                <span>{messages.common.round} {session.roundNumber}</span>
+                <span>{session.cardsShown} {messages.common.cards}</span>
+                <span class="live">{messages.room.live}</span>
+            </div>
+            {#if role === "DISPLAY"}<strong class="stage-room-code">{roomCode}</strong>{/if}
         </div>
-        {#if role === "DISPLAY"}<strong class="stage-room-code">{roomCode}</strong>{/if}
-    </div>
-    <ParticipantRoster
-        {participants}
-        {presence}
-        stage={role === "DISPLAY"}
-        includeDisplays={false}
-        {roomCode}
-    />
+        <ParticipantRoster
+            {participants}
+            {presence}
+            stage={role === "DISPLAY"}
+            includeDisplays={false}
+            {roomCode}
+        />
 
-    {#if session.activePlayer}
-        <p class="active-player">
-            <span>{messages.common.nowPlaying}</span>
-            {session.activePlayer.name}
-        </p>
+        {#if session.activePlayer}
+            <p class="active-player">
+                <span>{messages.common.nowPlaying}</span>
+                {session.activePlayer.name}
+            </p>
+        {/if}
     {/if}
 
     {#if exhausted}

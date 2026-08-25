@@ -58,9 +58,14 @@ time is never treated as the beginning of play.
 Hosting is a transferable Room responsibility. The current host can explicitly
 promote a PLAYER device; persistence atomically demotes the old host so exactly
 one HOST remains. If the host socket disappears, the adapter waits through a
-reconnect grace period and promotes the oldest connected PLAYER. If nobody is
-connected yet, the Room remains orphaned until the next PLAYER reconnects and is
-then promoted. The active `GameSession` is not restarted or modified.
+reconnect grace period and promotes the oldest connected PLAYER. If nobody is connected
+yet but another Player remains inside their own grace period, the Room remains orphaned
+until that Player reconnects and is then promoted. A currently connected DISPLAY keeps
+an otherwise player-empty Room and its code live so new Players can join; it never becomes
+Host. The first eligible Player is promoted. When the final Host/Player and display are
+no longer connected or reconnectable, the server closes the abandoned Room and ends
+active runtime without deleting durable DataSpace history. Reconnect grace defaults to
+180 seconds and is configurable with a minimum of 120 seconds.
 
 Room creation explicitly chooses `EPHEMERAL` or `DATASPACE` persistence:
 

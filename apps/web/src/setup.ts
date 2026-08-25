@@ -1,4 +1,10 @@
-import type { RoomGameSettings } from "./multiplayer";
+import type {
+    CardLanguageSettings,
+    EffectiveGameSettings,
+    GameProfileSummary,
+    RoomGameSettings,
+} from "./multiplayer";
+import { loadLanguagePreferences } from "./languagePreferences";
 
 export type SetupIntent = "HOST" | "JOIN" | "DISPLAY";
 export type DeviceMode = "couch" | "personal" | "party";
@@ -27,6 +33,8 @@ export type GameSetupState = {
     enabledDareTypeIds: string[];
     blockedOperationalFlags: string[];
     cardLocale: string;
+    cardFallbackEnabled: boolean;
+    cardFallbackLocales: string[];
     neverHaveIEverRevealMode: "ANONYMOUS_AGGREGATE" | "NAMED_ANSWERS";
     deviceMode: DeviceMode;
 };
@@ -61,7 +69,9 @@ const defaults: GameSetupState = {
     ],
     enabledDareTypeIds: ["DARE_SILLY", "DARE_OTHER", "DARE_TOUCH", "DARE_KISS", "DARE_CLOTHING"],
     blockedOperationalFlags: [],
-    cardLocale: "de-DE",
+    cardLocale: "",
+    cardFallbackEnabled: false,
+    cardFallbackLocales: [...loadLanguagePreferences().fallbackLocales],
     neverHaveIEverRevealMode: "ANONYMOUS_AGGREGATE",
     deviceMode: "couch",
 };
@@ -87,6 +97,83 @@ export function resetSetup(step: SetupStep = "intent"): GameSetupState {
     return state;
 }
 
+/**
+ * Selecting a built-in profile restores its immutable configuration. Custom is the
+ * deliberate exception: an account-owned Custom snapshot can replace its neutral seed.
+ */
+export function applyGameProfile(
+    state: GameSetupState,
+    profile: GameProfileSummary,
+    savedCustomConfiguration?: EffectiveGameSettings,
+): GameSetupState {
+    const canonical = {
+        ...state,
+        profileId: profile.id,
+        adultContentConfirmed: false,
+        enabledQuestionCategoryIds: [...profile.enabledQuestionCategoryIds],
+        enabledDareTypeIds: [...profile.enabledDareTypeIds],
+        blockedOperationalFlags: [...profile.blockedOperationalFlags],
+        startingIntensity: profile.startingIntensity as GameSetupState["startingIntensity"],
+        maximumIntensity: profile.maximumIntensity as GameSetupState["maximumIntensity"],
+        intensityProgressionUnit: profile.intensityProgressionUnit,
+        intensityProgressionInterval: profile.intensityProgressionInterval,
+        intensityProgressionIncrement: profile.intensityProgressionIncrement,
+        randomQuestionRatio: profile.randomQuestionRatio,
+        maximumTypeStreak: profile.maximumTypeStreak,
+        letsTalkMetaInterval: profile.letsTalkMetaInterval,
+    };
+    if (profile.id !== "PROFILE_CUSTOM" || !savedCustomConfiguration) return canonical;
+    return applyGameConfiguration(canonical, savedCustomConfiguration);
+}
+
+export function applyGameConfiguration(
+    state: GameSetupState,
+    configuration: EffectiveGameSettings,
+): GameSetupState {
+    return {
+        ...state,
+        enabledQuestionCategoryIds: [...configuration.enabledQuestionCategoryIds],
+        enabledDareTypeIds: [...configuration.enabledDareTypeIds],
+        blockedOperationalFlags: [...configuration.blockedOperationalFlags],
+        startingIntensity: configuration.startingIntensity,
+        maximumIntensity: configuration.maximumIntensity,
+        intensityProgressionUnit: configuration.intensityProgressionUnit,
+        intensityProgressionInterval: configuration.intensityProgressionInterval,
+        intensityProgressionIncrement: configuration.intensityProgressionIncrement,
+        randomQuestionRatio: configuration.randomQuestionRatio,
+        maximumTypeStreak: configuration.maximumTypeStreak,
+        letsTalkMetaInterval: configuration.letsTalkMetaInterval,
+    };
+}
+
+export function applyCardLanguageSettings(
+    state: GameSetupState,
+    settings: CardLanguageSettings,
+): GameSetupState {
+    return {
+        ...state,
+        cardLocale: settings.cardLocale,
+        cardFallbackEnabled: settings.cardFallbackEnabled,
+        cardFallbackLocales: [...settings.cardFallbackLocales],
+    };
+}
+
+export function setupConfiguration(state: GameSetupState): EffectiveGameSettings {
+    return {
+        enabledQuestionCategoryIds: [...state.enabledQuestionCategoryIds],
+        enabledDareTypeIds: [...state.enabledDareTypeIds],
+        blockedOperationalFlags: [...state.blockedOperationalFlags],
+        startingIntensity: state.startingIntensity,
+        maximumIntensity: state.maximumIntensity,
+        intensityProgressionUnit: state.intensityProgressionUnit,
+        intensityProgressionInterval: state.intensityProgressionInterval,
+        intensityProgressionIncrement: state.intensityProgressionIncrement,
+        randomQuestionRatio: state.randomQuestionRatio,
+        maximumTypeStreak: state.maximumTypeStreak,
+        letsTalkMetaInterval: state.letsTalkMetaInterval,
+    };
+}
+
 export function setupHref(step: SetupStep): string {
     return `/play/?setup=${step}`;
 }
@@ -98,20 +185,10 @@ export function setupRoomSettings(state: GameSetupState): RoomGameSettings {
         groupId: state.groupChoice === "SELECT" ? state.groupId : null,
         adultContentConfirmed: state.adultContentConfirmed,
         cardLocale: state.cardLocale,
+        cardFallbackEnabled: state.cardFallbackEnabled,
+        cardFallbackLocales: [...state.cardFallbackLocales],
         neverHaveIEverRevealMode: state.neverHaveIEverRevealMode,
-        configuration: {
-            enabledQuestionCategoryIds: state.enabledQuestionCategoryIds,
-            enabledDareTypeIds: state.enabledDareTypeIds,
-            blockedOperationalFlags: state.blockedOperationalFlags,
-            startingIntensity: state.startingIntensity,
-            maximumIntensity: state.maximumIntensity,
-            intensityProgressionUnit: state.intensityProgressionUnit,
-            intensityProgressionInterval: state.intensityProgressionInterval,
-            intensityProgressionIncrement: state.intensityProgressionIncrement,
-            randomQuestionRatio: state.randomQuestionRatio,
-            maximumTypeStreak: state.maximumTypeStreak,
-            letsTalkMetaInterval: state.letsTalkMetaInterval,
-        },
+        configuration: setupConfiguration(state),
     };
 }
 

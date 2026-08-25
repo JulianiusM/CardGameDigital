@@ -9,13 +9,16 @@ bleibt auf diesem Gerät. Verschicke keine gespeicherten Zugangslinks oder Brows
 Mehrere Geschwistergruppen können gleichzeitig im selben Netz spielen: Jeder Raum hat
 einen eigenen Code, Zustand und Befehlskanal. Prüfe vor dem Beitritt den Code, damit du
 nicht versehentlich in der anderen Runde landest.
+Auf jedem verbundenen Gerät bleibt die aktuelle Personenzahl zusammen mit der
+konfigurierten Höchstzahl sichtbar.
 
 ## Mehrere Personen an einem Gerät
 
 In der Lobby kann jedes Spielergerät lokale Personen hinzufügen. Das ist auch auf einem
 Nicht-Host-Gerät möglich. Das Gerät zeigt später nur die Aktionen für die Personen, die
-es steuert. Speichere die Liste vor dem Start; danach ist sie gesperrt, damit Stimmen und
-Rundenreihenfolge eindeutig bleiben.
+es steuert. Änderungen werden nach der Eingabe automatisch und spätestens vor dem Start
+gespeichert; der sichtbare Status bestätigt dies. Danach ist die Liste gesperrt, damit
+Stimmen und Rundenreihenfolge eindeutig bleiben.
 
 ## Rolle der Spielleitung
 
@@ -26,9 +29,14 @@ eigenen vorgesehenen Aktionen ausführen; ein Display bleibt schreibgeschützt.
 ## Host übergeben oder wiederherstellen
 
 Der Host kann in der Lobby gezielt ein Spielergerät auswählen und die Aufgabe
-übertragen. Bei einem unbeabsichtigten Verbindungsabbruch wartet der Server kurz auf die
+übertragen. Bei einem unbeabsichtigten Verbindungsabbruch wartet der Server standardmäßig
+drei Minuten auf die
 Rückkehr. Danach wird ein verbundenes Spielergerät automatisch Host. War niemand
 verbunden, erfolgt die Zuweisung beim nächsten geeigneten Beitritt.
+Wenn alle Hosts und Spieler den Raum verlassen oder ihre Rückkehrfrist abläuft, hält ein
+aktuell verbundenes Display den Code für neu beitretende Spieler offen. Es wird nie Host;
+der nächste Spieler übernimmt. Der Raum schließt, sobald auch das Display getrennt ist
+und seine Rückkehrfrist abläuft.
 
 Nach einer Wiederverbindung immer den neuen Snapshot abwarten. Nur Schaltflächen, die
 der Server danach anbietet, sind aktuell erlaubt.

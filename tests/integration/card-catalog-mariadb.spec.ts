@@ -7,8 +7,8 @@ import { cardCatalog, catalogArtifact } from "../support/cardCatalog";
 
 const enabled = process.env.CARD_CATALOG_MARIADB_TEST === "1";
 const database = process.env.E2E_DB_NAME ?? "";
-if (enabled && !/e2e/i.test(database)) {
-    throw new Error("CARD_CATALOG_MARIADB_TEST requires an E2E_DB_NAME containing 'e2e'");
+if (enabled && !/(?:test|e2e)/i.test(database)) {
+    throw new Error("CARD_CATALOG_MARIADB_TEST requires a disposable test/e2e database name");
 }
 
 const sources: DataSource[] = [];

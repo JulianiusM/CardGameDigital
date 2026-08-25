@@ -8,7 +8,7 @@ import settings from "../../src/modules/settings";
 import { TypeOrmRealtimeRoomRepository } from "../../src/packages/persistence";
 import { DARE_TYPES, OPERATIONAL_FLAGS, QUESTION_CATEGORIES } from "../../src/packages/game-core";
 import { defaultRoomGameSettings } from "../../src/packages/application/roomGameSettings";
-import { ROOM_CAPACITY } from "../../src/packages/application/roomService";
+import { DEFAULT_ROOM_CAPACITY } from "../../src/packages/application/roomService";
 
 let directory: string;
 let repository: TypeOrmRealtimeRoomRepository;
@@ -86,7 +86,7 @@ describe("private boundary persistence", () => {
                     connectionStatus: "CONNECTED",
                     credentialHash: "b".repeat(64),
                 },
-                ROOM_CAPACITY,
+                DEFAULT_ROOM_CAPACITY,
             ),
         ).rejects.toMatchObject({ code: "ROOM_NOT_FOUND" });
     });

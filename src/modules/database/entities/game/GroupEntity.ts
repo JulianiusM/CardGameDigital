@@ -12,4 +12,8 @@ export class GroupEntity {
     @Column("datetime", { name: "history_reset_at", nullable: true }) historyResetAt!: Date | null;
     @Column("varchar", { name: "preferred_profile_id", length: 80, nullable: true })
     preferredProfileId!: string | null;
+    @Column("text", { name: "custom_configuration_json", nullable: true })
+    customConfigurationJson!: string | null;
+    @Column("text", { name: "card_language_settings_json", nullable: true })
+    cardLanguageSettingsJson!: string | null;
 }

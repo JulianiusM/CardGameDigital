@@ -45,6 +45,7 @@ export interface RealtimeRoomRepository {
     saveDevicePlayers(participantId: string, players: readonly DevicePlayer[]): Promise<void>;
     transferHost(roomId: string, currentHostId: string, nextHostId: string): Promise<void>;
     closeRoom(roomId: string, hostParticipantId: string): Promise<void>;
+    closeRoomIfNoPlayers(roomId: string): Promise<boolean>;
     loadSettings(roomId: string): Promise<VersionedRoomGameSettings>;
     saveSettings(
         roomId: string,

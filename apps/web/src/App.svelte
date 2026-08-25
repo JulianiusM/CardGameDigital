@@ -41,6 +41,9 @@
         type AppRoute,
     } from "./router";
     import { hasMeaningfulSetup, loadSetup, resetSetup } from "./setup";
+    import { updateLocalLanguagePreferences } from "./languagePreferences";
+    import { accountApi } from "./accountApi";
+    import { authentication, setAuthenticatedAccount } from "./authentication";
 
     let route: AppRoute = routeFromLocation();
     let joined: Join | null = null;
@@ -52,6 +55,9 @@
     let settingsDirty = false;
     let devicePlayerNames: string[] = [];
     let projectedDevicePlayerKey = "";
+    let devicePlayersDirty = false;
+    let devicePlayersSaving = false;
+    let devicePlayerSaveTimer: ReturnType<typeof setTimeout> | undefined;
     let transferTarget = "";
     let updateCounter = 0;
     let lastCardId: string | undefined;
@@ -66,13 +72,22 @@
     $: snapshot = (updateCounter, connection?.snapshot);
     $: session = snapshot?.session;
     $: participants = snapshot?.participants ?? [];
+    $: representedPlayerCount = participants.reduce(
+        (total, participant) =>
+            total + (participant.role === "DISPLAY" ? 0 : 1 + participant.devicePlayers.length),
+        0,
+    );
     $: currentParticipant = participants.find(({ id }) => id === joined?.participantId);
     $: {
         const names = currentParticipant?.devicePlayers.map(({ name }) => name) ?? [];
         const nextKey = JSON.stringify(names);
         if (nextKey !== projectedDevicePlayerKey) {
             projectedDevicePlayerKey = nextKey;
-            devicePlayerNames = names;
+            if (devicePlayersDirty && nextKey === JSON.stringify(normalizedDevicePlayerNames())) {
+                devicePlayersDirty = false;
+                devicePlayersSaving = false;
+                devicePlayerNames = names;
+            } else if (!devicePlayersDirty) devicePlayerNames = names;
         }
     }
     $: if (openSettingsAfterReset && snapshot && !session && effectiveRole === "HOST") {
@@ -135,6 +150,7 @@
         });
         void enforceRoute();
         return () => {
+            if (devicePlayerSaveTimer) clearTimeout(devicePlayerSaveTimer);
             stopRouter();
             connection?.dispose();
         };
@@ -184,12 +200,19 @@
             width: 260,
             color: { dark: "#3b2416", light: "#fff8e8" },
         });
-        const [loadedProfiles, loadedLocales] = await Promise.all([
-            loadGameProfiles(),
-            loadCardLocales(),
-        ]);
-        profiles = loadedProfiles;
-        cardLocales = loadedLocales.locales;
+        try {
+            const [loadedProfiles, loadedLocales] = await Promise.all([
+                loadGameProfiles(),
+                loadCardLocales(),
+            ]);
+            profiles = loadedProfiles;
+            cardLocales = loadedLocales.locales;
+        } catch (cause) {
+            showNotification(
+                cause instanceof Error ? cause.message : messages.common.connectionFailed,
+                "error",
+            );
+        }
     }
 
     function leaveCompleted(
@@ -271,6 +294,7 @@
         connection?.command(type, payload);
     }
     function startSession(): void {
+        flushDevicePlayers();
         command("command.startSession");
     }
     function newRoomGame(): void {
@@ -284,11 +308,32 @@
     function setDevicePlayer(index: number, value: string): void {
         devicePlayerNames[index] = value;
         devicePlayerNames = [...devicePlayerNames];
+        scheduleDevicePlayerSave();
     }
-    function saveDevicePlayers(): void {
+    function normalizedDevicePlayerNames(): string[] {
+        return devicePlayerNames.map((entry) => entry.trim()).filter(Boolean);
+    }
+    function scheduleDevicePlayerSave(): void {
+        devicePlayersDirty = true;
+        devicePlayersSaving = false;
+        if (devicePlayerSaveTimer) clearTimeout(devicePlayerSaveTimer);
+        devicePlayerSaveTimer = setTimeout(flushDevicePlayers, 500);
+    }
+    function flushDevicePlayers(): void {
+        if (!devicePlayersDirty) return;
+        if (devicePlayerSaveTimer) clearTimeout(devicePlayerSaveTimer);
+        devicePlayerSaveTimer = undefined;
+        devicePlayersSaving = true;
         command("command.setDevicePlayers", {
-            names: devicePlayerNames.map((entry) => entry.trim()).filter(Boolean),
+            names: normalizedDevicePlayerNames(),
         });
+    }
+    function addDevicePlayer(): void {
+        devicePlayerNames = [...devicePlayerNames, ""];
+    }
+    function removeDevicePlayer(index: number): void {
+        devicePlayerNames = devicePlayerNames.filter((_, current) => current !== index);
+        scheduleDevicePlayerSave();
     }
     function leaveRoom(): void {
         command("command.leaveRoom");
@@ -312,6 +357,20 @@
     function changeSettings(settings: RoomGameSettings): void {
         settingsDraft = settings;
         settingsDirty = true;
+    }
+    function rememberCardLocale(cardLocale: string): void {
+        if (roomSettings?.groupId) return;
+        updateLocalLanguagePreferences({ cardLocale });
+        if (!$authentication.authenticated) return;
+        void accountApi
+            .updateLanguagePreferences({ cardLocale })
+            .then((account) => setAuthenticatedAccount($authentication, account))
+            .catch((cause) =>
+                showNotification(
+                    cause instanceof Error ? cause.message : messages.common.requestFailed,
+                    "error",
+                ),
+            );
     }
     function saveRoomSettings(): void {
         if (!settingsDraft || !roomSettings) return;
@@ -349,6 +408,12 @@
                 class:playing={Boolean(session && session.state !== "ENDED")}
                 class:display-role={effectiveRole === "DISPLAY"}
             >
+                {#if snapshot}<div class="room-size" aria-live="polite">
+                        {messages.room.playerCount(
+                            representedPlayerCount,
+                            snapshot.capacity.maximumPlayers,
+                        )}
+                    </div>{/if}
                 {#if recoveringRoom || !snapshot || !effectiveRole}
                     <section class="card-panel reconnect-panel" aria-live="polite">
                         <div class="reconnect-copy">
@@ -395,13 +460,10 @@
                             {cardLocales}
                             {devicePlayerNames}
                             onSetDevicePlayer={setDevicePlayer}
-                            onAddDevicePlayer={() =>
-                                (devicePlayerNames = [...devicePlayerNames, ""])}
-                            onRemoveDevicePlayer={(index) =>
-                                (devicePlayerNames = devicePlayerNames.filter(
-                                    (_, current) => current !== index,
-                                ))}
-                            onSaveDevicePlayers={saveDevicePlayers}
+                            onAddDevicePlayer={addDevicePlayer}
+                            onRemoveDevicePlayer={removeDevicePlayer}
+                            {devicePlayersDirty}
+                            {devicePlayersSaving}
                             onStart={startSession}
                             onSaveBoundaries={saveBoundaries}
                             onOpenSettings={openSettings}
@@ -454,6 +516,7 @@
                                     {profiles}
                                     {cardLocales}
                                     onChange={changeSettings}
+                                    onCardLocaleSelect={rememberCardLocale}
                                 />
                                 <button
                                     class="primary wide"

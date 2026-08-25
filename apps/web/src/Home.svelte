@@ -2,33 +2,49 @@
     import { onMount } from "svelte";
     import GameSettingsEditor from "./GameSettingsEditor.svelte";
     import UiIcon from "./UiIcon.svelte";
-    import { gameModes, messages } from "./i18n";
+    import LegalLinks from "./LegalLinks.svelte";
+    import GroupBrowser from "./GroupBrowser.svelte";
+    import { gameModes, locale, messages } from "./i18n";
     import {
         createGroup,
         loadGameProfiles,
         loadCardLocales,
         loadHostConfiguration,
-        resetGroupHistory,
         rooms,
+        saveGameSettings,
         saveJoin,
         updateGroup,
         type GameProfileSummary,
         type GroupSummary,
         type RoomGameSettings,
         type CardLocaleSummary,
+        type CardLanguageSettings,
+        type GameSettings,
     } from "./multiplayer";
+    import { authentication, refreshAuthentication } from "./authentication";
     import { presentation } from "./presentation";
     import { dismissNotification, showNotification } from "./notifications";
     import { navigate } from "./router";
     import {
         loadSetup,
+        applyCardLanguageSettings,
+        applyGameProfile,
         resetSetup,
         saveSetup,
+        setupConfiguration,
         setupRoomSettings,
         type GameSetupState,
         type SetupIntent,
         type SetupStep,
     } from "./setup";
+    import {
+        loadLanguagePreferences,
+        matchSupportedLanguage,
+        updateLocalLanguagePreferences,
+    } from "./languagePreferences";
+    import { accountApi } from "./accountApi";
+    import { setAuthenticatedAccount } from "./authentication";
+    import { announceGroupChange, subscribeToGroupChanges } from "./groupChanges";
 
     const query = new URLSearchParams(location.search);
     let setup: GameSetupState = loadSetup();
@@ -37,7 +53,11 @@
     let groups: GroupSummary[] = [];
     let profiles: GameProfileSummary[] = [];
     let cardLocales: CardLocaleSummary[] = [];
+    let defaultCardLocale = "";
     let groupsAvailable = false;
+    let authenticationLoaded = false;
+    let authenticationResolved = false;
+    let savedGameSettings: GameSettings | null = null;
     let groupName = "";
     let groupMembers = "";
     let joinName = "";
@@ -50,6 +70,11 @@
     $: presentation.setScene(screen === "menu" ? "MENU" : "LOBBY");
     $: editorSettings = setupRoomSettings(setup);
     $: homePhaseKey = screen === "menu" ? "menu" : `${setup.intent ?? "setup"}:${setup.step}`;
+    $: persistenceAvailable =
+        authenticationResolved &&
+        ($authentication.deploymentMode === "local" || $authentication.authenticated);
+    $: continueGroupTarget =
+        groups.find(({ id }) => id === savedGameSettings?.defaultGroupId) ?? groups[0];
 
     onMount(async () => {
         const requestedStep = query.get("setup") as SetupStep | null;
@@ -67,68 +92,170 @@
         }
         if (roomCode && !setup.intent) persist({ intent: "JOIN", step: "intent" });
         try {
-            const [loadedProfiles, catalogLocales] = await Promise.all([
+            const [loadedProfiles, catalogLocales, authStatus] = await Promise.all([
                 loadGameProfiles(),
                 loadCardLocales(),
+                refreshAuthentication(),
             ]);
+            authenticationLoaded = true;
+            authenticationResolved = true;
             profiles = loadedProfiles;
             cardLocales = catalogLocales.locales;
+            defaultCardLocale = catalogLocales.defaultLocale;
             if (!catalogLocales.locales.some(({ id }) => id === setup.cardLocale)) {
-                persist({ cardLocale: catalogLocales.defaultLocale });
+                const preferences = loadLanguagePreferences();
+                const preferred = preferences.cardLocale
+                    ? [preferences.cardLocale]
+                    : [locale, ...preferences.fallbackLocales];
+                const cardLocale = matchSupportedLanguage(
+                    preferred,
+                    catalogLocales.locales.map(({ id }) => id),
+                    catalogLocales.defaultLocale,
+                );
+                persist({
+                    cardLocale,
+                    cardFallbackLocales: setup.cardFallbackLocales.filter(
+                        (entry) =>
+                            entry !== cardLocale &&
+                            catalogLocales.locales.some(({ id }) => id === entry),
+                    ),
+                });
             }
-            const configuration = await loadHostConfiguration();
-            groups = configuration.groups;
-            groupsAvailable = true;
+            if (authStatus.deploymentMode === "local" || authStatus.authenticated) {
+                const configuration = await loadHostConfiguration();
+                groups = configuration.groups;
+                savedGameSettings = configuration.settings;
+                groupsAvailable = true;
+                if (!groups.length && setup.groupChoice === "SELECT") chooseGroup(null);
+            }
+            const accountName = authStatus.account?.user.name.trim();
+            if (accountName) {
+                joinName = accountName;
+                if (!setup.hostName.trim()) persist({ hostName: accountName });
+            }
         } catch {
+            authenticationLoaded = true;
             if (!profiles.length) profiles = await loadGameProfiles().catch(() => []);
             groupsAvailable = false;
+            showNotification(messages.common.connectionFailed, "error");
         }
     });
+    onMount(() =>
+        subscribeToGroupChanges(() => {
+            if (!persistenceAvailable) return;
+            void refreshGroups().catch((cause) =>
+                showNotification(
+                    cause instanceof Error ? cause.message : messages.common.connectionFailed,
+                    "error",
+                ),
+            );
+        }),
+    );
 
     function persist(next: Partial<GameSetupState>): void {
         setup = { ...setup, ...next };
         saveSetup(setup);
     }
+    function withPreferredCardLanguage(state: GameSetupState): GameSetupState {
+        if (!cardLocales.length) return state;
+        const preferences = loadLanguagePreferences();
+        const candidates = preferences.cardLocale
+            ? [preferences.cardLocale]
+            : [locale, ...preferences.fallbackLocales];
+        const cardLocale = matchSupportedLanguage(
+            candidates,
+            cardLocales.map(({ id }) => id),
+            defaultCardLocale,
+        );
+        return {
+            ...state,
+            cardLocale,
+            cardFallbackLocales: preferences.fallbackLocales.filter(
+                (entry) => entry !== cardLocale && cardLocales.some(({ id }) => id === entry),
+            ),
+        };
+    }
     function openIntent(intent: SetupIntent): void {
-        setup = resetSetup(intent === "HOST" ? "group" : "intent");
-        setup = { ...setup, intent };
+        const reset = withPreferredCardLanguage(resetSetup(intent === "HOST" ? "group" : "intent"));
+        setup = intent === "HOST" ? applySavedDefaults(reset) : reset;
+        const accountName = $authentication.account?.user.name.trim() ?? "";
+        setup = {
+            ...setup,
+            intent,
+            hostName: intent === "HOST" ? accountName : setup.hostName,
+            groupChoice: "NONE",
+            groupId: null,
+            groupMembers: [],
+        };
         saveSetup(setup);
+        if (intent === "JOIN" && accountName) joinName = accountName;
         screen = "wizard";
         presentation.playEffect("confirm");
     }
     function continueGroup(): void {
-        setup = { ...resetSetup("group"), intent: "HOST", groupChoice: "SELECT" };
+        setup = {
+            ...applySavedDefaults(withPreferredCardLanguage(resetSetup("group"))),
+            intent: "HOST",
+            groupChoice: "SELECT",
+        };
         saveSetup(setup);
         screen = "wizard";
-        if (groups[0]) chooseGroup(groups[0]);
+        const preferred = groups.find(({ id }) => id === setup.groupId) ?? continueGroupTarget;
+        if (preferred) chooseGroup(preferred);
     }
     function chooseGroup(group: GroupSummary | null): void {
-        persist({
+        let next: GameSetupState = {
+            ...setup,
             groupChoice: group ? "SELECT" : "NONE",
             groupId: group?.id ?? null,
             groupMembers: group?.members ?? [],
             profileId: group?.preferredProfileId ?? setup.profileId,
-        });
-        if (group?.preferredProfileId) {
-            const profile = profiles.find(({ id }) => id === group.preferredProfileId);
-            if (profile) chooseProfile(profile);
+        };
+        const profile = profiles.find(({ id }) => id === next.profileId);
+        if (profile) {
+            const customConfiguration = customConfigurationFor(profile, group);
+            next = applyGameProfile(next, profile, customConfiguration);
         }
+        next = group?.cardLanguageSettings
+            ? applyAvailableCardLanguageSettings(next, group.cardLanguageSettings)
+            : quickRoundCardLanguageSettings(next);
+        setup = next;
+        saveSetup(setup);
     }
     function chooseProfile(profile: GameProfileSummary): void {
-        persist({
-            profileId: profile.id,
-            adultContentConfirmed: false,
-            enabledQuestionCategoryIds: [...profile.enabledQuestionCategoryIds],
-            enabledDareTypeIds: [...profile.enabledDareTypeIds],
-            blockedOperationalFlags: [...profile.blockedOperationalFlags],
-            startingIntensity: profile.startingIntensity as GameSetupState["startingIntensity"],
-            maximumIntensity: profile.maximumIntensity as GameSetupState["maximumIntensity"],
-            intensityProgressionUnit: profile.intensityProgressionUnit,
-            intensityProgressionInterval: profile.intensityProgressionInterval,
-            intensityProgressionIncrement: profile.intensityProgressionIncrement,
-            randomQuestionRatio: profile.randomQuestionRatio,
-            maximumTypeStreak: profile.maximumTypeStreak,
-            letsTalkMetaInterval: profile.letsTalkMetaInterval,
+        const group = groups.find(({ id }) => id === setup.groupId);
+        setup = applyGameProfile(setup, profile, customConfigurationFor(profile, group));
+        saveSetup(setup);
+    }
+    function customConfigurationFor(
+        profile: GameProfileSummary,
+        group: GroupSummary | undefined | null,
+    ) {
+        if (profile.id !== "PROFILE_CUSTOM") return undefined;
+        if (group) return group.customConfiguration ?? undefined;
+        return savedGameSettings?.customConfiguration;
+    }
+    function quickRoundCardLanguageSettings(state: GameSetupState): GameSetupState {
+        const saved = savedGameSettings?.cardLanguageSettings;
+        if (saved) return applyAvailableCardLanguageSettings(state, saved);
+        return preferredCardLanguageSettings(state);
+    }
+    function preferredCardLanguageSettings(state: GameSetupState): GameSetupState {
+        return { ...withPreferredCardLanguage(state), cardFallbackEnabled: false };
+    }
+    function applyAvailableCardLanguageSettings(
+        state: GameSetupState,
+        saved: CardLanguageSettings,
+    ): GameSetupState {
+        const available = new Set(cardLocales.map(({ id }) => id));
+        if (!available.has(saved.cardLocale)) return preferredCardLanguageSettings(state);
+        const cardFallbackLocales = saved.cardFallbackLocales.filter(
+            (entry) => entry !== saved.cardLocale && available.has(entry),
+        );
+        return applyCardLanguageSettings(state, {
+            cardLocale: saved.cardLocale,
+            cardFallbackEnabled: saved.cardFallbackEnabled && cardFallbackLocales.length > 0,
+            cardFallbackLocales,
         });
     }
     function applyEditor(settings: RoomGameSettings): void {
@@ -137,6 +264,8 @@
             profileId: settings.profileId,
             adultContentConfirmed: settings.adultContentConfirmed,
             cardLocale: settings.cardLocale,
+            cardFallbackEnabled: settings.cardFallbackEnabled,
+            cardFallbackLocales: [...settings.cardFallbackLocales],
             neverHaveIEverRevealMode: settings.neverHaveIEverRevealMode,
             enabledQuestionCategoryIds: [...settings.configuration.enabledQuestionCategoryIds],
             enabledDareTypeIds: [...settings.configuration.enabledDareTypeIds],
@@ -151,10 +280,124 @@
             letsTalkMetaInterval: settings.configuration.letsTalkMetaInterval,
         });
     }
+    function rememberCardLocale(cardLocale: string): void {
+        if (setup.groupChoice === "SELECT" && setup.groupId) return;
+        updateLocalLanguagePreferences({ cardLocale });
+        if (!$authentication.authenticated) return;
+        void accountApi
+            .updateLanguagePreferences({ cardLocale })
+            .then((account) => setAuthenticatedAccount($authentication, account))
+            .catch((cause) =>
+                showNotification(
+                    cause instanceof Error ? cause.message : messages.common.requestFailed,
+                    "error",
+                ),
+            );
+    }
     async function refreshGroups(): Promise<void> {
         const configuration = await loadHostConfiguration();
         groups = configuration.groups;
+        savedGameSettings = configuration.settings;
         groupsAvailable = true;
+        if (setup.groupChoice !== "SELECT") return;
+        const selected = groups.find(({ id }) => id === setup.groupId);
+        if (!selected) chooseGroup(null);
+        else persist({ groupMembers: [...selected.members] });
+    }
+    function applySavedDefaults(state: GameSetupState): GameSetupState {
+        if (!savedGameSettings) return state;
+        const profile = profiles.find(({ id }) => id === savedGameSettings?.preferredProfileId);
+        const fromProfile = profile
+            ? applyGameProfile(
+                  state,
+                  profile,
+                  profile.id === "PROFILE_CUSTOM"
+                      ? savedGameSettings.customConfiguration
+                      : undefined,
+              )
+            : state;
+        const defaultGroup = groups.find(({ id }) => id === savedGameSettings?.defaultGroupId);
+        const selectedGroup = {
+            ...fromProfile,
+            groupChoice: defaultGroup ? "SELECT" : "NONE",
+            groupId: defaultGroup?.id ?? null,
+            groupMembers: defaultGroup?.members ?? [],
+        };
+        let configured = selectedGroup;
+        if (profile?.id !== "PROFILE_CUSTOM") {
+            configured = {
+                ...selectedGroup,
+                startingIntensity:
+                    savedGameSettings.startingIntensity as GameSetupState["startingIntensity"],
+                maximumIntensity:
+                    savedGameSettings.maximumIntensity as GameSetupState["maximumIntensity"],
+                intensityProgressionUnit: savedGameSettings.intensityProgressionUnit,
+                intensityProgressionInterval: savedGameSettings.intensityProgressionInterval,
+                intensityProgressionIncrement: savedGameSettings.intensityProgressionIncrement,
+                randomQuestionRatio: savedGameSettings.randomQuestionRatio,
+                letsTalkMetaInterval: savedGameSettings.letsTalkMetaInterval,
+            };
+        }
+        if (savedGameSettings.cardLanguageSettings) {
+            return applyAvailableCardLanguageSettings(
+                configured,
+                savedGameSettings.cardLanguageSettings,
+            );
+        }
+        return configured;
+    }
+    async function persistAccountDefaults(): Promise<void> {
+        if (!persistenceAvailable) return;
+        const group = groups.find(
+            ({ id }) => setup.groupChoice === "SELECT" && id === setup.groupId,
+        );
+        if (group) {
+            const updated = await updateGroup({
+                ...group,
+                preferredProfileId: setup.profileId,
+                customConfiguration:
+                    setup.profileId === "PROFILE_CUSTOM"
+                        ? setupConfiguration(setup)
+                        : group.customConfiguration,
+                cardLanguageSettings: {
+                    cardLocale: setup.cardLocale,
+                    cardFallbackEnabled: setup.cardFallbackEnabled,
+                    cardFallbackLocales: [...setup.cardFallbackLocales],
+                },
+            });
+            groups = groups.map((candidate) => (candidate.id === updated.id ? updated : candidate));
+            announceGroupChange();
+            if (savedGameSettings) {
+                savedGameSettings = await saveGameSettings({
+                    ...savedGameSettings,
+                    defaultGroupId: updated.id,
+                });
+            }
+            return;
+        }
+        savedGameSettings = await saveGameSettings({
+            preferredProfileId: setup.profileId,
+            startingIntensity: setup.startingIntensity,
+            maximumIntensity: setup.maximumIntensity,
+            intensityProgressionUnit: setup.intensityProgressionUnit,
+            intensityProgressionInterval: setup.intensityProgressionInterval,
+            intensityProgressionIncrement: setup.intensityProgressionIncrement,
+            randomQuestionRatio: setup.randomQuestionRatio,
+            letsTalkMetaInterval: setup.letsTalkMetaInterval,
+            defaultGroupId:
+                setup.groupChoice === "SELECT" && setup.groupId
+                    ? setup.groupId
+                    : (savedGameSettings?.defaultGroupId ?? null),
+            customConfiguration:
+                setup.profileId === "PROFILE_CUSTOM"
+                    ? setupConfiguration(setup)
+                    : (savedGameSettings?.customConfiguration ?? setupConfiguration(setup)),
+            cardLanguageSettings: {
+                cardLocale: setup.cardLocale,
+                cardFallbackEnabled: setup.cardFallbackEnabled,
+                cardFallbackLocales: [...setup.cardFallbackLocales],
+            },
+        });
     }
     async function createSavedGroup(): Promise<void> {
         if (!groupName.trim()) return;
@@ -169,6 +412,7 @@
                     .filter(Boolean),
                 setup.profileId,
             );
+            announceGroupChange();
             await refreshGroups();
             chooseGroup(groups.find(({ id }) => id === created.id) ?? created);
             groupName = "";
@@ -182,39 +426,41 @@
             busy = false;
         }
     }
-    async function resetHistory(group: GroupSummary): Promise<void> {
-        if (!confirm(messages.setup.resetHistoryConfirm)) return;
-        const updated = await resetGroupHistory(group.id);
-        groups = groups.map((candidate) => (candidate.id === updated.id ? updated : candidate));
-        showNotification(messages.setup.historyReset, "success");
-    }
     async function next(): Promise<void> {
-        dismissNotification();
-        const index = hostSteps.indexOf(setup.step);
-        if (setup.step === "profile" && setup.groupId) {
-            const group = groups.find(({ id }) => id === setup.groupId);
-            if (group && group.preferredProfileId !== setup.profileId) {
-                const updated = await updateGroup({
-                    ...group,
-                    preferredProfileId: setup.profileId,
-                });
-                groups = groups.map((candidate) =>
-                    candidate.id === updated.id ? updated : candidate,
-                );
-            }
-        }
-        if (index < hostSteps.length - 1) {
-            persist({ step: hostSteps[index + 1] });
-            presentation.playEffect("turn");
-            return;
-        }
-        if (setup.deviceMode === "couch") {
-            navigate("/play/couch", { force: true });
-            return;
-        }
-        if (!setup.hostName.trim()) return;
+        if (busy) return;
         busy = true;
+        dismissNotification();
         try {
+            const index = hostSteps.indexOf(setup.step);
+            if (setup.step === "profile" && setup.groupId) {
+                const group = groups.find(({ id }) => id === setup.groupId);
+                if (group && group.preferredProfileId !== setup.profileId) {
+                    const updated = await updateGroup({
+                        ...group,
+                        preferredProfileId: setup.profileId,
+                    });
+                    groups = groups.map((candidate) =>
+                        candidate.id === updated.id ? updated : candidate,
+                    );
+                    announceGroupChange();
+                }
+            }
+            if (index < hostSteps.length - 1) {
+                const nextStep = hostSteps[index + 1];
+                if (nextStep === "profile") {
+                    const profile = profiles.find(({ id }) => id === setup.profileId);
+                    if (profile) chooseProfile(profile);
+                }
+                persist({ step: nextStep });
+                presentation.playEffect("turn");
+                return;
+            }
+            await persistAccountDefaults();
+            if (setup.deviceMode === "couch") {
+                navigate("/play/couch", { force: true });
+                return;
+            }
+            if (!setup.hostName.trim()) return;
             const persistence =
                 setup.groupChoice === "SELECT" && setup.groupId ? "DATASPACE" : "EPHEMERAL";
             const join = await rooms.create(
@@ -257,12 +503,29 @@
                 cause instanceof Error ? cause.message : messages.common.connectionFailed,
                 "error",
             );
+        } finally {
             busy = false;
         }
     }
 </script>
 
 <main class="home-shell">
+    {#if authenticationLoaded && $authentication.authenticationAvailable}<a
+            class="account-status-pill"
+            href="/play/account?returnTo=%2Fplay%2F"
+            on:click|preventDefault={() =>
+                navigate("/play/account?returnTo=%2Fplay%2F", { force: true })}
+            aria-label={$authentication.authenticated
+                ? messages.account.openAccount
+                : messages.account.loginTitle}
+        >
+            <UiIcon name="account" />
+            <span
+                >{$authentication.authenticated && $authentication.account
+                    ? $authentication.account.user.name
+                    : messages.account.login}</span
+            >
+        </a>{/if}
     <header class="hero">
         <span class="spark" aria-hidden="true"><UiIcon name="spark" /></span><span class="eyebrow"
             >{messages.brand}</span
@@ -293,15 +556,21 @@
                             >{messages.menu.displayOnlyHint}</small
                         ></button
                     >
-                    {#if groups.length}<button
+                    {#if continueGroupTarget}<button
                             class="menu-tile continue-tile"
                             on:click={continueGroup}
                             ><span class="tile-symbol" aria-hidden="true"
                                 ><UiIcon name="group" /></span
-                            ><strong>{messages.menu.continueGroup}: {groups[0].name}</strong
+                            ><strong
+                                >{messages.menu.continueGroup}: {continueGroupTarget.name}</strong
                             ></button
                         >{/if}
                 </nav>
+                {#if authenticationLoaded}<LegalLinks
+                        imprintUrl={$authentication.imprintUrl}
+                        privacyPolicyUrl={$authentication.privacyPolicyUrl}
+                        compact
+                    />{/if}
             {:else}
                 <section class="wizard card-panel" aria-labelledby="wizard-title">
                     {#if setup.intent === "HOST" && currentIndex >= 0}
@@ -355,43 +624,50 @@
                                     >{messages.setup.noGroup}</strong
                                 ><small>{messages.setup.quickGroupHint}</small></button
                             >
-                            <button
-                                class:selected={setup.groupChoice === "SELECT"}
-                                class="option-card"
-                                on:click={() => persist({ groupChoice: "SELECT" })}
-                                ><span class="option-symbol"><UiIcon name="group" /></span><strong
-                                    >{messages.setup.selectGroup}</strong
-                                ><small>{messages.setup.selectGroupHint}</small></button
-                            >
-                            <button
-                                class:selected={setup.groupChoice === "NEW"}
-                                class="option-card"
-                                on:click={() => persist({ groupChoice: "NEW", groupId: null })}
-                                ><span class="option-symbol"><UiIcon name="add" /></span><strong
-                                    >{messages.setup.newGroup}</strong
-                                ><small>{messages.setup.newGroupHint}</small></button
-                            >
+                            {#if persistenceAvailable}
+                                <button
+                                    class:selected={setup.groupChoice === "SELECT"}
+                                    class="option-card"
+                                    disabled={!groups.length}
+                                    on:click={() => persist({ groupChoice: "SELECT" })}
+                                    ><span class="option-symbol"><UiIcon name="group" /></span
+                                    ><strong>{messages.setup.selectGroup}</strong><small
+                                        >{groups.length
+                                            ? messages.setup.selectGroupHint
+                                            : messages.setup.noSavedGroupsHint}</small
+                                    ></button
+                                >
+                                <button
+                                    class:selected={setup.groupChoice === "NEW"}
+                                    class="option-card"
+                                    on:click={() => persist({ groupChoice: "NEW", groupId: null })}
+                                    ><span class="option-symbol"><UiIcon name="add" /></span><strong
+                                        >{messages.setup.newGroup}</strong
+                                    ><small>{messages.setup.newGroupHint}</small></button
+                                >
+                            {:else if authenticationLoaded && $authentication.authenticationAvailable}
+                                <a
+                                    class="option-card sign-in-option"
+                                    href="/play/account?returnTo=%2Fplay%2F%3Fsetup%3Dgroup"
+                                    on:click|preventDefault={() =>
+                                        navigate(
+                                            "/play/account?returnTo=%2Fplay%2F%3Fsetup%3Dgroup",
+                                            { force: true },
+                                        )}
+                                    ><span class="option-symbol"><UiIcon name="account" /></span
+                                    ><strong>{messages.setup.signInForGroups}</strong><small
+                                        >{messages.setup.signInForGroupsHint}</small
+                                    ></a
+                                >
+                            {/if}
                         </div>
-                        {#if setup.groupChoice === "SELECT"}<div class="group-list" role="list">
-                                {#each groups as group}<div
-                                        class:selected={setup.groupId === group.id}
-                                        class="group-list-row"
-                                        role="listitem"
-                                    >
-                                        <button
-                                            class="group-select-action text-button"
-                                            aria-pressed={setup.groupId === group.id}
-                                            on:click={() => chooseGroup(group)}
-                                            ><strong>{group.name}</strong><small
-                                                >{group.members.join(", ")}</small
-                                            ></button
-                                        ><button
-                                            class="text-action"
-                                            on:click={() => resetHistory(group)}
-                                            >{messages.setup.resetHistory}</button
-                                        >
-                                    </div>{/each}
-                            </div>
+                        {#if setup.groupChoice === "SELECT" && groups.length}
+                            <GroupBrowser
+                                {groups}
+                                selectedId={setup.groupId}
+                                onSelect={chooseGroup}
+                                pageSize={12}
+                            />
                         {:else if setup.groupChoice === "NEW" && groupsAvailable}<div
                                 class="group-create settings-section-card"
                             >
@@ -462,6 +738,7 @@
                             showMode={false}
                             showProfile={false}
                             onChange={applyEditor}
+                            onCardLocaleSelect={rememberCardLocale}
                         />
                     {:else if setup.step === "screen"}
                         <h2 id="wizard-title">{messages.setup.chooseScreen}</h2>

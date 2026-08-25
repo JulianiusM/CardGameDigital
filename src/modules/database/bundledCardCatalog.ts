@@ -15,12 +15,14 @@ export function bundledCardCatalogPath(): string {
 
 export function bundledCardCatalogArtifact(
     deploymentMode: "local" | "public",
+    allowDevelopmentFixture = false,
 ): ValidatedCardCatalogArtifact {
     const file = bundledCardCatalogPath();
     if (!fs.existsSync(file)) throw new Error(`Bundled Card catalog is missing: ${file}`);
     const artifact = validateCardCatalogArtifact(fs.readFileSync(file));
     if (
         deploymentMode === "public" &&
+        !allowDevelopmentFixture &&
         (artifact.catalog.catalogId === "development" ||
             artifact.catalog.catalogVersion.startsWith("development-fixture"))
     ) {

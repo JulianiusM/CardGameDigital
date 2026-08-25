@@ -418,6 +418,10 @@ input[type="range"] {
     gap: 0.55rem;
     color: var(--color-espresso);
 }
+.boundary-panel .bulk-selection-actions {
+    grid-column: 1 / -1;
+    justify-content: flex-start;
+}
 .boundary-saved {
     padding: 0.8rem;
     border: 1px solid rgb(201 142 47 / 46%);

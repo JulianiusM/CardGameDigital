@@ -42,3 +42,11 @@ how large each increase should be. The default adds one fine-grained point every
 displayed cards; a 0.5-point step is gentler, while larger steps escalate faster. Card
 pacing is consistent across group sizes; round pacing follows the group's natural turns.
 Skips, private boundaries, disabled content types, and history remain in force throughout.
+
+Both intensity sliders always cover 1–5; crossing one past the other moves the linked
+value with it. Use **All active** or **None active** in category, DareType, and rule
+sections for a fast starting point. The Display settings tab can follow the browser
+automatically or select a searchable interface language. Manual UI/Card choices and the
+ordered fallback list sync to a signed-in account. Card language initially follows the
+interface language when the catalog supports it; each game can separately enable and
+order Card fallback languages.

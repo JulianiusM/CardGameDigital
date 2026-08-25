@@ -130,10 +130,20 @@ describe("bundled Card catalog FULL reconciliation", () => {
     it("uses exact database Card locales and excludes missing localizations", async () => {
         const db = await database();
         const input = cardCatalog();
-        input.cards[0].localizations = [{ locale: "de-DE", text: "Nur Deutsch" }];
+        input.locales.push({ id: "fr-FR", nativeName: "Français", active: true });
+        input.cards[0].localizations = [
+            { locale: "de-DE", text: "Nur Deutsch" },
+            { locale: "fr-FR", text: "Seulement français" },
+        ];
         input.questionCategories[0].localizations = [
             { locale: "de-DE", label: "Alltag", description: null },
+            { locale: "fr-FR", label: "Quotidien", description: null },
         ];
+        input.dareTypes[0].localizations.push({
+            locale: "fr-FR",
+            label: "Drôle",
+            description: null,
+        });
         await applyCardCatalogSnapshot(db, catalogArtifact(input));
         const cards = new TypeOrmCardRepository(db.getRepository(CardEntity));
         expect(await cards.isLocaleActive("en-GB")).toBe(true);
@@ -141,12 +151,14 @@ describe("bundled Card catalog FULL reconciliation", () => {
             [],
         );
         expect(
-            await cards.listActive({
-                locale: "en-GB",
-                missingTranslation: "FALLBACK",
-                fallbackLocale: "de-DE",
-            }),
-        ).toHaveLength(1);
+            (
+                await cards.listActive({
+                    locale: "en-GB",
+                    missingTranslation: "FALLBACK",
+                    fallbackLocales: ["fr-FR", "de-DE"],
+                })
+            )[0].cardText,
+        ).toBe("Seulement français");
     });
 
     it("soft-retires missing Cards, reactivates their UUID, and never downgrades", async () => {

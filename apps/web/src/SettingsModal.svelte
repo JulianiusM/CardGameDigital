@@ -1,14 +1,34 @@
 <script lang="ts">
     import { onMount } from "svelte";
     import BoundarySetup, { type BoundarySelection } from "./BoundarySetup.svelte";
-    import { messages } from "./i18n";
+    import {
+        availableLocales,
+        locale,
+        localeDefinitions,
+        messages,
+        selectLocale,
+        selectSystemLocale,
+        type Locale,
+    } from "./i18n";
     import { presentation } from "./presentation";
-    import { loadServerInfo } from "./multiplayer";
+    import { authentication, refreshAuthentication } from "./authentication";
     import ResponsiveTabs from "./ResponsiveTabs.svelte";
     import SettingsAction from "./SettingsAction.svelte";
+    import LegalLinks from "./LegalLinks.svelte";
     import GameSettingsSummary from "./GameSettingsSummary.svelte";
     import ModalShell from "./ModalShell.svelte";
     import type { CardLocaleSummary, GameProfileSummary, PublicGameSettings } from "./multiplayer";
+    import { loadCardLocales } from "./multiplayer";
+    import LanguageSelector, { type LanguageOption } from "./LanguageSelector.svelte";
+    import LanguageOrderEditor from "./LanguageOrderEditor.svelte";
+    import {
+        loadLanguagePreferences,
+        updateLocalLanguagePreferences,
+        type LanguagePreferences,
+    } from "./languagePreferences";
+    import { accountApi } from "./accountApi";
+    import { setAuthenticatedAccount } from "./authentication";
+    import { showNotification } from "./notifications";
 
     export let open = false;
     export let showContent = false;
@@ -27,6 +47,7 @@
     export let qr = "";
     export let defaultTab = "audio";
     let preferences = presentation.preferences;
+    let languagePreferences: LanguagePreferences = loadLanguagePreferences();
     let tab:
         | "game"
         | "currentGame"
@@ -37,7 +58,6 @@
         | "services"
         | "advanced" = "audio";
     let wasOpen = false;
-    let authenticationAvailable = false;
     $: availableTabs = [
         ...(showGame ? [{ id: "game", label: messages.settings.game, icon: "host" }] : []),
         ...(currentGameSettings
@@ -57,9 +77,18 @@
             icon: roomCode ? "host" : "service",
         },
         ...(showAdvanced
-            ? [{ id: "advanced", label: messages.settings.advanced, icon: "session" }]
+            ? [{ id: "advanced", label: messages.settings.advanced, icon: "advanced" }]
             : []),
     ];
+    $: interfaceLanguageOptions = availableLocales().map((id) => ({
+        id,
+        nativeName: localeDefinitions[id].nativeName,
+    }));
+    $: fallbackLanguageOptions = languageOptionsForFallbacks(
+        cardLocales,
+        interfaceLanguageOptions,
+        languagePreferences.fallbackLocales,
+    );
     $: if (!availableTabs.some(({ id }) => id === tab)) {
         tab = (availableTabs[0]?.id ?? "audio") as typeof tab;
     }
@@ -72,9 +101,10 @@
 
     onMount(async () => {
         try {
-            authenticationAvailable = (await loadServerInfo()).authenticationAvailable;
+            await refreshAuthentication();
+            if (!cardLocales.length) cardLocales = (await loadCardLocales()).locales;
         } catch {
-            authenticationAvailable = false;
+            // Gameplay settings remain usable if account status cannot be loaded.
         }
     });
 
@@ -88,6 +118,47 @@
     function closeRoom(): void {
         onCloseRoom?.();
         open = false;
+    }
+
+    async function persistLanguagePatch(patch: Partial<LanguagePreferences>): Promise<void> {
+        languagePreferences = updateLocalLanguagePreferences(patch);
+        if (!$authentication.authenticated) return;
+        try {
+            const account = await accountApi.updateLanguagePreferences(patch);
+            setAuthenticatedAccount($authentication, account);
+        } catch (cause) {
+            showNotification(
+                cause instanceof Error ? cause.message : messages.common.requestFailed,
+                "error",
+            );
+        }
+    }
+
+    async function chooseInterfaceLanguage(next: string): Promise<void> {
+        await persistLanguagePatch({ useSystemLanguage: false, interfaceLocale: next });
+        selectLocale(next as Locale);
+    }
+
+    async function chooseSystemLanguage(): Promise<void> {
+        await persistLanguagePatch({ useSystemLanguage: true });
+        selectSystemLocale();
+    }
+
+    function languageOptionsForFallbacks(
+        catalog: readonly CardLocaleSummary[],
+        interfaces: readonly LanguageOption[],
+        selected: readonly string[],
+    ): LanguageOption[] {
+        const result = new Map<string, LanguageOption>();
+        for (const option of catalog) result.set(option.id, option);
+        for (const option of interfaces) {
+            const tag = localeDefinitions[option.id as Locale].languageTag;
+            if (!result.has(tag)) result.set(tag, { id: tag, nativeName: option.nativeName });
+        }
+        for (const id of selected) {
+            if (!result.has(id)) result.set(id, { id, nativeName: id });
+        }
+        return [...result.values()];
     }
 </script>
 
@@ -152,6 +223,43 @@
                 /></label
             >
         {:else if tab === "display"}
+            <section class="settings-section-card interface-language-setting">
+                <div>
+                    <h3>{messages.settings.interfaceLanguage}</h3>
+                    <p>{messages.settings.interfaceLanguageHint}</p>
+                </div>
+                <LanguageSelector
+                    options={interfaceLanguageOptions}
+                    selected={locale}
+                    label={messages.settings.interfaceLanguage}
+                    onSelect={chooseInterfaceLanguage}
+                />
+            </section>
+            <label class="setting-row system-language-setting">
+                <span
+                    ><strong>{messages.settings.useSystemLanguage}</strong><small
+                        >{messages.settings.useSystemLanguageHint}</small
+                    ></span
+                ><input
+                    type="checkbox"
+                    checked={languagePreferences.useSystemLanguage}
+                    on:change={(event) =>
+                        event.currentTarget.checked
+                            ? chooseSystemLanguage()
+                            : chooseInterfaceLanguage(locale)}
+                />
+            </label>
+            <section class="settings-section-card language-fallback-setting">
+                <div>
+                    <h3>{messages.settings.languageFallbacks}</h3>
+                    <p>{messages.settings.languageFallbacksHint}</p>
+                </div>
+                <LanguageOrderEditor
+                    options={fallbackLanguageOptions}
+                    order={languagePreferences.fallbackLocales}
+                    onChange={(fallbackLocales) => persistLanguagePatch({ fallbackLocales })}
+                />
+            </section>
             <label class="setting-row"
                 ><span
                     ><strong>{messages.presentation.reducedMotion}</strong><small
@@ -207,12 +315,19 @@
                     icon="service"
                     newTab
                 />
-                {#if authenticationAvailable}<SettingsAction
-                        href="/play/account"
-                        label={messages.settings.account}
+                {#if $authentication.authenticationAvailable}<SettingsAction
+                        href={`/play/account?returnTo=${encodeURIComponent(location.pathname + location.search)}`}
+                        label={$authentication.authenticated && $authentication.account
+                            ? messages.account.openAs($authentication.account.user.name)
+                            : messages.settings.account}
                         icon="account"
+                        newTab
                     />{/if}
             </div>
+            <LegalLinks
+                imprintUrl={$authentication.imprintUrl}
+                privacyPolicyUrl={$authentication.privacyPolicyUrl}
+            />
             {#if onLeave}<p>{messages.settings.leaveHint}</p>
                 <button class="danger wide" on:click={onLeave}>{messages.settings.leave}</button
                 >{/if}

@@ -20,11 +20,11 @@ export type CardCandidateRequest = {
 export type CardLocalizationPolicy = {
     locale: string;
     missingTranslation: "EXCLUDE" | "FALLBACK";
-    fallbackLocale?: string;
+    fallbackLocales?: readonly string[];
 };
 export const DEFAULT_CARD_TRANSLATION_POLICY: Pick<
     CardLocalizationPolicy,
-    "missingTranslation" | "fallbackLocale"
+    "missingTranslation" | "fallbackLocales"
 > = Object.freeze({ missingTranslation: "EXCLUDE" });
 export interface CardRepository {
     getById(id: CardId, localization: CardLocalizationPolicy): Promise<PlayableCard | null>;
@@ -42,6 +42,7 @@ export interface SessionRepository {
 }
 export interface CouchSessionRepository {
     load(id: string): Promise<GameSessionRuntimeState | null>;
+    ownerDataSpaceId(id: string): Promise<DataSpaceId | null>;
     groupHistory(dataSpaceId: DataSpaceId, groupId: string): Promise<ReadonlySet<CardId>>;
     save(
         snapshot: GameSessionRuntimeState,

@@ -49,3 +49,12 @@ hinzu; ein 0,5-Punkte-Schritt ist sanfter, größere Schritte steigern schneller
 Kartenoption bleibt bei jeder Gruppengröße gleichmäßig; die Rundenoption folgt den
 Spielzügen der Gruppe. Überspringen, private Grenzen, deaktivierte Inhalte und der
 Kartenverlauf gelten unverändert weiter.
+
+Beide Intensitätsregler decken immer 1–5 ab. Wird ein Regler über den anderen gezogen,
+folgt der verknüpfte Wert direkt. Mit **Alle aktiv** und **Keine aktiv** lassen sich
+Kategorien, Pflichtarten und Regeln schnell setzen. Im Einstellungen-Tab **Darstellung**
+kann die Oberfläche automatisch dem Browser folgen oder über die Suche gewählt werden.
+Manuelle Oberflächen-/Kartensprachen und die geordnete Ersatzsprachenliste werden mit
+einem angemeldeten Konto synchronisiert. Die Kartensprache folgt anfangs der
+Oberflächensprache, sofern sie im Katalog verfügbar ist; Ersatzsprachen für Karten werden
+für jedes Spiel getrennt aktiviert und geordnet.

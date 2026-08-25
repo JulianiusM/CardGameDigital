@@ -18,7 +18,8 @@ import { MESSAGE_KEYS } from "../packages/localization/keys";
 import type { Request } from "express";
 import * as oidc from "openid-client";
 import { z } from "zod";
-import { findOrCreateUserFromOidc } from "./database/services/UserService";
+import { ensureDataSpaceForUser, findOrCreateUserFromOidc } from "./database/services/UserService";
+import { bindAccountSession } from "./database/services/AccountSessionService";
 import { ExpectedError } from "./lib/errors";
 import { persistSession, regenerateSession } from "./lib/session";
 import settings from "./settings";
@@ -50,7 +51,7 @@ export function canonicalOidcCallbackUrl(originalUrl: string, configuredRedirect
     return callback;
 }
 
-export async function startLogin(session: Request["session"]) {
+export async function startLogin(session: Request["session"], returnTo = "/play/") {
     if (!config) await initOIDC();
 
     const redirect_uri = settings.value.oidcRedirectUrl;
@@ -64,7 +65,7 @@ export async function startLogin(session: Request["session"]) {
     const state = oidc.randomState();
 
     // Store in session for callback verification
-    session.oidc = { code_verifier, state };
+    session.oidc = { code_verifier, state, returnTo };
 
     const parameters: Record<string, string> = {
         redirect_uri,
@@ -86,7 +87,7 @@ export async function startLogin(session: Request["session"]) {
     return redirectTo.href;
 }
 
-export async function callback(req: Request) {
+export async function callback(req: Request): Promise<string> {
     if (!config) await initOIDC();
 
     const sess = req.session.oidc;
@@ -141,13 +142,21 @@ export async function callback(req: Request) {
     const user = await findOrCreateUserFromOidc(issuer, identityClaims, {
         linkByEmail: identityClaims.email_verified === true,
     });
+    const dataSpace = await ensureDataSpaceForUser(user.id);
+    if (!dataSpace) {
+        throw new ExpectedError(MESSAGE_KEYS.ACCOUNT_AUTHENTICATION_REQUIRED);
+    }
+    const returnTo = sess.returnTo ?? "/play/";
     const authenticatedSession = await regenerateSession(req);
-    authenticatedSession.auth = { user };
-    authenticatedSession.dataSpace =
-        user.dataSpaces.find((space) => space.defaultForOwner) ?? user.dataSpaces[0];
+    authenticatedSession.account = {
+        userId: user.id,
+        dataSpaceId: dataSpace.id,
+    };
 
     // Clear transient OIDC artifacts
     authenticatedSession.oidc = undefined;
 
     await persistSession(authenticatedSession);
+    await bindAccountSession(req.sessionID, user.id);
+    return returnTo;
 }

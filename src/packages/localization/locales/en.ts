@@ -15,6 +15,7 @@ export const en = {
         "account.invalidReset": "The link is invalid or expired.",
         "account.usernameMismatch": "The username does not match.",
         "account.dataSpaceNotFound": "DataSpace not found.",
+        "account.lastDataSpace": "An account must keep at least one DataSpace.",
         "account.noDataSpace": "No DataSpace is selected.",
         "account.authenticationRequired": "Authentication required.",
         "account.sessionNotFound": "Session not found.",

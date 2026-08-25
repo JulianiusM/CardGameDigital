@@ -15,7 +15,11 @@ export function getRoomService(): RoomService {
         new CryptoRandomSource(),
         {
             missingTranslation: settings.value.cardMissingTranslation,
-            fallbackLocale: settings.value.cardFallbackLocale,
+            fallbackLocales: [settings.value.cardFallbackLocale],
+        },
+        {
+            maximumParticipants: settings.value.roomMaximumParticipants,
+            maximumPlayers: settings.value.roomMaximumPlayers,
         },
     ));
 }

@@ -33,6 +33,7 @@ const repository: CardRepository = {
     findEligibleCandidates: async () => cards,
 };
 const input = (mode: (typeof GAME_MODES)[keyof typeof GAME_MODES]) => ({
+    persistence: "EPHEMERAL" as const,
     mode,
     players: [{ name: "Anna" }, { name: "Ben" }],
     configuration: {
@@ -45,6 +46,39 @@ const input = (mode: (typeof GAME_MODES)[keyof typeof GAME_MODES]) => ({
 });
 
 describe("CouchSessionService", () => {
+    it("validates and applies an ordered per-game Card fallback policy", async () => {
+        let localization: Parameters<CardRepository["listActive"]>[0] | undefined;
+        const observingRepository: CardRepository = {
+            ...repository,
+            listActive: async (policy) => {
+                localization = policy;
+                return cards;
+            },
+        };
+        const service = new CouchSessionService(observingRepository, new SequenceRandomSource([0]));
+        const created = await service.create({
+            ...input(GAME_MODES.CLASSIC),
+            cardFallbackEnabled: true,
+            cardFallbackLocales: ["fr-FR", "de-DE"],
+        });
+        expect(localization).toEqual({
+            locale: "en-GB",
+            missingTranslation: "FALLBACK",
+            fallbackLocales: ["fr-FR", "de-DE"],
+        });
+        expect(created.settings).toMatchObject({
+            cardFallbackEnabled: true,
+            cardFallbackLocales: ["fr-FR", "de-DE"],
+        });
+        await expect(
+            service.create({
+                ...input(GAME_MODES.CLASSIC),
+                cardFallbackEnabled: true,
+                cardFallbackLocales: ["en-GB"],
+            }),
+        ).rejects.toMatchObject({ code: "CARD_LOCALE_UNAVAILABLE" });
+    });
+
     it("rejects a one-player Couch session in the application/domain path", async () => {
         const service = new CouchSessionService(repository, new SequenceRandomSource([0]));
         await expect(
@@ -135,6 +169,7 @@ describe("CouchSessionService", () => {
         let rejectNextSave = false;
         const persistence: CouchSessionRepository = {
             load: async () => stored,
+            ownerDataSpaceId: async () => "00000000-0000-4000-8000-000000000001" as never,
             groupHistory: async () => new Set(),
             save: async (runtime) => {
                 if (rejectNextSave) {
@@ -150,7 +185,11 @@ describe("CouchSessionService", () => {
             undefined,
             persistence,
         );
-        const created = await service.create(input(GAME_MODES.CLASSIC));
+        const created = await service.create({
+            ...input(GAME_MODES.CLASSIC),
+            persistence: "DATASPACE",
+            dataSpaceId: "00000000-0000-4000-8000-000000000001" as never,
+        });
         rejectNextSave = true;
 
         await expect(

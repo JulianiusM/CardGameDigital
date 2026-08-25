@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 
 describe("offline gameplay assets", () => {
     it("bundles audio locally and has no remote browser runtime dependency", () => {
-        for (const name of [
+        const audioFiles = [
             "ambient-menu.wav",
             "ambient-lobby.wav",
             "ambient-question.wav",
@@ -13,7 +13,9 @@ describe("offline gameplay assets", () => {
             "ambient-end.wav",
             "action.wav",
             "card-reveal.wav",
-        ]) {
+        ];
+        expect(fs.readdirSync("apps/web/public/audio").sort()).toEqual([...audioFiles].sort());
+        for (const name of audioFiles) {
             const file = fs.readFileSync(path.join("apps/web/public/audio", name));
             expect(file.subarray(0, 4).toString("ascii")).toBe("RIFF");
             expect(file.length).toBeGreaterThan(1_000);
@@ -45,6 +47,9 @@ describe("offline gameplay assets", () => {
             "generic-dare",
             "conversation",
         ];
+        expect(fs.readdirSync("apps/web/public/motifs").sort()).toEqual(
+            [...motifs.map((name) => `${name}.svg`), "motif-symbols.svg", "ui-icons.svg"].sort(),
+        );
         for (const name of motifs) {
             const svg = fs.readFileSync(path.join("apps/web/public/motifs", `${name}.svg`), "utf8");
             expect(svg).toMatch(/^<svg/);
@@ -92,8 +97,8 @@ describe("offline gameplay assets", () => {
         expect(presentationStyles).not.toContain("backdrop-filter");
         expect(presentationStyles).not.toMatch(/#(?:17132d|211a3b|100c22|65d1c5|78d8ff)/i);
         expect(presentationStyles).toContain("#e4ba61");
-        expect(presentationStyles).toContain("#c98e2f");
-        expect(presentationStyles).toContain("#c58a72");
+        expect(presentationStyles).toContain("#a66812");
+        expect(presentationStyles).toContain("#e3b4a5");
         expect(presentationStyles).toContain("#9f6558");
         expect(presentationStyles).not.toContain("var(--color-result-honey)");
 

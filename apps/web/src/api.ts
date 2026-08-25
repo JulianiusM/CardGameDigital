@@ -1,3 +1,6 @@
+import { messages } from "./i18n";
+import { fetchJsonResponse } from "./http";
+
 export type Snapshot = {
     id: string;
     startedAt: number;
@@ -19,6 +22,7 @@ export type Snapshot = {
     voteResult: { yes: number; no: number; total: number };
     votedPlayerIds: string[];
     neverHaveIEverVoting: import("./multiplayer").NeverHaveIEverVotingView | null;
+    persistence: "EPHEMERAL" | "DATASPACE";
     settings: import("./multiplayer").PublicGameSettings;
 };
 
@@ -32,11 +36,8 @@ export class ApiError extends Error {
 }
 
 async function request(path: string, init?: RequestInit): Promise<Snapshot> {
-    const response = await fetch(`/api/v1/couch${path}`, {
-        headers: { "accept-language": locale, "content-type": "application/json" },
-        ...init,
-    });
-    const body = await response.json();
+    const { response, body: unknownBody } = await fetchJsonResponse(`/api/v1/couch${path}`, init);
+    const body = unknownBody as { error?: { code?: string; message?: string } } & Snapshot;
     if (!response.ok)
         throw new ApiError(
             body?.error?.code ?? "UNKNOWN_ERROR",
@@ -45,6 +46,7 @@ async function request(path: string, init?: RequestInit): Promise<Snapshot> {
     return body;
 }
 export const couchApi = {
+    get: (id: string) => request(`/sessions/${encodeURIComponent(id)}`),
     create: (payload: unknown) =>
         request("/sessions", { method: "POST", body: JSON.stringify(payload) }),
     command: (session: Snapshot, command: string, payload: object = {}) =>
@@ -53,4 +55,3 @@ export const couchApi = {
             body: JSON.stringify({ revision: session.revision, ...payload }),
         }),
 };
-import { locale, messages } from "./i18n";

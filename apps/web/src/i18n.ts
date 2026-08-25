@@ -1,23 +1,25 @@
 import { defaultLocale, localeCatalogs, localeDefinitions, type MessageCatalog } from "./locales";
+import {
+    browserLanguageCandidates,
+    loadLanguagePreferences,
+    matchSupportedLanguage,
+    updateLocalLanguagePreferences,
+} from "./languagePreferences";
+import { reloadWithoutNavigationPrompt } from "./router";
+
+export { localeDefinitions } from "./locales";
 
 export type Locale = keyof typeof localeCatalogs;
 export type Messages = MessageCatalog;
 
 const supportedLocales = Object.keys(localeCatalogs) as Locale[];
-const storageKey = "party-game.locale";
-
-function isLocale(value: string | null | undefined): value is Locale {
-    return supportedLocales.includes(value as Locale);
-}
-
 function detectLocale(): Locale {
-    const saved = localStorage.getItem(storageKey);
-    if (isLocale(saved)) return saved;
-    for (const language of navigator.languages) {
-        const candidate = language.split("-")[0];
-        if (isLocale(candidate)) return candidate;
-    }
-    return defaultLocale;
+    const preferences = loadLanguagePreferences();
+    const requested = preferences.useSystemLanguage
+        ? browserLanguageCandidates()
+        : [preferences.interfaceLocale ?? ""];
+    const candidates = [...requested, ...preferences.fallbackLocales];
+    return matchSupportedLanguage(candidates, supportedLocales, defaultLocale) as Locale;
 }
 
 export const locale = detectLocale();
@@ -26,8 +28,13 @@ export const gameModes = Object.values(messages.modes);
 
 /** Persists a new locale. Reloading keeps every non-Svelte consumer consistent too. */
 export function selectLocale(next: Locale): void {
-    localStorage.setItem(storageKey, next);
-    location.reload();
+    updateLocalLanguagePreferences({ useSystemLanguage: false, interfaceLocale: next });
+    reloadWithoutNavigationPrompt();
+}
+
+export function selectSystemLocale(): void {
+    updateLocalLanguagePreferences({ useSystemLanguage: true });
+    reloadWithoutNavigationPrompt();
 }
 
 export function availableLocales(): Locale[] {

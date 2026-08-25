@@ -20,15 +20,16 @@ import express, { NextFunction, Request, Response } from "express";
 import { rateLimit } from "express-rate-limit";
 import session from "express-session";
 import path from "node:path";
-import { logout, validateSession } from "./packages/application/accountService";
+import { validateSession } from "./packages/application/accountService";
 import { handleGenericError } from "./middleware/genericErrorHandler";
 import { AppDataSource } from "./modules/database/dataSource";
 import { AccountSession } from "./modules/database/entities/session/AccountSession";
 import { asyncHandler } from "./modules/lib/asyncHandler";
 import { ExpectedError } from "./modules/lib/errors";
-import settings from "./modules/settings";
+import settings, { isPublicRuntimeSecurityEnforced } from "./modules/settings";
 import { isTrustedOrigin } from "./modules/requestSecurity";
 import { structuredRequestLogger } from "./modules/structuredLogger";
+import { regenerateSession } from "./modules/lib/session";
 import { detectLocale, translate } from "./packages/localization/messages";
 import apiRouter from "./routes/api";
 
@@ -65,7 +66,7 @@ app.use((_request, response, next) => {
             "style-src 'self' 'unsafe-inline'",
         ].join("; "),
     );
-    if (settings.value.deploymentMode === "public") {
+    if (isPublicRuntimeSecurityEnforced(settings.value)) {
         response.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
     }
     next();
@@ -90,8 +91,9 @@ app.use(
         cookie: {
             // 1 day (match store TTL below)
             maxAge: 1000 * 60 * 60 * 24,
-            secure: settings.value.deploymentMode === "public",
+            secure: new URL(settings.value.publicUrl).protocol === "https:",
             sameSite: "lax",
+            httpOnly: true,
         },
         store: new TypeormStore({
             cleanupLimit: 2, // prune expired sessions periodically
@@ -106,11 +108,11 @@ app.use("/api", (_request, response, next) => {
     next();
 });
 
-// Public deployments use same-origin checks as the CSRF boundary for all
-// state-changing browser requests. Local LAN gameplay remains account-free.
+// Enforced public deployments use same-origin checks as the CSRF boundary for all
+// state-changing browser requests. Local and explicit development gameplay do not.
 app.use((req: Request, res: Response, next: NextFunction) => {
     if (
-        settings.value.deploymentMode === "public" &&
+        isPublicRuntimeSecurityEnforced(settings.value) &&
         ["POST", "PUT", "PATCH", "DELETE"].includes(req.method)
     ) {
         const source = req.get("origin") ?? req.get("referer");
@@ -141,11 +143,14 @@ const localizedRateLimitHandler = (req: Request, res: Response) => {
         },
     });
 };
+const skipPublicAbuseControls = () =>
+    !isPublicRuntimeSecurityEnforced(settings.value) || settings.value.testMode;
 const accountLimiter = rateLimit({
     windowMs: 15 * 60_000,
     limit: 20,
     standardHeaders: true,
     legacyHeaders: false,
+    skip: skipPublicAbuseControls,
     handler: localizedRateLimitHandler,
 });
 const roomCreationLimiter = rateLimit({
@@ -153,7 +158,7 @@ const roomCreationLimiter = rateLimit({
     limit: 10,
     standardHeaders: true,
     legacyHeaders: false,
-    skip: () => settings.value.deploymentMode !== "public",
+    skip: skipPublicAbuseControls,
     handler: localizedRateLimitHandler,
 });
 const roomJoinLimiter = rateLimit({
@@ -161,13 +166,14 @@ const roomJoinLimiter = rateLimit({
     limit: 30,
     standardHeaders: true,
     legacyHeaders: false,
-    skip: () => settings.value.deploymentMode !== "public",
+    skip: skipPublicAbuseControls,
     handler: localizedRateLimitHandler,
 });
 app.use(
     [
         "/api/v1/account/login",
         "/api/v1/account/register",
+        "/api/v1/account/activation-requests",
         "/api/v1/account/password-reset-requests",
         "/api/v1/account/password-resets",
     ],
@@ -180,18 +186,10 @@ app.post("/api/v1/rooms/:roomCode/participants", roomJoinLimiter);
 app.use(
     asyncHandler(async (req: Request, res: Response, next: NextFunction) => {
         if (!(await validateSession(req.session))) {
-            // Session is not valid anymore --> force logout
-            await logout(req.session);
-            res.status(401).json({
-                error: {
-                    code: "SESSION_EXPIRED",
-                    message: translate(
-                        detectLocale(req.get("accept-language")),
-                        MESSAGE_KEYS.ACCOUNT_SESSION_EXPIRED,
-                    ),
-                },
-            });
-            return;
+            // Expired account identity becomes an anonymous browser session. Public quick
+            // rounds must not be blocked by a stale login cookie; protected routes still
+            // return their normal authentication-required response downstream.
+            await regenerateSession(req);
         }
         next();
     }),

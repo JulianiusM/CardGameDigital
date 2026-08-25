@@ -4,7 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import Database from "better-sqlite3";
 import { DataSource, DataSourceOptions } from "typeorm";
-import settings, { Settings } from "../settings";
+import settings, { isPublicRuntimeSecurityEnforced, Settings } from "../settings";
 import { entities, migrations, subscribers } from "./__index__";
 import { DataSpace } from "./entities/user/DataSpace";
 import { applyBundledCardCatalog, bundledCardCatalogArtifact } from "./bundledCardCatalog";
@@ -58,7 +58,10 @@ async function backupSqliteBeforeUpgrade(config: Settings, catalogSequence: numb
 export async function initDataSource(): Promise<DataSource> {
     if (AppDataSource?.isInitialized) return AppDataSource;
     if (!settings.value.initialized) await settings.read();
-    const catalogArtifact = bundledCardCatalogArtifact(settings.value.deploymentMode);
+    const catalogArtifact = bundledCardCatalogArtifact(
+        settings.value.deploymentMode,
+        settings.value.testMode || !isPublicRuntimeSecurityEnforced(settings.value),
+    );
     await backupSqliteBeforeUpgrade(settings.value, catalogArtifact.catalog.sequence);
     AppDataSource = new DataSource(dataSourceOptions(settings.value));
     await AppDataSource.initialize();
@@ -81,6 +84,8 @@ export async function initDataSource(): Promise<DataSource> {
     }
     if (settings.value.dbType === "sqlite") {
         await AppDataSource.query("PRAGMA journal_mode = WAL");
+    }
+    if (settings.value.deploymentMode === "local" && settings.value.dbType === "sqlite") {
         const repository = AppDataSource.getRepository(DataSpace);
         const count = await repository.count();
         if (count === 0) {

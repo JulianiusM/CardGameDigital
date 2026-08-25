@@ -1,5 +1,12 @@
 import { expect, test, type Page } from "@playwright/test";
 
+test.beforeEach(async ({ context }) => {
+    await context.addInitScript(() => {
+        if (!localStorage.getItem("party-game.locale"))
+            localStorage.setItem("party-game.locale", "de");
+    });
+});
+
 async function hostRoom(
     page: Page,
     screen: "personal" | "party" = "party",
@@ -97,8 +104,11 @@ async function expectInsideViewport(page: Page, selector: string): Promise<void>
 test("host creates a Party Screen Room and exposes safe QR join information", async ({
     browser,
 }) => {
-    const hostContext = await browser.newContext();
-    const displayContext = await browser.newContext({ viewport: { width: 1920, height: 1080 } });
+    const hostContext = await browser.newContext({ locale: "de-DE" });
+    const displayContext = await browser.newContext({
+        locale: "de-DE",
+        viewport: { width: 1920, height: 1080 },
+    });
     const host = await hostContext.newPage();
     const code = await hostRoom(host);
     expect(code).toMatch(/^[A-Z2-9]{6}$/);
@@ -108,6 +118,8 @@ test("host creates a Party Screen Room and exposes safe QR join information", as
     await expect(host.getByText("Party Screen", { exact: true })).toBeVisible();
     await expect(display.getByRole("button", { name: "Lobby verlassen" })).toBeVisible();
     await expect(display.locator(".public-stage-lobby")).toBeVisible();
+    await expect(host.locator(".room-size")).toContainText(/1 \/ \d+ Personen/);
+    await expect(display.locator(".room-size")).toContainText(/1 \/ \d+ Personen/);
     expect(
         await display.evaluate(
             () => document.scrollingElement!.scrollHeight <= window.innerHeight + 1,
@@ -121,9 +133,9 @@ test("settings, device players and transferred Host authority synchronize across
     browser,
 }) => {
     test.setTimeout(60_000);
-    const oldContext = await browser.newContext();
-    const newContext = await browser.newContext();
-    const thirdContext = await browser.newContext();
+    const oldContext = await browser.newContext({ locale: "de-DE" });
+    const newContext = await browser.newContext({ locale: "de-DE" });
+    const thirdContext = await browser.newContext({ locale: "de-DE" });
     const oldHost = await oldContext.newPage();
     const newHost = await newContext.newPage();
     const thirdPlayer = await thirdContext.newPage();
@@ -135,6 +147,9 @@ test("settings, device players and transferred Host authority synchronize across
     await expect(newHost.getByText("Carla", { exact: true })).toBeVisible();
     await expect(thirdPlayer.getByText("Ben", { exact: true })).toBeVisible();
     await expect(newHost.getByText("Host Anna", { exact: true })).toBeVisible();
+    for (const page of [oldHost, newHost, thirdPlayer]) {
+        await expect(page.locator(".room-size")).toContainText(/3 \/ \d+ Personen/);
+    }
     await expect(newHost.getByText(/Startintensität: 1 → Endintensität: 3/)).toBeVisible();
 
     await oldHost.getByRole("button", { name: "Spieleinstellungen bearbeiten" }).click();
@@ -187,7 +202,7 @@ test("settings, device players and transferred Host authority synchronize across
     expect((await editor.boundingBox())!.width).toBeLessThanOrEqual(
         (await playersPanel.boundingBox())!.width,
     );
-    await newHost.getByRole("button", { name: "Personen für dieses Gerät speichern" }).click();
+    await expect(newHost.getByText("Personen auf diesem Gerät sind gespeichert")).toBeVisible();
     await expect(oldHost.locator(".participant.device-player").getByText("Bea")).toBeVisible();
     await expect(newHost.getByRole("button", { name: "Lobby verlassen" })).toBeVisible();
 
@@ -199,8 +214,8 @@ test("settings, device players and transferred Host authority synchronize across
 test("players can inspect complete public settings without private boundaries", async ({
     browser,
 }) => {
-    const hostContext = await browser.newContext();
-    const playerContext = await browser.newContext();
+    const hostContext = await browser.newContext({ locale: "de-DE" });
+    const playerContext = await browser.newContext({ locale: "de-DE" });
     const host = await hostContext.newPage();
     const player = await playerContext.newPage();
     const code = await hostRoom(host, "personal", /^Freunde /, /Zufällige Wahl/);
@@ -250,9 +265,9 @@ test("players can inspect complete public settings without private boundaries", 
 test("a player joining during active play enters the authoritative Session roster", async ({
     browser,
 }) => {
-    const hostContext = await browser.newContext();
-    const firstContext = await browser.newContext();
-    const lateContext = await browser.newContext();
+    const hostContext = await browser.newContext({ locale: "de-DE" });
+    const firstContext = await browser.newContext({ locale: "de-DE" });
+    const lateContext = await browser.newContext({ locale: "de-DE" });
     const host = await hostContext.newPage();
     const first = await firstContext.newPage();
     const late = await lateContext.newPage();
@@ -289,8 +304,8 @@ test("a player joining during active play enters the authoritative Session roste
 test("network loss enters reconnecting immediately and restores the same participant", async ({
     browser,
 }) => {
-    const hostContext = await browser.newContext();
-    const playerContext = await browser.newContext();
+    const hostContext = await browser.newContext({ locale: "de-DE" });
+    const playerContext = await browser.newContext({ locale: "de-DE" });
     const host = await hostContext.newPage();
     const player = await playerContext.newPage();
     const code = await hostRoom(host, "personal");
@@ -330,8 +345,8 @@ test("network loss enters reconnecting immediately and restores the same partici
 });
 
 test("hosted players see Card intensity and shared game/modal transitions", async ({ browser }) => {
-    const hostContext = await browser.newContext();
-    const playerContext = await browser.newContext();
+    const hostContext = await browser.newContext({ locale: "de-DE" });
+    const playerContext = await browser.newContext({ locale: "de-DE" });
     const host = await hostContext.newPage();
     const player = await playerContext.newPage();
     const code = await hostRoom(host, "personal");
@@ -381,9 +396,12 @@ test("hosted players see Card intensity and shared game/modal transitions", asyn
 test("named Never Have I Ever synchronizes private progress then public answer columns", async ({
     browser,
 }) => {
-    const hostContext = await browser.newContext();
-    const playerContext = await browser.newContext();
-    const displayContext = await browser.newContext({ viewport: { width: 1920, height: 1080 } });
+    const hostContext = await browser.newContext({ locale: "de-DE" });
+    const playerContext = await browser.newContext({ locale: "de-DE" });
+    const displayContext = await browser.newContext({
+        locale: "de-DE",
+        viewport: { width: 1920, height: 1080 },
+    });
     const host = await hostContext.newPage();
     const player = await playerContext.newPage();
     const display = await displayContext.newPage();
@@ -473,9 +491,12 @@ test("named Never Have I Ever synchronizes private progress then public answer c
 test("anonymous Never Have I Ever uses a compact aggregate on a short display", async ({
     browser,
 }) => {
-    const hostContext = await browser.newContext();
-    const playerContext = await browser.newContext();
-    const displayContext = await browser.newContext({ viewport: { width: 640, height: 360 } });
+    const hostContext = await browser.newContext({ locale: "de-DE" });
+    const playerContext = await browser.newContext({ locale: "de-DE" });
+    const displayContext = await browser.newContext({
+        locale: "de-DE",
+        viewport: { width: 640, height: 360 },
+    });
     const host = await hostContext.newPage();
     const player = await playerContext.newPage();
     const display = await displayContext.newPage();
@@ -498,11 +519,11 @@ test("anonymous Never Have I Ever uses a compact aggregate on a short display", 
     await expect(display.locator(".aggregate-total")).toContainText("2");
     await expect(display.locator(".aggregate-yes")).toHaveCSS(
         "background-image",
-        "linear-gradient(90deg, rgb(228, 186, 97), rgb(201, 142, 47))",
+        "linear-gradient(90deg, rgb(228, 186, 97), rgb(166, 104, 18))",
     );
     await expect(display.locator(".aggregate-no")).toHaveCSS(
         "background-image",
-        "linear-gradient(90deg, rgb(197, 138, 114), rgb(159, 101, 88))",
+        "linear-gradient(90deg, rgb(227, 180, 165), rgb(159, 101, 88))",
     );
     await expect(display.locator(".aggregate-metric").first().locator("strong")).toHaveCSS(
         "color",
@@ -538,9 +559,9 @@ test("anonymous Never Have I Ever uses a compact aggregate on a short display", 
 test("leaving notifies every remaining device and a clean rejoin keeps Settings closed", async ({
     browser,
 }) => {
-    const hostContext = await browser.newContext();
-    const playerContext = await browser.newContext();
-    const displayContext = await browser.newContext();
+    const hostContext = await browser.newContext({ locale: "de-DE" });
+    const playerContext = await browser.newContext({ locale: "de-DE" });
+    const displayContext = await browser.newContext({ locale: "de-DE" });
     const host = await hostContext.newPage();
     const player = await playerContext.newPage();
     const display = await displayContext.newPage();
@@ -576,8 +597,11 @@ test("small public displays automatically page long voting rosters and named res
     browser,
 }) => {
     test.setTimeout(75_000);
-    const hostContext = await browser.newContext();
-    const displayContext = await browser.newContext({ viewport: { width: 800, height: 600 } });
+    const hostContext = await browser.newContext({ locale: "de-DE" });
+    const displayContext = await browser.newContext({
+        locale: "de-DE",
+        viewport: { width: 800, height: 600 },
+    });
     const host = await hostContext.newPage();
     const display = await displayContext.newPage();
     const code = await hostRoom(host, "party", /^Freunde /, /Ich hab noch nie/, "named");
@@ -590,7 +614,7 @@ test("small public displays automatically page long voting rosters and named res
             .locator("input")
             .fill(`Person ${index + 2}`);
     }
-    await host.getByRole("button", { name: "Personen für dieses Gerät speichern" }).click();
+    await expect(host.getByText("Personen auf diesem Gerät sind gespeichert")).toBeVisible();
     await joinRoom(display, code, "", true);
     await expectInsideViewport(display, ".public-stage-lobby");
     await expectInsideViewport(display, ".public-stage-lobby .stage-player-roster");
@@ -644,6 +668,12 @@ test("small public displays automatically page long voting rosters and named res
     await host.getByRole("tab", { name: "Session" }).click();
     await host.getByRole("button", { name: "Spiel beenden" }).click();
     await expect(display.getByRole("heading", { name: /Gute Nacht/ })).toBeVisible();
+    for (const page of [host, display]) {
+        await expect(page.locator(".stage-status")).toHaveCount(0);
+        await expect(page.locator(".stage-player-roster")).toHaveCount(0);
+        await expect(page.locator(".active-player")).toHaveCount(0);
+        await expect(page.locator(".room-size")).toBeVisible();
+    }
     await expectInsideViewport(display, ".ended-stage");
     await expectInsideViewport(display, ".ended-stage .session-summary");
     expect(
@@ -658,9 +688,9 @@ test("small public displays automatically page long voting rosters and named res
 
 test("New Game reuses the Room for Host, Player, and Display", async ({ browser }) => {
     test.setTimeout(60_000);
-    const hostContext = await browser.newContext();
-    const playerContext = await browser.newContext();
-    const displayContext = await browser.newContext();
+    const hostContext = await browser.newContext({ locale: "de-DE" });
+    const playerContext = await browser.newContext({ locale: "de-DE" });
+    const displayContext = await browser.newContext({ locale: "de-DE" });
     const host = await hostContext.newPage();
     const player = await playerContext.newPage();
     const display = await displayContext.newPage();
@@ -677,6 +707,12 @@ test("New Game reuses the Room for Host, Player, and Display", async ({ browser 
     await expect(host.getByRole("heading", { name: /Gute Nacht/ })).toBeVisible();
     await expect(player.getByRole("heading", { name: /Gute Nacht/ })).toBeVisible();
     await expect(display.getByRole("heading", { name: /Gute Nacht/ })).toBeVisible();
+    for (const page of [host, player, display]) {
+        await expect(page.locator(".stage-status")).toHaveCount(0);
+        await expect(page.locator(".stage-player-roster")).toHaveCount(0);
+        await expect(page.locator(".active-player")).toHaveCount(0);
+        await expect(page.locator(".room-size")).toBeVisible();
+    }
     await expect(host.getByRole("button", { name: "Raum schließen" })).toBeVisible();
     await expect(player.getByRole("button", { name: "Raum verlassen" })).toBeVisible();
     await expect(display.getByRole("button", { name: "Raum verlassen" })).toBeVisible();
@@ -705,9 +741,9 @@ test("Host closes an active Room and every device returns cleanly to the main me
     browser,
 }) => {
     test.setTimeout(60_000);
-    const hostContext = await browser.newContext();
-    const playerContext = await browser.newContext();
-    const displayContext = await browser.newContext();
+    const hostContext = await browser.newContext({ locale: "de-DE" });
+    const playerContext = await browser.newContext({ locale: "de-DE" });
+    const displayContext = await browser.newContext({ locale: "de-DE" });
     const host = await hostContext.newPage();
     const player = await playerContext.newPage();
     const display = await displayContext.newPage();
@@ -747,8 +783,8 @@ test("Host closes an active Room and every device returns cleanly to the main me
 });
 
 test("hosted zero-card settings are rejected without leaving the lobby", async ({ browser }) => {
-    const hostContext = await browser.newContext();
-    const playerContext = await browser.newContext();
+    const hostContext = await browser.newContext({ locale: "de-DE" });
+    const playerContext = await browser.newContext({ locale: "de-DE" });
     const host = await hostContext.newPage();
     const player = await playerContext.newPage();
     const code = await hostRoom(host, "personal", /^Custom /);

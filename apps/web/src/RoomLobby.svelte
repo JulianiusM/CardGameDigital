@@ -25,7 +25,8 @@
     export let onSetDevicePlayer: (index: number, value: string) => void;
     export let onAddDevicePlayer: () => void;
     export let onRemoveDevicePlayer: (index: number) => void;
-    export let onSaveDevicePlayers: () => void;
+    export let devicePlayersDirty = false;
+    export let devicePlayersSaving = false;
     export let onStart: () => void;
     export let onSaveBoundaries: (boundaries: BoundarySelection) => void;
     export let onOpenSettings: () => void;
@@ -103,9 +104,18 @@
                 <button class="secondary" on:click={onAddDevicePlayer}>
                     {messages.room.addLocalPerson}
                 </button>
-                <button class="secondary" on:click={onSaveDevicePlayers}>
-                    {messages.room.saveLocalPlayers}
-                </button>
+                <p
+                    class:saving={devicePlayersDirty}
+                    class="device-player-save-status"
+                    aria-live="polite"
+                >
+                    {devicePlayersSaving
+                        ? messages.room.savingLocalPlayers
+                        : devicePlayersDirty
+                          ? messages.room.localPlayersPending
+                          : messages.room.localPlayersSaved}
+                    <small>{messages.room.localPlayersAutoSaveHint}</small>
+                </p>
             </div>
         {/if}
 

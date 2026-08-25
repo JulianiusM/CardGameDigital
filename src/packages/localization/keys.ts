@@ -12,6 +12,7 @@ export const MESSAGE_KEYS = {
     ACCOUNT_INVALID_RESET: "account.invalidReset",
     ACCOUNT_USERNAME_MISMATCH: "account.usernameMismatch",
     ACCOUNT_DATA_SPACE_NOT_FOUND: "account.dataSpaceNotFound",
+    ACCOUNT_LAST_DATA_SPACE: "account.lastDataSpace",
     ACCOUNT_NO_DATA_SPACE: "account.noDataSpace",
     ACCOUNT_AUTHENTICATION_REQUIRED: "account.authenticationRequired",
     ACCOUNT_SESSION_NOT_FOUND: "account.sessionNotFound",

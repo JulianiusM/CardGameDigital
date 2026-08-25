@@ -61,6 +61,18 @@ export class User extends NumericBase {
     @Column("varchar", { name: "oidc_issuer", nullable: true, length: 255 })
     oidcIssuer?: string | null;
 
+    @Column("boolean", { name: "use_system_language", nullable: true })
+    useSystemLanguage?: boolean | null;
+
+    @Column("varchar", { name: "interface_locale", nullable: true, length: 35 })
+    interfaceLocale?: string | null;
+
+    @Column("varchar", { name: "card_locale", nullable: true, length: 35 })
+    cardLocale?: string | null;
+
+    @Column("text", { name: "language_fallbacks_json", nullable: true })
+    languageFallbacksJson?: string | null;
+
     @OneToMany(() => DataSpace, (dataSpace) => dataSpace.user)
     dataSpaces: DataSpace[];
 

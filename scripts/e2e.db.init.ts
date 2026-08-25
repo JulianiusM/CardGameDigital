@@ -28,9 +28,9 @@ dotenv.config({ path: process.env.E2E_DOTENV_FILE ?? ".env.e2e" });
 // ---- Guardrails: refuse to run on non-E2E DBs ----
 const runtimeSettings = resolveSettings(process.env, "/dev/null");
 const DB_NAME = runtimeSettings.dbName;
-if (!/e2e/i.test(DB_NAME)) {
+if (!/(?:e2e|test)/i.test(DB_NAME)) {
     console.error(
-        `Refusing to run DB init because E2E_DB_NAME "${DB_NAME}" does not contain 'e2e'.`,
+        `Refusing to run DB init because E2E_DB_NAME "${DB_NAME}" is not a test/e2e database.`,
     );
     process.exit(1);
 }

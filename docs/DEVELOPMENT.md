@@ -11,8 +11,13 @@ npm test
 ```
 
 Local defaults need no external database. The server creates a SQLite database under
-`data/`. For public-database integration work, use the repository MariaDB compose file
-and environment settings described in the root README.
+`data/`. For public-database integration work, use `docker-compose.mariadb.test.yml` or
+another disposable MariaDB 10.11 instance. Put integration credentials in the ignored
+`tests/.env.test.local` profile and browser credentials in `.env.e2e`; database names
+must contain `test` or `e2e` before the reset tooling will touch them.
+For a single permission-scoped local test schema, set `E2E_DB_USE_TEST_PROFILE=1` in
+`.env.e2e`. The Playwright runner then inherits the ignored `TEST_DB_*` profile without
+copying its credentials into another file.
 
 ## Common commands
 
@@ -26,7 +31,15 @@ npm run format           # format supported sources and documentation
 npm run format:check
 npm test
 npm run e2e              # requires Playwright browsers
+npm run test:mariadb:reset
+npm run test:mariadb:public
 ```
+
+The public MariaDB suite clears its exact test schema, runs the full migration chain,
+and covers anonymous all-mode quick play plus account activation/login/reset,
+DataSpaces, durable Couch/Room ownership, export, revocation, and deletion cascades.
+`NODE_ENV=e2e` permits public semantics on an HTTP loopback origin for browser tests;
+non-loopback and production public configurations still require HTTPS.
 
 ## Change workflow
 

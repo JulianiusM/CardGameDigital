@@ -33,15 +33,14 @@ describe("account email localization", () => {
         const german = listHelpDocuments("de").map(({ slug }) => slug);
         const english = listHelpDocuments("en").map(({ slug }) => slug);
         expect(german).toEqual(english);
-        expect(german).toEqual(
-            expect.arrayContaining([
-                "getting-started",
-                "game-modes",
-                "rooms-and-devices",
-                "safety-and-boundaries",
-                "accounts-and-data",
-                "troubleshooting",
-            ]),
-        );
+        expect(german).toEqual([
+            "readme",
+            "getting-started",
+            "game-modes",
+            "rooms-and-devices",
+            "safety-and-boundaries",
+            "accounts-and-data",
+            "troubleshooting",
+        ]);
     });
 });

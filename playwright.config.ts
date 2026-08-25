@@ -4,6 +4,20 @@ import * as dotenv from "dotenv";
 
 dotenv.config({ path: process.env.E2E_DOTENV_FILE ?? ".env.e2e" });
 
+if (process.env.E2E_DB_USE_TEST_PROFILE === "1") {
+    const testProfile: NodeJS.ProcessEnv = {};
+    dotenv.config({
+        path: process.env.TEST_DOTENV_FILE ?? "tests/.env.test.local",
+        processEnv: testProfile,
+        quiet: true,
+    });
+    for (const key of ["DB_HOST", "DB_PORT", "DB_USER", "DB_PASSWORD", "DB_NAME"] as const) {
+        const value = testProfile[`TEST_${key}`];
+        if (!value) throw new Error(`E2E_DB_USE_TEST_PROFILE requires TEST_${key}`);
+        process.env[`E2E_${key}`] = value;
+    }
+}
+
 const PORT = Number.parseInt(process.env.E2E_HTTP_PORT ?? process.env.HTTP_PORT ?? "3001", 10);
 const BASE_URL = process.env.E2E_PUBLIC_URL ?? process.env.PUBLIC_URL ?? `http://localhost:${PORT}`;
 const IS_CI = process.env.CI === "true" || process.env.CI === "1";

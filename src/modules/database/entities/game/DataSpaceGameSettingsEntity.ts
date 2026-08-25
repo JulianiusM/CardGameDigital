@@ -17,5 +17,9 @@ export class DataSpaceGameSettingsEntity {
     @Column("integer", { name: "lets_talk_meta_interval" }) letsTalkMetaInterval!: number;
     @Column("varchar", { name: "default_group_id", length: 36, nullable: true }) defaultGroupId!:
         string | null;
+    @Column("text", { name: "custom_configuration_json", nullable: true })
+    customConfigurationJson!: string | null;
+    @Column("text", { name: "card_language_settings_json", nullable: true })
+    cardLanguageSettingsJson!: string | null;
     @Column("datetime", { name: "updated_at" }) updatedAt!: Date;
 }

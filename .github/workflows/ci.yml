@@ -77,13 +77,20 @@ jobs:
         run: |
           cat > .env.e2e <<'EOF'
           NODE_ENV=e2e
-          E2E_DEPLOYMENT_MODE=local
-          E2E_AUTH_MODE=none
+          E2E_DEPLOYMENT_MODE=public
+          E2E_AUTH_MODE=account
           E2E_HTTP_BIND=127.0.0.1
           E2E_HTTP_PORT=3001
           E2E_PUBLIC_URL=http://127.0.0.1:3001
           E2E_SESSION_SECRET=ci-e2e-session-secret-1234567890
           E2E_OIDC_ENABLED=false
+          E2E_SMTP_HOST=smtp.example.test
+          E2E_SMTP_PORT=465
+          E2E_SMTP_USER=mailer
+          E2E_SMTP_PASSWORD=mail-password
+          E2E_SMTP_EMAIL=cards@example.test
+          E2E_SMTP_SECURE=true
+          E2E_TRUST_PROXY=1
 
           # E2E DB (guard requires name to contain 'e2e')
           E2E_DB_TYPE=mariadb
@@ -108,6 +115,11 @@ jobs:
           E2E_DB_USER: surveyor
           E2E_DB_PASSWORD: surveyor
           E2E_DB_NAME: surveyor_e2e
+          TEST_DB_HOST: 127.0.0.1
+          TEST_DB_PORT: 3306
+          TEST_DB_USER: surveyor
+          TEST_DB_PASSWORD: surveyor
+          TEST_DB_NAME: surveyor_test
         run: |
           mkdir -p artifacts
           npm run test:ci
