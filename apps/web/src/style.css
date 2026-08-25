@@ -279,9 +279,26 @@ input[type="range"] {
     font-size: clamp(1.65rem, 5vw, 3.2rem);
     line-height: 1.16;
 }
-.dots {
+.intensity-pair {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.55rem 1rem;
+    align-items: center;
+    justify-content: center;
     color: var(--color-muted-cocoa);
-    letter-spacing: 0.25rem;
+}
+.intensity-meter {
+    display: inline-flex;
+    gap: 0.35rem;
+    align-items: center;
+}
+.intensity-meter .ui-icon {
+    flex: 0 0 auto;
+    width: 1.1em;
+    height: 1.1em;
+}
+.intensity-dots {
+    letter-spacing: 0.14rem;
 }
 .actions {
     display: flex;

@@ -711,7 +711,9 @@ independently tuned, hard-coded numeric base offset for each QuestionCategory an
 DareType and derives an internal score as `base offset + Card intensity`. Fractional
 offsets allow the overlap between each pair of five-score ranges to match their actual
 content relationship while distant classifications remain separated. The browser
-receives the global 1–5 display level `min(5, ceil(score / 4))`.
+receives both the relative 1–5 Card level and the global 1–5 display level
+`min(5, ceil(score / 4))`. The adaptive background uses the relative level because its
+visual family already represents the Question Category or DareType offset.
 
 ---
 
@@ -845,6 +847,8 @@ Conceptual:
     "id": "8fc2...",
     "type": "DARE",
     "dareType": "DARE_KISS_SPICY",
+    "cardIntensity": 4,
+    "intensity": 3,
     "text": "..."
 }
 ```

@@ -219,6 +219,36 @@ const cards: CardRepository = {
 };
 
 describe("RoomService", () => {
+    it("projects relative and global Card intensity separately", async () => {
+        const repository = new MemoryRooms();
+        const intensityCards: CardRepository = {
+            ...cards,
+            async listActive() {
+                return [card({ id: "intensity-question" as never, intensity: 3 })];
+            },
+        };
+        const service = new RoomService(repository, intensityCards, new SequenceRandomSource([0]));
+        const joined = await service.createRoom("Host");
+        const player = await service.joinRoom(joined.roomCode, "Player", "PLAYER");
+        const host = (await service.authenticate(joined.roomCode, joined.participantCredential))!;
+        await service.authenticate(joined.roomCode, player.participantCredential);
+        await service.execute(joined.roomId, host, {
+            type: "command.startSession",
+            revision: null,
+            payload: {},
+        });
+        const shown = await service.execute(joined.roomId, host, {
+            type: "command.chooseCardType",
+            revision: 0,
+            payload: { cardType: "QUESTION" },
+        });
+
+        expect(shown.session?.currentCard).toMatchObject({
+            cardIntensity: 3,
+            intensity: 1,
+        });
+    });
+
     it("rejects Session start when every configured pool is empty", async () => {
         const repository = new MemoryRooms();
         const emptyCards: CardRepository = { ...cards, listActive: async () => [] };

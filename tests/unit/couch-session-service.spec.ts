@@ -101,7 +101,12 @@ describe("CouchSessionService", () => {
                     : await service.startTurn(snapshot.id, snapshot.revision);
             expect(snapshot.revision).toBe(1);
             expect(snapshot.currentCard).not.toBeNull();
-            if (mode === GAME_MODES.CLASSIC) expect(snapshot.currentCard?.intensity).toBe(1);
+            if (mode === GAME_MODES.CLASSIC) {
+                expect(snapshot.currentCard).toMatchObject({
+                    cardIntensity: 3,
+                    intensity: 1,
+                });
+            }
             expect(await service.get(snapshot.id)).toEqual(snapshot);
         }
     });

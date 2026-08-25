@@ -1,6 +1,7 @@
 <script lang="ts">
     import { messages } from "./i18n";
     import { atmosphereFor, type PresentedCard } from "./presentationMapping";
+    import UiIcon from "./UiIcon.svelte";
 
     export let card: PresentedCard;
     export let showIntensity = false;
@@ -31,8 +32,27 @@
     </span>
     <p>{card.cardText}</p>
     {#if showIntensity}
-        <span class="dots" aria-label={`${messages.common.intensityLabel} ${card.intensity}`}>
-            {"●".repeat(card.intensity)}{"○".repeat(5 - card.intensity)}
+        <span class="intensity-pair">
+            <span
+                class="intensity-meter card-intensity"
+                role="img"
+                aria-label={`${messages.common.cardIntensityLabel} ${card.cardIntensity}`}
+            >
+                <UiIcon name="card-intensity" />
+                <span class="intensity-dots" aria-hidden="true"
+                    >{"●".repeat(card.cardIntensity)}{"○".repeat(5 - card.cardIntensity)}</span
+                >
+            </span>
+            <span
+                class="intensity-meter global-intensity"
+                role="img"
+                aria-label={`${messages.common.globalIntensityLabel} ${card.intensity}`}
+            >
+                <UiIcon name="global-intensity" />
+                <span class="intensity-dots" aria-hidden="true"
+                    >{"●".repeat(card.intensity)}{"○".repeat(5 - card.intensity)}</span
+                >
+            </span>
         </span>
     {/if}
 </article>

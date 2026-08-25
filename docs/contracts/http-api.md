@@ -160,8 +160,11 @@ is null until completion. Anonymous results contain counts only; named results t
 ordered `{playerId,displayName,vote}` entries. Individual values are never copied into
 CardAppearance or Group history.
 
-The `currentCard.intensity` in Couch and Room snapshots is the derived global 1–5 band,
-not the producer's relative per-taxonomy position.
+The additive `currentCard.cardIntensity` in Couch and Room snapshots is the Card's
+relative 1–5 position within its Question Category or DareType. The existing
+`currentCard.intensity` remains the derived global 1–5 band. Clients should use
+`cardIntensity` to tune category/type-specific visual families and may present both
+values to players.
 
 ## Accounts
 

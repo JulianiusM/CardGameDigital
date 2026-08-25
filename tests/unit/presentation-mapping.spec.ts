@@ -11,6 +11,7 @@ function presentedCard(overrides: Partial<PresentedCard> = {}): PresentedCard {
         id: "card",
         cardText: "Text",
         cardType: "QUESTION",
+        cardIntensity: 1,
         intensity: 1,
         questionCategoryId: "CAT_PERSONALITY",
         dareTypeId: null,
@@ -73,8 +74,8 @@ describe("presentation mapping", () => {
         }
     });
 
-    it("keeps intensity as a modifier and maps commands without rendering conditionals", () => {
-        expect(atmosphereFor(presentedCard({ intensity: 4.4 }))).toEqual({
+    it("uses relative Card intensity as the family modifier and maps commands centrally", () => {
+        expect(atmosphereFor(presentedCard({ cardIntensity: 4.4, intensity: 2 }))).toEqual({
             family: "INNER_SELF",
             intensity: 4,
         });
@@ -83,7 +84,8 @@ describe("presentation mapping", () => {
                 presentedCard({
                     cardType: "CONVERSATION",
                     questionCategoryId: null,
-                    intensity: 9,
+                    cardIntensity: 9,
+                    intensity: 3,
                 }),
             ),
         ).toEqual({ family: "CONVERSATION", intensity: 5 });

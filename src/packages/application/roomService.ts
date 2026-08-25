@@ -3,7 +3,6 @@ import { createHash, randomBytes, randomUUID } from "node:crypto";
 import {
     CARD_TYPES,
     GameSession,
-    globalCardIntensityLevel,
     type DareTypeId,
     type OperationalFlag,
     type QuestionCategoryId,
@@ -38,6 +37,7 @@ import {
     type VersionedRoomGameSettings,
 } from "./roomGameSettings";
 import { projectNeverHaveIEverVoting } from "./neverHaveIEverVoting";
+import { projectCardIntensities } from "./cardIntensityProjection";
 
 const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 export const DEFAULT_ROOM_CAPACITY: Readonly<RoomCapacity> = Object.freeze({
@@ -78,7 +78,7 @@ function projectCurrentCard(card: PlayableCard | null) {
     if (!card) return null;
     return {
         ...card,
-        intensity: globalCardIntensityLevel(card),
+        ...projectCardIntensities(card),
     };
 }
 export type RoomCommand =

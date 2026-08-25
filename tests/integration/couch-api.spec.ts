@@ -61,6 +61,10 @@ describe("Couch HTTP application adapter", () => {
                 .expect(200);
             expect(shown.body).toMatchObject({ revision: 1, cardsShown: 1 });
             expect(shown.body.currentCard.cardText).toBeTruthy();
+            expect(shown.body.currentCard).toMatchObject({
+                cardIntensity: expect.any(Number),
+                intensity: expect.any(Number),
+            });
         }
         expect(await AppDataSource.getRepository(CouchGameSessionEntity).count()).toBe(0);
     });

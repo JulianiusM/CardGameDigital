@@ -733,6 +733,15 @@ The public global Intensity remains 1 to 5 and uses four-point internal score ba
 min(5, ceil(global score / 4))
 ```
 
+During active play, the Card's relative Intensity and its derived global Intensity are
+both shown on the Card as separate symbol-led five-mark indicators. A Card symbol
+identifies relative intensity and a globe symbol identifies global intensity; accessible
+labels name both values without adding descriptive text to the visible Card surface.
+
+The adaptive background uses the relative Card Intensity. Question Category or DareType
+already selects a separately tuned visual family, so applying the global intensity would
+count the taxonomy offset twice in the presentation.
+
 For questions, relative intensity describes personal or emotional intensity within the
 Question Category.
 

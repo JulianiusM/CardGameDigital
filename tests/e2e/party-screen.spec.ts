@@ -69,7 +69,7 @@ async function expectCompactResultCard(page: Page): Promise<void> {
         const bounds = card.getBoundingClientRect();
         const type = card.querySelector(".card-type")!.getBoundingClientRect();
         const text = card.querySelector("p")!.getBoundingClientRect();
-        const intensity = card.querySelector(".dots")!.getBoundingClientRect();
+        const intensity = card.querySelector(".intensity-pair")!.getBoundingClientRect();
         return {
             inside:
                 type.top >= bounds.top - 1 &&
@@ -344,7 +344,9 @@ test("network loss enters reconnecting immediately and restores the same partici
     await playerContext.close();
 });
 
-test("hosted players see Card intensity and shared game/modal transitions", async ({ browser }) => {
+test("hosted players see both Card intensities and shared game/modal transitions", async ({
+    browser,
+}) => {
     const hostContext = await browser.newContext({ locale: "de-DE" });
     const playerContext = await browser.newContext({ locale: "de-DE" });
     const host = await hostContext.newPage();
@@ -361,11 +363,30 @@ test("hosted players see Card intensity and shared game/modal transitions", asyn
     await chooser.getByRole("button", { name: "Wahrheit", exact: true }).click();
 
     for (const page of [host, player]) {
-        await expect(page.locator(".game-card .dots")).toBeVisible();
+        const intensityPair = page.locator(".game-card .intensity-pair");
+        await expect(intensityPair).toBeVisible();
+        await expect(intensityPair.locator(".intensity-meter")).toHaveCount(2);
         await expect(page.locator(".game-card")).toHaveCSS("animation-name", "card-enter");
-        await expect(page.locator(".game-card .dots")).toHaveAttribute(
+        await expect(intensityPair.locator(".card-intensity")).toHaveAttribute(
             "aria-label",
-            /Intensität [1-5]/,
+            "Kartenintensität 2",
+        );
+        await expect(intensityPair.locator(".global-intensity")).toHaveAttribute(
+            "aria-label",
+            "Globale Intensität 1",
+        );
+        await expect(intensityPair).not.toContainText("Intensität");
+        await expect(intensityPair.locator(".card-intensity use")).toHaveAttribute(
+            "href",
+            /#card-intensity$/,
+        );
+        await expect(intensityPair.locator(".global-intensity use")).toHaveAttribute(
+            "href",
+            /#global-intensity$/,
+        );
+        await expect(page.locator(".atmosphere-layer")).toHaveAttribute(
+            "data-backdrop-intensity",
+            "2",
         );
         await expect(page.locator(".game-phase")).toHaveCSS("animation-name", "phase-enter");
     }

@@ -531,11 +531,24 @@ test("card text remains centered on a narrow, short viewport", async ({ page }) 
     const card = page.locator(".game-card");
     const text = card.locator("p");
     await expect(text).toBeVisible();
+    await expect(card.locator(".intensity-meter")).toHaveCount(2);
+    await expect(card.locator(".card-intensity")).toHaveAttribute(
+        "aria-label",
+        "Kartenintensität 2",
+    );
+    await expect(card.locator(".global-intensity")).toHaveAttribute(
+        "aria-label",
+        "Globale Intensität 1",
+    );
+    await expect(page.locator(".atmosphere-layer")).toHaveAttribute("data-backdrop-intensity", "2");
     const cardBox = (await card.boundingBox())!;
     const textBox = (await text.boundingBox())!;
+    const intensityBox = (await card.locator(".intensity-pair").boundingBox())!;
     const cardCenter = cardBox.y + cardBox.height / 2;
     const textCenter = textBox.y + textBox.height / 2;
     expect(Math.abs(textCenter - cardCenter)).toBeLessThan(cardBox.height * 0.2);
+    expect(intensityBox.x).toBeGreaterThanOrEqual(cardBox.x);
+    expect(intensityBox.x + intensityBox.width).toBeLessThanOrEqual(cardBox.x + cardBox.width);
 });
 
 test("game card and actions fit medium and TV viewports without document scrolling", async ({

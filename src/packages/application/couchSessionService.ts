@@ -1,12 +1,6 @@
 import { MESSAGE_KEYS } from "../localization/keys";
 import { randomUUID } from "node:crypto";
-import {
-    GameSession,
-    type GameMode,
-    CARD_TYPES,
-    globalCardIntensityLevel,
-    type DataSpaceId,
-} from "../game-core";
+import { GameSession, type GameMode, CARD_TYPES, type DataSpaceId } from "../game-core";
 import {
     DEFAULT_CARD_TRANSLATION_POLICY,
     type CardLocalizationPolicy,
@@ -24,6 +18,7 @@ import {
     type NeverHaveIEverVotingProjection,
 } from "./neverHaveIEverVoting";
 import { NEVER_HAVE_I_EVER_REVEAL_MODES, type NeverHaveIEverRevealMode } from "../game-core";
+import { projectCardIntensities } from "./cardIntensityProjection";
 
 export type CreateCouchSession = {
     persistence: "EPHEMERAL" | "DATASPACE";
@@ -53,6 +48,7 @@ export type CouchSessionSnapshot = {
         id: string;
         cardText: string;
         cardType: string;
+        cardIntensity: number;
         intensity: number;
         questionCategoryId: string | null;
         dareTypeId: string | null;
@@ -317,7 +313,7 @@ export class CouchSessionService {
                       id: session.currentCard.id,
                       cardText: session.currentCard.cardText,
                       cardType: session.currentCard.cardType,
-                      intensity: globalCardIntensityLevel(session.currentCard),
+                      ...projectCardIntensities(session.currentCard),
                       questionCategoryId: session.currentCard.questionCategoryId,
                       dareTypeId: session.currentCard.dareTypeId,
                   }

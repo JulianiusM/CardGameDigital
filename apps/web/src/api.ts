@@ -14,6 +14,7 @@ export type Snapshot = {
         id: string;
         cardText: string;
         cardType: string;
+        cardIntensity: number;
         intensity: number;
         questionCategoryId: string | null;
         dareTypeId: string | null;

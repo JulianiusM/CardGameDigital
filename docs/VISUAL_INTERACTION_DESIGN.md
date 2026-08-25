@@ -348,9 +348,16 @@ meaning._
 
 # 11. Intensity gradient
 
-The intensity used for presentation is the derived global Card intensity. It modifies a
-family; it never replaces the family. A Childhood question stays golden/amber and a SEX
-dare stays berry/raspberry regardless of their position in the global progression.
+The intensity used to tune the adaptive background is the relative Card intensity within
+its Question Category or DareType. The category/type already selects a separately tuned
+family, so the derived global intensity is informative but must not tune the family a
+second time. A Childhood question stays golden/amber and a SEX dare stays berry/raspberry
+regardless of their position in the global progression.
+
+The active Card shows both values as a compact pair of symbol-led five-mark meters: a Card
+symbol for relative Card intensity and a globe symbol for derived global intensity. No
+visible descriptive labels accompany the meters. Accessible names still identify both
+values for assistive technology.
 
 | **Intensity**       | **Color**                                | **Icon opacity** | **Density** | **Row drift** | **Character**                                                  |
 | ------------------- | ---------------------------------------- | ---------------- | ----------- | ------------- | -------------------------------------------------------------- |

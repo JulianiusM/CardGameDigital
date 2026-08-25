@@ -9,6 +9,7 @@ export type PresentedCard = {
     id: string;
     cardText: string;
     cardType: string;
+    cardIntensity: number;
     intensity: number;
     questionCategoryId: string | null;
     dareTypeId: string | null;
@@ -79,7 +80,7 @@ export function atmosphereFor(
     if (!card) return null;
     return {
         family: visualFamilyFor(card),
-        intensity: presentationIntensity(card.intensity),
+        intensity: presentationIntensity(card.cardIntensity),
     };
 }
 

@@ -64,8 +64,10 @@ Intensity settings include public 1–5 `startingIntensity` and `maximumIntensit
 increment after each interval and caps at the end. Omitted progression fields default to
 Card-based pacing every two Cards with an increment of 1, so the addition is
 backward-compatible within protocol v2; snapshots always include them.
-`currentCard.intensity` is the derived global display band rather than the producer's
-relative per-taxonomy position.
+The additive `currentCard.cardIntensity` is the Card's relative 1–5 position within its
+Question Category or DareType. The existing `currentCard.intensity` remains the derived
+global 1–5 display band. Clients should use `cardIntensity` to tune category/type-specific
+visual families and may present both values to players.
 
 `cardFallbackEnabled` and `cardFallbackLocales` are additive protocol-v2 settings and
 default to `false` and `[]` when omitted. Enabling fallback requires a non-empty unique
@@ -135,3 +137,5 @@ Clients must ignore additive response fields.
 
 Protocol v2 replaces v1 because Session start no longer accepts client-authoritative
 settings. A v1 client is rejected with `PROTOCOL_VERSION_UNSUPPORTED` and must upgrade.
+The `currentCard.cardIntensity` response field is additive within v2; existing clients
+continue to receive the unchanged global meaning of `currentCard.intensity`.

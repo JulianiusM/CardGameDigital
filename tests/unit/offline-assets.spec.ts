@@ -60,6 +60,8 @@ describe("offline gameplay assets", () => {
         expect(fs.existsSync("apps/web/public/motifs/end.svg")).toBe(false);
         const uiIcons = fs.readFileSync("apps/web/public/motifs/ui-icons.svg", "utf8");
         expect(uiIcons.match(/<symbol\b/g)?.length).toBeGreaterThanOrEqual(20);
+        expect(uiIcons).toContain('id="card-intensity"');
+        expect(uiIcons).toContain('id="global-intensity"');
         const backgroundSymbols = fs.readFileSync(
             "apps/web/public/motifs/motif-symbols.svg",
             "utf8",

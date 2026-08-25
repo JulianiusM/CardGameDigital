@@ -2943,7 +2943,7 @@ main.playing .public-stage .voting-collection .never-voting {
     line-height: 1.08;
     overflow-wrap: anywhere;
 }
-.public-stage .voting-results .result-compact .dots {
+.public-stage .voting-results .result-compact .intensity-pair {
     overflow: hidden;
     font-size: clamp(0.62rem, 7cqh, 0.9rem);
     line-height: 1;
