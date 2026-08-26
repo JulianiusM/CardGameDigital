@@ -1,0 +1,231 @@
+{
+    "contract": "game-card-catalog/v2",
+    "catalogId": "core",
+    "catalogVersion": "2026.09.01-1",
+    "sequence": 14,
+    "generatedAt": "2026-09-01T12:00:00Z",
+    "snapshotKind": "FULL",
+    "cardDefaults": {
+        "socialSensitivity": "GENERAL",
+        "minimumPlayerCount": 2,
+        "maximumPlayerCount": null
+    },
+    "defaultLocale": "de-DE",
+    "locales": [
+        {
+            "id": "de-DE",
+            "nativeName": "Deutsch (Deutschland)",
+            "active": true
+        },
+        {
+            "id": "en-GB",
+            "nativeName": "English (United Kingdom)",
+            "active": true
+        },
+        {
+            "id": "fr-FR",
+            "nativeName": "Français (France)",
+            "active": true
+        }
+    ],
+    "taxonomy": {
+        "questionCategories": [
+            {
+                "id": "CAT_EVERYDAY",
+                "defaultSocialSensitivity": "PERSONAL",
+                "localizations": [
+                    {
+                        "locale": "de-DE",
+                        "label": "Alltag",
+                        "description": null
+                    },
+                    {
+                        "locale": "en-GB",
+                        "label": "Everyday",
+                        "description": null
+                    },
+                    {
+                        "locale": "fr-FR",
+                        "label": "Quotidien",
+                        "description": null
+                    }
+                ]
+            },
+            {
+                "id": "CAT_FRIENDSHIP",
+                "defaultSocialSensitivity": "CLOSE_PERSONAL",
+                "localizations": [
+                    {
+                        "locale": "de-DE",
+                        "label": "Freundschaft",
+                        "description": null
+                    },
+                    {
+                        "locale": "en-GB",
+                        "label": "Friendship",
+                        "description": null
+                    }
+                ]
+            },
+            {
+                "id": "CAT_RELATIONSHIP",
+                "defaultSocialSensitivity": "DEEP_PERSONAL",
+                "localizations": [
+                    {
+                        "locale": "de-DE",
+                        "label": "Beziehung",
+                        "description": null
+                    },
+                    {
+                        "locale": "en-GB",
+                        "label": "Relationship",
+                        "description": null
+                    }
+                ]
+            }
+        ],
+        "dareTypes": [
+            {
+                "id": "DARE_SILLY",
+                "defaultSocialSensitivity": "GENERAL",
+                "localizations": [
+                    {
+                        "locale": "de-DE",
+                        "label": "Albern",
+                        "description": null
+                    },
+                    {
+                        "locale": "en-GB",
+                        "label": "Silly",
+                        "description": null
+                    }
+                ]
+            },
+            {
+                "id": "DARE_KISS",
+                "defaultSocialSensitivity": "INTIMATE",
+                "localizations": [
+                    {
+                        "locale": "de-DE",
+                        "label": "Kuss",
+                        "description": null
+                    },
+                    {
+                        "locale": "en-GB",
+                        "label": "Kiss",
+                        "description": null
+                    }
+                ]
+            }
+        ]
+    },
+    "cards": [
+        {
+            "id": "6ef89318-b6d5-49ee-bccf-d97958475e7c",
+            "lifecycle": "ACTIVE",
+            "cardType": "QUESTION",
+            "questionCategoryId": "CAT_EVERYDAY",
+            "dareTypeId": null,
+            "dareAffinityCategoryId": null,
+            "yesNoAnswerPossible": true,
+            "intensity": 2,
+            "alwaysEligible": false,
+            "repeatableInSession": false,
+            "repeatCooldown": 0,
+            "weight": 1,
+            "operationalFlags": [],
+            "localizations": [
+                {
+                    "locale": "de-DE",
+                    "text": "Was ist dein größter Wunsch?"
+                },
+                {
+                    "locale": "en-GB",
+                    "text": "What is your greatest wish?"
+                },
+                {
+                    "locale": "fr-FR",
+                    "text": "Quel est ton plus grand souhait ?"
+                }
+            ]
+        },
+        {
+            "id": "5cb8e827-93dd-42e3-b8f6-6927a896c529",
+            "lifecycle": "ACTIVE",
+            "cardType": "QUESTION",
+            "questionCategoryId": "CAT_EVERYDAY",
+            "dareTypeId": null,
+            "dareAffinityCategoryId": null,
+            "yesNoAnswerPossible": true,
+            "intensity": 2,
+            "alwaysEligible": false,
+            "repeatableInSession": false,
+            "repeatCooldown": 0,
+            "weight": 1,
+            "socialSensitivity": "PERSONAL",
+            "minimumPlayerCount": 2,
+            "operationalFlags": [],
+            "localizations": [
+                {
+                    "locale": "de-DE",
+                    "text": "Welche Eigenschaft an euren Freundschaften bedeutet dir besonders viel?"
+                },
+                {
+                    "locale": "en-GB",
+                    "text": "What quality in your friendships means the most to you?"
+                }
+            ]
+        },
+        {
+            "id": "79aa8f3c-fbbb-4306-aa92-2093994329d4",
+            "lifecycle": "ACTIVE",
+            "cardType": "DARE",
+            "questionCategoryId": null,
+            "dareTypeId": "DARE_KISS",
+            "dareAffinityCategoryId": "CAT_RELATIONSHIP",
+            "yesNoAnswerPossible": false,
+            "intensity": 2,
+            "alwaysEligible": false,
+            "repeatableInSession": false,
+            "repeatCooldown": 0,
+            "weight": 1,
+            "maximumPlayerCount": 6,
+            "operationalFlags": ["REQUIRES_TARGET_PLAYER", "REQUIRES_PHYSICAL_CONTACT"],
+            "localizations": [
+                {
+                    "locale": "de-DE",
+                    "text": "Küsse eine Person deiner Wahl."
+                },
+                {
+                    "locale": "en-GB",
+                    "text": "Kiss a person of your choice."
+                }
+            ]
+        },
+        {
+            "id": "47927f24-cbd1-477f-8830-e73ebd3502fc",
+            "lifecycle": "ACTIVE",
+            "cardType": "CONVERSATION_META",
+            "questionCategoryId": null,
+            "dareTypeId": null,
+            "dareAffinityCategoryId": null,
+            "yesNoAnswerPossible": false,
+            "intensity": 1,
+            "alwaysEligible": true,
+            "repeatableInSession": true,
+            "repeatCooldown": 3,
+            "weight": 1,
+            "operationalFlags": [],
+            "localizations": [
+                {
+                    "locale": "de-DE",
+                    "text": "Wählt gemeinsam die nächste Person aus."
+                },
+                {
+                    "locale": "en-GB",
+                    "text": "Choose the next person together."
+                }
+            ]
+        }
+    ]
+}
