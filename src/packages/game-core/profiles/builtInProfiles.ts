@@ -10,13 +10,14 @@ import {
 } from "../cards/taxonomy";
 import { INTENSITY_PROGRESSION_UNITS, type Intensity } from "../cards/intensity";
 import { validateGameProfile, type GameProfile } from "./gameProfile";
+import { SOCIAL_SENSITIVITIES, type SocialSensitivity } from "../cards/socialSensitivity";
 
 export const BUILT_IN_PROFILE_IDS = {
-    COLLEAGUES: "PROFILE_COLLEAGUES",
+    CHILD_FRIENDLY: "PROFILE_CHILD_FRIENDLY",
+    ACQUAINTANCES: "PROFILE_ACQUAINTANCES",
     FRIENDS: "PROFILE_FRIENDS",
-    BEST_FRIENDS: "PROFILE_BEST_FRIENDS",
-    COUPLES: "PROFILE_COUPLES",
-    COUPLES_SPICY: "PROFILE_COUPLES_SPICY",
+    CLOSE_FRIENDS: "PROFILE_CLOSE_FRIENDS",
+    SPICY: "PROFILE_SPICY",
 } as const;
 
 export type BuiltInGameProfile = GameProfile & {
@@ -33,6 +34,7 @@ type ProfileInput = {
     questions: readonly QuestionCategoryId[];
     dares: readonly DareTypeId[];
     blockedFlags?: readonly OperationalFlag[];
+    maximumSocialSensitivity: SocialSensitivity;
     maximumIntensity: Intensity;
     randomQuestionRatio?: number;
     requiresAdultConfirmation?: boolean;
@@ -46,6 +48,7 @@ function profile(input: ProfileInput): BuiltInGameProfile {
             enabledQuestionCategoryIds: new Set(input.questions),
             enabledDareTypeIds: new Set(input.dares),
             blockedOperationalFlags: new Set(input.blockedFlags ?? []),
+            maximumSocialSensitivity: input.maximumSocialSensitivity,
             startingIntensity: 1,
             maximumIntensity: input.maximumIntensity,
             intensityProgressionUnit: INTENSITY_PROGRESSION_UNITS.CARDS,
@@ -73,35 +76,38 @@ const playfulDares = [DARE_TYPES.SILLY, DARE_TYPES.OTHER] as const;
 const externalSubstanceFlags = [
     OPERATIONAL_FLAGS.INVOLVES_THIRD_PARTY,
     OPERATIONAL_FLAGS.INVOLVES_ALCOHOL,
-    OPERATIONAL_FLAGS.INVOLVES_RECREATIONAL_DRUGS,
+    OPERATIONAL_FLAGS.INVOLVES_RECREATIONAL_SUBSTANCES,
 ] as const;
-const colleaguesBlockedFlags = [
+const acquaintancesBlockedFlags = [
     ...externalSubstanceFlags,
     OPERATIONAL_FLAGS.REQUIRES_PHYSICAL_CONTACT,
-    OPERATIONAL_FLAGS.REQUIRES_PRIVATE_SPACE,
     OPERATIONAL_FLAGS.REMOVES_CLOTHING,
     OPERATIONAL_FLAGS.REQUIRES_NUDITY,
 ] as const;
 const friendsBlockedFlags = [
     ...externalSubstanceFlags,
-    OPERATIONAL_FLAGS.REQUIRES_PRIVATE_SPACE,
     OPERATIONAL_FLAGS.REMOVES_CLOTHING,
     OPERATIONAL_FLAGS.REQUIRES_NUDITY,
 ] as const;
-const closeFriendsBlockedFlags = [
-    ...externalSubstanceFlags,
-    OPERATIONAL_FLAGS.REQUIRES_PRIVATE_SPACE,
-    OPERATIONAL_FLAGS.REQUIRES_NUDITY,
-] as const;
-
 export const BUILT_IN_GAME_PROFILES: readonly BuiltInGameProfile[] = [
     profile({
-        id: BUILT_IN_PROFILE_IDS.COLLEAGUES,
-        nameKey: MESSAGE_KEYS.PROFILE_COLLEAGUES_NAME,
-        descriptionKey: MESSAGE_KEYS.PROFILE_COLLEAGUES_DESCRIPTION,
+        id: BUILT_IN_PROFILE_IDS.CHILD_FRIENDLY,
+        nameKey: MESSAGE_KEYS.PROFILE_CHILD_FRIENDLY_NAME,
+        descriptionKey: MESSAGE_KEYS.PROFILE_CHILD_FRIENDLY_DESCRIPTION,
+        questions: [...commonQuestions, QUESTION_CATEGORIES.RELATIONSHIP, QUESTION_CATEGORIES.BODY],
+        dares: [...playfulDares, DARE_TYPES.TOUCH],
+        blockedFlags: friendsBlockedFlags,
+        maximumSocialSensitivity: SOCIAL_SENSITIVITIES.DEEP_PERSONAL,
+        maximumIntensity: 3,
+    }),
+    profile({
+        id: BUILT_IN_PROFILE_IDS.ACQUAINTANCES,
+        nameKey: MESSAGE_KEYS.PROFILE_ACQUAINTANCES_NAME,
+        descriptionKey: MESSAGE_KEYS.PROFILE_ACQUAINTANCES_DESCRIPTION,
         questions: commonQuestions,
         dares: playfulDares,
-        blockedFlags: colleaguesBlockedFlags,
+        blockedFlags: acquaintancesBlockedFlags,
+        maximumSocialSensitivity: SOCIAL_SENSITIVITIES.GENERAL,
         maximumIntensity: 2,
     }),
     profile({
@@ -111,37 +117,15 @@ export const BUILT_IN_GAME_PROFILES: readonly BuiltInGameProfile[] = [
         questions: [...commonQuestions, QUESTION_CATEGORIES.RELATIONSHIP, QUESTION_CATEGORIES.BODY],
         dares: [...playfulDares, DARE_TYPES.TOUCH, DARE_TYPES.KISS, DARE_TYPES.CLOTHING],
         blockedFlags: friendsBlockedFlags,
+        maximumSocialSensitivity: SOCIAL_SENSITIVITIES.PERSONAL,
         maximumIntensity: 3,
     }),
     profile({
-        id: BUILT_IN_PROFILE_IDS.BEST_FRIENDS,
-        nameKey: MESSAGE_KEYS.PROFILE_BEST_FRIENDS_NAME,
-        descriptionKey: MESSAGE_KEYS.PROFILE_BEST_FRIENDS_DESCRIPTION,
+        id: BUILT_IN_PROFILE_IDS.CLOSE_FRIENDS,
+        nameKey: MESSAGE_KEYS.PROFILE_CLOSE_FRIENDS_NAME,
+        descriptionKey: MESSAGE_KEYS.PROFILE_CLOSE_FRIENDS_DESCRIPTION,
         questions: [
             ...commonQuestions,
-            QUESTION_CATEGORIES.RELATIONSHIP,
-            QUESTION_CATEGORIES.BODY,
-            QUESTION_CATEGORIES.SEX_OPENNESS,
-            QUESTION_CATEGORIES.SEX_TENSION,
-        ],
-        dares: [
-            ...playfulDares,
-            DARE_TYPES.TOUCH,
-            DARE_TYPES.TOUCH_SPICY,
-            DARE_TYPES.KISS,
-            DARE_TYPES.KISS_SPICY,
-            DARE_TYPES.CLOTHING,
-        ],
-        blockedFlags: closeFriendsBlockedFlags,
-        maximumIntensity: 4,
-    }),
-    profile({
-        id: BUILT_IN_PROFILE_IDS.COUPLES,
-        nameKey: MESSAGE_KEYS.PROFILE_COUPLES_NAME,
-        descriptionKey: MESSAGE_KEYS.PROFILE_COUPLES_DESCRIPTION,
-        questions: [
-            QUESTION_CATEGORIES.EVERYDAY,
-            QUESTION_CATEGORIES.PERSONALITY,
             QUESTION_CATEGORIES.RELATIONSHIP,
             QUESTION_CATEGORIES.BODY,
             QUESTION_CATEGORIES.SEXUALITY,
@@ -160,15 +144,17 @@ export const BUILT_IN_GAME_PROFILES: readonly BuiltInGameProfile[] = [
             DARE_TYPES.SEXUAL_TENSION,
         ],
         blockedFlags: externalSubstanceFlags,
+        maximumSocialSensitivity: SOCIAL_SENSITIVITIES.INTIMATE,
         maximumIntensity: 4,
     }),
     profile({
-        id: BUILT_IN_PROFILE_IDS.COUPLES_SPICY,
-        nameKey: MESSAGE_KEYS.PROFILE_COUPLES_SPICY_NAME,
-        descriptionKey: MESSAGE_KEYS.PROFILE_COUPLES_SPICY_DESCRIPTION,
+        id: BUILT_IN_PROFILE_IDS.SPICY,
+        nameKey: MESSAGE_KEYS.PROFILE_SPICY_NAME,
+        descriptionKey: MESSAGE_KEYS.PROFILE_SPICY_DESCRIPTION,
         questions: Object.values(QUESTION_CATEGORIES),
         dares: Object.values(DARE_TYPES),
         blockedFlags: externalSubstanceFlags,
+        maximumSocialSensitivity: SOCIAL_SENSITIVITIES.EXPLICIT,
         maximumIntensity: 5,
         randomQuestionRatio: 0.5,
         requiresAdultConfirmation: true,

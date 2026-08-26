@@ -215,6 +215,22 @@ export function structuredRequestLogger(
         response.locals.requestId = requestId;
         response.setHeader("X-Request-ID", requestId);
 
+        const sendJson = response.json.bind(response);
+        response.json = ((body: unknown) => {
+            const error =
+                typeof body === "object" && body !== null
+                    ? (body as { error?: unknown }).error
+                    : undefined;
+            const code =
+                typeof error === "object" && error !== null
+                    ? (error as { code?: unknown }).code
+                    : undefined;
+            if (typeof code === "string" && code.length > 0) {
+                response.locals.responseErrorCode = code;
+            }
+            return sendJson(body);
+        }) as Response["json"];
+
         const writeRequest = () => {
             if (written) return;
             written = true;
@@ -229,6 +245,10 @@ export function structuredRequestLogger(
                     method: request.method,
                     path: requestPathForLog(request.originalUrl ?? request.url),
                     statusCode: response.statusCode,
+                    failureReason:
+                        response.statusCode >= 400
+                            ? (response.locals.responseErrorCode ?? "UNSPECIFIED_HTTP_ERROR")
+                            : undefined,
                     durationMs: Number(durationMs.toFixed(3)),
                     aborted: !response.writableEnded,
                 },

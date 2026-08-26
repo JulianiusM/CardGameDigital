@@ -1,10 +1,13 @@
 import { z } from "zod";
-import { describe, expect, it } from "vitest";
+import express from "express";
+import request from "supertest";
+import { describe, expect, it, vi } from "vitest";
 import {
     errorLogFields,
     logLevelEnabled,
     safeErrorName,
     structuredLogEntry,
+    structuredRequestLogger,
 } from "../../src/modules/structuredLogger";
 
 describe("structured logging", () => {
@@ -76,5 +79,34 @@ describe("structured logging", () => {
         );
         expect(mailFailure.errorMessage).toContain("activate=[redacted]");
         expect(mailFailure.errorMessage).not.toContain("one-time-value");
+    });
+
+    it("adds the stable API failure reason to every failed request log", async () => {
+        const lines: string[] = [];
+        const write = vi.spyOn(process.stdout, "write").mockImplementation((chunk) => {
+            lines.push(String(chunk));
+            return true;
+        });
+        const app = express();
+        app.use(structuredRequestLogger("trace"));
+        app.put("/api/v1/game-settings", (_request, response) => {
+            response.status(400).json({ error: { code: "UNKNOWN_GAME_PROFILE" } });
+        });
+
+        try {
+            await request(app).put("/api/v1/game-settings").expect(400);
+        } finally {
+            write.mockRestore();
+        }
+
+        const entry = lines
+            .map((line) => JSON.parse(line) as Record<string, unknown>)
+            .find(({ event }) => event === "http.request");
+        expect(entry).toMatchObject({
+            method: "PUT",
+            path: "/api/v1/game-settings",
+            statusCode: 400,
+            failureReason: "UNKNOWN_GAME_PROFILE",
+        });
     });
 });

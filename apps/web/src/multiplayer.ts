@@ -30,6 +30,7 @@ export type SessionView = {
         dareTypeId: string | null;
     } | null;
     cardsShown: number;
+    remainingCardCount: number;
     voteResult: { yes: number; no: number; total: number };
     neverHaveIEverVoting: NeverHaveIEverVotingView | null;
     hasVoted: boolean;
@@ -64,10 +65,13 @@ export type RoomSnapshot = {
     settings: VersionedRoomGameSettings;
     session: SessionView | null;
 };
+export type SocialSensitivity =
+    "GENERAL" | "PERSONAL" | "CLOSE_PERSONAL" | "DEEP_PERSONAL" | "INTIMATE" | "EXPLICIT";
 export type EffectiveGameSettings = {
     enabledQuestionCategoryIds: string[];
     enabledDareTypeIds: string[];
     blockedOperationalFlags: string[];
+    maximumSocialSensitivity: SocialSensitivity;
     startingIntensity: 1 | 2 | 3 | 4 | 5;
     maximumIntensity: 1 | 2 | 3 | 4 | 5;
     intensityProgressionUnit: "ROUNDS" | "CARDS";
@@ -76,6 +80,47 @@ export type EffectiveGameSettings = {
     randomQuestionRatio: number;
     maximumTypeStreak: number;
     letsTalkMetaInterval: number;
+};
+export type AvailabilityDirective = "INHERIT" | "INCLUDE" | "EXCLUDE";
+export type BooleanDirective = "INHERIT" | "ENABLE" | "DISABLE";
+export type ScalarDirective<T> =
+    { mode: "INHERIT" } | { mode: "CATALOG" } | { mode: "SET"; value: T };
+export type CardPolicyDirectives = {
+    availability?: AvailabilityDirective;
+    alwaysEligible?: BooleanDirective;
+    repeatableInSession?: BooleanDirective;
+    repeatCooldown?: ScalarDirective<number>;
+    intensity?: ScalarDirective<1 | 2 | 3 | 4 | 5>;
+    weight?: ScalarDirective<number>;
+    socialSensitivity?: ScalarDirective<string>;
+    playerCount?: ScalarDirective<{ minimum: number; maximum: number | null }>;
+};
+export type CardPolicyPredicate = {
+    cardTypes?: string[];
+    questionCategoryIds?: string[];
+    dareTypeIds?: string[];
+    dareAffinityCategoryIds?: string[];
+    yesNoAnswerPossible?: boolean;
+    socialSensitivities?: string[];
+    operationalFlagsAll?: string[];
+    operationalFlagsAny?: string[];
+    operationalFlagsNone?: string[];
+    minimumIntensity?: number;
+    maximumIntensity?: number;
+    lifecycle?: "ACTIVE" | "RETIRED";
+};
+export type CardPolicyRule = {
+    id: string;
+    name: string;
+    order: number;
+    enabled: boolean;
+    predicate: CardPolicyPredicate;
+    directives: CardPolicyDirectives;
+};
+export type SessionCardPolicy = {
+    scopeDefault: CardPolicyDirectives;
+    conditionalRules: CardPolicyRule[];
+    exactCards: { cardId: string; directives: CardPolicyDirectives }[];
 };
 export type RoomGameSettings = {
     mode: string;
@@ -87,6 +132,7 @@ export type RoomGameSettings = {
     cardFallbackLocales: string[];
     neverHaveIEverRevealMode: NeverHaveIEverRevealMode;
     configuration: EffectiveGameSettings;
+    cardPolicy: SessionCardPolicy;
 };
 export type PublicGameSettings = Pick<
     RoomGameSettings,
@@ -96,6 +142,7 @@ export type PublicGameSettings = Pick<
     | "cardFallbackEnabled"
     | "cardFallbackLocales"
     | "neverHaveIEverRevealMode"
+    | "cardPolicy"
     | "configuration"
 >;
 export type VersionedRoomGameSettings = RoomGameSettings & {
@@ -110,6 +157,7 @@ export type GameProfileSummary = {
     requiresAdultConfirmation: boolean;
     startingIntensity: number;
     maximumIntensity: number;
+    maximumSocialSensitivity: SocialSensitivity;
     intensityProgressionUnit: "ROUNDS" | "CARDS";
     intensityProgressionInterval: number;
     intensityProgressionIncrement: number;
@@ -140,6 +188,7 @@ export type GameSettings = {
     preferredProfileId: string;
     startingIntensity: number;
     maximumIntensity: number;
+    maximumSocialSensitivity: SocialSensitivity;
     intensityProgressionUnit: "ROUNDS" | "CARDS";
     intensityProgressionInterval: number;
     intensityProgressionIncrement: number;
@@ -198,12 +247,20 @@ export async function loadCardLocales(): Promise<{
 export async function loadHostConfiguration(): Promise<{
     groups: GroupSummary[];
     settings: GameSettings;
+    dataSpace: { id: string; name: string };
 }> {
     const [groupResult, settingsResult] = await Promise.all([
         loadGroups().then((groups) => ({ groups })),
-        json<{ settings: GameSettings }>("/api/v1/game-settings", { method: "GET" }),
+        json<{ settings: GameSettings; dataSpace: { id: string; name: string } }>(
+            "/api/v1/game-settings",
+            { method: "GET" },
+        ),
     ]);
-    return { groups: groupResult.groups, settings: settingsResult.settings };
+    return {
+        groups: groupResult.groups,
+        settings: settingsResult.settings,
+        dataSpace: settingsResult.dataSpace,
+    };
 }
 export async function loadGroups(): Promise<GroupSummary[]> {
     const result = await json<{ groups: GroupSummary[] }>("/api/v1/groups", { method: "GET" });

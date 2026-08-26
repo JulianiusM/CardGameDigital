@@ -38,6 +38,7 @@ import {
 } from "./roomGameSettings";
 import { projectNeverHaveIEverVoting } from "./neverHaveIEverVoting";
 import { projectCardIntensities } from "./cardIntensityProjection";
+import type { CardPolicyService } from "./cardPolicyService";
 
 const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 export const DEFAULT_ROOM_CAPACITY: Readonly<RoomCapacity> = Object.freeze({
@@ -147,6 +148,7 @@ export class RoomService {
             "missingTranslation" | "fallbackLocales"
         > = DEFAULT_CARD_TRANSLATION_POLICY,
         private readonly capacity: Readonly<RoomCapacity> = DEFAULT_ROOM_CAPACITY,
+        private readonly cardPolicies?: CardPolicyService,
     ) {}
 
     async createRoom(
@@ -245,6 +247,37 @@ export class RoomService {
         return connected;
     }
 
+    /** Resolve the current lobby pool for an authenticated Room participant without
+     * changing connection state or exposing the Room's persistent policy owner. */
+    async eligibilityPreview(roomCode: string, credential: string) {
+        const participant = await this.repository.authenticate(
+            roomCode.toUpperCase(),
+            this.hashCredential(credential),
+        );
+        if (!participant) return null;
+        if (!this.cardPolicies) throw new Error("Card policy service is unavailable");
+
+        const [settings, participants, policyOwner] = await Promise.all([
+            this.repository.loadSettings(participant.roomId),
+            this.repository.listParticipants(participant.roomId),
+            this.repository.policyOwner?.(participant.roomId) ?? Promise.resolve(null),
+        ]);
+        const [cards, groupHistoryCardIds] = await Promise.all([
+            this.cards.listActive(this.localizationPolicy(settings)),
+            this.repository.groupHistory(participant.roomId, settings.groupId),
+        ]);
+        return this.cardPolicies.eligibilityPreview({
+            cards,
+            dataSpaceId: policyOwner?.dataSpaceId,
+            groupId: policyOwner?.groupId,
+            profile: roomSettingsGameProfile(settings),
+            sessionPolicy: settings.cardPolicy,
+            mode: settings.mode,
+            playerCount: Math.max(2, sessionPlayers(participants).length),
+            groupHistoryCardIds,
+        });
+    }
+
     async markConnected(participant: RoomParticipant): Promise<void> {
         await this.repository.setConnectionStatus(participant.id, "CONNECTED");
     }
@@ -276,13 +309,20 @@ export class RoomService {
             this.repository.listBoundaries(roomId),
             this.repository.loadSettings(roomId),
         ]);
+        const remainingCardCount = session
+            ? session.remainingEligibleCardCount(
+                  await this.cards.listActive(this.localizationPolicy(session)),
+              )
+            : 0;
         return {
             roomId,
             capacity: this.capacity,
             participants,
             boundaryConfigured: viewer ? boundaries.has(viewer.id) : false,
             settings: roomSettings,
-            session: session ? this.project(session, viewer, participants) : null,
+            session: session
+                ? this.project(session, viewer, participants, remainingCardCount)
+                : null,
         };
     }
 
@@ -530,6 +570,25 @@ export class RoomService {
                 await this.repository.listBoundaries(roomId),
             );
             const groupHistoryCardIds = await this.repository.selectGroup(roomId, settings.groupId);
+            const cards = await this.cards.listActive({
+                locale: settings.cardLocale,
+                missingTranslation: settings.cardFallbackEnabled
+                    ? "FALLBACK"
+                    : this.cardTranslationPolicy.missingTranslation,
+                fallbackLocales: settings.cardFallbackEnabled
+                    ? settings.cardFallbackLocales
+                    : this.cardTranslationPolicy.fallbackLocales,
+            });
+            const policyOwner = await this.repository.policyOwner?.(roomId);
+            const compiled = this.cardPolicies
+                ? await this.cardPolicies.compileSessionCards({
+                      cards,
+                      dataSpaceId: policyOwner?.dataSpaceId,
+                      groupId: policyOwner?.groupId,
+                      profile,
+                      sessionPolicy: settings.cardPolicy,
+                  })
+                : null;
             const proposed = new GameSession(
                 {
                     id: randomUUID(),
@@ -543,12 +602,11 @@ export class RoomService {
                     cardFallbackEnabled: settings.cardFallbackEnabled,
                     cardFallbackLocales: settings.cardFallbackLocales,
                     neverHaveIEverRevealMode: settings.neverHaveIEverRevealMode,
+                    compiledCardPolicy: compiled?.snapshot,
+                    sessionCardPolicy: settings.cardPolicy,
                 },
                 this.random,
             );
-            const cards = await this.cards.listActive({
-                ...this.localizationPolicy(proposed),
-            });
             if (!proposed.hasEligibleCards(cards)) {
                 throw Object.assign(new Error(MESSAGE_KEYS.GAME_CARD_POOL_EXHAUSTED), {
                     code: "CARD_POOL_EXHAUSTED",
@@ -708,6 +766,7 @@ export class RoomService {
         session: GameSession,
         viewer?: RoomParticipant,
         participants: readonly RoomParticipant[] = [],
+        remainingCardCount = 0,
     ) {
         const controllablePlayerIds = viewer
             ? controlledPlayerIds(viewer, participants)
@@ -759,6 +818,7 @@ export class RoomService {
             players: session.players,
             currentCard: projectCurrentCard(session.currentCard),
             cardsShown: session.sessionHistory.length,
+            remainingCardCount,
             voteResult: session.voteResult(),
             neverHaveIEverVoting: projectNeverHaveIEverVoting(session),
             hasVoted: viewer ? session.votes.has(viewer.id) : false,

@@ -10,6 +10,9 @@ import { GameSessionEntity } from "../../modules/database/entities/game/GameSess
 import { RoomEntity } from "../../modules/database/entities/game/RoomEntity";
 import { CouchCardAppearanceEntity } from "../../modules/database/entities/game/CouchCardAppearanceEntity";
 import { CardAppearanceEntity } from "../../modules/database/entities/game/CardAppearanceEntity";
+import { CardPolicyScopeDefaultEntity } from "../../modules/database/entities/game/CardPolicyScopeDefaultEntity";
+import { CardPolicyConditionalRuleEntity } from "../../modules/database/entities/game/CardPolicyConditionalRuleEntity";
+import { CardPolicyExactCardEntity } from "../../modules/database/entities/game/CardPolicyExactCardEntity";
 import * as users from "../../modules/database/services/UserService";
 import * as accountSessions from "../../modules/database/services/AccountSessionService";
 import mailer from "../../modules/email";
@@ -322,6 +325,24 @@ export async function exportAccount(session: Request["session"]) {
         : [];
     const couchSessionIds = couchSessions.map(({ id }) => id);
     const roomSessionIds = roomSessions.map(({ id }) => id);
+    const [policyDefaults, policyRules, exactCardPolicies] = ids.length
+        ? await Promise.all([
+              AppDataSource.getRepository(CardPolicyScopeDefaultEntity)
+                  .createQueryBuilder("item")
+                  .where("item.dataSpaceId IN (:...ids)", { ids })
+                  .getMany(),
+              AppDataSource.getRepository(CardPolicyConditionalRuleEntity)
+                  .createQueryBuilder("item")
+                  .where("item.dataSpaceId IN (:...ids)", { ids })
+                  .orderBy("item.ownerKey", "ASC")
+                  .addOrderBy("item.ruleOrder", "ASC")
+                  .getMany(),
+              AppDataSource.getRepository(CardPolicyExactCardEntity)
+                  .createQueryBuilder("item")
+                  .where("item.dataSpaceId IN (:...ids)", { ids })
+                  .getMany(),
+          ])
+        : [[], [], []];
     const couchAppearances = couchSessionIds.length
         ? await AppDataSource.getRepository(CouchCardAppearanceEntity)
               .createQueryBuilder("item")
@@ -361,6 +382,7 @@ export async function exportAccount(session: Request["session"]) {
             })),
     });
     return {
+        exportVersion: 3,
         exportedAt: new Date().toISOString(),
         account: { id: user.id, username: user.username, name: user.name, email: user.email },
         languagePreferences: users.languagePreferencesForUser(user),
@@ -393,6 +415,32 @@ export async function exportAccount(session: Request["session"]) {
             }),
         ),
         gameSettings,
+        cardPolicies: {
+            scopeDefaults: policyDefaults.map((item) => ({
+                dataSpaceId: item.dataSpaceId,
+                groupId: item.groupId,
+                directives: JSON.parse(item.directivesJson),
+                revision: item.revision,
+            })),
+            conditionalRules: policyRules.map((item) => ({
+                id: item.id,
+                dataSpaceId: item.dataSpaceId,
+                groupId: item.groupId,
+                name: item.name,
+                order: item.ruleOrder,
+                enabled: item.enabled,
+                predicate: JSON.parse(item.predicateJson),
+                directives: JSON.parse(item.directivesJson),
+                revision: item.revision,
+            })),
+            exactCards: exactCardPolicies.map((item) => ({
+                dataSpaceId: item.dataSpaceId,
+                groupId: item.groupId,
+                cardId: item.cardId,
+                directives: JSON.parse(item.directivesJson),
+                revision: item.revision,
+            })),
+        },
         gameSessions: [
             ...couchSessions.map((item) => projectSession("COUCH", item, couchAppearances)),
             ...roomSessions.map((item) => projectSession("ROOM", item, roomAppearances)),

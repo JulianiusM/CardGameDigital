@@ -35,11 +35,16 @@
     {#if session.state !== "ENDED"}
         <div class="stage-status">
             <div class="status">
-                <span>{messages.common.round} {session.roundNumber}</span>
-                <span>{session.cardsShown} {messages.common.cards}</span>
-                <span class="live">{messages.room.live}</span>
+                <span data-adaptive-contrast>{messages.common.round} {session.roundNumber}</span>
+                <span data-adaptive-contrast>{session.cardsShown} {messages.common.cards}</span>
+                <span class="remaining-cards" data-adaptive-contrast
+                    >{messages.common.remainingCards(session.remainingCardCount)}</span
+                >
+                <span class="live" data-adaptive-contrast>{messages.room.live}</span>
+                {#if role === "DISPLAY"}<strong class="stage-room-code" data-adaptive-contrast
+                        >{roomCode}</strong
+                    >{/if}
             </div>
-            {#if role === "DISPLAY"}<strong class="stage-room-code">{roomCode}</strong>{/if}
         </div>
         <ParticipantRoster
             {participants}
@@ -50,7 +55,7 @@
         />
 
         {#if session.activePlayer}
-            <p class="active-player">
+            <p class="active-player" data-adaptive-contrast>
                 <span>{messages.common.nowPlaying}</span>
                 {session.activePlayer.name}
             </p>

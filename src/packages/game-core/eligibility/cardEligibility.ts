@@ -3,6 +3,7 @@ import { globalCardIntensityScore, maximumGlobalIntensityScore } from "../cards/
 import type { CardAppearance } from "../history/history";
 import { isAllowedByHistory } from "../history/history";
 import type { GameProfile, PlayerBoundaries } from "../profiles/gameProfile";
+import { compareSocialSensitivity } from "../cards/socialSensitivity";
 
 export type EligibilityRequest = {
     cardType: CardType;
@@ -12,6 +13,7 @@ export type EligibilityRequest = {
     maximumIntensityScore: number;
     sessionHistory: readonly CardAppearance[];
     groupHistoryCardIds: ReadonlySet<Card["id"]>;
+    playerCount?: number;
 };
 
 export type EligibilityReason =
@@ -22,7 +24,10 @@ export type EligibilityReason =
     | "QUESTION_BOUNDARY"
     | "DARE_BOUNDARY"
     | "OPERATIONAL_FLAG"
+    | "SOCIAL_SENSITIVITY"
     | "INTENSITY"
+    | "POLICY_AVAILABILITY"
+    | "PLAYER_COUNT"
     | "INACTIVE"
     | "HISTORY";
 
@@ -72,6 +77,11 @@ export function eligibilityReasons(
     if (card.operationalFlags.some((flag) => blockedFlags.has(flag)))
         reasons.push("OPERATIONAL_FLAG");
     if (
+        compareSocialSensitivity(card.socialSensitivity, request.profile.maximumSocialSensitivity) >
+        0
+    )
+        reasons.push("SOCIAL_SENSITIVITY");
+    if (
         globalCardIntensityScore(card) >
         Math.min(
             request.maximumIntensityScore,
@@ -79,6 +89,12 @@ export function eligibilityReasons(
         )
     )
         reasons.push("INTENSITY");
+    if (card.policyAvailable === false) reasons.push("POLICY_AVAILABILITY");
+    if (
+        (request.playerCount ?? 2) < card.minimumPlayerCount ||
+        (card.maximumPlayerCount !== null && (request.playerCount ?? 2) > card.maximumPlayerCount)
+    )
+        reasons.push("PLAYER_COUNT");
     if (!card.active) reasons.push("INACTIVE");
     if (!isAllowedByHistory(card, request.sessionHistory, request.groupHistoryCardIds))
         reasons.push("HISTORY");

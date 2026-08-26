@@ -16,7 +16,8 @@ describe("card localization boundary", () => {
 
     it("does not derive card UUIDs from localized wording", () => {
         const schema = fs.readFileSync("src/packages/card-catalog-contract/schema.ts", "utf8");
-        expect(schema).toMatch(/id: z\.uuid\(\)/);
+        expect(schema).toMatch(/canonicalUuidSchema = .*\.pipe\(z\.uuid\(\)\)/);
+        expect(schema).toMatch(/id: canonicalUuidSchema/);
         expect(fs.existsSync("src/tooling/card-import/normalize.ts")).toBe(false);
     });
 

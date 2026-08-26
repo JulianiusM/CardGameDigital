@@ -1,5 +1,5 @@
 import { v5 as uuidv5 } from "uuid";
-import { IsNull, LessThan, MoreThan, Not, type DataSource } from "typeorm";
+import { IsNull, LessThan, MoreThan, Not, type DataSource, type EntityManager } from "typeorm";
 import type { CardId, GameSessionRuntimeState, PlayerBoundaries } from "../game-core";
 import type {
     DevicePlayer,
@@ -19,6 +19,10 @@ import { CardAppearanceEntity } from "../../modules/database/entities/game/CardA
 import { RoomParticipantBoundaryEntity } from "../../modules/database/entities/game/RoomParticipantBoundaryEntity";
 import { GroupEntity } from "../../modules/database/entities/game/GroupEntity";
 import { CouchCardAppearanceEntity } from "../../modules/database/entities/game/CouchCardAppearanceEntity";
+import {
+    externalizeSessionImmutableState,
+    hydrateSessionImmutableState,
+} from "./sessionImmutablePayloadStore";
 
 const APPEARANCE_NAMESPACE = "d2dad6a5-b25c-570d-a102-9e8b9106a77b";
 
@@ -365,39 +369,22 @@ export class TypeOrmRealtimeRoomRepository implements RealtimeRoomRepository {
         return this.source.transaction(async (manager) => {
             const rooms = manager.getRepository(RoomEntity);
             const room = await rooms.findOneByOrFail({ id: roomId });
-            if (groupId) {
-                if (!room.dataSpaceId) {
-                    throw Object.assign(new Error("Unowned Room cannot use a persistent Group"), {
-                        code: "NOT_AUTHORIZED",
-                    });
-                }
-                const owned = await manager.getRepository(GroupEntity).existsBy({
-                    id: groupId,
-                    dataSpaceId: room.dataSpaceId,
-                });
-                if (!owned) {
-                    throw Object.assign(new Error("Group is outside the Room DataSpace"), {
-                        code: "NOT_AUTHORIZED",
-                    });
-                }
-            }
+            const history = await this.loadOwnedGroupHistory(manager, room.dataSpaceId, groupId);
             await rooms.update({ id: roomId }, { groupId });
-            if (!groupId) return new Set<CardId>();
-            const group = await manager.getRepository(GroupEntity).findOneByOrFail({ id: groupId });
-            const shownAt = group.historyResetAt ? MoreThan(group.historyResetAt) : undefined;
-            const where = { groupId, ...(shownAt ? { shownAt } : {}) };
-            const [roomHistory, couchHistory] = await Promise.all([
-                manager.getRepository(CardAppearanceEntity).find({
-                    where,
-                    select: { cardId: true },
-                }),
-                manager.getRepository(CouchCardAppearanceEntity).find({
-                    where,
-                    select: { cardId: true },
-                }),
-            ]);
-            return new Set([...roomHistory, ...couchHistory].map(({ cardId }) => cardId as CardId));
+            return history;
         });
+    }
+    async groupHistory(roomId: string, groupId: string | null): Promise<ReadonlySet<CardId>> {
+        return this.source.transaction(async (manager) => {
+            const room = await manager.getRepository(RoomEntity).findOneByOrFail({ id: roomId });
+            return this.loadOwnedGroupHistory(manager, room.dataSpaceId, groupId);
+        });
+    }
+    async policyOwner(
+        roomId: string,
+    ): Promise<{ dataSpaceId: string; groupId: string | null } | null> {
+        const room = await this.source.getRepository(RoomEntity).findOneByOrFail({ id: roomId });
+        return room.dataSpaceId ? { dataSpaceId: room.dataSpaceId, groupId: room.groupId } : null;
     }
     async loadRuntime(roomId: string): Promise<GameSessionRuntimeState | null> {
         const room = await this.source.getRepository(RoomEntity).findOneByOrFail({ id: roomId });
@@ -406,7 +393,29 @@ export class TypeOrmRealtimeRoomRepository implements RealtimeRoomRepository {
             .getRepository(GameSessionEntity)
             .findOneBy({ id: room.currentSessionId, roomId });
         if (!record) return null;
-        const parsed = JSON.parse(record.runtimeStateJson) as GameSessionRuntimeState;
+        const appearances = await this.source.getRepository(CardAppearanceEntity).find({
+            where: { sessionId: record.id },
+            order: { sequence: "ASC" },
+        });
+        const parsed = await hydrateSessionImmutableState(
+            this.source.manager,
+            record.runtimeStateJson,
+            {
+                compiledCardPolicyDigest: record.compiledCardPolicyDigest,
+                groupHistoryDigest: record.groupHistoryDigest,
+            },
+            appearances.length
+                ? appearances.map((appearance) => ({
+                      cardId: appearance.cardId as CardId,
+                      playerId: appearance.playerId,
+                      roundNumber: appearance.roundNumber,
+                      sequence: appearance.sequence,
+                      skipped: appearance.skipped,
+                      completed: appearance.completed,
+                      vetoed: appearance.vetoed,
+                  }))
+                : undefined,
+        );
         if (
             parsed.version !== record.runtimeStateVersion ||
             parsed.revision !== record.revision ||
@@ -428,6 +437,7 @@ export class TypeOrmRealtimeRoomRepository implements RealtimeRoomRepository {
                     throw Object.assign(new Error("Room already has a current Session"), {
                         code: "INVALID_GAME_STATE",
                     });
+                const persisted = await externalizeSessionImmutableState(manager, runtime);
                 await sessions.insert({
                     id: runtime.id,
                     roomId,
@@ -435,7 +445,9 @@ export class TypeOrmRealtimeRoomRepository implements RealtimeRoomRepository {
                     mode: runtime.mode,
                     revision: runtime.revision,
                     runtimeStateVersion: runtime.version,
-                    runtimeStateJson: JSON.stringify(runtime),
+                    runtimeStateJson: persisted.runtimeStateJson,
+                    compiledCardPolicyDigest: persisted.compiledCardPolicyDigest,
+                    groupHistoryDigest: persisted.groupHistoryDigest,
                     startedAt: new Date(runtime.startedAt),
                     endedAt: runtime.state === "ENDED" ? new Date() : null,
                 });
@@ -454,12 +466,19 @@ export class TypeOrmRealtimeRoomRepository implements RealtimeRoomRepository {
                     throw Object.assign(new Error("Stale current Session"), {
                         code: "STALE_SESSION_REVISION",
                     });
+                const existing = await sessions.findOneBy({ id: runtime.id, roomId });
+                const persisted = await externalizeSessionImmutableState(manager, runtime, {
+                    compiledCardPolicyDigest: existing?.compiledCardPolicyDigest ?? null,
+                    groupHistoryDigest: existing?.groupHistoryDigest ?? null,
+                });
                 const updated = await sessions.update(
                     { id: runtime.id, roomId, revision: previousRevision },
                     {
                         revision: runtime.revision,
                         runtimeStateVersion: runtime.version,
-                        runtimeStateJson: JSON.stringify(runtime),
+                        runtimeStateJson: persisted.runtimeStateJson,
+                        compiledCardPolicyDigest: persisted.compiledCardPolicyDigest,
+                        groupHistoryDigest: persisted.groupHistoryDigest,
                         endedAt: runtime.state === "ENDED" ? new Date() : null,
                     },
                 );
@@ -469,9 +488,16 @@ export class TypeOrmRealtimeRoomRepository implements RealtimeRoomRepository {
                     });
             }
             const appearances = manager.getRepository(CardAppearanceEntity);
-            for (const appearance of runtime.sessionHistory) {
+            const storedLatest = await appearances.findOne({
+                where: { sessionId: runtime.id },
+                order: { sequence: "DESC" },
+            });
+            const changedAppearances = runtime.sessionHistory.filter(
+                ({ sequence }) => !storedLatest || sequence >= storedLatest.sequence,
+            );
+            for (const appearance of changedAppearances) {
                 const id = uuidv5(`${runtime.id}:${appearance.sequence}`, APPEARANCE_NAMESPACE);
-                const existing = await appearances.findOneBy({ id });
+                const existing = storedLatest?.id === id ? storedLatest : null;
                 await appearances.save(
                     appearances.create({
                         id,
@@ -518,5 +544,40 @@ export class TypeOrmRealtimeRoomRepository implements RealtimeRoomRepository {
             devicePlayers: JSON.parse(participant.devicePlayersJson) as DevicePlayer[],
             connectionStatus: participant.connectionStatus,
         };
+    }
+
+    private async loadOwnedGroupHistory(
+        manager: EntityManager,
+        dataSpaceId: string | null,
+        groupId: string | null,
+    ): Promise<ReadonlySet<CardId>> {
+        if (!groupId) return new Set<CardId>();
+        if (!dataSpaceId) {
+            throw Object.assign(new Error("Unowned Room cannot use a persistent Group"), {
+                code: "NOT_AUTHORIZED",
+            });
+        }
+        const group = await manager.getRepository(GroupEntity).findOneBy({
+            id: groupId,
+            dataSpaceId,
+        });
+        if (!group) {
+            throw Object.assign(new Error("Group is outside the Room DataSpace"), {
+                code: "NOT_AUTHORIZED",
+            });
+        }
+        const shownAt = group.historyResetAt ? MoreThan(group.historyResetAt) : undefined;
+        const where = { groupId, ...(shownAt ? { shownAt } : {}) };
+        const [roomHistory, couchHistory] = await Promise.all([
+            manager.getRepository(CardAppearanceEntity).find({
+                where,
+                select: { cardId: true },
+            }),
+            manager.getRepository(CouchCardAppearanceEntity).find({
+                where,
+                select: { cardId: true },
+            }),
+        ]);
+        return new Set([...roomHistory, ...couchHistory].map(({ cardId }) => cardId as CardId));
     }
 }

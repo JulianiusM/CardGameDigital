@@ -1,6 +1,7 @@
 import type { CardId } from "../index";
 import type { Intensity } from "./intensity";
 import type { CardType, DareTypeId, OperationalFlag, QuestionCategoryId } from "./taxonomy";
+import type { SocialSensitivity } from "./socialSensitivity";
 
 export type Card = {
     id: CardId;
@@ -14,6 +15,10 @@ export type Card = {
     repeatableInSession: boolean;
     repeatCooldown: number;
     weight: number;
+    socialSensitivity: SocialSensitivity;
+    minimumPlayerCount: number;
+    maximumPlayerCount: number | null;
+    policyAvailable?: boolean;
     active: boolean;
     operationalFlags: readonly OperationalFlag[];
 };

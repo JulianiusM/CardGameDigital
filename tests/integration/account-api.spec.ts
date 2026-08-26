@@ -114,8 +114,14 @@ describe("native account API", () => {
         const sessions = await agent.get("/api/v1/account/sessions").expect(200);
         expect(sessions.body.sessions).toEqual([expect.objectContaining({ current: true })]);
         const exported = await agent.get("/api/v1/account/export").expect(200);
+        expect(exported.body.exportVersion).toBe(3);
         expect(exported.body.account.username).toBe("anna");
         expect(exported.body.languagePreferences.fallbackLocales).toEqual(["de-DE", "fr-FR"]);
+        expect(exported.body.cardPolicies).toEqual({
+            scopeDefaults: [],
+            conditionalRules: [],
+            exactCards: [],
+        });
         expect(exported.headers["content-disposition"]).toContain("attachment");
 
         await agent.post("/api/v1/account/logout").expect(204);

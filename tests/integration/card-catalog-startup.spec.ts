@@ -7,11 +7,13 @@ import { AppDataSource, initDataSource } from "../../src/modules/database/dataSo
 import { CardCatalogVersionEntity } from "../../src/modules/database/entities/card/CardCatalogVersionEntity";
 import { CardEntity } from "../../src/modules/database/entities/card/CardEntity";
 import settings from "../../src/modules/settings";
+import { setBundledCardCatalogPathForTests } from "../../src/modules/database/bundledCardCatalog";
 
 let directory: string;
 let databaseFile: string;
 
 beforeAll(async () => {
+    setBundledCardCatalogPathForTests(path.resolve("catalog/card-catalog.json"));
     directory = fs.mkdtempSync(path.join(os.tmpdir(), "catalog-startup-"));
     databaseFile = path.join(directory, "game.sqlite");
     const existing = new Database(databaseFile);
@@ -28,7 +30,7 @@ beforeAll(async () => {
     });
     await settings.read("/dev/null");
     await initDataSource();
-});
+}, 120_000);
 
 afterAll(async () => {
     if (AppDataSource.isInitialized) await AppDataSource.destroy();
@@ -48,7 +50,16 @@ describe("bundled catalog startup", () => {
             value: "preserved",
         });
         backup.close();
-        expect(await AppDataSource.getRepository(CardCatalogVersionEntity).count()).toBe(1);
-        expect(await AppDataSource.getRepository(CardEntity).countBy({ active: true })).toBe(4);
+        const productionCatalog = JSON.parse(
+            fs.readFileSync(path.resolve("catalog/card-catalog.json"), "utf8"),
+        ) as { catalogVersion: string; cards: unknown[] };
+        expect(
+            await AppDataSource.getRepository(CardCatalogVersionEntity).findOneByOrFail({
+                catalogVersion: productionCatalog.catalogVersion,
+            }),
+        ).toMatchObject({ cardCount: productionCatalog.cards.length });
+        expect(await AppDataSource.getRepository(CardEntity).countBy({ active: true })).toBe(
+            productionCatalog.cards.length,
+        );
     });
 });

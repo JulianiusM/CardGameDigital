@@ -56,6 +56,8 @@ export interface RealtimeRoomRepository {
     saveBoundaries(participantId: string, boundaries: PlayerBoundaries): Promise<void>;
     listBoundaries(roomId: string): Promise<ReadonlyMap<string, PlayerBoundaries>>;
     selectGroup(roomId: string, groupId: string | null): Promise<ReadonlySet<CardId>>;
+    groupHistory(roomId: string, groupId: string | null): Promise<ReadonlySet<CardId>>;
+    policyOwner?(roomId: string): Promise<{ dataSpaceId: string; groupId: string | null } | null>;
     loadRuntime(roomId: string): Promise<GameSessionRuntimeState | null>;
     commitRuntime(
         roomId: string,

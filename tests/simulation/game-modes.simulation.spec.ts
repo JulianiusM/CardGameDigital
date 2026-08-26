@@ -63,12 +63,12 @@ describe("deterministic game simulations", () => {
             card({ id: "q" as never, repeatableInSession: true }),
             card({
                 id: "m1" as never,
-                cardType: CARD_TYPES.CONVERSATION,
+                cardType: CARD_TYPES.CONVERSATION_META,
                 questionCategoryId: null,
             }),
             card({
                 id: "m2" as never,
-                cardType: CARD_TYPES.CONVERSATION,
+                cardType: CARD_TYPES.CONVERSATION_META,
                 questionCategoryId: null,
             }),
         ];
@@ -80,10 +80,10 @@ describe("deterministic game simulations", () => {
         expect(types).toEqual([
             "QUESTION",
             "QUESTION",
-            "CONVERSATION",
+            "CONVERSATION_META",
             "QUESTION",
             "QUESTION",
-            "CONVERSATION",
+            "CONVERSATION_META",
             "QUESTION",
             "QUESTION",
             "QUESTION",

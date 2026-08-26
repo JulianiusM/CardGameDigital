@@ -6,6 +6,10 @@ import { CouchGameSessionEntity } from "../../modules/database/entities/game/Cou
 import { CouchCardAppearanceEntity } from "../../modules/database/entities/game/CouchCardAppearanceEntity";
 import { GroupEntity } from "../../modules/database/entities/game/GroupEntity";
 import { CardAppearanceEntity } from "../../modules/database/entities/game/CardAppearanceEntity";
+import {
+    externalizeSessionImmutableState,
+    hydrateSessionImmutableState,
+} from "./sessionImmutablePayloadStore";
 
 const COUCH_APPEARANCE_NAMESPACE = "d7e5b926-7f9c-5ab8-a07c-cfe764d0ef72";
 
@@ -15,7 +19,29 @@ export class TypeOrmCouchSessionRepository implements CouchSessionRepository {
     async load(id: string): Promise<GameSessionRuntimeState | null> {
         const record = await this.source.getRepository(CouchGameSessionEntity).findOneBy({ id });
         if (!record) return null;
-        const runtime = JSON.parse(record.runtimeStateJson) as GameSessionRuntimeState;
+        const appearances = await this.source.getRepository(CouchCardAppearanceEntity).find({
+            where: { sessionId: id },
+            order: { sequence: "ASC" },
+        });
+        const runtime = await hydrateSessionImmutableState(
+            this.source.manager,
+            record.runtimeStateJson,
+            {
+                compiledCardPolicyDigest: record.compiledCardPolicyDigest,
+                groupHistoryDigest: record.groupHistoryDigest,
+            },
+            appearances.length
+                ? appearances.map((appearance) => ({
+                      cardId: appearance.cardId as CardId,
+                      playerId: appearance.playerId,
+                      roundNumber: appearance.roundNumber,
+                      sequence: appearance.sequence,
+                      skipped: appearance.skipped,
+                      completed: appearance.completed,
+                      vetoed: appearance.vetoed,
+                  }))
+                : undefined,
+        );
         if (runtime.id !== record.id || runtime.revision !== record.revision)
             throw new Error("Stored Couch Session runtime is inconsistent");
         return runtime;
@@ -62,6 +88,10 @@ export class TypeOrmCouchSessionRepository implements CouchSessionRepository {
         await this.source.transaction(async (manager) => {
             const sessions = manager.getRepository(CouchGameSessionEntity);
             const existing = await sessions.findOneBy({ id: runtime.id });
+            const persisted = await externalizeSessionImmutableState(manager, runtime, {
+                compiledCardPolicyDigest: existing?.compiledCardPolicyDigest ?? null,
+                groupHistoryDigest: existing?.groupHistoryDigest ?? null,
+            });
             if (!existing) {
                 await sessions.insert({
                     id: runtime.id,
@@ -70,7 +100,9 @@ export class TypeOrmCouchSessionRepository implements CouchSessionRepository {
                     mode: runtime.mode,
                     revision: runtime.revision,
                     runtimeStateVersion: runtime.version,
-                    runtimeStateJson: JSON.stringify(runtime),
+                    runtimeStateJson: persisted.runtimeStateJson,
+                    compiledCardPolicyDigest: persisted.compiledCardPolicyDigest,
+                    groupHistoryDigest: persisted.groupHistoryDigest,
                     startedAt: new Date(runtime.startedAt),
                     endedAt: runtime.state === "ENDED" ? new Date() : null,
                 });
@@ -80,7 +112,9 @@ export class TypeOrmCouchSessionRepository implements CouchSessionRepository {
                     {
                         revision: runtime.revision,
                         runtimeStateVersion: runtime.version,
-                        runtimeStateJson: JSON.stringify(runtime),
+                        runtimeStateJson: persisted.runtimeStateJson,
+                        compiledCardPolicyDigest: persisted.compiledCardPolicyDigest,
+                        groupHistoryDigest: persisted.groupHistoryDigest,
                         endedAt: runtime.state === "ENDED" ? new Date() : null,
                     },
                 );
@@ -91,12 +125,19 @@ export class TypeOrmCouchSessionRepository implements CouchSessionRepository {
             }
             const groupId = existing?.groupId ?? ownership?.groupId ?? null;
             const appearances = manager.getRepository(CouchCardAppearanceEntity);
-            for (const appearance of runtime.sessionHistory) {
+            const storedLatest = await appearances.findOne({
+                where: { sessionId: runtime.id },
+                order: { sequence: "DESC" },
+            });
+            const changedAppearances = runtime.sessionHistory.filter(
+                ({ sequence }) => !storedLatest || sequence >= storedLatest.sequence,
+            );
+            for (const appearance of changedAppearances) {
                 const id = uuidv5(
                     `${runtime.id}:${appearance.sequence}`,
                     COUCH_APPEARANCE_NAMESPACE,
                 );
-                const stored = await appearances.findOneBy({ id });
+                const stored = storedLatest?.id === id ? storedLatest : null;
                 await appearances.save(
                     appearances.create({
                         id,

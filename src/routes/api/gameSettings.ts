@@ -3,7 +3,11 @@ import { z } from "zod";
 import { AppDataSource } from "../../modules/database/dataSource";
 import { DataSpaceGameSettingsEntity } from "../../modules/database/entities/game/DataSpaceGameSettingsEntity";
 import { GroupEntity } from "../../modules/database/entities/game/GroupEntity";
-import { BUILT_IN_PROFILE_IDS, builtInGameProfile } from "../../packages/game-core";
+import {
+    BUILT_IN_PROFILE_IDS,
+    SOCIAL_SENSITIVITIES,
+    builtInGameProfile,
+} from "../../packages/game-core";
 import { CUSTOM_GAME_PROFILE_ID } from "../../packages/application/roomGameSettings";
 import { effectiveSettingsFromProfile } from "../../packages/application/roomGameSettings";
 import { effectiveGameSettingsSchema } from "../../packages/protocol";
@@ -16,6 +20,7 @@ const inputSchema = z
         preferredProfileId: z.string().min(1),
         startingIntensity: z.number().int().min(1).max(5).default(1),
         maximumIntensity: z.number().int().min(1).max(5),
+        maximumSocialSensitivity: z.enum(SOCIAL_SENSITIVITIES).default("EXPLICIT"),
         intensityProgressionUnit: z.enum(["ROUNDS", "CARDS"]).default("CARDS"),
         intensityProgressionInterval: z.number().int().min(1).max(100).default(2),
         intensityProgressionIncrement: z.number().min(0.5).max(4).multipleOf(0.5).default(1),
@@ -33,6 +38,7 @@ const defaults = {
     preferredProfileId: BUILT_IN_PROFILE_IDS.FRIENDS,
     startingIntensity: 1,
     maximumIntensity: 3,
+    maximumSocialSensitivity: "PERSONAL" as const,
     intensityProgressionUnit: "CARDS" as const,
     intensityProgressionInterval: 2,
     intensityProgressionIncrement: 1,
@@ -49,6 +55,7 @@ function project(stored: DataSpaceGameSettingsEntity | null) {
         preferredProfileId: stored.preferredProfileId,
         startingIntensity: stored.startingIntensity,
         maximumIntensity: stored.maximumIntensity,
+        maximumSocialSensitivity: stored.maximumSocialSensitivity,
         intensityProgressionUnit: stored.intensityProgressionUnit,
         intensityProgressionInterval: stored.intensityProgressionInterval,
         intensityProgressionIncrement: stored.intensityProgressionIncrement,
@@ -70,7 +77,10 @@ router.get("/", async (request, response, next) => {
         const stored = await AppDataSource.getRepository(DataSpaceGameSettingsEntity).findOneBy({
             dataSpaceId: space.id,
         });
-        response.json({ settings: project(stored) });
+        response.json({
+            settings: project(stored),
+            dataSpace: { id: space.id, name: space.name },
+        });
     } catch (error) {
         next(error);
     }
@@ -115,6 +125,7 @@ router.put("/", async (request, response, next) => {
                 preferredProfileId: input.preferredProfileId,
                 startingIntensity: input.startingIntensity,
                 maximumIntensity: input.maximumIntensity,
+                maximumSocialSensitivity: input.maximumSocialSensitivity,
                 intensityProgressionUnit: input.intensityProgressionUnit,
                 intensityProgressionInterval: input.intensityProgressionInterval,
                 intensityProgressionIncrement: input.intensityProgressionIncrement,
@@ -128,7 +139,10 @@ router.put("/", async (request, response, next) => {
                 updatedAt: new Date(),
             }),
         );
-        response.json({ settings: project(saved) });
+        response.json({
+            settings: project(saved),
+            dataSpace: { id: space.id, name: space.name },
+        });
     } catch (error) {
         next(error);
     }

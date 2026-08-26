@@ -19,6 +19,8 @@ import {
 } from "./neverHaveIEverVoting";
 import { NEVER_HAVE_I_EVER_REVEAL_MODES, type NeverHaveIEverRevealMode } from "../game-core";
 import { projectCardIntensities } from "./cardIntensityProjection";
+import type { SessionCardPolicyInput } from "../game-core";
+import type { CardPolicyService } from "./cardPolicyService";
 
 export type CreateCouchSession = {
     persistence: "EPHEMERAL" | "DATASPACE";
@@ -33,6 +35,7 @@ export type CreateCouchSession = {
     neverHaveIEverRevealMode?: NeverHaveIEverRevealMode;
     groupId?: string | null;
     dataSpaceId?: DataSpaceId;
+    cardPolicy?: SessionCardPolicyInput;
 };
 
 export type CouchSessionSnapshot = {
@@ -54,6 +57,7 @@ export type CouchSessionSnapshot = {
         dareTypeId: string | null;
     } | null;
     cardsShown: number;
+    remainingCardCount: number;
     voteResult: { yes: number; no: number; total: number };
     votedPlayerIds: readonly string[];
     neverHaveIEverVoting: NeverHaveIEverVotingProjection | null;
@@ -65,6 +69,7 @@ export type CouchSessionSnapshot = {
         cardFallbackEnabled: boolean;
         cardFallbackLocales: readonly string[];
         neverHaveIEverRevealMode: NeverHaveIEverRevealMode;
+        cardPolicy: SessionCardPolicyInput;
         configuration: EffectiveGameSettings;
     };
 };
@@ -88,6 +93,7 @@ export class CouchSessionService {
             "missingTranslation" | "fallbackLocales"
         > = DEFAULT_CARD_TRANSLATION_POLICY,
         private readonly repository?: CouchSessionRepository,
+        private readonly cardPolicies?: CardPolicyService,
     ) {}
 
     defaultCardLocale(): Promise<string> {
@@ -148,33 +154,62 @@ export class CouchSessionService {
             neverHaveIEverRevealMode:
                 input.neverHaveIEverRevealMode ??
                 NEVER_HAVE_I_EVER_REVEAL_MODES.ANONYMOUS_AGGREGATE,
+            cardPolicy: input.cardPolicy ?? {
+                scopeDefault: {},
+                conditionalRules: [],
+                exactCards: [],
+            },
             configuration: input.configuration,
         });
         const groupHistoryCardIds =
             input.groupId && input.dataSpaceId && this.repository
                 ? await this.repository.groupHistory(input.dataSpaceId, input.groupId)
                 : new Set<never>();
+        const sessionId = randomUUID();
+        const sessionPlayers = input.players.map((player) => ({
+            id: randomUUID(),
+            name: player.name.trim(),
+        }));
+        const cards = await this.cards.listActive({
+            locale: input.cardLocale,
+            missingTranslation: input.cardFallbackEnabled
+                ? "FALLBACK"
+                : this.cardTranslationPolicy.missingTranslation,
+            fallbackLocales: input.cardFallbackEnabled
+                ? fallbackLocales
+                : this.cardTranslationPolicy.fallbackLocales,
+        });
+        const sessionPolicy = input.cardPolicy ?? {
+            scopeDefault: {},
+            conditionalRules: [],
+            exactCards: [],
+        };
+        const compiled = this.cardPolicies
+            ? await this.cardPolicies.compileSessionCards({
+                  cards,
+                  dataSpaceId: input.dataSpaceId,
+                  groupId: input.groupId,
+                  profile: gameProfile,
+                  sessionPolicy,
+              })
+            : null;
         const session = new GameSession(
             {
-                id: randomUUID(),
+                id: sessionId,
                 startedAt: Date.now(),
                 mode: input.mode,
                 profile: gameProfile,
-                players: input.players.map((player) => ({
-                    id: randomUUID(),
-                    name: player.name.trim(),
-                })),
+                players: sessionPlayers,
                 cardLocale: input.cardLocale,
                 cardFallbackEnabled: input.cardFallbackEnabled,
                 cardFallbackLocales: fallbackLocales,
                 neverHaveIEverRevealMode: input.neverHaveIEverRevealMode,
                 groupHistoryCardIds,
+                compiledCardPolicy: compiled?.snapshot,
+                sessionCardPolicy: sessionPolicy,
             },
             this.random,
         );
-        const cards = await this.cards.listActive({
-            ...this.localizationPolicy(session),
-        });
         if (!session.hasEligibleCards(cards)) {
             throw Object.assign(new Error(MESSAGE_KEYS.GAME_CARD_POOL_EXHAUSTED), {
                 code: "CARD_POOL_EXHAUSTED",
@@ -298,7 +333,8 @@ export class CouchSessionService {
     private async persist(session: GameSession): Promise<void> {
         if (this.owners.get(session.id)) await this.repository?.save(session.toRuntimeState());
     }
-    private snapshot(session: GameSession): CouchSessionSnapshot {
+    private async snapshot(session: GameSession): Promise<CouchSessionSnapshot> {
+        const cards = await this.cards.listActive(this.localizationPolicy(session));
         return {
             id: session.id,
             startedAt: session.startedAt,
@@ -319,6 +355,7 @@ export class CouchSessionService {
                   }
                 : null,
             cardsShown: session.sessionHistory.length,
+            remainingCardCount: session.remainingEligibleCardCount(cards),
             voteResult: session.voteResult(),
             votedPlayerIds: [...session.votes.keys()],
             neverHaveIEverVoting: projectNeverHaveIEverVoting(session),
@@ -330,10 +367,12 @@ export class CouchSessionService {
                 cardFallbackEnabled: session.cardFallbackEnabled,
                 cardFallbackLocales: [...session.cardFallbackLocales],
                 neverHaveIEverRevealMode: session.neverHaveIEverRevealMode,
+                cardPolicy: session.sessionCardPolicy,
                 configuration: {
                     enabledQuestionCategoryIds: [...session.profile.enabledQuestionCategoryIds],
                     enabledDareTypeIds: [...session.profile.enabledDareTypeIds],
                     blockedOperationalFlags: [...session.profile.blockedOperationalFlags],
+                    maximumSocialSensitivity: session.profile.maximumSocialSensitivity,
                     startingIntensity: session.profile.startingIntensity,
                     maximumIntensity: session.profile.maximumIntensity,
                     intensityProgressionUnit: session.profile.intensityProgressionUnit,

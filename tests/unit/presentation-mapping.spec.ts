@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
     atmosphereFor,
     effectForCommand,
+    motifSymbolFor,
     sceneFor,
     type PresentedCard,
 } from "../../apps/web/src/presentationMapping";
@@ -74,25 +75,33 @@ describe("presentation mapping", () => {
         }
     });
 
-    it("uses relative Card intensity as the family modifier and maps commands centrally", () => {
+    it("uses global intensity as the family modifier and maps commands centrally", () => {
         expect(atmosphereFor(presentedCard({ cardIntensity: 4.4, intensity: 2 }))).toEqual({
             family: "INNER_SELF",
-            intensity: 4,
+            intensity: 2,
         });
         expect(
             atmosphereFor(
                 presentedCard({
-                    cardType: "CONVERSATION",
+                    cardType: "CONVERSATION_META",
                     questionCategoryId: null,
                     cardIntensity: 9,
                     intensity: 3,
                 }),
             ),
-        ).toEqual({ family: "CONVERSATION", intensity: 5 });
+        ).toEqual({ family: "CONVERSATION", intensity: 3 });
         expect(atmosphereFor(null)).toBeNull();
         expect(effectForCommand("command.submitVote")).toBe("vote");
         expect(effectForCommand("command.advanceSession")).toBe("turn");
         expect(effectForCommand("command.endSession")).toBe("end");
         expect(effectForCommand("command.setBoundaries")).toBe("action");
+    });
+
+    it("chooses one stable symbol from the Card's visual family", () => {
+        const card = presentedCard({ id: "card-42", questionCategoryId: "CAT_PERSONALITY" });
+        expect(motifSymbolFor(card)).toBe(motifSymbolFor({ ...card }));
+        expect(["mirror", "fingerprint", "eye", "silhouette", "contour", "spark"]).toContain(
+            motifSymbolFor(card),
+        );
     });
 });

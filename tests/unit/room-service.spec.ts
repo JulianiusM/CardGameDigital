@@ -183,6 +183,9 @@ class MemoryRooms implements RealtimeRoomRepository {
     async selectGroup() {
         return new Set<never>();
     }
+    async groupHistory() {
+        return new Set<never>();
+    }
     async loadRuntime(roomId: string) {
         return this.runtimes.get(roomId) ?? null;
     }

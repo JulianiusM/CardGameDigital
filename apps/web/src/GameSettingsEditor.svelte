@@ -7,6 +7,10 @@
     import BulkSelectionActions from "./BulkSelectionActions.svelte";
     import LanguageSelector from "./LanguageSelector.svelte";
     import LanguageOrderEditor from "./LanguageOrderEditor.svelte";
+    import { navigate } from "./router";
+    import PolicyScaleControl from "./PolicyScaleControl.svelte";
+    import EligibleCardPreview from "./EligibleCardPreview.svelte";
+    import type { SocialSensitivity } from "./multiplayer";
 
     export let settings: RoomGameSettings;
     export let profiles: readonly GameProfileSummary[] = [];
@@ -15,8 +19,23 @@
     export let showProfile = true;
     export let onChange: (settings: RoomGameSettings) => void;
     export let onCardLocaleSelect: ((locale: string) => void) | undefined;
+    export let sessionManagementHref: string | undefined;
+    export let playerCount = 2;
+    export let showEligibility = true;
 
     const operationalFlagLabels: Record<string, string> = messages.boundaries.flags;
+    const sensitivityIds: readonly SocialSensitivity[] = [
+        "GENERAL",
+        "PERSONAL",
+        "CLOSE_PERSONAL",
+        "DEEP_PERSONAL",
+        "INTIMATE",
+        "EXPLICIT",
+    ];
+    const sensitivityOptions = sensitivityIds.map((value) => ({
+        value,
+        label: messages.cardManagement.sensitivityNames[value],
+    }));
     $: includesDares = ["CLASSIC_TRUTH_OR_DARE", "RANDOM_TRUTH_OR_DARE"].includes(settings.mode);
     $: localeOptions = cardLocales.length
         ? cardLocales
@@ -39,6 +58,7 @@
                 enabledQuestionCategoryIds: [...profile.enabledQuestionCategoryIds],
                 enabledDareTypeIds: [...profile.enabledDareTypeIds],
                 blockedOperationalFlags: [...profile.blockedOperationalFlags],
+                maximumSocialSensitivity: profile.maximumSocialSensitivity,
                 startingIntensity: profile.startingIntensity as 1 | 2 | 3 | 4 | 5,
                 maximumIntensity: profile.maximumIntensity as 1 | 2 | 3 | 4 | 5,
                 intensityProgressionUnit: profile.intensityProgressionUnit,
@@ -90,6 +110,7 @@
 </script>
 
 <div class="game-settings-editor">
+    {#if showEligibility}<EligibleCardPreview {settings} {playerCount} />{/if}
     {#if showMode}
         <section class="settings-section-card">
             <h3>{messages.setup.chooseMode}</h3>
@@ -180,6 +201,31 @@
                     />{messages.room.adultConfirmation}
                 </label>
             {/if}
+        </section>
+    {/if}
+
+    <section class="settings-section-card priority-setting sensitivity-setting">
+        <h3>{messages.cardManagement.maximumSensitivity}</h3>
+        <p>{messages.cardManagement.maximumSensitivityHint}</p>
+        <PolicyScaleControl
+            label={messages.cardManagement.maximumSensitivity}
+            options={sensitivityOptions}
+            value={settings.configuration.maximumSocialSensitivity}
+            onChange={(value) =>
+                updateConfiguration({ maximumSocialSensitivity: value as SocialSensitivity })}
+        />
+    </section>
+
+    {#if sessionManagementHref}
+        <section class="settings-section-card">
+            <h3>{messages.cardManagement.sessionScope}</h3>
+            <p>{messages.cardManagement.sessionScopeHint}</p>
+            <a
+                class="text-action"
+                href={sessionManagementHref}
+                on:click|preventDefault={() => navigate(sessionManagementHref!, { force: true })}
+                >{messages.cardManagement.openManagement} →</a
+            >
         </section>
     {/if}
 

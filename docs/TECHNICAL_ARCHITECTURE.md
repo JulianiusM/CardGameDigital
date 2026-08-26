@@ -579,7 +579,7 @@ System Card UUIDs MUST remain identical across:
 Card UUIDs MUST NOT be derived from localized text.
 
 The third-party Card management system assigns each UUID permanently and publishes it
-in `game-card-catalog/v1`. The game persists that UUID unchanged and has no source-ID
+in `game-card-catalog/v2`. The game persists that UUID unchanged and has no source-ID
 mapping layer.
 
 ---
@@ -706,14 +706,14 @@ Equivalent localization tables exist for:
 - built-in GameProfile;
 - other catalog-defined labels.
 
-Card catalog v1 and taxonomy persistence remain unchanged. `game-core` owns an
+Card catalog v2 retains the existing taxonomy intensity semantics. `game-core` owns an
 independently tuned, hard-coded numeric base offset for each QuestionCategory and
 DareType and derives an internal score as `base offset + Card intensity`. Fractional
 offsets allow the overlap between each pair of five-score ranges to match their actual
 content relationship while distant classifications remain separated. The browser
 receives both the relative 1–5 Card level and the global 1–5 display level
-`min(5, ceil(score / 4))`. The adaptive background uses the relative level because its
-visual family already represents the Question Category or DareType offset.
+`min(5, ceil(score / 4))`. The taxonomy selects the adaptive background family; the
+derived global level tunes that family's atmosphere and remains active between Cards.
 
 ---
 
@@ -938,7 +938,7 @@ production format.
 
 # 41. Build and Startup Pipeline
 
-1. strict-parse and validate `game-card-catalog/v1`;
+1. strict-parse and validate `game-card-catalog/v2`;
 2. run semantic and coverage checks;
 3. compute SHA-256 over exact bytes;
 4. package those bytes unchanged;
@@ -1031,6 +1031,7 @@ Card type
 → active exact-locale localization
 → QuestionCategory
 → GameProfile
+→ maximum social sensitivity
 → boundaries
 → derived global intensity / Session phase
 → history
@@ -1045,6 +1046,7 @@ Card type
 → active exact-locale localization
 → DareType
 → GameProfile
+→ maximum social sensitivity
 → boundaries
 → flags
 → Dare Affinity
@@ -1060,8 +1062,14 @@ displayed Cards. The increment accepts half-steps from 0.5 through 4 and never r
 ceiling above `maximumIntensity × 4`. Built-ins use one point every two displayed Cards,
 which crosses overlapping taxonomy thresholds gradually. Never Have I Ever treats one
 completed all-player Card as a round; Card-based pacing uses authoritative CardAppearance
-count. This calculation lives in `game-core`, is serialized in runtime version 3, and is
+count. This calculation lives in `game-core`, is serialized in the versioned runtime, and is
 shared by every topology.
+
+`GameProfile.maximumSocialSensitivity` is a required ordered domain value independent
+from intensity and taxonomy. Eligibility rejects a Card above that ceiling after policy
+resolution, so a DataSpace/Group/Session sensitivity override is evaluated consistently.
+Persisted runtime v4 records from before this additive field restore it as `EXPLICIT`,
+which preserves their original unrestricted behavior.
 
 ---
 
@@ -1347,9 +1355,21 @@ never_have_i_ever_reveal_mode
 revision
 runtime_state_version
 runtime_state_json
+compiled_card_policy_digest
+group_history_digest
 started_at
 ended_at
 ```
+
+The runtime JSON holds only small mutable state. Its catalog-sized compiled policy and
+frozen Group-history inputs live in separate immutable payload storage. Each payload is
+Brotli-compressed, identified by a kind-specific SHA-256 digest, and split into 24 KiB
+binary chunks whose Base64 database values stay below 32 KiB. Identical inputs are
+shared. Frozen Group history is an exact bitset indexed by the compiled Card order,
+requiring one bit per current Card instead of a UUID list. Current-Session Card history
+is loaded from normalized CardAppearance rows and is not duplicated in runtime JSON. These mappings preserve authoritative restart state
+while keeping every write bounded independently of catalog, Group-history, and Session
+length.
 
 ---
 
@@ -2063,6 +2083,8 @@ The architecture is being followed when:
 - game logic never branches on translated labels;
 - card selection requires locale-compatible published localization;
 - Group history is independent from Card language;
+- same-lineage catalog releases preserve Group history, while a catalog-lineage replacement
+  advances each existing Group's history-reset epoch without deleting appearances;
 - producer-approved localization presence/absence is reconciled without changing Card identity;
 - FULL catalog snapshots preserve producer-owned stable UUIDs while soft-disabling removed runtime content;
 - locales can be added through catalog releases without schema redesign;
@@ -2136,3 +2158,72 @@ The resulting architecture allows the game to evolve:
 - deployments
 
 without invalidating the durable concepts that must remain stable over the lifetime of the product.
+
+## Scoped Card-policy compilation
+
+`game-core/policies` owns directive types, predicate matching, and deterministic
+resolution. Application services load sparse DataSpace/Group scopes and
+compile a pending Session. TypeORM adapters store validated directive/predicate JSON in
+portable relational owner-scoped rows; core behavior does not depend on database JSON
+queries. HTTP adapters validate management and setup inputs with Zod.
+
+The read-only pending-game eligibility preview loads the same localized Cards, compiles
+the same hierarchy, and runs the same core eligibility function at both starting and
+maximum intensity. It includes shared Group history and authoritative proposed roster
+size but intentionally has no private-boundary input. This keeps the count useful without
+turning private participant choices into shared setup data.
+
+Lobby clients use the same preview through their Room participant credential. The
+application resolves the saved Room settings, connected represented-player count,
+DataSpace/Group owner, and shared history server-side; it does not trust a Group UUID or
+roster count supplied by a guest and does not mutate WebSocket presence.
+
+The compiled GameSession runtime is version 5. It contains immutable catalog provenance,
+maximum policy revisions, and compact positional effective values for every Card. The
+engine builds an O(1) Card-ID map in memory rather than repeating JSON property and
+provenance names per Card. Draw-time selection applies that map before the existing
+eligibility/history/weight pipeline; it does not reevaluate Conditional Rules. Roster
+count remains dynamic and is compared with each compiled atomic range at the next draw.
+
+Persistence freezes two potentially catalog-sized inputs independently: the compiled
+policy and the Group history visible when the Session starts. They are compressed,
+content-addressed, and written as bounded immutable chunks; the active Session row keeps
+only foreign-key digests. The Group-history payload is an exact bitset indexed by the
+compiled snapshot, so even a 50,000-Card catalog needs only 6,250 raw bit bytes per
+Session. Separate digests let common compiled policies deduplicate even when Groups have
+different histories. A restart rehydrates the exact inputs rather than
+recompiling against possibly changed catalog or policy rows. Compilation reads the
+DataSpace scope and, when selected, that one Group scope only; rules from unrelated
+Groups never enter the Session payload. Normalized appearance rows provide mutable
+current-Session history and only the newest or changed appearance is written per commit.
+
+Persistent scope rows use a server-derived owner key plus DataSpace and optional Group
+foreign keys. DataSpace/Group deletion cascades policy rows, while Card deletion remains
+restricted and producer Cards continue to be soft-retired. Every Group request proves
+membership in the selected DataSpace. Local no-auth mode resolves the one local
+DataSpace; public mode resolves the authenticated session's selected DataSpace.
+
+### Management-query and browser boundary
+
+The Card-management browser never loads the catalog as one client-side collection.
+`GET /api/v1/card-policy/cards` and the pending-Session equivalent accept validated
+facets, a bounded limit of at most 50, and an opaque stable-UUID cursor. The web client
+uses 24-Card pages, retains only the pages visited during the current search, resets its
+cursor stack when filters change, and opens one detail editor at a time. Rule preview is
+also server-side: it counts the complete result and returns only a bounded sample for
+human verification.
+
+Rules and account-owned Group/DataSpace summaries are smaller ownership resources and
+may arrive as complete API snapshots, but their presentation remains search-filtered
+and paged so the DOM is bounded. The current web limits are ten rules, eight DataSpaces
+or policy-scope Groups, twelve setup Groups, and sixteen account-management Groups per
+rendered page. This distinction is intentional: catalog scale is bounded at transport
+and rendering, while ownership-list scale is bounded at rendering without creating a
+second partial account model.
+
+The client holds only draft form state and optimistic revisions. It does not resolve
+policy, trust its own match count for bulk writes, or infer producer metadata from Card
+text. Creating a rule produces a disabled draft; changing its predicate invalidates the
+optional informational preview but does not block saving. The application service
+remains authoritative for validation, preview, bulk reconfirmation, imports, precedence,
+and transactional persistence in both deployment modes.

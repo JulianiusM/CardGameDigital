@@ -3,6 +3,7 @@ import request, { type Response } from "supertest";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { AppDataSource, initDataSource } from "../../src/modules/database/dataSource";
 import { CouchGameSessionEntity } from "../../src/modules/database/entities/game/CouchGameSessionEntity";
+import { CardPolicyScopeDefaultEntity } from "../../src/modules/database/entities/game/CardPolicyScopeDefaultEntity";
 import { RoomEntity } from "../../src/modules/database/entities/game/RoomEntity";
 import { AccountSession } from "../../src/modules/database/entities/session/AccountSession";
 import { DataSpace } from "../../src/modules/database/entities/user/DataSpace";
@@ -111,12 +112,26 @@ suite("public mode on MariaDB", () => {
         );
         vi.spyOn(mailer, "sendDeletionEmail").mockResolvedValue(undefined);
         app = (await import("../../src/app")).default;
-    }, 60_000);
+    }, 120_000);
 
     afterAll(async () => {
         vi.restoreAllMocks();
         if (AppDataSource?.isInitialized) await AppDataSource.destroy();
         if (profile && mariaSchemaCreated) await dropMariaTestDatabase(profile);
+    });
+
+    it("stores production Room and Session snapshots beyond the MariaDB TEXT limit", async () => {
+        const columns = (await AppDataSource.query(
+            `SELECT TABLE_NAME AS tableName, DATA_TYPE AS dataType
+             FROM information_schema.COLUMNS
+             WHERE TABLE_SCHEMA = DATABASE()
+               AND ((TABLE_NAME = 'rooms' AND COLUMN_NAME = 'game_settings_json')
+                 OR (TABLE_NAME IN ('game_sessions', 'couch_game_sessions')
+                   AND COLUMN_NAME = 'runtime_state_json'))
+             ORDER BY TABLE_NAME`,
+        )) as Array<{ tableName: string; dataType: string }>;
+        expect(columns).toHaveLength(3);
+        expect(columns.every(({ dataType }) => dataType.toLowerCase() === "longtext")).toBe(true);
     });
 
     it("runs every mode as an anonymous quick round without account persistence", async () => {
@@ -171,6 +186,35 @@ suite("public mode on MariaDB", () => {
                 ...canonicalSettings,
             })
             .expect(401);
+        await publicRequest("get", "/api/v1/card-policy/default").expect(401);
+        await publicRequest("post", "/api/v1/card-policy/session/cards")
+            .send({
+                sessionPolicy: {
+                    scopeDefault: {},
+                    conditionalRules: [],
+                    exactCards: [],
+                },
+                search: { locale: "de-DE", limit: 2 },
+            })
+            .expect(200)
+            .expect(({ body }) => expect(body.cards).toHaveLength(2));
+        await publicRequest("post", "/api/v1/card-policy/session/eligibility-preview")
+            .send({
+                settings: {
+                    ...canonicalSettings,
+                    mode: GAME_MODES.CLASSIC,
+                    cardFallbackEnabled: false,
+                    cardFallbackLocales: [],
+                    cardPolicy: {
+                        scopeDefault: {},
+                        conditionalRules: [],
+                        exactCards: [],
+                    },
+                },
+                playerCount: 2,
+            })
+            .expect(200)
+            .expect(({ body }) => expect(body.total).toBeGreaterThan(0));
     });
 
     it("registers, activates, logs in, and binds the minimal account session", async () => {
@@ -214,6 +258,30 @@ suite("public mode on MariaDB", () => {
             account: { userId: login.body.user.id, dataSpaceId: activeDataSpaceId },
         });
         expect(stored[0].json).not.toContain("maria@example.test");
+    });
+
+    it("owns Card policy in MariaDB while keeping Session preview read-only", async () => {
+        await publicRequest("put", "/api/v1/card-policy/default", firstCookie)
+            .send({
+                directives: { socialSensitivity: { mode: "SET", value: "PERSONAL" } },
+                expectedRevision: 0,
+            })
+            .expect(200);
+        const exported = await publicRequest(
+            "get",
+            "/api/v1/card-policy/export",
+            firstCookie,
+        ).expect(200);
+        expect(exported.body).toMatchObject({
+            format: "party-game-card-policy/v2",
+            scopeDefault: { socialSensitivity: { mode: "SET", value: "PERSONAL" } },
+        });
+        await publicRequest("post", "/api/v1/card-policy/import", firstCookie)
+            .send({ ...exported.body, scopeDefault: {} })
+            .expect(200);
+        await publicRequest("get", "/api/v1/card-policy/default", firstCookie)
+            .expect(200)
+            .expect(({ body }) => expect(body.scopeDefault.directives).toEqual({}));
     });
 
     it("persists owned Groups, defaults, Couch history, and Rooms", async () => {
@@ -467,6 +535,11 @@ suite("public mode on MariaDB", () => {
         ).toBe(0);
         expect(
             await AppDataSource.getRepository(RoomEntity).countBy({
+                dataSpaceId: activeDataSpaceId,
+            }),
+        ).toBe(0);
+        expect(
+            await AppDataSource.getRepository(CardPolicyScopeDefaultEntity).countBy({
                 dataSpaceId: activeDataSpaceId,
             }),
         ).toBe(0);

@@ -15,7 +15,9 @@ export type GameSessionSnapshot = {
 
 export * from "./cards/card";
 export * from "./cards/intensity";
+export * from "./cards/socialSensitivity";
 export * from "./cards/taxonomy";
+export * from "./policies/cardPolicy";
 export * from "./eligibility/cardEligibility";
 export * from "./history/history";
 export * from "./profiles/gameProfile";

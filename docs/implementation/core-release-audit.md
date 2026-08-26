@@ -26,6 +26,11 @@ required service/platform is unavailable in this repository environment.
   against MariaDB 10.11 as well as SQLite.
 - Public account login/reset, Argon2id, hash-only one-time tokens, OIDC linking
   checks and DataSpace-scoped groups/settings are retained behind one server.
+- Scoped Card policy compiles once into the authoritative Session, persists sparse
+  DataSpace/Group decisions with optimistic revisions, and exposes one bounded,
+  localized management workspace in local none-auth and authenticated public modes.
+- Browser scale coverage holds DataSpace and policy lists to bounded rendered pages;
+  deterministic simulation covers 50,000 Cards with 200 ordered rules.
 
 ## External verification gates
 
@@ -48,7 +53,7 @@ The bundled catalog contract and transactional runtime reconciliation are comple
 but a production catalog cannot be fabricated without violating the GDD's content
 lineage and editorial requirements. Consequently the repository must not label the
 entire Core Release **VERIFIED** until the producer publishes, editorially validates,
-and supplies the canonical `game-card-catalog/v1` artifact. Development fixtures remain
+and supplies the canonical `game-card-catalog/v2` artifact. Development fixtures remain
 non-production content.
 
 ## Phase 10 cleanup decision

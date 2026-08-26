@@ -1,4 +1,5 @@
 import { writable } from "svelte/store";
+import { MOTIF_SYMBOLS_BY_FAMILY } from "./motifFamilies";
 
 export type PresentationPreferences = {
     musicEnabled: boolean;
@@ -82,7 +83,7 @@ const familyStyles: Record<VisualFamily, FamilyStyle> = {
         deepA: "#E6A12E",
         deepB: "#F07830",
         patternTone: "#94501B",
-        symbols: ["spark", "wave", "linked", "star", "heart"],
+        symbols: MOTIF_SYMBOLS_BY_FAMILY.GENERAL,
     },
     LOBBY: {
         colorA: "#FFE49A",
@@ -90,7 +91,7 @@ const familyStyles: Record<VisualFamily, FamilyStyle> = {
         deepA: "#D99A29",
         deepB: "#E87522",
         patternTone: "#8A4A16",
-        symbols: ["door", "people", "phone", "speech-pair", "spark"],
+        symbols: MOTIF_SYMBOLS_BY_FAMILY.LOBBY,
     },
     CURIOSITY: {
         colorA: "#FFE49A",
@@ -98,7 +99,7 @@ const familyStyles: Record<VisualFamily, FamilyStyle> = {
         deepA: "#E6B34D",
         deepB: "#E68A1F",
         patternTone: "#B86516",
-        symbols: ["question", "bulb", "thought", "cloud", "star", "dice"],
+        symbols: MOTIF_SYMBOLS_BY_FAMILY.CURIOSITY,
     },
     INNER_SELF: {
         colorA: "#FFC18A",
@@ -106,7 +107,7 @@ const familyStyles: Record<VisualFamily, FamilyStyle> = {
         deepA: "#E79A64",
         deepB: "#BC594C",
         patternTone: "#884434",
-        symbols: ["mirror", "fingerprint", "eye", "silhouette", "contour", "spark"],
+        symbols: MOTIF_SYMBOLS_BY_FAMILY.INNER_SELF,
     },
     CONNECTION: {
         colorA: "#FFAD75",
@@ -114,7 +115,7 @@ const familyStyles: Record<VisualFamily, FamilyStyle> = {
         deepA: "#E98A5D",
         deepB: "#D74E68",
         patternTone: "#9C4050",
-        symbols: ["linked", "speech-pair", "hands", "paired-stars", "heart"],
+        symbols: MOTIF_SYMBOLS_BY_FAMILY.CONNECTION,
     },
     UNFILTERED: {
         colorA: "#FFC44D",
@@ -122,7 +123,7 @@ const familyStyles: Record<VisualFamily, FamilyStyle> = {
         deepA: "#E39C20",
         deepB: "#D95A12",
         patternTone: "#9B470F",
-        symbols: ["wobble", "bubbles", "spiral", "warped-star", "tilted-shape"],
+        symbols: MOTIF_SYMBOLS_BY_FAMILY.UNFILTERED,
     },
     INTIMATE_TALK: {
         colorA: "#FF9A78",
@@ -130,7 +131,7 @@ const familyStyles: Record<VisualFamily, FamilyStyle> = {
         deepA: "#DD7059",
         deepB: "#BD3D68",
         patternTone: "#8B3550",
-        symbols: ["open-heart", "lips", "speech", "keyhole", "spark"],
+        symbols: MOTIF_SYMBOLS_BY_FAMILY.INTIMATE_TALK,
     },
     DESIRE_STORIES: {
         colorA: "#FF775F",
@@ -138,7 +139,7 @@ const familyStyles: Record<VisualFamily, FamilyStyle> = {
         deepA: "#D74B45",
         deepB: "#A92F5C",
         patternTone: "#792A48",
-        symbols: ["spark", "kiss", "magnet", "heart", "trail", "frame"],
+        symbols: MOTIF_SYMBOLS_BY_FAMILY.DESIRE_STORIES,
     },
     MISCHIEF: {
         colorA: "#FFD45F",
@@ -146,7 +147,7 @@ const familyStyles: Record<VisualFamily, FamilyStyle> = {
         deepA: "#E6AA2F",
         deepB: "#DD6513",
         patternTone: "#9E4B0D",
-        symbols: ["zigzag", "burst", "star", "blob", "exclamation"],
+        symbols: MOTIF_SYMBOLS_BY_FAMILY.MISCHIEF,
     },
     SOCIAL_CHAOS: {
         colorA: "#FFB13D",
@@ -154,7 +155,7 @@ const familyStyles: Record<VisualFamily, FamilyStyle> = {
         deepA: "#DD871F",
         deepB: "#C64321",
         patternTone: "#853718",
-        symbols: ["arrows-out", "satellite", "speech", "rings", "people"],
+        symbols: MOTIF_SYMBOLS_BY_FAMILY.SOCIAL_CHAOS,
     },
     AFFECTION: {
         colorA: "#FFB58E",
@@ -162,7 +163,7 @@ const familyStyles: Record<VisualFamily, FamilyStyle> = {
         deepA: "#E68B69",
         deepB: "#D5585B",
         patternTone: "#91483F",
-        symbols: ["heart", "hands", "linked", "kiss", "ripple"],
+        symbols: MOTIF_SYMBOLS_BY_FAMILY.AFFECTION,
     },
     FLIRT: {
         colorA: "#FF906D",
@@ -170,7 +171,7 @@ const familyStyles: Record<VisualFamily, FamilyStyle> = {
         deepA: "#DC654F",
         deepB: "#B82F60",
         patternTone: "#812B49",
-        symbols: ["lips", "spark", "magnet", "heart", "squiggle"],
+        symbols: MOTIF_SYMBOLS_BY_FAMILY.FLIRT,
     },
     REVEAL: {
         colorA: "#EE8A4F",
@@ -178,7 +179,7 @@ const familyStyles: Record<VisualFamily, FamilyStyle> = {
         deepA: "#C9683C",
         deepB: "#74354E",
         patternTone: "#613245",
-        symbols: ["fold", "hanger", "curtains", "silhouette", "sunrise"],
+        symbols: MOTIF_SYMBOLS_BY_FAMILY.REVEAL,
     },
     HEAT: {
         colorA: "#E85065",
@@ -188,7 +189,7 @@ const familyStyles: Record<VisualFamily, FamilyStyle> = {
         patternTone: "#6D2049",
         lightPatternTone: "#FFD0B5",
         highlight: "#FFB486",
-        symbols: ["flame", "intertwined", "pulse", "crescent", "dense-spark"],
+        symbols: MOTIF_SYMBOLS_BY_FAMILY.HEAT,
     },
     GENERIC_DARE: {
         colorA: "#FFC05A",
@@ -196,7 +197,7 @@ const familyStyles: Record<VisualFamily, FamilyStyle> = {
         deepA: "#DE932A",
         deepB: "#D96314",
         patternTone: "#91400E",
-        symbols: ["arrow", "burst", "exclamation", "motion", "zigzag"],
+        symbols: MOTIF_SYMBOLS_BY_FAMILY.GENERIC_DARE,
     },
     CONVERSATION: {
         colorA: "#FFE3AD",
@@ -205,7 +206,7 @@ const familyStyles: Record<VisualFamily, FamilyStyle> = {
         deepB: "#CF7755",
         patternTone: "#80503A",
         motionScale: 1.35,
-        symbols: ["speech", "speech-pair", "dots", "thought", "ripple"],
+        symbols: MOTIF_SYMBOLS_BY_FAMILY.CONVERSATION,
     },
     END: {
         colorA: "#FFD166",
@@ -213,7 +214,7 @@ const familyStyles: Record<VisualFamily, FamilyStyle> = {
         deepA: "#DAA12F",
         deepB: "#A92F5C",
         patternTone: "#793544",
-        symbols: ["confetti", "star", "ribbon", "spark", "burst"],
+        symbols: MOTIF_SYMBOLS_BY_FAMILY.END,
     },
 };
 

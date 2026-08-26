@@ -5,6 +5,7 @@ const contractFiles = [
     "docs/contracts/http-api.md",
     "docs/contracts/websocket-v1.md",
     "docs/contracts/card-catalog-v1.md",
+    "docs/contracts/card-catalog-v2.md",
     "docs/contracts/infrastructure.md",
 ];
 
@@ -19,11 +20,13 @@ describe("external contract documentation", () => {
     it("keeps versioned transport and card lifecycle rules visible", () => {
         const http = fs.readFileSync(contractFiles[0], "utf8");
         const websocket = fs.readFileSync(contractFiles[1], "utf8");
-        const catalog = fs.readFileSync(contractFiles[2], "utf8");
+        const catalogV1 = fs.readFileSync(contractFiles[2], "utf8");
+        const catalogV2 = fs.readFileSync(contractFiles[3], "utf8");
         expect(http).toContain("/api/v1");
         expect(websocket).toContain('"protocol": 1');
-        expect(catalog).toMatch(/producer UUID/i);
-        expect(catalog).toMatch(/soft-disabled/i);
-        expect(catalog).toContain("game-card-catalog/v1");
+        expect(catalogV1).toContain("game-card-catalog/v1");
+        expect(catalogV2).toMatch(/producer UUID/i);
+        expect(catalogV2).toMatch(/soft-(?:disabled|retire)/i);
+        expect(catalogV2).toContain("game-card-catalog/v2");
     });
 });

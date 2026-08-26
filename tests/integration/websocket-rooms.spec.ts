@@ -159,6 +159,9 @@ class Repo implements RealtimeRoomRepository {
     async selectGroup() {
         return new Set<never>();
     }
+    async groupHistory() {
+        return new Set<never>();
+    }
     async loadRuntime() {
         return this.runtime;
     }

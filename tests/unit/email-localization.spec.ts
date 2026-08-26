@@ -40,6 +40,7 @@ describe("account email localization", () => {
             "rooms-and-devices",
             "safety-and-boundaries",
             "accounts-and-data",
+            "card-management",
             "troubleshooting",
         ]);
     });

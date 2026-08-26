@@ -4,7 +4,11 @@ import { z } from "zod";
 import { CouchSessionService } from "../../packages/application/couchSessionService";
 import { CryptoRandomSource } from "../../packages/application/cryptoRandomSource";
 import { CARD_TYPES, GAME_MODES, type DataSpaceId } from "../../packages/game-core";
-import { TypeOrmCardRepository, TypeOrmCouchSessionRepository } from "../../packages/persistence";
+import {
+    TypeOrmCardPolicyRepository,
+    TypeOrmCardRepository,
+    TypeOrmCouchSessionRepository,
+} from "../../packages/persistence";
 import { AppDataSource } from "../../modules/database/dataSource";
 import settings from "../../modules/settings";
 import { CardEntity } from "../../modules/database/entities/card/CardEntity";
@@ -13,6 +17,8 @@ import { detectLocale, translate, translateError } from "../../packages/localiza
 import { requireCurrentDataSpace } from "./dataSpaceAccess";
 import { effectiveGameSettingsSchema } from "../../packages/protocol";
 import { logApiValidationError } from "../../middleware/validationErrorHandler";
+import { sessionCardPolicySchema } from "../../packages/protocol/cardPolicy";
+import { CardPolicyService } from "../../packages/application/cardPolicyService";
 
 const router = express.Router();
 const service = new CouchSessionService(
@@ -23,6 +29,7 @@ const service = new CouchSessionService(
         fallbackLocales: [settings.value.cardFallbackLocale],
     },
     new TypeOrmCouchSessionRepository(AppDataSource),
+    new CardPolicyService(new TypeOrmCardPolicyRepository(AppDataSource)),
 );
 const idSchema = z.string().uuid();
 const revisionSchema = z.number().int().nonnegative();
@@ -49,6 +56,7 @@ const createSchema = z
         neverHaveIEverRevealMode: z
             .enum(["ANONYMOUS_AGGREGATE", "NAMED_ANSWERS"])
             .default("ANONYMOUS_AGGREGATE"),
+        cardPolicy: sessionCardPolicySchema,
     })
     .strict();
 const revisionBody = z.object({ revision: revisionSchema }).strict();

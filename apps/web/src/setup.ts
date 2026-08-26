@@ -32,10 +32,12 @@ export type GameSetupState = {
     enabledQuestionCategoryIds: string[];
     enabledDareTypeIds: string[];
     blockedOperationalFlags: string[];
+    maximumSocialSensitivity: EffectiveGameSettings["maximumSocialSensitivity"];
     cardLocale: string;
     cardFallbackEnabled: boolean;
     cardFallbackLocales: string[];
     neverHaveIEverRevealMode: "ANONYMOUS_AGGREGATE" | "NAMED_ANSWERS";
+    cardPolicy?: RoomGameSettings["cardPolicy"];
     deviceMode: DeviceMode;
 };
 
@@ -69,10 +71,12 @@ const defaults: GameSetupState = {
     ],
     enabledDareTypeIds: ["DARE_SILLY", "DARE_OTHER", "DARE_TOUCH", "DARE_KISS", "DARE_CLOTHING"],
     blockedOperationalFlags: [],
+    maximumSocialSensitivity: "PERSONAL",
     cardLocale: "",
     cardFallbackEnabled: false,
     cardFallbackLocales: [...loadLanguagePreferences().fallbackLocales],
     neverHaveIEverRevealMode: "ANONYMOUS_AGGREGATE",
+    cardPolicy: { scopeDefault: {}, conditionalRules: [], exactCards: [] },
     deviceMode: "couch",
 };
 
@@ -113,6 +117,7 @@ export function applyGameProfile(
         enabledQuestionCategoryIds: [...profile.enabledQuestionCategoryIds],
         enabledDareTypeIds: [...profile.enabledDareTypeIds],
         blockedOperationalFlags: [...profile.blockedOperationalFlags],
+        maximumSocialSensitivity: profile.maximumSocialSensitivity,
         startingIntensity: profile.startingIntensity as GameSetupState["startingIntensity"],
         maximumIntensity: profile.maximumIntensity as GameSetupState["maximumIntensity"],
         intensityProgressionUnit: profile.intensityProgressionUnit,
@@ -126,6 +131,19 @@ export function applyGameProfile(
     return applyGameConfiguration(canonical, savedCustomConfiguration);
 }
 
+/** Repairs stale browser setup state against the profiles exposed by this deployment. */
+export function repairUnavailableGameProfile(
+    state: GameSetupState,
+    profiles: readonly GameProfileSummary[],
+): GameSetupState {
+    if (profiles.some(({ id }) => id === state.profileId)) return state;
+    const fallback =
+        profiles.find(({ id }) => id === "PROFILE_FRIENDS") ??
+        profiles.find(({ id }) => id !== "PROFILE_CUSTOM") ??
+        profiles[0];
+    return fallback ? applyGameProfile(state, fallback) : state;
+}
+
 export function applyGameConfiguration(
     state: GameSetupState,
     configuration: EffectiveGameSettings,
@@ -135,6 +153,7 @@ export function applyGameConfiguration(
         enabledQuestionCategoryIds: [...configuration.enabledQuestionCategoryIds],
         enabledDareTypeIds: [...configuration.enabledDareTypeIds],
         blockedOperationalFlags: [...configuration.blockedOperationalFlags],
+        maximumSocialSensitivity: configuration.maximumSocialSensitivity,
         startingIntensity: configuration.startingIntensity,
         maximumIntensity: configuration.maximumIntensity,
         intensityProgressionUnit: configuration.intensityProgressionUnit,
@@ -163,6 +182,7 @@ export function setupConfiguration(state: GameSetupState): EffectiveGameSettings
         enabledQuestionCategoryIds: [...state.enabledQuestionCategoryIds],
         enabledDareTypeIds: [...state.enabledDareTypeIds],
         blockedOperationalFlags: [...state.blockedOperationalFlags],
+        maximumSocialSensitivity: state.maximumSocialSensitivity,
         startingIntensity: state.startingIntensity,
         maximumIntensity: state.maximumIntensity,
         intensityProgressionUnit: state.intensityProgressionUnit,
@@ -188,6 +208,7 @@ export function setupRoomSettings(state: GameSetupState): RoomGameSettings {
         cardFallbackEnabled: state.cardFallbackEnabled,
         cardFallbackLocales: [...state.cardFallbackLocales],
         neverHaveIEverRevealMode: state.neverHaveIEverRevealMode,
+        cardPolicy: structuredClone(state.cardPolicy ?? defaults.cardPolicy!),
         configuration: setupConfiguration(state),
     };
 }

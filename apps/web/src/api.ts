@@ -20,6 +20,7 @@ export type Snapshot = {
         dareTypeId: string | null;
     } | null;
     cardsShown: number;
+    remainingCardCount: number;
     voteResult: { yes: number; no: number; total: number };
     votedPlayerIds: string[];
     neverHaveIEverVoting: import("./multiplayer").NeverHaveIEverVotingView | null;

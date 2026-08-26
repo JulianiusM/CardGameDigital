@@ -16,6 +16,12 @@ topology, while accounts and persistence remain optional for quick rounds.
   disclosed to the room.
 - **Optional accounts:** anonymous ephemeral rounds or account-owned DataSpaces,
   groups, preferences, sessions, and exports.
+- **Scoped Card management:** inherited defaults, structured metadata rules, exact Card
+  exceptions, and per-game overrides for a DataSpace, Group, or the next game. Search
+  and preview remain bounded with a production-scale catalog.
+- **Transparent setup:** the main menu names the active DataSpace, social sensitivity is
+  an explicit game setting, and server-calculated eligible Card counts appear before
+  play without disclosing private boundaries.
 - **Bundled global catalog:** producer-owned Card UUIDs, database Card locales,
   release-approved localizations, immutable releases, and non-destructive FULL apply.
 
@@ -69,6 +75,11 @@ In public mode, opening the game does not require an account: Quick Round remain
 available for Couch, Personal-device, and Party Screen play and writes no account-owned
 history. Signing in unlocks the same setup flow plus DataSpaces, saved groups/defaults,
 durable sessions, history, export, and multi-device login management.
+
+Card management is available from the main menu in a local none-auth installation and
+from the signed-in Account screen in a public installation. Leaving every decision at
+**Inherit** preserves the catalog and profile defaults, so a normal quick game requires
+no policy configuration.
 
 ## Configuration
 
@@ -130,7 +141,7 @@ npm run card:catalog:validate -- catalog/card-catalog.json
 Builds package the exact validated bytes. Startup validates them again and applies a
 newer immutable FULL snapshot transactionally before readiness. Producer UUIDs are
 stored unchanged; missing Cards, locales, and localizations are soft-disabled. See the
-[bundled Card catalog contract](./docs/contracts/card-catalog-v1.md).
+[bundled Card catalog contract](./docs/contracts/card-catalog-v2.md).
 
 The checked-in four-Card catalog is a development fixture. Enforced public startup and
 public release packaging deliberately refuse it; replace it with the producer-approved
@@ -186,7 +197,8 @@ tests/                       Unit, integration, simulation, E2E, architecture te
 - [HTTP API v1](./docs/contracts/http-api.md)
 - [WebSocket protocol v2](./docs/contracts/websocket-v2.md)
 - [Retired WebSocket protocol v1](./docs/contracts/websocket-v1.md)
-- [Bundled Card catalog](./docs/contracts/card-catalog-v1.md)
+- [Bundled Card catalog](./docs/contracts/card-catalog-v2.md)
+- [Historical immutable Card catalog v1](./docs/contracts/card-catalog-v1.md)
 - [Infrastructure integrations](./docs/contracts/infrastructure.md)
 
 ## Contributing

@@ -4,6 +4,7 @@ import {
     INTENSITY_PROGRESSION_UNITS,
     NEVER_HAVE_I_EVER_REVEAL_MODES,
     OPERATIONAL_FLAGS,
+    SOCIAL_SENSITIVITIES,
     builtInGameProfile,
     type DareTypeId,
     type GameMode,
@@ -13,6 +14,9 @@ import {
     type OperationalFlag,
     type NeverHaveIEverRevealMode,
     type QuestionCategoryId,
+    type SocialSensitivity,
+    emptySessionCardPolicy,
+    type SessionCardPolicyInput,
     validateGameProfile,
 } from "../game-core";
 
@@ -28,6 +32,7 @@ export type EffectiveGameSettings = {
     enabledQuestionCategoryIds: QuestionCategoryId[];
     enabledDareTypeIds: DareTypeId[];
     blockedOperationalFlags: OperationalFlag[];
+    maximumSocialSensitivity: SocialSensitivity;
     startingIntensity: Intensity;
     maximumIntensity: Intensity;
     intensityProgressionUnit: IntensityProgressionUnit;
@@ -48,6 +53,7 @@ export type RoomGameSettings = {
     cardFallbackLocales: string[];
     neverHaveIEverRevealMode: NeverHaveIEverRevealMode;
     configuration: EffectiveGameSettings;
+    cardPolicy: SessionCardPolicyInput;
 };
 
 export type VersionedRoomGameSettings = RoomGameSettings & {
@@ -62,6 +68,7 @@ export function effectiveSettingsFromProfile(profileId: string): EffectiveGameSe
             enabledQuestionCategoryIds: [...profile.enabledQuestionCategoryIds],
             enabledDareTypeIds: [...profile.enabledDareTypeIds],
             blockedOperationalFlags: [...profile.blockedOperationalFlags],
+            maximumSocialSensitivity: profile.maximumSocialSensitivity,
             startingIntensity: profile.startingIntensity,
             maximumIntensity: profile.maximumIntensity,
             intensityProgressionUnit: profile.intensityProgressionUnit,
@@ -77,6 +84,7 @@ export function effectiveSettingsFromProfile(profileId: string): EffectiveGameSe
         enabledQuestionCategoryIds: [],
         enabledDareTypeIds: [],
         blockedOperationalFlags: Object.values(OPERATIONAL_FLAGS),
+        maximumSocialSensitivity: SOCIAL_SENSITIVITIES.EXPLICIT,
         ...DEFAULT_INTENSITY_PROGRESSION,
         maximumIntensity: 1,
         randomQuestionRatio: 0.5,
@@ -96,18 +104,22 @@ export function defaultRoomGameSettings(): RoomGameSettings {
         cardFallbackLocales: [],
         neverHaveIEverRevealMode: NEVER_HAVE_I_EVER_REVEAL_MODES.ANONYMOUS_AGGREGATE,
         configuration: effectiveSettingsFromProfile(BUILT_IN_PROFILE_IDS.FRIENDS),
+        cardPolicy: emptySessionCardPolicy(),
     };
 }
 
 export function normalizeRoomGameSettings(
     settings: Omit<
         RoomGameSettings,
-        "neverHaveIEverRevealMode" | "cardFallbackEnabled" | "cardFallbackLocales"
+        "neverHaveIEverRevealMode" | "cardFallbackEnabled" | "cardFallbackLocales" | "cardPolicy"
     > &
         Partial<
             Pick<
                 RoomGameSettings,
-                "neverHaveIEverRevealMode" | "cardFallbackEnabled" | "cardFallbackLocales"
+                | "neverHaveIEverRevealMode"
+                | "cardFallbackEnabled"
+                | "cardFallbackLocales"
+                | "cardPolicy"
             >
         >,
 ): RoomGameSettings {
@@ -127,11 +139,14 @@ export function normalizeRoomGameSettings(
             intensityProgressionIncrement:
                 settings.configuration.intensityProgressionIncrement ??
                 DEFAULT_INTENSITY_PROGRESSION.intensityProgressionIncrement,
+            maximumSocialSensitivity:
+                settings.configuration.maximumSocialSensitivity ?? SOCIAL_SENSITIVITIES.EXPLICIT,
         },
         neverHaveIEverRevealMode:
             settings.neverHaveIEverRevealMode ?? NEVER_HAVE_I_EVER_REVEAL_MODES.ANONYMOUS_AGGREGATE,
         cardFallbackEnabled: settings.cardFallbackEnabled ?? false,
         cardFallbackLocales: [...(settings.cardFallbackLocales ?? [])],
+        cardPolicy: settings.cardPolicy ?? emptySessionCardPolicy(),
     };
 }
 
@@ -144,6 +159,7 @@ export function roomSettingsGameProfile(settings: RoomGameSettings): GameProfile
         enabledQuestionCategoryIds: new Set(settings.configuration.enabledQuestionCategoryIds),
         enabledDareTypeIds: new Set(settings.configuration.enabledDareTypeIds),
         blockedOperationalFlags: new Set(settings.configuration.blockedOperationalFlags),
+        maximumSocialSensitivity: settings.configuration.maximumSocialSensitivity,
         startingIntensity: settings.configuration.startingIntensity,
         maximumIntensity: settings.configuration.maximumIntensity,
         intensityProgressionUnit: settings.configuration.intensityProgressionUnit,

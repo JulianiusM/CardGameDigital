@@ -10,6 +10,14 @@ export class GameSessionEntity {
     @Column("int") revision!: number;
     @Column("int", { name: "runtime_state_version" }) runtimeStateVersion!: number;
     @Column("text", { name: "runtime_state_json" }) runtimeStateJson!: string;
+    @Column("varchar", {
+        name: "compiled_card_policy_digest",
+        length: 64,
+        nullable: true,
+    })
+    compiledCardPolicyDigest!: string | null;
+    @Column("varchar", { name: "group_history_digest", length: 64, nullable: true })
+    groupHistoryDigest!: string | null;
     @Column("datetime", { name: "started_at" }) startedAt!: Date;
     @Column("datetime", { name: "ended_at", nullable: true }) endedAt!: Date | null;
 }

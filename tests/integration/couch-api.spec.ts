@@ -8,7 +8,10 @@ import { AppDataSource, initDataSource } from "../../src/modules/database/dataSo
 import settings from "../../src/modules/settings";
 import { CouchGameSessionEntity } from "../../src/modules/database/entities/game/CouchGameSessionEntity";
 import { CouchCardAppearanceEntity } from "../../src/modules/database/entities/game/CouchCardAppearanceEntity";
+import { SessionImmutablePayloadChunkEntity } from "../../src/modules/database/entities/game/SessionImmutablePayloadChunkEntity";
+import { SessionImmutablePayloadEntity } from "../../src/modules/database/entities/game/SessionImmutablePayloadEntity";
 import { effectiveSettingsFromProfile } from "../../src/packages/application/roomGameSettings";
+import { TypeOrmCouchSessionRepository } from "../../src/packages/persistence/TypeOrmCouchSessionRepository";
 
 const canonicalSettings = {
     profileId: "PROFILE_FRIENDS",
@@ -31,13 +34,106 @@ beforeAll(async () => {
     await settings.read("/dev/null");
     await initDataSource();
     app = (await import("../../src/app")).default;
-});
+}, 120_000);
 afterAll(async () => {
     if (AppDataSource.isInitialized) await AppDataSource.destroy();
     fs.rmSync(directory, { recursive: true, force: true });
 });
 
 describe("Couch HTTP application adapter", () => {
+    it("compiles Session policy once and enforces its player-count range", async () => {
+        const cardPolicy = {
+            scopeDefault: {
+                playerCount: { mode: "SET", value: { minimum: 3, maximum: null } },
+            },
+            conditionalRules: [],
+            exactCards: [],
+        };
+        await request(app)
+            .post("/api/v1/couch/sessions")
+            .send({
+                mode: GAME_MODES.CLASSIC,
+                players: [{ name: "Anna" }, { name: "Ben" }],
+                cardPolicy,
+                ...canonicalSettings,
+            })
+            .expect(409)
+            .expect(({ body }) => expect(body.error.code).toBe("CARD_POOL_EXHAUSTED"));
+
+        const created = await request(app)
+            .post("/api/v1/couch/sessions")
+            .send({
+                persistence: "DATASPACE",
+                mode: GAME_MODES.CLASSIC,
+                players: [{ name: "Anna" }, { name: "Ben" }, { name: "Carla" }],
+                cardPolicy,
+                ...canonicalSettings,
+            })
+            .expect(201);
+        const stored = await AppDataSource.getRepository(CouchGameSessionEntity).findOneByOrFail({
+            id: created.body.id,
+        });
+        expect(stored.runtimeStateVersion).toBe(5);
+        expect(JSON.parse(stored.runtimeStateJson).compiledCardPolicy).toBeNull();
+        expect(stored.compiledCardPolicyDigest).toMatch(/^[a-f0-9]{64}$/);
+        const snapshot = await AppDataSource.getRepository(
+            SessionImmutablePayloadEntity,
+        ).findOneByOrFail({
+            digest: stored.compiledCardPolicyDigest!,
+            payloadKind: "COMPILED_CARD_POLICY",
+        });
+        const chunks = await AppDataSource.getRepository(SessionImmutablePayloadChunkEntity).findBy(
+            { payloadDigest: snapshot.digest },
+        );
+        expect(chunks).toHaveLength(snapshot.chunkCount);
+        expect(
+            chunks.every(({ payloadBase64 }) => Buffer.byteLength(payloadBase64, "utf8") <= 32_768),
+        ).toBe(true);
+        const hydrated = await new TypeOrmCouchSessionRepository(AppDataSource).load(
+            created.body.id,
+        );
+        expect(hydrated?.compiledCardPolicy).toMatchObject({
+            catalog: { contract: "game-card-catalog/v2", sequence: expect.any(Number) },
+            cards: expect.any(Array),
+        });
+        expect(Buffer.byteLength(stored.runtimeStateJson, "utf8")).toBeLessThan(32_000);
+
+        await request(app)
+            .post(`/api/v1/couch/sessions/${created.body.id}/choose`)
+            .send({ revision: 0, cardType: "QUESTION" })
+            .expect(200);
+        const storedAfterCard = await AppDataSource.getRepository(
+            CouchGameSessionEntity,
+        ).findOneByOrFail({ id: created.body.id });
+        expect(JSON.parse(storedAfterCard.runtimeStateJson).sessionHistory).toEqual([]);
+        const hydratedAfterCard = await new TypeOrmCouchSessionRepository(AppDataSource).load(
+            created.body.id,
+        );
+        expect(hydratedAfterCard?.sessionHistory).toHaveLength(1);
+
+        const second = await request(app)
+            .post("/api/v1/couch/sessions")
+            .send({
+                persistence: "DATASPACE",
+                mode: GAME_MODES.CLASSIC,
+                players: [{ name: "Dan" }, { name: "Eli" }, { name: "Fran" }],
+                cardPolicy,
+                ...canonicalSettings,
+            })
+            .expect(201);
+        const secondStored = await AppDataSource.getRepository(
+            CouchGameSessionEntity,
+        ).findOneByOrFail({ id: second.body.id });
+        expect(secondStored.compiledCardPolicyDigest).toBe(stored.compiledCardPolicyDigest);
+        expect(
+            await AppDataSource.getRepository(SessionImmutablePayloadEntity).countBy({
+                digest: stored.compiledCardPolicyDigest!,
+            }),
+        ).toBe(1);
+        await AppDataSource.getRepository(CouchGameSessionEntity).delete({ id: created.body.id });
+        await AppDataSource.getRepository(CouchGameSessionEntity).delete({ id: second.body.id });
+    });
+
     it("runs every mode without making the client authoritative", async () => {
         for (const mode of Object.values(GAME_MODES)) {
             const created = await request(app)
@@ -196,7 +292,9 @@ describe("Couch HTTP application adapter", () => {
             .post(`/api/v1/couch/sessions/${created.body.id}/choose`)
             .send({ revision: 0, cardType: "QUESTION" })
             .expect(200)
-            .expect(({ body }) => expect(body.currentCard.cardText).toMatch(/laugh|night/i));
+            .expect(({ body }) =>
+                expect(body.currentCard.cardText).toMatch(/greatest wish|friendships/i),
+            );
     });
 
     it("rejects a Card locale not present in the runtime catalog", async () => {
@@ -205,14 +303,14 @@ describe("Couch HTTP application adapter", () => {
             .send({
                 mode: GAME_MODES.CLASSIC,
                 players: [{ name: "Anna" }, { name: "Ben" }],
-                cardLocale: "fr-FR",
+                cardLocale: "es-ES",
                 ...canonicalSettings,
             })
             .expect(400)
             .expect(({ body }) => expect(body.error.code).toBe("CARD_LOCALE_UNAVAILABLE"));
     });
 
-    it("applies persistent Group history and re-enables it only after reset", async () => {
+    it("keeps unplayed Group Cards available and re-enables history after reset", async () => {
         const group = await request(app)
             .post("/api/v1/groups")
             .send({ name: "Couch history", members: ["Anna", "Ben"] })
@@ -237,20 +335,21 @@ describe("Couch HTTP application adapter", () => {
             .post(`/api/v1/couch/sessions/${first.body.id}/end`)
             .send({ revision: shown.body.revision })
             .expect(200);
-        await request(app)
-            .post("/api/v1/couch/sessions")
-            .set("accept-language", "de-DE")
-            .send(payload)
-            .expect(409)
-            .expect(({ body }) => expect(body.error.code).toBe("CARD_POOL_EXHAUSTED"));
-        await request(app)
-            .post(`/api/v1/groups/${group.body.id}/history-reset`)
-            .send({ confirmed: true })
-            .expect(200);
-        await request(app)
+        const continued = await request(app)
             .post("/api/v1/couch/sessions")
             .set("accept-language", "de-DE")
             .send(payload)
             .expect(201);
+        expect(continued.body.remainingCardCount).toBeGreaterThan(0);
+        await request(app)
+            .post(`/api/v1/groups/${group.body.id}/history-reset`)
+            .send({ confirmed: true })
+            .expect(200);
+        const reset = await request(app)
+            .post("/api/v1/couch/sessions")
+            .set("accept-language", "de-DE")
+            .send(payload)
+            .expect(201);
+        expect(reset.body.remainingCardCount).toBeGreaterThan(continued.body.remainingCardCount);
     });
 });

@@ -9,6 +9,7 @@ import { entities, migrations, subscribers } from "./__index__";
 import { DataSpace } from "./entities/user/DataSpace";
 import { applyBundledCardCatalog, bundledCardCatalogArtifact } from "./bundledCardCatalog";
 import { LocaleEntity } from "./entities/card/LocaleEntity";
+import { CardCatalogVersionEntity } from "./entities/card/CardCatalogVersionEntity";
 import { logEvent } from "../structuredLogger";
 
 export function dataSourceOptions(config: Settings): DataSourceOptions {
@@ -70,7 +71,24 @@ export async function initDataSource(): Promise<DataSource> {
     }
     await AppDataSource.runMigrations({ transaction: "all" });
     const catalogResult = await applyBundledCardCatalog(AppDataSource, catalogArtifact);
-    logEvent("info", "catalog.startup", { result: catalogResult }, settings.value.logLevel);
+    const installedCatalog = await AppDataSource.getRepository(CardCatalogVersionEntity).findOne({
+        where: { catalogId: catalogArtifact.catalog.catalogId },
+        order: { sequence: "DESC" },
+    });
+    logEvent(
+        "info",
+        "catalog.startup",
+        {
+            result: catalogResult,
+            catalogId: catalogArtifact.catalog.catalogId,
+            catalogVersion: catalogArtifact.catalog.catalogVersion,
+            sequence: catalogArtifact.catalog.sequence,
+            cardCount: catalogArtifact.catalog.cards.length,
+            installedCatalogVersion: installedCatalog?.catalogVersion,
+            installedSequence: installedCatalog?.sequence,
+        },
+        settings.value.logLevel,
+    );
     if (settings.value.cardMissingTranslation === "FALLBACK") {
         const fallbackAvailable = await AppDataSource.getRepository(LocaleEntity).existsBy({
             id: settings.value.cardFallbackLocale,

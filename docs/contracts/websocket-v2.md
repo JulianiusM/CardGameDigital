@@ -48,10 +48,12 @@ participant disconnect grace period.
 | `command.leaveRoom`          | current or null | `{}`; authoritative leave and reconnect-credential invalidation.                            |
 
 Room settings use the canonical engine configuration: mode, profile ID, optional Group,
-adult confirmation, card locale, explicit ordered Card fallback policy, enabled Question Categories, enabled DareTypes, blocked
-operational flags, intensity progression, random question ratio, maximum type streak, and
-Let's Talk meta interval. Room snapshots expose versioned public settings to every
-participant. They never expose private participant boundaries.
+adult confirmation, card locale, explicit ordered Card fallback policy, enabled Question
+Categories, enabled DareTypes, blocked operational flags, an explicit maximum social
+sensitivity, intensity progression, random question ratio, maximum type streak, Let's
+Talk meta interval, and sparse Session Card policy. Room snapshots expose versioned
+public settings to every participant. They never
+expose private participant boundaries.
 Each snapshot also contains authoritative
 `capacity:{maximumParticipants,maximumPlayers}`. Clients may display the represented
 player count against `maximumPlayers`, but the repository transaction remains the
@@ -64,6 +66,12 @@ Intensity settings include public 1–5 `startingIntensity` and `maximumIntensit
 increment after each interval and caps at the end. Omitted progression fields default to
 Card-based pacing every two Cards with an increment of 1, so the addition is
 backward-compatible within protocol v2; snapshots always include them.
+`configuration.maximumSocialSensitivity` is the ordinary SocialSensitivity ceiling and
+uses `GENERAL`, `PERSONAL`, `CLOSE_PERSONAL`, `DEEP_PERSONAL`, `INTIMATE`, or `EXPLICIT`.
+It is independent from intensity and taxonomy. The selected profile and Card policies
+carry any separate taxonomy or operational restrictions. Omission defaults to
+`EXPLICIT`, which preserves the pre-field behavior; snapshots always include the
+resolved value.
 The additive `currentCard.cardIntensity` is the Card's relative 1–5 position within its
 Question Category or DareType. The existing `currentCard.intensity` remains the derived
 global 1–5 display band. Clients should use `cardIntensity` to tune category/type-specific
@@ -133,9 +141,20 @@ the authoritative Card transition. Neither event grants authority or replaces th
 snapshot. Error `code` is stable; localized `message` is not a programmatic contract.
 Clients must ignore additive response fields.
 
+The Session projection includes additive `remainingCardCount`, the number of distinct
+Cards that the authoritative engine can still draw for the current Session state after
+profile, boundaries, progression, policy, Session history, and Group history are
+applied. It is projected by the server and is never accepted from a client.
+
 ## Compatibility impact
 
 Protocol v2 replaces v1 because Session start no longer accepts client-authoritative
 settings. A v1 client is rejected with `PROTOCOL_VERSION_UNSUPPORTED` and must upgrade.
 The `currentCard.cardIntensity` response field is additive within v2; existing clients
 continue to receive the unchanged global meaning of `currentCard.intensity`.
+The defaulted `settings.cardPolicy` and compiled Session Card-policy snapshot fields are
+also additive within v2. Clients that omit them inherit the DataSpace, Group, Catalog,
+and built-in profile behavior selected by the server.
+The defaulted `configuration.maximumSocialSensitivity` field is likewise additive;
+older clients that omit it retain the former unrestricted (`EXPLICIT`) ceiling.
+`session.remainingCardCount` is an additive display-only field within v2.

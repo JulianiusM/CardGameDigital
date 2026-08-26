@@ -5,5 +5,6 @@
     { "slug": "rooms-and-devices", "order": 30 },
     { "slug": "safety-and-boundaries", "order": 40 },
     { "slug": "accounts-and-data", "order": 50 },
+    { "slug": "card-management", "order": 55 },
     { "slug": "troubleshooting", "order": 60 }
 ]

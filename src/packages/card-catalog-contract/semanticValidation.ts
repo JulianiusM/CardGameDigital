@@ -1,5 +1,5 @@
 import { CARD_TYPES } from "../game-core";
-import { cardCatalogSchema, type CardCatalog } from "./schema";
+import { cardCatalogSchema, resolveProducerCardMetadata, type CardCatalog } from "./schema";
 
 export type CatalogSemanticIssue = { path: string; message: string };
 
@@ -39,13 +39,13 @@ export function catalogSemanticIssues(catalog: CardCatalog): CatalogSemanticIssu
     );
     addDuplicates(
         issues,
-        "questionCategories",
-        catalog.questionCategories.map((category) => category.id),
+        "taxonomy.questionCategories",
+        catalog.taxonomy.questionCategories.map((category) => category.id),
     );
     addDuplicates(
         issues,
-        "dareTypes",
-        catalog.dareTypes.map((type) => type.id),
+        "taxonomy.dareTypes",
+        catalog.taxonomy.dareTypes.map((type) => type.id),
     );
 
     const localeIds = new Set(catalog.locales.map((locale) => locale.id));
@@ -61,23 +61,24 @@ export function catalogSemanticIssues(catalog: CardCatalog): CatalogSemanticIssu
     }
 
     const questionCategories = new Map(
-        catalog.questionCategories.map((category) => [category.id, category]),
+        catalog.taxonomy.questionCategories.map((category) => [category.id, category]),
     );
-    const dareTypes = new Map(catalog.dareTypes.map((type) => [type.id, type]));
+    const dareTypes = new Map(catalog.taxonomy.dareTypes.map((type) => [type.id, type]));
     for (const [collectionName, collection] of [
-        ["questionCategories", catalog.questionCategories],
-        ["dareTypes", catalog.dareTypes],
+        ["taxonomy.questionCategories", catalog.taxonomy.questionCategories],
+        ["taxonomy.dareTypes", catalog.taxonomy.dareTypes],
     ] as const) {
         for (const [index, taxonomy] of collection.entries()) {
+            const taxonomyPath = `${collectionName}.${index}.id(${taxonomy.id})`;
             addDuplicates(
                 issues,
-                `${collectionName}.${index}.localizations`,
+                `${taxonomyPath}.localizations`,
                 taxonomy.localizations.map((entry) => entry.locale),
             );
             for (const localization of taxonomy.localizations) {
                 if (!localeIds.has(localization.locale)) {
                     issues.push({
-                        path: `${collectionName}.${index}.localizations`,
+                        path: `${taxonomyPath}.localizations`,
                         message: `references undeclared locale '${localization.locale}'`,
                     });
                 }
@@ -86,7 +87,7 @@ export function catalogSemanticIssues(catalog: CardCatalog): CatalogSemanticIssu
     }
 
     for (const [index, card] of catalog.cards.entries()) {
-        const path = `cards.${index}`;
+        const path = `cards.${index}.id(${card.id})`;
         addDuplicates(
             issues,
             `${path}.localizations`,
@@ -111,12 +112,47 @@ export function catalogSemanticIssues(catalog: CardCatalog): CatalogSemanticIssu
             if (!card.questionCategoryId || card.dareTypeId || card.dareAffinityCategoryId) {
                 issues.push({ path, message: "Question taxonomy is inconsistent" });
             }
+            if (card.questionCategoryId && !questionCategories.has(card.questionCategoryId)) {
+                issues.push({ path, message: `references missing '${card.questionCategoryId}'` });
+            }
         } else if (card.cardType === CARD_TYPES.DARE) {
             if (card.questionCategoryId || !card.dareTypeId) {
                 issues.push({ path, message: "Dare taxonomy is inconsistent" });
             }
+            if (card.dareTypeId && !dareTypes.has(card.dareTypeId)) {
+                issues.push({ path, message: `references missing '${card.dareTypeId}'` });
+            }
         } else if (card.dareTypeId || card.dareAffinityCategoryId) {
             issues.push({ path, message: "Conversation taxonomy is inconsistent" });
+        }
+        if (
+            card.questionCategoryId &&
+            card.cardType === CARD_TYPES.CONVERSATION_META &&
+            !questionCategories.has(card.questionCategoryId)
+        ) {
+            issues.push({ path, message: `references missing '${card.questionCategoryId}'` });
+        }
+        if (card.dareAffinityCategoryId && !questionCategories.has(card.dareAffinityCategoryId)) {
+            issues.push({
+                path,
+                message: `references missing '${card.dareAffinityCategoryId}'`,
+            });
+        }
+        if (!card.repeatableInSession && card.repeatCooldown !== 0) {
+            issues.push({
+                path: `${path}.repeatCooldown`,
+                message: "must be 0 when repeatableInSession is false",
+            });
+        }
+        const resolved = resolveProducerCardMetadata(catalog, card);
+        if (
+            resolved.maximumPlayerCount !== null &&
+            resolved.maximumPlayerCount < resolved.minimumPlayerCount
+        ) {
+            issues.push({
+                path,
+                message: "resolved maximumPlayerCount must be null or at least minimumPlayerCount",
+            });
         }
         for (const localization of card.localizations) {
             if (card.questionCategoryId) {

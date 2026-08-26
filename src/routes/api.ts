@@ -28,6 +28,7 @@ import groupsRouter from "./api/groups";
 import gameSettingsRouter from "./api/gameSettings";
 import helpRouter from "./api/help";
 import catalogRouter from "./api/catalog";
+import cardPolicyRouter from "./api/cardPolicy";
 
 const router = express.Router();
 
@@ -52,6 +53,7 @@ router.use("/v1/groups", groupsRouter);
 router.use("/v1/game-settings", gameSettingsRouter);
 router.use("/v1/help", helpRouter);
 router.use("/v1/catalog", catalogRouter);
+router.use("/v1/card-policy", cardPolicyRouter);
 
 // catch 404 and forward to error handler
 router.use(function (req: express.Request, res: express.Response, next: NextFunction) {

@@ -1,15 +1,34 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { bundledCardCatalogArtifact } from "../../src/modules/database/bundledCardCatalog";
+import {
+    bundledCardCatalogArtifact,
+    setBundledCardCatalogPathForTests,
+} from "../../src/modules/database/bundledCardCatalog";
 
 describe("bundled Card catalog deployment policy", () => {
-    it("allows the development fixture locally but refuses it in public mode", () => {
-        expect(bundledCardCatalogArtifact("local").catalog.catalogId).toBe("development");
-        expect(() => bundledCardCatalogArtifact("public")).toThrow(
-            /refuses the bundled development Card catalog/,
-        );
+    it("accepts the producer-shaped test release in local and public modes", () => {
+        expect(bundledCardCatalogArtifact("local").catalog.catalogId).toBe("core");
+        expect(bundledCardCatalogArtifact("public").catalog.catalogId).toBe("core");
     });
 
-    it("allows the development fixture only through an explicit runtime override", () => {
-        expect(bundledCardCatalogArtifact("public", true).catalog.catalogId).toBe("development");
+    it("refuses a named development fixture publicly unless explicitly allowed", () => {
+        const directory = fs.mkdtempSync(path.join(os.tmpdir(), "bundled-catalog-policy-"));
+        const file = path.join(directory, "card-catalog.json");
+        const fixture = JSON.parse(
+            fs.readFileSync("tests/fixtures/card-catalog-v2.example.json", "utf8"),
+        ) as { catalogVersion: string };
+        fixture.catalogVersion = "development-fixture-test";
+        fs.writeFileSync(file, JSON.stringify(fixture));
+        setBundledCardCatalogPathForTests(file);
+        try {
+            expect(() => bundledCardCatalogArtifact("public")).toThrow(
+                /refuses the bundled development Card catalog/,
+            );
+            expect(bundledCardCatalogArtifact("public", true).catalog.catalogId).toBe("core");
+        } finally {
+            fs.rmSync(directory, { recursive: true, force: true });
+        }
     });
 });

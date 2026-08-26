@@ -7,6 +7,7 @@ import {
     type Intensity,
     type IntensityProgressionUnit,
 } from "../cards/intensity";
+import { SOCIAL_SENSITIVITIES, type SocialSensitivity } from "../cards/socialSensitivity";
 
 export type GameProfile = {
     id: string;
@@ -14,6 +15,7 @@ export type GameProfile = {
     enabledQuestionCategoryIds: ReadonlySet<QuestionCategoryId>;
     enabledDareTypeIds: ReadonlySet<DareTypeId>;
     blockedOperationalFlags: ReadonlySet<OperationalFlag>;
+    maximumSocialSensitivity: SocialSensitivity;
     startingIntensity: Intensity;
     maximumIntensity: Intensity;
     intensityProgressionUnit: IntensityProgressionUnit;
@@ -26,6 +28,8 @@ export type GameProfile = {
 
 export function validateGameProfile(profile: GameProfile): GameProfile {
     if (!profile.id || !profile.name) throw new Error("GameProfile id and name are required");
+    if (!Object.values(SOCIAL_SENSITIVITIES).includes(profile.maximumSocialSensitivity))
+        throw new Error("maximumSocialSensitivity must be a known SocialSensitivity");
     if (!INTENSITY_LEVELS.includes(profile.maximumIntensity))
         throw new Error("maximumIntensity must be an integer in [1, 5]");
     if (!INTENSITY_LEVELS.includes(profile.startingIntensity))

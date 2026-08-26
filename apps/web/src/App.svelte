@@ -3,6 +3,7 @@
     import QRCode from "qrcode";
     import AdaptiveBackdrop from "./AdaptiveBackdrop.svelte";
     import Account from "./Account.svelte";
+    import CardManagement from "./CardManagement.svelte";
     import type { BoundarySelection } from "./BoundarySetup.svelte";
     import Couch from "./Couch.svelte";
     import GameSettingsEditor from "./GameSettingsEditor.svelte";
@@ -31,7 +32,7 @@
         type Role,
         type RoomGameSettings,
     } from "./multiplayer";
-    import { presentation } from "./presentation";
+    import { presentation, type AtmospherePresentation } from "./presentation";
     import { atmosphereFor, effectForCommand, sceneFor } from "./presentationMapping";
     import {
         configureNavigationProtection,
@@ -61,6 +62,7 @@
     let transferTarget = "";
     let updateCounter = 0;
     let lastCardId: string | undefined;
+    let lastGameAtmosphere: AtmospherePresentation | null = null;
     let settingsOpen = false;
     let currentSettingsOpen = false;
     let recoveringRoom = false;
@@ -116,6 +118,10 @@
     $: cardReplacementReason = (updateCounter, connection?.cardReplacementReason ?? "");
     $: roomSettings = snapshot?.settings;
     $: roomCode = joined?.roomCode ?? "";
+    $: cardAtmosphere = atmosphereFor(session?.currentCard);
+    $: gameInProgress = Boolean(session && session.state !== "ENDED");
+    $: if (cardAtmosphere) lastGameAtmosphere = cardAtmosphere;
+    $: if (!gameInProgress && !cardAtmosphere) lastGameAtmosphere = null;
     $: settingsDefaultTab = defaultSettingsTab(effectiveRole, session?.state);
     $: if (connectionError && connectionError !== lastConnectionNotice) {
         lastConnectionNotice = connectionError;
@@ -135,7 +141,7 @@
         lastCardId = cardId;
         presentation.setScene(
             sceneFor(session?.state, session?.currentCard, Boolean(joined)),
-            atmosphereFor(session?.currentCard),
+            cardAtmosphere ?? (gameInProgress ? lastGameAtmosphere : null),
         );
     }
 
@@ -384,7 +390,8 @@
 </script>
 
 <AdaptiveBackdrop />
-{#if route === "home" || route === "account" || route === "help"}<PresentationControls />{/if}
+{#if route === "home" || route === "account" || route === "cards" || route === "help"}<PresentationControls
+    />{/if}
 {#if $notification}<NotificationToast
         message={$notification.message}
         notificationId={$notification.id}
@@ -399,6 +406,8 @@
             <Home />
         {:else if route === "account"}
             <Account />
+        {:else if route === "cards"}
+            <CardManagement />
         {:else if route === "help"}
             <Help />
         {:else if route === "couch"}
@@ -455,6 +464,10 @@
                             boundaryConfigured={snapshot.boundaryConfigured}
                             {qr}
                             code={roomCode}
+                            roomAccess={{
+                                roomCode,
+                                participantCredential: joined.participantCredential,
+                            }}
                             settings={snapshot.settings}
                             {profiles}
                             {cardLocales}
@@ -508,6 +521,11 @@
                         {cardLocales}
                         {roomCode}
                         {qr}
+                        currentGamePlayerCount={Math.max(2, representedPlayerCount)}
+                        roomAccess={{
+                            roomCode,
+                            participantCredential: joined.participantCredential,
+                        }}
                         defaultTab={settingsDefaultTab}
                     >
                         <div slot="game">
@@ -515,6 +533,7 @@
                                     settings={settingsDraft}
                                     {profiles}
                                     {cardLocales}
+                                    playerCount={Math.max(2, representedPlayerCount)}
                                     onChange={changeSettings}
                                     onCardLocaleSelect={rememberCardLocale}
                                 />
@@ -541,6 +560,11 @@
                         settings={snapshot.settings}
                         {profiles}
                         {cardLocales}
+                        playerCount={Math.max(2, representedPlayerCount)}
+                        roomAccess={{
+                            roomCode,
+                            participantCredential: joined.participantCredential,
+                        }}
                     />
                 {/if}
             </main>

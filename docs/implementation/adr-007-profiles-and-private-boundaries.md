@@ -12,11 +12,14 @@ Accepted for Phase 7.
   production `PUBLISHED` editorial status.
 - Built-in operational defaults are conservative and stored with each profile.
   All presets block third-party, alcohol, and recreational-drug requirements.
-  Colleagues also blocks contact, private-space, clothing-removal, and nudity
-  requirements; Friends and Best Friends progressively permit contact-related
-  rules; Couples presets permit consensual private/contact rules that match their
-  content range. `PROFILE_CUSTOM` begins with every operational rule blocked.
-- The explicit `PROFILE_COUPLES_SPICY` profile requires a deliberate adult-content
+  Child-friendly enables non-sexual categories and silly, ordinary-contact, and generic
+  dares with a Deep personal ceiling and maximum intensity 3; every copied setting
+  remains editable before play.
+  Acquaintances & Colleagues also blocks contact, private-space, clothing-removal, and
+  nudity requirements; Good Friends permits ordinary consensual contact; Close Friends
+  combines trusted-group breadth with an intimate range. `PROFILE_CUSTOM` begins with
+  every operational rule blocked.
+- The explicit `PROFILE_SPICY` profile requires a deliberate adult-content
   confirmation at both the browser and application-service boundaries.
 - Each authenticated Room participant submits boundaries privately over the
   WebSocket protocol before Session start. Question categories, DareTypes, and

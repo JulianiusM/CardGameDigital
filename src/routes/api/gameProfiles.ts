@@ -22,6 +22,7 @@ router.get("/", (request, response) => {
                 enabledQuestionCategoryIds: [...profile.enabledQuestionCategoryIds],
                 enabledDareTypeIds: [...profile.enabledDareTypeIds],
                 blockedOperationalFlags: [...profile.blockedOperationalFlags],
+                maximumSocialSensitivity: profile.maximumSocialSensitivity,
                 startingIntensity: profile.startingIntensity,
                 maximumIntensity: profile.maximumIntensity,
                 intensityProgressionUnit: profile.intensityProgressionUnit,

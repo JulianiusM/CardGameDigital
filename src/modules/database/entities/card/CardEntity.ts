@@ -3,6 +3,10 @@ import { CardLocalizationEntity } from "./CardLocalizationEntity";
 import { CardOperationalFlagEntity } from "./CardOperationalFlagEntity";
 
 @Index("IDX_cards_type_active", ["cardType", "active"])
+@Index("IDX_cards_management_sensitivity", ["socialSensitivity", "active", "id"])
+@Index("IDX_cards_management_question", ["questionCategoryId", "active", "id"])
+@Index("IDX_cards_management_dare", ["dareTypeId", "active", "id"])
+@Index("IDX_cards_management_players", ["minimumPlayerCount", "maximumPlayerCount", "id"])
 @Entity("cards")
 export class CardEntity {
     @PrimaryColumn("varchar", { length: 36 }) id!: string;
@@ -21,6 +25,11 @@ export class CardEntity {
     repeatableInSession!: boolean;
     @Column("int", { name: "repeat_cooldown", default: 0 }) repeatCooldown!: number;
     @Column("float", { name: "weight", default: 1 }) weight!: number;
+    @Column("varchar", { name: "social_sensitivity", length: 24, default: "GENERAL" })
+    socialSensitivity!: string;
+    @Column("int", { name: "minimum_player_count", default: 2 }) minimumPlayerCount!: number;
+    @Column("int", { name: "maximum_player_count", nullable: true }) maximumPlayerCount!:
+        number | null;
     @Column("boolean", { name: "active", default: true }) active!: boolean;
     @OneToMany(() => CardOperationalFlagEntity, (flag) => flag.card, { cascade: true })
     flags!: CardOperationalFlagEntity[];

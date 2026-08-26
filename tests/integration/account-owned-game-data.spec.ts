@@ -51,7 +51,7 @@ describe("DataSpace-owned game data", () => {
         await request(app)
             .put("/api/v1/game-settings")
             .send({
-                preferredProfileId: "PROFILE_BEST_FRIENDS",
+                preferredProfileId: "PROFILE_CLOSE_FRIENDS",
                 startingIntensity: 2,
                 maximumIntensity: 4,
                 intensityProgressionUnit: "CARDS",
@@ -68,7 +68,7 @@ describe("DataSpace-owned game data", () => {
             expect.objectContaining({ name: "Friday friends", members: ["Ada", "Lin"] }),
         ]);
         expect(settingsResponse.body.settings).toMatchObject({
-            preferredProfileId: "PROFILE_BEST_FRIENDS",
+            preferredProfileId: "PROFILE_CLOSE_FRIENDS",
             startingIntensity: 2,
             maximumIntensity: 4,
             intensityProgressionUnit: "CARDS",
@@ -236,7 +236,7 @@ describe("DataSpace-owned game data", () => {
                 name: first.body.name,
                 members: first.body.members,
                 cardLanguageSettings: {
-                    cardLocale: "fr-FR",
+                    cardLocale: "es-ES",
                     cardFallbackEnabled: false,
                     cardFallbackLocales: [],
                 },

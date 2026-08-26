@@ -58,7 +58,7 @@ A producer-owned Card UUID identifies language-independent gameplay metadata.
 state. Catalog locales and localized taxonomy labels are database content and do not
 come from UI i18n resources.
 
-The exact bundled `game-card-catalog/v1` FULL snapshot is validated and hashed at build
+The exact bundled `game-card-catalog/v2` FULL snapshot is validated and hashed at build
 and startup, then reconciled transactionally before readiness. Missing Cards, locales,
 or localizations are soft-disabled. Gameplay requests an active database locale and
 excludes missing localizations unless deployment explicitly enables fallback.

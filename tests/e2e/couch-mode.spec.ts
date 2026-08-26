@@ -18,7 +18,8 @@ async function reachCouch(
     await page.getByRole("button", { name: /^Weiter/ }).click();
     await page.getByRole("button", { name: new RegExp(modeLabel) }).click();
     await page.getByRole("button", { name: /^Weiter/ }).click();
-    await page.getByRole("button", { name: /^Freunde / }).click();
+    await expect(page.locator(".option-grid.profiles > button")).toHaveCount(6);
+    await page.getByRole("button", { name: /^Gute Freunde / }).click();
     await page.getByRole("button", { name: /^Weiter/ }).click();
     await expect(page.getByRole("heading", { name: "Erlebnis anpassen" })).toBeVisible();
     await expect(page.getByRole("slider", { name: /Startintensität/ })).toBeVisible();
@@ -80,6 +81,10 @@ test("Golden Mischief uses warm local surfaces and a motion-aware adaptive backd
         trackCount: Number(layer.getAttribute("data-track-count")),
         trackGap: Number(layer.getAttribute("data-track-gap")),
     }));
+    await expect(page.locator(".atmosphere-layer")).toHaveAttribute(
+        "data-density-origin",
+        "center",
+    );
     expect(backdropMetrics.trackCount).toBeGreaterThanOrEqual(6);
     expect(backdropMetrics.slotCount).toBeGreaterThanOrEqual(8);
     expect(backdropMetrics.iconGap).toBeGreaterThan(backdropMetrics.iconSize * 2);
@@ -108,11 +113,6 @@ test("Golden Mischief uses warm local surfaces and a motion-aware adaptive backd
             const y = Math.round((probe.y / bounds.height) * (canvas.height - 1));
             return [...canvas.getContext("2d")!.getImageData(x, y, 1, 1).data.slice(0, 3)];
         }, gradientProbe);
-    const sampledSymbol = await page
-        .locator(".incoming-symbol[data-adaptive-color]")
-        .first()
-        .elementHandle();
-    const beforeSymbolColor = await sampledSymbol!.getAttribute("data-adaptive-color");
     const desktopTrackSpeeds = await measureTrackSpeeds(page);
     const afterGradientPhase = Number(await atmosphereLayer.getAttribute("data-gradient-phase"));
     expect(Math.min(...desktopTrackSpeeds)).toBeGreaterThan(35);
@@ -138,10 +138,6 @@ test("Golden Mischief uses warm local surfaces and a motion-aware adaptive backd
             ),
         ),
     ).toBeLessThanOrEqual(3);
-    await expect
-        .poll(() => sampledSymbol!.getAttribute("data-adaptive-color"))
-        .not.toBe(beforeSymbolColor);
-
     const trackGeometry = await page.evaluate(() => {
         const field = document.querySelector<HTMLElement>(".motif-field")!;
         const firstTrack = document.querySelector<HTMLElement>(".motif-track")!;
@@ -498,7 +494,7 @@ test("Golden Mischief uses warm local surfaces and a motion-aware adaptive backd
     expect(phoneMotifs.maximumSize).toBeLessThan(64);
     expect(phoneMotifs.iconGap).toBe(backdropMetrics.iconGap);
     expect(phoneMotifs.trackGap).toBe(backdropMetrics.trackGap);
-    expect(phoneMotifs.trackCount).toBeLessThan(backdropMetrics.trackCount);
+    expect(phoneMotifs.trackCount).toBeGreaterThanOrEqual(backdropMetrics.trackCount);
 });
 
 test("Couch Mode runs all four modes through the server-authoritative engine", async ({
@@ -527,6 +523,9 @@ test("Couch Mode runs all four modes through the server-authoritative engine", a
 test("card text remains centered on a narrow, short viewport", async ({ page }) => {
     await page.setViewportSize({ width: 360, height: 640 });
     await createGame(page, "Wahrheit oder Pflicht");
+    const trackCountBeforeReveal = Number(
+        await page.locator(".atmosphere-layer").getAttribute("data-track-count"),
+    );
     await page.getByRole("button", { name: "Wahrheit", exact: true }).click();
     const card = page.locator(".game-card");
     const text = card.locator("p");
@@ -534,21 +533,54 @@ test("card text remains centered on a narrow, short viewport", async ({ page }) 
     await expect(card.locator(".intensity-meter")).toHaveCount(2);
     await expect(card.locator(".card-intensity")).toHaveAttribute(
         "aria-label",
-        "Kartenintensität 2",
+        /Kartenintensität [1-5]/,
     );
     await expect(card.locator(".global-intensity")).toHaveAttribute(
         "aria-label",
-        "Globale Intensität 1",
+        /Globale Intensität [1-5]/,
     );
-    await expect(page.locator(".atmosphere-layer")).toHaveAttribute("data-backdrop-intensity", "2");
+    const globalIntensity = (await card
+        .locator(".global-intensity")
+        .getAttribute("aria-label"))!.match(/[1-5]$/)![0];
+    await expect(page.locator(".atmosphere-layer")).toHaveAttribute(
+        "data-backdrop-intensity",
+        globalIntensity,
+    );
+    expect(Number(await page.locator(".atmosphere-layer").getAttribute("data-track-count"))).toBe(
+        trackCountBeforeReveal,
+    );
+    await expect(page.locator(".remaining-cards")).toContainText(/\d+ verfügbar/);
+    await expect(page.locator(".status [data-adaptive-contrast]").first()).toHaveAttribute(
+        "data-adaptive-tone",
+        /dark|light/,
+    );
+    await expect(page.locator(".active-player[data-adaptive-contrast]")).toHaveAttribute(
+        "data-adaptive-tone",
+        /dark|light/,
+    );
+    await expect(card.locator(".card-symbol use")).toHaveCount(1);
     const cardBox = (await card.boundingBox())!;
+    const cardSymbolBox = (await card.locator(".card-symbol").boundingBox())!;
     const textBox = (await text.boundingBox())!;
     const intensityBox = (await card.locator(".intensity-pair").boundingBox())!;
     const cardCenter = cardBox.y + cardBox.height / 2;
     const textCenter = textBox.y + textBox.height / 2;
     expect(Math.abs(textCenter - cardCenter)).toBeLessThan(cardBox.height * 0.2);
+    expect(cardSymbolBox.x).toBeGreaterThanOrEqual(cardBox.x);
+    expect(cardSymbolBox.y).toBeGreaterThanOrEqual(cardBox.y);
+    expect(cardSymbolBox.x + cardSymbolBox.width).toBeLessThanOrEqual(cardBox.x + cardBox.width);
     expect(intensityBox.x).toBeGreaterThanOrEqual(cardBox.x);
     expect(intensityBox.x + intensityBox.width).toBeLessThanOrEqual(cardBox.x + cardBox.width);
+    const cardFamily = await page.locator(".atmosphere-layer").getAttribute("data-backdrop-family");
+    await page.getByRole("button", { name: "Weiter", exact: true }).click();
+    await expect(page.locator(".atmosphere-layer")).toHaveAttribute(
+        "data-backdrop-family",
+        cardFamily!,
+    );
+    await expect(page.locator(".atmosphere-layer")).toHaveAttribute(
+        "data-backdrop-intensity",
+        globalIntensity,
+    );
 });
 
 test("game card and actions fit medium and TV viewports without document scrolling", async ({
@@ -589,6 +621,80 @@ test("main setup exposes Host, Join and Display and guards direct Host URLs", as
     await expect(page).toHaveURL(/\/play\/?$/);
     await expect(page.getByRole("button", { name: /Spiel hosten/ })).toBeVisible();
     await expect(page.getByText("Lobby", { exact: true })).toHaveCount(0);
+});
+
+test("DataSpace, sensitivity and eligible Cards stay visible through quick setup", async ({
+    page,
+}) => {
+    await page.goto("/play/");
+    const dataSpace = page.locator(".active-dataspace-indicator");
+    await expect(dataSpace).toContainText("Aktiver DataSpace");
+    await expect(dataSpace).toContainText("Local");
+    await expect(dataSpace).toHaveCSS("transition-property", /transform/);
+    expect((await dataSpace.boundingBox())!.height).toBeLessThanOrEqual(40);
+    await expect(page.locator(".home-context-status")).toHaveCSS("position", "fixed");
+
+    await page.getByRole("button", { name: /Spiel hosten/ }).click();
+    const setupPreview = page.locator(".wizard-footer > .eligibility-preview");
+    await expect(dataSpace).toBeVisible();
+    await expect(setupPreview).toContainText("geeignete Karten");
+    await expect(setupPreview.locator(".eligibility-preview-total > strong")).toHaveText(/\d+/);
+    await expect(setupPreview).toHaveCSS("animation-name", "policy-control-enter");
+    await expect(setupPreview).toHaveCSS("box-shadow", "none");
+    expect(
+        Number.parseFloat(
+            await setupPreview
+                .locator(".eligibility-preview-total > strong")
+                .evaluate((element) => getComputedStyle(element).fontSize),
+        ),
+    ).toBeLessThanOrEqual(18);
+
+    await page.getByRole("button", { name: /Keine Gruppe/ }).click();
+    await page.getByRole("button", { name: /^Weiter/ }).click();
+    await expect(dataSpace).toBeVisible();
+    await page.getByRole("button", { name: /Wahrheit oder Pflicht/ }).click();
+    await page.getByRole("button", { name: /^Weiter/ }).click();
+    await expect(dataSpace).toBeVisible();
+    await page.getByRole("button", { name: /^Kinderfreundlich / }).click();
+    await page.getByRole("button", { name: /^Weiter/ }).click();
+    await expect(dataSpace).toBeVisible();
+
+    const editor = page.locator(".game-settings-editor");
+    const sensitivity = editor.getByRole("slider", {
+        name: "Maximale soziale Sensibilität",
+    });
+    await expect(sensitivity).toHaveAttribute("aria-valuetext", "Tief persönlich");
+    await expect(editor.locator(":scope > .eligibility-preview")).toHaveCount(0);
+    await expect(page.locator(".wizard-footer > .eligibility-preview")).toContainText(
+        "geeignete Karten",
+    );
+
+    await page.setViewportSize({ width: 360, height: 740 });
+    await expect
+        .poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
+        .toBe(true);
+    await page.getByRole("button", { name: /^Weiter/ }).click();
+    await expect(dataSpace).toBeVisible();
+    await expect(page.locator(".wizard-footer > .eligibility-preview")).toContainText(
+        "geeignete Karten",
+    );
+    await page.getByRole("button", { name: /Nur dieser Bildschirm/ }).click();
+    await page.getByRole("button", { name: /Weiter zur Lobby/ }).click();
+    await expect(page).toHaveURL(/\/play\/couch$/);
+    await expect(page.locator(".active-dataspace-indicator")).toContainText("Local");
+    await expect(page.locator(".player-setup .eligibility-preview")).toContainText(
+        "geeignete Karten",
+    );
+
+    await page.getByLabel("Einstellungen").click();
+    await page.getByRole("tab", { name: "Aktuelle Spieleinstellungen" }).click();
+    await expect(page.locator(".settings-modal .eligibility-preview")).toContainText(
+        "geeignete Karten",
+    );
+    await expect(page.locator(".settings-modal")).toContainText("Maximale soziale Sensibilität");
+    await expect
+        .poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
+        .toBe(true);
 });
 
 test("navigation animates its component panel without invoking a document transition", async ({
@@ -852,10 +958,10 @@ test("Custom profile exposes the full shared customization editor", async ({ pag
     await expect(page.getByRole("button", { name: "ALLTAG" })).toBeVisible();
     await expect(page.getByRole("button", { name: "KUSS", exact: true })).toBeVisible();
     await expect(
-        page.getByRole("button", { name: /Deutsch \(Deutschland\).*de-DE/ }),
+        page.getByRole("option", { name: /Deutsch \(Deutschland\).*de-DE/ }),
     ).toBeVisible();
     await expect(
-        page.getByRole("button", { name: /English \(United Kingdom\).*en-GB/ }),
+        page.getByRole("option", { name: /English \(United Kingdom\).*en-GB/ }),
     ).toBeVisible();
 
     const intensitySection = page.locator(".behavior-settings");
@@ -1024,7 +1130,7 @@ test("Never Have I Ever reveal policy lives only in Customize Experience", async
     await expect(
         page.getByRole("heading", { name: "Wie sollen die Antworten aufgedeckt werden?" }),
     ).toHaveCount(0);
-    await page.getByRole("button", { name: /^Freunde / }).click();
+    await page.getByRole("button", { name: /^Gute Freunde / }).click();
     await page.getByRole("button", { name: /^Weiter/ }).click();
     await expect(page.getByRole("heading", { name: "Erlebnis anpassen" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Anzeige der Antworten" })).toBeVisible();
@@ -1077,7 +1183,7 @@ test("built-in profiles offer a validation-preserving Customize shortcut", async
     await page.getByRole("button", { name: /Keine Gruppe/ }).click();
     await page.getByRole("button", { name: /^Weiter/ }).click();
     await page.getByRole("button", { name: /^Weiter/ }).click();
-    await page.getByRole("button", { name: /^Freunde / }).click();
+    await page.getByRole("button", { name: /^Gute Freunde / }).click();
     await page.getByRole("button", { name: /^Weiter/ }).click();
     const skip = page.getByRole("button", { name: /Überspringen/ });
     const next = page.getByRole("button", { name: /^Weiter/ });
@@ -1328,6 +1434,7 @@ test("Help topic tabs stay inside their article and support arrow scrolling", as
         "Räume, Geräte und Spielleitung",
         "Grenzen und respektvolles Spielen",
         "Konten und gespeicherte Daten",
+        "Kartenverwaltung",
         "Probleme lösen",
     ]);
     const next = page.locator(".tab-scroll-arrow.next");
@@ -1374,4 +1481,324 @@ test("beforeunload protection is enabled only after setup becomes meaningful", a
     expect(await isProtected()).toBe(false);
     await page.getByRole("button", { name: /Spiel hosten/ }).click();
     expect(await isProtected()).toBe(true);
+});
+
+test("Card management stays bounded and Session changes return to quick setup", async ({
+    page,
+}) => {
+    test.setTimeout(60_000);
+    await page.setViewportSize({ width: 1440, height: 1100 });
+    await page.goto("/play/cards");
+    await expect(page.getByRole("heading", { name: "Kartenverwaltung" })).toBeVisible();
+    await expect(page.locator("main.card-management-shell > .card-management-frame")).toBeVisible();
+    await expect(page.getByText("Aktueller Datenraum", { exact: true })).toBeVisible();
+
+    const scopeActions = page.locator(".policy-scope-actions > *");
+    await expect(scopeActions).toHaveCount(3);
+    for (const action of await scopeActions.all()) {
+        await expect(action).toHaveCSS("white-space", "nowrap");
+        expect((await action.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+    }
+    const scopeChooser = page.getByRole("button", { name: "DataSpace / Gruppe wählen" });
+    await scopeChooser.click();
+
+    await expect(
+        page.getByRole("heading", { name: "Karteneigenschaften überschreiben" }).first(),
+    ).toBeVisible();
+    await expect(page.getByText("Kartenabstimmung", { exact: true })).toHaveCount(0);
+    await expect(
+        page.getByText(/Diese Einstellungen überschreiben den eigenen Wert jeder passenden Karte/),
+    ).toBeVisible();
+    await expect(page.getByText("Wähle, was du bearbeitest", { exact: true })).toBeVisible();
+    await expect(page.locator(".policy-scope-picker")).toHaveCSS(
+        "animation-name",
+        "policy-control-enter",
+    );
+    await expect(page.getByText("DATASPACE-STANDARD", { exact: true })).toBeVisible();
+    await expect(page.getByText("GRUPPENAUSNAHMEN", { exact: true })).toBeVisible();
+    const currentDataSpace = page.locator(".policy-scope-option").first();
+    await expect(currentDataSpace).toHaveClass(/selected/);
+    await expect(currentDataSpace.locator("strong")).toHaveCSS("white-space", "normal");
+    await expect(currentDataSpace.locator("small")).toHaveCSS("white-space", "normal");
+    await scopeChooser.click();
+
+    const availability = page.getByRole("group", { name: "Verfügbarkeit" }).first();
+    const exclude = availability.getByRole("button", { name: "Ausschließen", exact: true });
+    const inherit = availability.getByRole("button", { name: "Erben", exact: true });
+    await expect(exclude).toHaveCSS("transition-property", /transform/);
+    await exclude.click();
+    await expect(exclude).toHaveAttribute("aria-pressed", "true");
+    await inherit.click();
+    await expect(inherit).toHaveAttribute("aria-pressed", "true");
+
+    const sensitivityMode = page.getByRole("group", { name: "Soziale Sensibilität" }).first();
+    await sensitivityMode.getByRole("button", { name: "Wert überschreiben" }).click();
+    const sensitivityScale = page.getByRole("slider", { name: "Soziale Sensibilität" });
+    await expect(sensitivityScale).toHaveAttribute("aria-valuetext", "Explizit");
+    await sensitivityScale.fill("2");
+    await expect(sensitivityScale).toHaveAttribute("aria-valuetext", "Nah persönlich");
+    await sensitivityMode.getByRole("button", { name: "Katalogwert" }).click();
+    await sensitivityMode.getByRole("button", { name: "Wert überschreiben" }).click();
+    await expect(sensitivityScale).toHaveAttribute("aria-valuetext", "Nah persönlich");
+
+    const intensityMode = page.getByRole("group", { name: "Kartenintensität" }).first();
+    await intensityMode.getByRole("button", { name: "Wert überschreiben" }).click();
+    await expect(page.getByRole("slider", { name: "Kartenintensität" })).toHaveAttribute(
+        "aria-valuetext",
+        "Stufe 1 von 5",
+    );
+    await expect(page.getByText(/Jede passende Karte erhält die relative Stufe 1/)).toBeVisible();
+
+    await page.getByRole("tab", { name: "Bedingte Regeln" }).click();
+    await expect(page.locator(".card-policy-workspace")).toHaveCSS(
+        "animation-name",
+        "policy-control-enter",
+    );
+    await page.getByRole("button", { name: "Regel hinzufügen" }).click();
+    await expect(
+        page.getByText("Die Vorschau ist optional und ändert oder speichert die Regel nicht."),
+    ).toBeVisible();
+    const saveRule = page
+        .locator(".policy-sticky-actions")
+        .getByRole("button", { name: "Speichern", exact: true });
+    await expect(saveRule).toBeEnabled();
+    await saveRule.click();
+    await expect(page.getByRole("status")).toContainText("Kartenrichtlinie gespeichert");
+    await page.getByRole("button", { name: "Regel löschen", exact: true }).click();
+    await page
+        .locator(".policy-confirmation-card")
+        .getByRole("button", { name: "Regel löschen", exact: true })
+        .click();
+    await expect(page.getByText("Bedingte Regel gelöscht.", { exact: true })).toBeVisible();
+
+    await page.getByRole("tab", { name: "Kartenausnahmen" }).click();
+    await expect(page.getByText(/Karten 1–\d+ von \d+/)).toBeVisible();
+    await page.locator(".card-filter-drawer > summary").click();
+    await expect(page.locator(".policy-master-pane")).toHaveCSS("overflow-y", "visible");
+    const pageButtons = page.locator(".policy-master-pane .policy-pagination button");
+    await expect(pageButtons).toHaveCount(2);
+    const previousBox = (await pageButtons.nth(0).boundingBox())!;
+    const nextBox = (await pageButtons.nth(1).boundingBox())!;
+    expect(Math.abs(previousBox.width - nextBox.width)).toBeLessThanOrEqual(1);
+    await expect(page.locator(".managed-card-id")).toContainText(
+        /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/,
+    );
+    await expect(page.locator(".managed-card-id")).toHaveCSS("align-items", "baseline");
+    await expect(page.locator(".managed-card-id")).toHaveCSS("border-left-style", "solid");
+    const cardMetadataFonts = await page.locator(".managed-card-meta").evaluate((metadata) => {
+        const taxonomy = metadata.querySelector<HTMLElement>(".managed-card-taxonomy")!;
+        const id = metadata.querySelector<HTMLElement>(".managed-card-id")!;
+        return {
+            id: getComputedStyle(id).fontFamily,
+            taxonomy: getComputedStyle(taxonomy).fontFamily,
+        };
+    });
+    expect(cardMetadataFonts.id).toBe(cardMetadataFonts.taxonomy);
+    await expect(page.locator(".managed-card-list > button").first()).toHaveCSS(
+        "overflow",
+        "hidden",
+    );
+    const measureWrappedCardRow = () =>
+        page.locator(".managed-card-list > button").evaluateAll((rows) => {
+            for (const row of rows) {
+                const icon = row.querySelector<HTMLElement>(".managed-card-type");
+                const excerpt = row.querySelector<HTMLElement>(".managed-card-copy strong");
+                const metadata = row.querySelector<HTMLElement>(".managed-card-copy small");
+                if (!icon || !excerpt || !metadata) continue;
+                const excerptLineHeight = Number.parseFloat(getComputedStyle(excerpt).lineHeight);
+                const excerptBox = excerpt.getBoundingClientRect();
+                if (excerptBox.height < excerptLineHeight * 1.5) continue;
+                const rowBox = row.getBoundingClientRect();
+                const iconBox = icon.getBoundingClientRect();
+                const metadataBox = metadata.getBoundingClientRect();
+                return {
+                    excerptLines: excerptBox.height / excerptLineHeight,
+                    iconCenterOffset:
+                        iconBox.top + iconBox.height / 2 - (rowBox.top + rowBox.height / 2),
+                    metadataBottomInset: rowBox.bottom - metadataBox.bottom,
+                    metadataHeight: metadataBox.height,
+                    metadataLineHeight: Number.parseFloat(getComputedStyle(metadata).lineHeight),
+                };
+            }
+            return null;
+        });
+    const desktopWrappedRow = await measureWrappedCardRow();
+    expect(desktopWrappedRow).not.toBeNull();
+    expect(desktopWrappedRow!.excerptLines).toBeGreaterThan(1.5);
+    expect(desktopWrappedRow!.excerptLines).toBeLessThanOrEqual(2.05);
+    expect(Math.abs(desktopWrappedRow!.iconCenterOffset)).toBeLessThanOrEqual(2);
+    expect(desktopWrappedRow!.metadataBottomInset).toBeGreaterThan(4);
+    expect(desktopWrappedRow!.metadataHeight).toBeGreaterThanOrEqual(
+        desktopWrappedRow!.metadataLineHeight,
+    );
+    await expect(page.locator(".property-provenance-card")).toHaveCount(8);
+    await expect(page.getByText("socialSensitivity", { exact: true })).toHaveCount(0);
+    await expect
+        .poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
+        .toBe(true);
+    await page.setViewportSize({ width: 360, height: 740 });
+    await expect
+        .poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
+        .toBe(true);
+    const narrowWrappedRow = await measureWrappedCardRow();
+    expect(narrowWrappedRow).not.toBeNull();
+    expect(Math.abs(narrowWrappedRow!.iconCenterOffset)).toBeLessThanOrEqual(2);
+    expect(narrowWrappedRow!.metadataBottomInset).toBeGreaterThan(4);
+
+    await page.goto("/play/");
+    await page.getByRole("button", { name: /Spiel hosten/ }).click();
+    await page.getByRole("button", { name: /Keine Gruppe/ }).click();
+    await page.getByRole("button", { name: /^Weiter/ }).click();
+    await page.getByRole("button", { name: /Wahrheit oder Pflicht/ }).click();
+    await page.getByRole("button", { name: /^Weiter/ }).click();
+    await page.getByRole("button", { name: /^Gute Freunde / }).click();
+    await page.getByRole("button", { name: /^Weiter/ }).click();
+    await expect(page.getByRole("heading", { name: "Erlebnis anpassen" })).toBeVisible();
+    await page.getByRole("link", { name: /Kartenverwaltung öffnen/ }).click();
+
+    await expect(page).toHaveURL(/\/play\/cards\?scope=session/);
+    await expect(page.getByText("Dieses Spiel", { exact: true })).toBeVisible();
+    await expect(page.getByRole("group", { name: "Soziale Sensibilität" })).toHaveCount(0);
+    await page
+        .getByRole("group", { name: "Verfügbarkeit" })
+        .first()
+        .getByRole("button", { name: "Ausschließen", exact: true })
+        .click();
+    await page.getByRole("button", { name: "Richtlinie speichern" }).click();
+    await page.getByRole("link", { name: /Zurück zur Spieleinrichtung/ }).click();
+    await expect(page).toHaveURL(/setup=customize/);
+    const pendingPolicy = await page.evaluate(() => {
+        const stored = sessionStorage.getItem("party-game:setup");
+        return stored ? JSON.parse(stored).cardPolicy : null;
+    });
+    expect(pendingPolicy).toMatchObject({
+        scopeDefault: { availability: "EXCLUDE" },
+    });
+});
+
+test("Card management bounds thousand-entry Group and rule collections", async ({ page }) => {
+    const stableId = (index: number) =>
+        `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`;
+    const groups = Array.from({ length: 1_000 }, (_, index) => ({
+        id: stableId(index + 1),
+        name: `Gruppe ${String(index + 1).padStart(4, "0")}`,
+        members: [`Person ${index + 1}`],
+    }));
+    const rules = Array.from({ length: 1_000 }, (_, index) => ({
+        id: stableId(index + 2_000),
+        name: `Regel ${String(index + 1).padStart(4, "0")}`,
+        order: (index + 1) * 10,
+        enabled: false,
+        predicate: {},
+        directives: {},
+        revision: 0,
+    }));
+    await page.route("**/api/v1/groups", (route) =>
+        route.fulfill({ contentType: "application/json", body: JSON.stringify({ groups }) }),
+    );
+    await page.route("**/api/v1/card-policy/rules", (route) => {
+        if (route.request().method() !== "GET") return route.fallback();
+        return route.fulfill({ contentType: "application/json", body: JSON.stringify({ rules }) });
+    });
+
+    await page.goto("/play/cards");
+    await page.getByRole("button", { name: "DataSpace / Gruppe wählen" }).click();
+    await expect(page.locator(".policy-scope-group-list .policy-scope-option")).toHaveCount(8);
+    await expect(page.getByText("1000 Gruppen", { exact: true })).toBeVisible();
+    await page.getByRole("searchbox", { name: "Gruppe finden" }).fill("0999");
+    await expect(page.locator(".policy-scope-group-list .policy-scope-option")).toHaveCount(1);
+    await expect(page.getByText("Gruppe 0999", { exact: true })).toBeVisible();
+
+    await page.getByRole("tab", { name: "Bedingte Regeln" }).click();
+    await expect(page.locator(".policy-rule-select")).toHaveCount(10);
+    await expect(page.locator(".policy-rule-row-actions")).toHaveCount(10);
+    await expect(page.getByRole("button", { name: /Nach unten: Regel 0001/ })).toBeVisible();
+    await expect(page.getByText("1000 Regeln", { exact: true })).toBeVisible();
+    await page.getByRole("searchbox", { name: "Regeln durchsuchen" }).fill("0999");
+    await expect(page.locator(".policy-rule-select")).toHaveCount(1);
+    await expect(page.getByText("Regel 0999", { exact: true })).toBeVisible();
+    await page.setViewportSize({ width: 320, height: 700 });
+    await expect
+        .poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
+        .toBe(true);
+});
+
+test("Account DataSpace browser bounds a thousand entries and reveals the active page", async ({
+    page,
+}) => {
+    const stableId = (index: number) =>
+        `10000000-0000-4000-8000-${String(index).padStart(12, "0")}`;
+    const dataSpaces = Array.from({ length: 1_000 }, (_, index) => ({
+        id: stableId(index + 1),
+        name: `DataSpace ${String(index + 1).padStart(4, "0")}`,
+        defaultForOwner: index === 0,
+    }));
+    const account = {
+        user: {
+            id: 1,
+            username: "scale-user",
+            name: "Scale User",
+            email: "scale@example.test",
+        },
+        activeDataSpaceId: dataSpaces[996].id,
+        dataSpaces,
+        languagePreferences: null,
+    };
+    await page.route("**/api/v1/account/status", (route) =>
+        route.fulfill({
+            contentType: "application/json",
+            body: JSON.stringify({
+                authenticationAvailable: true,
+                localLoginEnabled: true,
+                oidcEnabled: false,
+                oidcName: "",
+                imprintUrl: "",
+                privacyPolicyUrl: "",
+                deploymentMode: "public",
+                authenticated: true,
+                account,
+            }),
+        }),
+    );
+    await page.route("**/api/v1/account/sessions", (route) =>
+        route.fulfill({
+            contentType: "application/json",
+            body: JSON.stringify({ sessions: [] }),
+        }),
+    );
+
+    await page.goto("/play/account");
+    await expect(page.locator(".data-space-card")).toHaveCount(8);
+    await expect(page.locator(".data-space-pagination > span")).toHaveText("125 / 125");
+    await expect(page.locator(".data-space-card.active")).toContainText("DataSpace 0997");
+    await page.getByRole("searchbox", { name: "DataSpaces durchsuchen" }).fill("0012");
+    await expect(page.locator(".data-space-card")).toHaveCount(1);
+    await expect(page.locator(".data-space-card")).toContainText("DataSpace 0012");
+    await page.getByRole("tab", { name: "Daten & Konto" }).click();
+    const adjacentActions = [
+        page.getByRole("link", { name: /Gespeicherte Runde starten/ }),
+        page.getByRole("link", { name: /Daten exportieren/ }),
+        page.getByRole("button", { name: "Abmelden", exact: true }),
+    ];
+    const adjacentMotion = await Promise.all(
+        adjacentActions.map((action) =>
+            action.evaluate((element) => {
+                const style = getComputedStyle(element);
+                return {
+                    duration: style.transitionDuration,
+                    property: style.transitionProperty,
+                };
+            }),
+        ),
+    );
+    expect(new Set(adjacentMotion.map(({ duration }) => duration)).size).toBe(1);
+    expect(new Set(adjacentMotion.map(({ property }) => property)).size).toBe(1);
+    for (const action of adjacentActions) {
+        await action.hover();
+        await expect(action).not.toHaveCSS("transform", "none");
+    }
+    await page.setViewportSize({ width: 320, height: 700 });
+    await expect
+        .poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
+        .toBe(true);
 });

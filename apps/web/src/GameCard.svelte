@@ -1,6 +1,6 @@
 <script lang="ts">
     import { messages } from "./i18n";
-    import { atmosphereFor, type PresentedCard } from "./presentationMapping";
+    import { motifSymbolFor, type PresentedCard } from "./presentationMapping";
     import UiIcon from "./UiIcon.svelte";
 
     export let card: PresentedCard;
@@ -8,10 +8,7 @@
     export let replacementDraw = false;
     export let compact = false;
 
-    $: atmosphere = atmosphereFor(card);
-    $: motifUrl = atmosphere
-        ? `/play/motifs/${atmosphere.family.toLowerCase().replaceAll("_", "-")}.svg`
-        : "/play/motifs/general.svg";
+    $: motifSymbol = motifSymbolFor(card);
     $: classificationId = card.questionCategoryId ?? card.dareTypeId;
     $: classification = classificationId
         ? (messages.taxonomy[classificationId] ?? classificationId)
@@ -24,8 +21,9 @@
     class="game-card"
     data-type={card.cardType}
 >
-    <span class="card-symbol" aria-hidden="true" style={`--card-motif-url: url('${motifUrl}')`}
-    ></span>
+    <svg class="card-symbol" aria-hidden="true" focusable="false" viewBox="0 0 64 64">
+        <use href={`/play/motifs/motif-symbols.svg#${motifSymbol}`}></use>
+    </svg>
     <span class="card-type">
         {messages.cardTypes[card.cardType]}
         {#if classification}<i>·</i>{classification}{/if}

@@ -24,6 +24,14 @@ DataSpace und die richtige Gruppe; fremde oder nicht ausgewählte DataSpaces kö
 nicht über ihre IDs aufgerufen werden. Neue Konten erhalten automatisch einen
 Standard-DataSpace.
 
+Die DataSpace-Liste bietet Namenssuche und begrenzte Seiten. Dadurch bleibt die Auswahl
+auch bei vielen Bereichen übersichtlich. Ein anderer DataSpace wechselt den
+Besitzbereich für Gruppen und Kartenverwaltung; Richtlinien werden dabei weder
+zusammengeführt noch aus einem anderen Bereich kopiert.
+Das Hauptmenü nennt den aktiven DataSpace oberhalb der Spielaktionen. Dadurch bleibt der
+Geltungsbereich sichtbar, bevor du eine Gruppe fortsetzt oder die Kartenverwaltung
+öffnest.
+
 Unter Konto gibt es einen eigenen Tab **Gruppen**. Die Suche findet Gruppen- und
 Personennamen; begrenzte Seiten halten die Liste auch bei Hunderten Gruppen übersichtlich.
 Wähle eine Gruppe aus, um sie umzubenennen, ihre Personen zu bearbeiten, ihren

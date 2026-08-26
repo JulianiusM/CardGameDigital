@@ -10,7 +10,7 @@ test.beforeEach(async ({ context }) => {
 async function hostRoom(
     page: Page,
     screen: "personal" | "party" = "party",
-    profile: RegExp = /^Freunde /,
+    profile: RegExp = /^Gute Freunde /,
     mode?: RegExp,
     reveal: "anonymous" | "named" = "anonymous",
 ) {
@@ -118,6 +118,11 @@ test("host creates a Party Screen Room and exposes safe QR join information", as
     await expect(host.getByText("Party Screen", { exact: true })).toBeVisible();
     await expect(display.getByRole("button", { name: "Lobby verlassen" })).toBeVisible();
     await expect(display.locator(".public-stage-lobby")).toBeVisible();
+    await expect(host.locator(".lobby .eligibility-preview")).toContainText("geeignete Karten");
+    const displayEligibility = display.locator(".room-settings-actions > .eligibility-preview");
+    await expect(displayEligibility).toContainText("geeignete Karten");
+    expect((await displayEligibility.boundingBox())!.height).toBeLessThanOrEqual(52);
+    await expect(display.locator(".stage-player-roster")).toBeVisible();
     await expect(host.locator(".room-size")).toContainText(/1 \/ \d+ Personen/);
     await expect(display.locator(".room-size")).toContainText(/1 \/ \d+ Personen/);
     expect(
@@ -218,7 +223,7 @@ test("players can inspect complete public settings without private boundaries", 
     const playerContext = await browser.newContext({ locale: "de-DE" });
     const host = await hostContext.newPage();
     const player = await playerContext.newPage();
-    const code = await hostRoom(host, "personal", /^Freunde /, /Zufällige Wahl/);
+    const code = await hostRoom(host, "personal", /^Gute Freunde /, /Zufällige Wahl/);
     await joinRoom(player, code, "Ben");
 
     await player.getByRole("button", { name: "Spieleinstellungen ansehen" }).click();
@@ -227,6 +232,8 @@ test("players can inspect complete public settings without private boundaries", 
     await expect(modal).toContainText("Fragenanteil");
     await expect(modal).toContainText("Startintensität");
     await expect(modal).toContainText("Endintensität");
+    await expect(modal).toContainText("Maximale soziale Sensibilität");
+    await expect(modal.locator(".eligibility-preview")).toContainText("geeignete Karten");
     await expect(modal).toContainText("Alle 2 Karten · +1");
     await expect(modal).toContainText("Maximale Kartenfolge desselben Typs");
     await expect(modal).toContainText("Zusätzliche Inhaltsregeln");
@@ -426,7 +433,7 @@ test("named Never Have I Ever synchronizes private progress then public answer c
     const host = await hostContext.newPage();
     const player = await playerContext.newPage();
     const display = await displayContext.newPage();
-    const code = await hostRoom(host, "party", /^Freunde /, /Ich hab noch nie/, "named");
+    const code = await hostRoom(host, "party", /^Gute Freunde /, /Ich hab noch nie/, "named");
     await joinRoom(player, code, "Ben");
     await joinRoom(display, code, "", true);
     await expect(player.locator(".room-settings-summary")).toContainText("Deutsch (Deutschland)");
@@ -436,6 +443,9 @@ test("named Never Have I Ever synchronizes private progress then public answer c
 
     await host.getByRole("button", { name: "Spiel starten" }).click();
     await host.getByRole("button", { name: "Karte aufdecken" }).click();
+    const displayRoomCode = display.locator(".status > .stage-room-code[data-adaptive-contrast]");
+    await expect(displayRoomCode).toHaveText(code);
+    await expect(displayRoomCode).toHaveCSS("border-radius", "999px");
     for (const page of [host, player, display]) {
         await expect(page.getByText("Antworten werden aufgedeckt", { exact: true })).toBeVisible();
         await expect(page.locator(".vote-progress-list")).toContainText("Host Anna");
@@ -521,7 +531,7 @@ test("anonymous Never Have I Ever uses a compact aggregate on a short display", 
     const host = await hostContext.newPage();
     const player = await playerContext.newPage();
     const display = await displayContext.newPage();
-    const code = await hostRoom(host, "party", /^Freunde /, /Ich hab noch nie/, "anonymous");
+    const code = await hostRoom(host, "party", /^Gute Freunde /, /Ich hab noch nie/, "anonymous");
     await joinRoom(player, code, "Ben");
     await joinRoom(display, code, "", true);
 
@@ -625,7 +635,7 @@ test("small public displays automatically page long voting rosters and named res
     });
     const host = await hostContext.newPage();
     const display = await displayContext.newPage();
-    const code = await hostRoom(host, "party", /^Freunde /, /Ich hab noch nie/, "named");
+    const code = await hostRoom(host, "party", /^Gute Freunde /, /Ich hab noch nie/, "named");
 
     for (let index = 0; index < 11; index += 1) {
         await host.getByRole("button", { name: /Person auf diesem Gerät/ }).click();
@@ -661,11 +671,9 @@ test("small public displays automatically page long voting rosters and named res
     ).toBe(true);
 
     for (let remaining = 12; remaining > 0; remaining -= 1) {
-        await host
-            .locator(".never-vote-row")
-            .first()
-            .getByRole("button", { name: "Trifft zu" })
-            .click();
+        const pendingVotes = host.locator(".never-vote-row");
+        await pendingVotes.first().getByRole("button", { name: "Trifft zu" }).click();
+        await expect(pendingVotes).toHaveCount(remaining - 1);
     }
     await expect(display.locator(".yes-column")).toBeVisible();
     await expect(display.locator(".no-column")).toBeVisible();

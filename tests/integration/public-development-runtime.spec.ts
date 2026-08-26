@@ -49,7 +49,7 @@ afterAll(async () => {
 });
 
 describe("public development runtime", () => {
-    it("starts with SQLite and the development catalog without creating a local DataSpace", async () => {
+    it("starts with SQLite and the bundled catalog without creating a local DataSpace", async () => {
         expect(settings.value).toMatchObject({
             deploymentMode: "public",
             publicRuntimeSecurity: "development",
@@ -57,7 +57,12 @@ describe("public development runtime", () => {
         });
         await expect(AppDataSource.getRepository(DataSpace).count()).resolves.toBe(0);
         const locales = await request(app).get("/api/v1/catalog/locales").expect(200);
-        expect(locales.body.locales).toHaveLength(2);
+        expect(locales.body.locales).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({ id: "de-DE" }),
+                expect.objectContaining({ id: "en-GB" }),
+            ]),
+        );
     });
 
     it("creates an anonymous Quick Room without Origin, HSTS, or account infrastructure", async () => {

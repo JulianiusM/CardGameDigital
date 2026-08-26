@@ -5,6 +5,8 @@ import { Column, Entity, Index, PrimaryColumn } from "typeorm";
 export class CardCatalogVersionEntity {
     @PrimaryColumn("varchar", { name: "catalog_id", length: 40 }) catalogId!: string;
     @PrimaryColumn("int", { name: "sequence" }) sequence!: number;
+    @Column("varchar", { name: "contract", length: 40, default: "game-card-catalog/v2" })
+    contract!: string;
     @Column("varchar", { name: "catalog_version", length: 80 }) catalogVersion!: string;
     @Column("varchar", { name: "artifact_digest", length: 64 }) artifactDigest!: string;
     @Column("datetime", { name: "generated_at" }) generatedAt!: Date;

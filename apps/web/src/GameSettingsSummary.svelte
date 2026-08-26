@@ -1,15 +1,26 @@
 <script lang="ts">
     import { gameModes, messages } from "./i18n";
     import { dareTypeIds, operationalFlagIds, questionCategoryIds } from "./gameSettingsOptions";
-    import type { CardLocaleSummary, GameProfileSummary, PublicGameSettings } from "./multiplayer";
+    import type {
+        CardLocaleSummary,
+        GameProfileSummary,
+        PublicGameSettings,
+        RoomGameSettings,
+    } from "./multiplayer";
+    import EligibleCardPreview from "./EligibleCardPreview.svelte";
+    import type { RoomEligibilityAccess } from "./cardPolicyApi";
 
-    export let settings: PublicGameSettings;
+    export let settings: PublicGameSettings | RoomGameSettings;
     export let profiles: readonly GameProfileSummary[] = [];
     export let cardLocales: readonly CardLocaleSummary[] = [];
+    export let playerCount = 2;
+    export let showEligibility = false;
+    export let roomAccess: RoomEligibilityAccess | undefined = undefined;
 
     $: mode = gameModes.find(([id]) => id === settings.mode);
     $: profile = profiles.find(({ id }) => id === settings.profileId);
     $: cardLocale = cardLocales.find(({ id }) => id === settings.cardLocale);
+    $: eligibilitySettings = "groupId" in settings ? settings : null;
     $: includesDares = ["CLASSIC_TRUTH_OR_DARE", "RANDOM_TRUTH_OR_DARE"].includes(settings.mode);
     $: enabledQuestions = questionCategoryIds.filter((id) =>
         settings.configuration.enabledQuestionCategoryIds.includes(id),
@@ -32,6 +43,9 @@
 </script>
 
 <div class="game-settings-summary-full">
+    {#if showEligibility && eligibilitySettings}
+        <EligibleCardPreview settings={eligibilitySettings} {playerCount} {roomAccess} />
+    {/if}
     <dl class="settings-facts">
         <div>
             <dt>{messages.room.gameMode}</dt>
@@ -61,6 +75,14 @@
         <div>
             <dt>{messages.room.profile}</dt>
             <dd>{profile?.name ?? settings.profileId}</dd>
+        </div>
+        <div>
+            <dt>{messages.room.maximumSocialSensitivity}</dt>
+            <dd>
+                {messages.cardManagement.sensitivityNames[
+                    settings.configuration.maximumSocialSensitivity
+                ]}
+            </dd>
         </div>
         <div>
             <dt>{messages.room.startingIntensity}</dt>

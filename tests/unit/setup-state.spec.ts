@@ -2,11 +2,72 @@ import { describe, expect, it } from "vitest";
 import {
     applyCardLanguageSettings,
     applyGameProfile,
+    repairUnavailableGameProfile,
     type GameSetupState,
 } from "../../apps/web/src/setup";
 import type { GameProfileSummary } from "../../apps/web/src/multiplayer";
 
 describe("game setup profile selection", () => {
+    it("repairs a removed profile in stale browser setup state", () => {
+        const stale = {
+            step: "profile",
+            intent: "HOST",
+            hostName: "Host",
+            groupChoice: "SELECT",
+            groupId: "10000000-0000-4000-8000-000000000010",
+            groupMembers: ["Anna", "Ben"],
+            mode: "CLASSIC_TRUTH_OR_DARE",
+            profileId: "PROFILE_COUPLES",
+            adultContentConfirmed: true,
+            enabledQuestionCategoryIds: [],
+            enabledDareTypeIds: [],
+            blockedOperationalFlags: [],
+            maximumSocialSensitivity: "EXPLICIT",
+            startingIntensity: 5,
+            maximumIntensity: 5,
+            intensityProgressionUnit: "CARDS",
+            intensityProgressionInterval: 2,
+            intensityProgressionIncrement: 1,
+            randomQuestionRatio: 0.5,
+            maximumTypeStreak: 3,
+            letsTalkMetaInterval: 5,
+            cardLocale: "de-DE",
+            cardFallbackEnabled: false,
+            cardFallbackLocales: [],
+            neverHaveIEverRevealMode: "ANONYMOUS_AGGREGATE",
+            deviceMode: "couch",
+        } satisfies GameSetupState;
+        const friends = {
+            id: "PROFILE_FRIENDS",
+            name: "Friends",
+            description: "",
+            editorialStatus: "PUBLISHED",
+            requiresAdultConfirmation: false,
+            startingIntensity: 1,
+            maximumIntensity: 3,
+            intensityProgressionUnit: "CARDS",
+            intensityProgressionInterval: 2,
+            intensityProgressionIncrement: 1,
+            enabledQuestionCategoryIds: ["CAT_EVERYDAY"],
+            enabledDareTypeIds: ["DARE_SILLY"],
+            blockedOperationalFlags: [],
+            maximumSocialSensitivity: "PERSONAL",
+            randomQuestionRatio: 0.6,
+            maximumTypeStreak: 3,
+            letsTalkMetaInterval: 5,
+            immutable: true,
+        } satisfies GameProfileSummary;
+
+        expect(repairUnavailableGameProfile(stale, [friends])).toMatchObject({
+            groupId: stale.groupId,
+            profileId: "PROFILE_FRIENDS",
+            adultContentConfirmed: false,
+            maximumSocialSensitivity: "PERSONAL",
+            startingIntensity: 1,
+            maximumIntensity: 3,
+        });
+    });
+
     it("applies and clones the complete Card-language scope", () => {
         const state = {
             step: "profile",
@@ -21,6 +82,7 @@ describe("game setup profile selection", () => {
             enabledQuestionCategoryIds: [],
             enabledDareTypeIds: [],
             blockedOperationalFlags: [],
+            maximumSocialSensitivity: "PERSONAL",
             startingIntensity: 1,
             maximumIntensity: 3,
             intensityProgressionUnit: "CARDS",
@@ -63,6 +125,7 @@ describe("game setup profile selection", () => {
             enabledQuestionCategoryIds: ["CUSTOM_CATEGORY"],
             enabledDareTypeIds: [],
             blockedOperationalFlags: ["REQUIRES_ALCOHOL"],
+            maximumSocialSensitivity: "EXPLICIT",
             startingIntensity: 4,
             maximumIntensity: 5,
             intensityProgressionUnit: "ROUNDS",
@@ -91,6 +154,7 @@ describe("game setup profile selection", () => {
             enabledQuestionCategoryIds: ["CAT_EVERYDAY"],
             enabledDareTypeIds: ["DARE_SILLY"],
             blockedOperationalFlags: [],
+            maximumSocialSensitivity: "PERSONAL",
             randomQuestionRatio: 0.6,
             maximumTypeStreak: 3,
             letsTalkMetaInterval: 5,
@@ -103,6 +167,7 @@ describe("game setup profile selection", () => {
             enabledQuestionCategoryIds: ["CAT_EVERYDAY"],
             enabledDareTypeIds: ["DARE_SILLY"],
             blockedOperationalFlags: [],
+            maximumSocialSensitivity: "PERSONAL",
             startingIntensity: 1,
             maximumIntensity: 3,
             intensityProgressionUnit: "CARDS",
@@ -128,6 +193,7 @@ describe("game setup profile selection", () => {
             enabledQuestionCategoryIds: ["OTHER_GAME"],
             enabledDareTypeIds: [],
             blockedOperationalFlags: [],
+            maximumSocialSensitivity: "EXPLICIT",
             startingIntensity: 5,
             maximumIntensity: 5,
             intensityProgressionUnit: "CARDS",
@@ -156,6 +222,7 @@ describe("game setup profile selection", () => {
             enabledQuestionCategoryIds: [],
             enabledDareTypeIds: [],
             blockedOperationalFlags: [],
+            maximumSocialSensitivity: "EXPLICIT",
             randomQuestionRatio: 0.5,
             maximumTypeStreak: 3,
             letsTalkMetaInterval: 5,
@@ -167,6 +234,7 @@ describe("game setup profile selection", () => {
                 enabledQuestionCategoryIds: ["CAT_FRIENDSHIP"],
                 enabledDareTypeIds: ["DARE_SILLY"],
                 blockedOperationalFlags: ["INVOLVES_ALCOHOL"],
+                maximumSocialSensitivity: "INTIMATE",
                 startingIntensity: 2,
                 maximumIntensity: 4,
                 intensityProgressionUnit: "ROUNDS",
@@ -181,6 +249,7 @@ describe("game setup profile selection", () => {
             enabledQuestionCategoryIds: ["CAT_FRIENDSHIP"],
             enabledDareTypeIds: ["DARE_SILLY"],
             blockedOperationalFlags: ["INVOLVES_ALCOHOL"],
+            maximumSocialSensitivity: "INTIMATE",
             startingIntensity: 2,
             maximumIntensity: 4,
         });

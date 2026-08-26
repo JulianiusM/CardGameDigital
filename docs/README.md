@@ -6,7 +6,6 @@
 - [Game Design Document](GAME_DESIGN.md)
 - [Technical Architecture Document](TECHNICAL_ARCHITECTURE.md)
 - [Visual & Interaction Design](VISUAL_INTERACTION_DESIGN.md)
-- [Golden Mischief web migration guide](VISUAL_STYLE_MIGRATION_GUIDE.md)
 - [Implementation ADRs and progress](implementation/)
 - [Core release audit](implementation/core-release-audit.md)
 
@@ -16,7 +15,8 @@
 - [HTTP API v1](contracts/http-api.md)
 - [WebSocket protocol v2](contracts/websocket-v2.md)
 - [Retired WebSocket protocol v1](contracts/websocket-v1.md)
-- [Bundled Card catalog](contracts/card-catalog-v1.md)
+- [Bundled Card catalog](contracts/card-catalog-v2.md)
+- [Historical immutable Card catalog v1](contracts/card-catalog-v1.md)
 - [Infrastructure integrations](contracts/infrastructure.md)
 
 ## Players
@@ -33,7 +33,6 @@ need no edits. The Svelte Help screen discovers documents through the API.
 - [Repository instructions](../AGENTS.md)
 - [Code style and architectural rules](implementation/code-style.md)
 - [Testing guide](TESTING_GUIDE.md)
-- [AI coding-agent visual migration prompt](AI_AGENT_VISUAL_MIGRATION_PROMPT.md)
 
 Documentation is part of each contract. Update it in the same change as behavior,
 configuration, transport schemas, or player workflows.

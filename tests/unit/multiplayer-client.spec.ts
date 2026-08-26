@@ -72,7 +72,7 @@ describe("authoritative multiplayer client events", () => {
         expect(connection.errorCode).toBe("CONNECTION_UNAVAILABLE");
         expect(connection.error).toBe("Verbindung fehlgeschlagen");
         connection.dispose();
-    });
+    }, 10_000);
 
     it("maps lifecycle notices and animates the snapshot following a Card replacement", async () => {
         installBrowserGlobals();

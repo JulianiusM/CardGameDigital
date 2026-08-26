@@ -18,9 +18,9 @@ Implemented for Phase 9; platform archives remain CI-verified.
 - Ambient music and interaction/reveal effects are original WAV assets bundled
   by Vite. Six scene loops crossfade between menu, lobby, question, dare,
   conversation, and end states. A centralized presentation mapping assigns every
-  Question Category and DareType to its canonical visual family; the relative Card
-  intensity only tunes that family's warm gradient, SVG motif opacity, row count, and
-  density. The Card surface presents relative and derived global intensity as separate
+  Question Category and DareType to its canonical visual family; derived global Card
+  intensity tunes that family's warm gradient, SVG motif opacity, row spacing, and
+  density and persists between Cards. The Card surface presents relative and derived global intensity as separate
   Card-symbol and globe-symbol meters. Background motifs are selected independently at random from the active
   family's bundled SVG symbol set and placed in fixed-pixel, evenly spaced slots rather
   than precomposed moving lane images. The measured viewport determines how many parallel

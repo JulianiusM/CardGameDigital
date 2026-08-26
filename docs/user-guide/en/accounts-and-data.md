@@ -21,6 +21,12 @@ sessions. Select the correct DataSpace and group before creating a persisted Roo
 from another DataSpace do not bypass ownership checks. New accounts receive a default
 DataSpace automatically.
 
+The DataSpace list has name search and bounded pages, so switching remains manageable
+even when an account owns many areas. Selecting a DataSpace changes the ownership scope
+for Groups and Card management; it does not merge or copy policy from another area.
+The main menu names the active DataSpace above its play actions, so this scope remains
+visible before you continue a Group or open Card management.
+
 The Account screen has a dedicated **Groups** tab. Its search checks both Group and
 person names, while bounded pages keep the list manageable even with hundreds of Groups.
 Select one Group to rename it, edit its people, reset its Card history, or fully delete

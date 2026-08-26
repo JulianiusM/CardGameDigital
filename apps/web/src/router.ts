@@ -1,4 +1,4 @@
-export type AppRoute = "home" | "room" | "couch" | "account" | "help" | "legacy-room";
+export type AppRoute = "home" | "room" | "couch" | "account" | "cards" | "help" | "legacy-room";
 
 type NavigateOptions = { replace?: boolean; force?: boolean };
 type RouteListener = (route: AppRoute) => void;
@@ -19,6 +19,7 @@ export function routeFromLocation(): AppRoute {
     if (path === "room") return "room";
     if (path === "couch") return "couch";
     if (path === "account") return "account";
+    if (path === "cards") return "cards";
     if (path === "help") return "help";
     if (["host", "mobile", "display"].includes(path)) return "legacy-room";
     return "home";

@@ -21,6 +21,9 @@ export function cardEntityToDomain(
         repeatableInSession: entity.repeatableInSession,
         repeatCooldown: entity.repeatCooldown,
         weight: entity.weight,
+        socialSensitivity: entity.socialSensitivity as PlayableCard["socialSensitivity"],
+        minimumPlayerCount: entity.minimumPlayerCount,
+        maximumPlayerCount: entity.maximumPlayerCount,
         active: entity.active,
         operationalFlags: (entity.flags ?? [])
             .map((entry) => entry.flag as PlayableCard["operationalFlags"][number])

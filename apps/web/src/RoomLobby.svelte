@@ -11,6 +11,8 @@
         Role,
         VersionedRoomGameSettings,
     } from "./multiplayer";
+    import EligibleCardPreview from "./EligibleCardPreview.svelte";
+    import type { RoomEligibilityAccess } from "./cardPolicyApi";
 
     export let participants: Participant[];
     export let presence: Presence[];
@@ -19,6 +21,7 @@
     export let qr: string;
     export let code: string;
     export let settings: VersionedRoomGameSettings;
+    export let roomAccess: RoomEligibilityAccess;
     export let profiles: GameProfileSummary[];
     export let cardLocales: CardLocaleSummary[] = [];
     export let devicePlayerNames: string[];
@@ -60,8 +63,10 @@
                 <small
                     >{selectedLocale?.nativeName ?? settings.cardLocale} · {messages.room
                         .startingIntensity}: {settings.configuration.startingIntensity} → {messages
-                        .room.endingIntensity}: {settings.configuration.maximumIntensity} · {settings
-                        .configuration.enabledQuestionCategoryIds.length}
+                        .room.endingIntensity}: {settings.configuration.maximumIntensity} · {messages
+                        .cardManagement.sensitivityNames[
+                        settings.configuration.maximumSocialSensitivity
+                    ]} · {settings.configuration.enabledQuestionCategoryIds.length}
                     {messages.settings.content} · {settings.configuration.enabledDareTypeIds.length}
                     {messages.common.dare}</small
                 >
@@ -72,6 +77,9 @@
                     </small>{/if}
             </div>
             <div class="room-settings-actions">
+                {#if effectiveRole === "DISPLAY"}
+                    <EligibleCardPreview {settings} {playerCount} {roomAccess} compact />
+                {/if}
                 <button class="secondary" on:click={onViewSettings}
                     >{messages.room.viewSettings}</button
                 >
@@ -80,6 +88,10 @@
                     >{/if}
             </div>
         </section>
+
+        {#if effectiveRole !== "DISPLAY"}
+            <EligibleCardPreview {settings} {playerCount} {roomAccess} compact />
+        {/if}
 
         <ParticipantRoster
             {participants}

@@ -34,6 +34,7 @@
     const TRACK_ANGLE_DEGREES = -15;
     const TRACK_ANGLE_RADIANS = Math.abs(TRACK_ANGLE_DEGREES) * (Math.PI / 180);
     const FIELD_PADDING = 232;
+    const MINIMUM_TRACK_GAP = 136;
     const GRADIENT_SPATIAL_PERIOD = 4_096;
     const GRADIENT_CROSS_PERIOD = 2_240;
     const GRADIENT_FRAME_INTERVAL = 1_000 / 20;
@@ -107,7 +108,10 @@
         const sine = Math.sin(TRACK_ANGLE_RADIANS);
         const fieldWidth = Math.ceil(safeWidth * cosine + safeHeight * sine + FIELD_PADDING * 2);
         const fieldHeight = Math.ceil(safeHeight * cosine + safeWidth * sine + FIELD_PADDING * 2);
-        const trackCount = Math.ceil(fieldHeight / atmosphere.motifTrackGap) + 1;
+        // Keep the track population stable while intensity changes. Changing only the gap
+        // around a centered first position makes density compact/expand from the viewport
+        // middle instead of appending rows at the lower edge.
+        const trackCount = Math.ceil(fieldHeight / MINIMUM_TRACK_GAP) + 2;
         const slotCount = Math.ceil(fieldWidth / atmosphere.motifIconGap) + 1;
         const segmentWidth = slotCount * atmosphere.motifIconGap;
         const firstTrackTop = (fieldHeight - (trackCount - 1) * atmosphere.motifTrackGap) / 2;
@@ -551,6 +555,46 @@
         atmosphereLayer.dataset.adaptiveSymbolCount = String(samples.length);
     }
 
+    function updateAdaptiveIndicatorColors(palette: GradientPalette): void {
+        let visibleCount = 0;
+        const indicators = document.querySelectorAll<HTMLElement>("[data-adaptive-contrast]");
+        for (const node of indicators) {
+            const rect = node.getBoundingClientRect();
+            if (
+                rect.right <= 0 ||
+                rect.bottom <= 0 ||
+                rect.left >= viewportWidth ||
+                rect.top >= viewportHeight
+            )
+                continue;
+            const background = sampleGradientColor(
+                rect.left + rect.width / 2,
+                rect.top + rect.height / 2,
+                gradientPhase,
+                palette,
+            );
+            const creamContrast = contrastRatio(SOFT_CREAM, background);
+            const espressoContrast = contrastRatio(ESPRESSO, background);
+            const useLightText = creamContrast > espressoContrast;
+            const foreground = useLightText ? SOFT_CREAM : ESPRESSO;
+            const muted = mixColor(background, foreground, 0.78);
+            node.style.setProperty("--adaptive-foreground", colorCss(foreground));
+            node.style.setProperty("--adaptive-muted", colorCss(muted));
+            node.style.setProperty(
+                "--adaptive-surface",
+                useLightText ? "rgb(59 36 22 / 72%)" : "rgb(255 241 199 / 78%)",
+            );
+            node.style.setProperty(
+                "--adaptive-border",
+                useLightText ? "rgb(255 241 199 / 34%)" : "rgb(59 36 22 / 24%)",
+            );
+            node.dataset.adaptiveTone = useLightText ? "light" : "dark";
+            node.dataset.gradientColor = colorData(background);
+            visibleCount++;
+        }
+        atmosphereLayer.dataset.adaptiveIndicatorCount = String(visibleCount);
+    }
+
     function adaptiveSymbol(node: SVGElement) {
         adaptiveSymbols.add(node);
         return {
@@ -580,6 +624,7 @@
         }
         if (canvasNeedsResize || timestamp - lastSymbolSampleAt >= SYMBOL_SAMPLE_INTERVAL) {
             updateAdaptiveSymbolColors(palette);
+            updateAdaptiveIndicatorColors(palette);
             lastSymbolSampleAt = timestamp;
         }
 
@@ -613,6 +658,7 @@
     data-gradient-renderer="continuous-field"
     data-gradient-spatial-period={GRADIENT_SPATIAL_PERIOD}
     data-gradient-transition-ms={gradientTransitionMilliseconds}
+    data-density-origin="center"
     data-icon-gap={presentation.current.motifIconGap}
     data-icon-size={layout.iconSize}
     data-slot-count={layout.slotCount}

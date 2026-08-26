@@ -7,6 +7,13 @@ export class DataSpaceGameSettingsEntity {
     @Column("varchar", { name: "preferred_profile_id", length: 80 }) preferredProfileId!: string;
     @Column("integer", { name: "starting_intensity" }) startingIntensity!: number;
     @Column("integer", { name: "maximum_intensity" }) maximumIntensity!: number;
+    @Column("varchar", {
+        name: "maximum_social_sensitivity",
+        length: 24,
+        default: "EXPLICIT",
+    })
+    maximumSocialSensitivity!:
+        "GENERAL" | "PERSONAL" | "CLOSE_PERSONAL" | "DEEP_PERSONAL" | "INTIMATE" | "EXPLICIT";
     @Column("varchar", { name: "intensity_progression_unit", length: 16 })
     intensityProgressionUnit!: "ROUNDS" | "CARDS";
     @Column("integer", { name: "intensity_progression_interval" })

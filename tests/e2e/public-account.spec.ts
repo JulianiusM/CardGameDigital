@@ -72,7 +72,8 @@ test("an account joins the themed SPA and unlocks MariaDB-backed saved play", as
     await page.getByRole("button", { name: /^Weiter/ }).click();
     await page.getByRole("button", { name: /Wahrheit oder Pflicht/ }).click();
     await page.getByRole("button", { name: /^Weiter/ }).click();
-    await page.getByRole("button", { name: /^Freunde / }).click();
+    await expect(page.getByRole("button", { name: /^Kinderfreundlich / })).toBeVisible();
+    await page.getByRole("button", { name: /^Gute Freunde / }).click();
     await page.getByRole("button", { name: /^Weiter/ }).click();
     await page.getByRole("button", { name: /^Weiter/ }).click();
     await page.getByRole("button", { name: /Alle mit eigenem Gerät/ }).click();
@@ -100,6 +101,7 @@ test("an account joins the themed SPA and unlocks MariaDB-backed saved play", as
     await expect(page.getByRole("heading", { name: /Gute Nacht/ })).toBeVisible();
 
     await page.getByRole("button", { name: "Zurück zum Hauptmenü" }).click();
+    await expect(page.locator(".active-dataspace-indicator")).toContainText("Aktiver DataSpace");
     await page.goto("/play/account");
     await page.getByRole("tab", { name: "Gruppen" }).click();
     await page.getByLabel("Gruppen durchsuchen").fill("MariaDB Runde");
@@ -136,6 +138,33 @@ test("an account joins the themed SPA and unlocks MariaDB-backed saved play", as
         page.getByRole("heading", { name: new RegExp(`Hallo, ${username}`, "i") }),
     ).toBeVisible();
     await expect(page.getByRole("heading", { name: "Was ist ein DataSpace?" })).toBeVisible();
+    await page.getByRole("tab", { name: "Kartenverwaltung" }).click();
+    await expect(page.locator(".account-tab-panel")).toHaveCSS("animation-name", "page-in");
+    await expect(page.getByRole("heading", { name: "Kartenverwaltung", exact: true })).toHaveCount(
+        0,
+    );
+    await expect(
+        page.getByRole("heading", { name: "Drei Ebenen, eine klare Richtlinie" }),
+    ).toBeVisible();
+    await expect(page.locator(".account-panel main")).toHaveCount(0);
+    const cardPolicyActions = page.locator(".policy-scope-actions > *");
+    await expect(cardPolicyActions).toHaveCount(3);
+    for (const action of await cardPolicyActions.all()) {
+        await expect(action).toHaveCSS("display", "flex");
+        await expect(action).toHaveCSS("white-space", "nowrap");
+        expect((await action.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+    }
+    await expect(page.getByRole("button", { name: "DataSpace / Gruppe wählen" })).toBeVisible();
+    await page.getByRole("tab", { name: "Kartenausnahmen" }).click();
+    const cardPageButtons = page.locator(".policy-master-pane .policy-pagination button");
+    await expect(cardPageButtons).toHaveCount(2);
+    const previousCardPageBox = (await cardPageButtons.nth(0).boundingBox())!;
+    const nextCardPageBox = (await cardPageButtons.nth(1).boundingBox())!;
+    expect(Math.abs(previousCardPageBox.width - nextCardPageBox.width)).toBeLessThanOrEqual(1);
+    await expect
+        .poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
+        .toBe(true);
+    await page.getByRole("tab", { name: "DataSpaces" }).click();
     await page.getByPlaceholder("Zum Beispiel: Freundeskreis").fill("UX Bereich");
     await page.getByRole("button", { name: "Erstellen", exact: true }).click();
     await expect(page.locator(".data-space-card.active", { hasText: "UX Bereich" })).toBeVisible();
@@ -148,6 +177,28 @@ test("an account joins the themed SPA and unlocks MariaDB-backed saved play", as
     await expect(page.getByRole("heading", { name: "Angemeldete Geräte" })).toBeVisible();
     await expect(page.getByText("Dieses Gerät")).toBeVisible();
     await page.getByRole("tab", { name: "Daten & Konto" }).click();
+    const accountActions = [
+        page.getByRole("link", { name: /Gespeicherte Runde starten/ }),
+        page.getByRole("link", { name: /Daten exportieren/ }),
+        page.getByRole("button", { name: "Abmelden", exact: true }),
+    ];
+    const actionMotion = await Promise.all(
+        accountActions.map((action) =>
+            action.evaluate((element) => {
+                const style = getComputedStyle(element);
+                return {
+                    duration: style.transitionDuration,
+                    property: style.transitionProperty,
+                };
+            }),
+        ),
+    );
+    expect(new Set(actionMotion.map(({ duration }) => duration)).size).toBe(1);
+    expect(new Set(actionMotion.map(({ property }) => property)).size).toBe(1);
+    for (const action of accountActions) {
+        await action.hover();
+        await expect(action).not.toHaveCSS("transform", "none");
+    }
     await page.getByRole("button", { name: "Abmelden", exact: true }).click();
     await expect(page.getByRole("heading", { name: "Anmelden" })).toBeVisible();
 

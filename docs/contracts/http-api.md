@@ -40,6 +40,16 @@ response uses `Cache-Control: no-store` and includes a server-generated `X-Reque
 | GET    | `/catalog/locales`             | Active database Card locales, default locale, and coverage.                  |
 | GET    | `/catalog/taxonomies?locale=L` | Database taxonomy labels for Card locale `L`.                                |
 
+`GET /game-profiles` returns the five immutable built-ins
+`PROFILE_CHILD_FRIENDLY`, `PROFILE_ACQUAINTANCES`, `PROFILE_FRIENDS`,
+`PROFILE_CLOSE_FRIENDS`, and `PROFILE_SPICY`, followed by editable `PROFILE_CUSTOM`.
+`PROFILE_SPICY` requires adult confirmation. The unreleased
+`PROFILE_COLLEAGUES`, `PROFILE_BEST_FRIENDS`, `PROFILE_COUPLES`, and
+`PROFILE_COUPLES_SPICY` identifiers are removed rather than aliased; this is an
+intentional pre-release compatibility break. The schema migration converts persisted
+DataSpace, Group, Room, and active-session values to their canonical replacements
+before those records are exposed to the API.
+
 Help HTML is generated from trusted bundled Markdown; it is not user-authored content. The
 single `docs/user-guide/topics.json` manifest defines stable slugs and spaced numeric positions
 for every locale. Adding or repositioning a topic does not require renaming documents or changing
@@ -66,11 +76,17 @@ operations; clients receive no additional authority from it.
         "cardLocale": "de-DE",
         "cardFallbackEnabled": false,
         "cardFallbackLocales": [],
+        "cardPolicy": {
+            "scopeDefault": {},
+            "conditionalRules": [],
+            "exactCards": []
+        },
         "neverHaveIEverRevealMode": "ANONYMOUS_AGGREGATE",
         "configuration": {
             "enabledQuestionCategoryIds": ["CAT_EVERYDAY"],
             "enabledDareTypeIds": ["DARE_SILLY"],
             "blockedOperationalFlags": [],
+            "maximumSocialSensitivity": "PERSONAL",
             "startingIntensity": 1,
             "maximumIntensity": 3,
             "intensityProgressionUnit": "CARDS",
@@ -86,6 +102,9 @@ operations; clients receive no additional authority from it.
 
 `persistence` is `EPHEMERAL` or `DATASPACE`. Ephemeral Rooms allow anonymous use.
 DataSpace Rooms require an authenticated session and owned current DataSpace.
+The web client selects `DATASPACE` whenever a local or authenticated DataSpace is
+available, including quick games without a Group, so DataSpace Card policy still applies.
+Anonymous public quick games remain `EPHEMERAL` and use Catalog plus Session policy.
 `settings` is optional only to support callers that deliberately accept the documented
 server default; when supplied, its Group must belong to the selected DataSpace.
 `neverHaveIEverRevealMode` is `ANONYMOUS_AGGREGATE` or `NAMED_ANSWERS` and defaults to
@@ -98,6 +117,10 @@ less than or equal to end. `intensityProgressionUnit` is `ROUNDS` or `CARDS`, an
 points. Runtime increases the fine-grained score ceiling by that increment after each
 interval until the end. Omitted progression fields default to start 1, Card-based pacing,
 interval 2, and increment 1; response snapshots always include them.
+`configuration.maximumSocialSensitivity` is independent from intensity and accepts
+`GENERAL`, `PERSONAL`, `CLOSE_PERSONAL`, `DEEP_PERSONAL`, `INTIMATE`, or `EXPLICIT`.
+Omission defaults to `EXPLICIT` for additive compatibility. The chosen profile and
+explicit Card policies apply any separate taxonomy or operational restrictions.
 `cardFallbackEnabled` defaults to false. When true, `cardFallbackLocales` must contain a
 non-empty, unique, ordered list of active Card locales and must not contain the primary
 `cardLocale`. The server validates all entries and resolves missing Card text in that
@@ -160,11 +183,15 @@ is null until completion. Anonymous results contain counts only; named results t
 ordered `{playerId,displayName,vote}` entries. Individual values are never copied into
 CardAppearance or Group history.
 
+Every Couch snapshot also includes additive `remainingCardCount`, calculated by the
+authoritative engine after the current profile, boundaries, progression, policies, and
+Session/Group history are applied. It is response-only display information.
+
 The additive `currentCard.cardIntensity` in Couch and Room snapshots is the Card's
 relative 1–5 position within its Question Category or DareType. The existing
 `currentCard.intensity` remains the derived global 1–5 band. Clients should use
-`cardIntensity` to tune category/type-specific visual families and may present both
-values to players.
+the taxonomy to choose a visual family and `intensity` to tune the global animated
+backdrop; they may present both intensity values to players.
 
 ## Accounts
 
@@ -216,10 +243,11 @@ to an owned DataSpace and is persisted in the session. An ID that still exists u
 different owner is rejected; the repair path never accepts a client-supplied ownership
 boundary.
 
-Account export includes account/DataSpace metadata, groups, saved defaults, durable
-Couch/Room Session metadata, and privacy-safe CardAppearance outcomes. It deliberately
-excludes live runtime JSON and individual Never-Have-I-Ever answers. Account deletion
-cascades through both Couch and Room data owned by the account's DataSpaces.
+Account export version 3 includes account/DataSpace metadata, groups, saved defaults,
+durable Couch/Room Session metadata, Card-policy defaults/rules/exact-Card records, and
+privacy-safe CardAppearance outcomes. It deliberately excludes live runtime JSON and
+individual Never-Have-I-Ever answers. Account deletion cascades through both Couch and
+Room data owned by the account's DataSpaces.
 
 Deleting a DataSpace is ownership-checked and transactional. The final DataSpace cannot
 be deleted (`409`). Deleting the selected DataSpace moves the session to a remaining
@@ -231,7 +259,8 @@ unchanged, although the newly created DataSpace is now selected immediately.
 
 ## DataSpace resources
 
-`/groups` and `/game-settings` require an authenticated, owned current DataSpace.
+`/groups` and `/game-settings` resolve the singleton local DataSpace in none-auth mode or
+require an authenticated, owned current DataSpace in public mode.
 Groups support `GET`, `POST`, `PUT /:id`, `DELETE /:id`, and confirmed
 `POST /:id/history-reset`. Resetting history advances the Group's history cutoff; it
 does not delete the Group or historical Session/CardAppearance records. Group responses
@@ -239,16 +268,26 @@ add nullable `customConfiguration` and `cardLanguageSettings` values. The latter
 `{cardLocale,cardFallbackEnabled,cardFallbackLocales}`. Writes validate the complete
 Custom schema, BCP-47-shaped unique locale order, and active Card catalog locales on the
 server. Built-in profile updates preserve the Group's Custom snapshot. Game settings
-support `GET` and `PUT` for preferred profile, start/end intensity, progression unit and
-interval, progression increment, question ratio, conversation interval, optional
+support `GET` and `PUT` for preferred profile, start/end intensity, maximum social
+sensitivity, progression unit and interval, progression increment, question ratio,
+conversation interval, optional
 default group, `customConfiguration`, and nullable `cardLanguageSettings`. The Custom
 value uses the canonical effective game settings schema (categories, DareTypes,
-operational flags, intensity, pacing, ratio, streak, and conversation interval). It is
+operational flags, maximum social sensitivity, intensity, pacing, ratio, streak, and
+conversation interval). It is
 updated only when `preferredProfileId` is `PROFILE_CUSTOM`; other profile writes preserve
 it. `GET` always returns it, using the neutral Custom seed until one has been saved. The
 Card-language value has the same shape and server validation as its Group counterpart
 and stores no-Group quick-round defaults separately. Resource IDs are UUIDs and are
 always authorization-scoped to the selected DataSpace.
+
+`GET /game-settings` returns
+`{settings,dataSpace:{id,name}}`. The small DataSpace projection lets setup and the main
+menu identify the ownership boundary currently in use without loading Account data; it
+works in both the one-DataSpace none-auth deployment and an authenticated public
+deployment. `PUT /game-settings` returns the same projection. An omitted
+`maximumSocialSensitivity` is interpreted as `EXPLICIT`, preserving the previously
+unrestricted sensitivity behavior for older `/api/v1` clients.
 
 The two account configuration responses expose `imprintUrl` and `privacyPolicyUrl` as
 empty strings when an administrator has not configured them. Non-empty values are
@@ -259,3 +298,101 @@ Deleting a Group is ownership-checked and transactional. It removes the Group an
 member list, clears it as the DataSpace default, and detaches durable Rooms, Sessions,
 and CardAppearances from the deleted Group. Historical Sessions and appearances remain
 as ungrouped account history.
+
+## Scoped Card policy
+
+Card management is additive under `/card-policy`. In a none-auth deployment the routes
+operate on the installation's local DataSpace. In a public deployment they require an
+authenticated current DataSpace. Supplying `groupId` selects an owned Group in that
+DataSpace; an absent `groupId` selects the DataSpace scope.
+
+| Method | Path                                       | Purpose                                                 |
+| ------ | ------------------------------------------ | ------------------------------------------------------- |
+| GET    | `/card-policy/export`                      | Download one portable selected-scope policy package.    |
+| POST   | `/card-policy/import`                      | Atomically replace one scope from a validated package.  |
+| GET    | `/card-policy/default`                     | Read the selected sparse scope default.                 |
+| PUT    | `/card-policy/default`                     | Replace the sparse scope-default directives.            |
+| GET    | `/card-policy/rules`                       | Read ordered conditional rules.                         |
+| POST   | `/card-policy/rules`                       | Append a conditional rule.                              |
+| PUT    | `/card-policy/rules/:id`                   | Replace one conditional rule.                           |
+| DELETE | `/card-policy/rules/:id`                   | Delete one conditional rule.                            |
+| POST   | `/card-policy/rules/reorder`               | Persist the complete rule order.                        |
+| POST   | `/card-policy/rules/preview`               | Preview a predicate against the installed catalog.      |
+| POST   | `/card-policy/session/rules/preview`       | Preview a pending Session rule without persistence.     |
+| POST   | `/card-policy/session/eligibility-preview` | Count Cards eligible for a pending game.                |
+| POST   | `/card-policy/session/cards`               | Search/resolve Cards for a pending Session policy.      |
+| GET    | `/card-policy/cards`                       | Cursor-search Cards and effective/provenance metadata.  |
+| POST   | `/card-policy/cards/bulk`                  | Materialize exact overrides for a confirmed result set. |
+| GET    | `/card-policy/cards/:cardId`               | Read one exact-Card override.                           |
+| PUT    | `/card-policy/cards/:cardId`               | Replace one exact-Card override.                        |
+| DELETE | `/card-policy/cards/:cardId`               | Delete one exact-Card override.                         |
+
+Policy writes use optimistic `expectedRevision`; stale writes return `409`. Directives
+are sparse and use `INHERIT` to restore the lower scope. Availability is
+`INHERIT | INCLUDE | EXCLUDE`; boolean values are
+`INHERIT | ENABLE | DISABLE`; scalar/range values are objects with mode
+`INHERIT | CATALOG | SET` and a `value` only for `SET`.
+
+`DELETE /card-policy/rules/:id` and `DELETE /card-policy/cards/:cardId` carry
+`expectedRevision` as a required non-negative decimal query parameter. As with every
+URL query value it is encoded as text on the wire and parsed to an integer at the HTTP
+boundary before the repository receives it.
+
+Portable scope packages use the closed `party-game-card-policy/v2` format and contain a
+Scope Default, ordered rules, and exact Card UUID policies without source ownership IDs.
+Import validates every directive, predicate, Card reference, and player-count range
+before replacing the target scope in one transaction. The earlier v1 package is not
+accepted; callers must emit the closed v2 shape.
+Retired Card references remain valid because Catalog reconciliation never hard-deletes
+historical Cards. Imported rule IDs are regenerated for the target ownership boundary.
+
+Bulk exact-Card writes submit the same server-side facets as Card search plus the result
+count the person confirmed. The server recomputes the complete match set and returns
+`409 POLICY_RESULT_SET_CHANGED` if that count changed, preventing a stale confirmation
+from silently targeting a different set. Text-filtered bulk changes materialize stable
+Card UUID policies; they never persist localized text as a rule predicate.
+
+Card search accepts `limit` from 1 through 50 (default 24) and an optional opaque UUID
+`cursor`. It returns `{cards,total,nextCursor}`. `total` describes the complete filtered
+result, `cards` contains only the requested page, and `nextCursor` is `null` at the end.
+Changing any facet starts a new cursor sequence. Each Card result contains localized
+text, stable taxonomy/lifecycle metadata, producer values, effective values, local
+directives, optimistic local revision, and per-property provenance.
+
+Rule-preview responses contain `{matchCount,cards}`. `matchCount` covers the complete
+installed catalog after predicate evaluation; `cards` is only a bounded localized sample
+for confirmation and must not be interpreted as the full result. Persistent and pending
+Session preview endpoints share these semantics. A preview is read-only and never
+activates or saves a rule.
+
+`POST /card-policy/session/eligibility-preview` accepts either
+`{settings:<canonical RoomGameSettings>,playerCount}` for pending setup changes or
+`{roomCode,participantCredential}` for the authoritative settings and connected roster
+of an existing Room. It returns
+`{total,availableAtStart,byType,atStartByType,playerCount}`. `total` is the
+mode-relevant pool at the configured maximum global intensity; `availableAtStart` uses
+the configured starting intensity. The server applies Card localization/fallback,
+profile taxonomy and maximum social sensitivity, DataSpace/Group/Session policy, Card
+player-count ranges, lifecycle, and shared Group history. It deliberately
+does not receive or reveal private participant boundaries, so those may reduce the pool
+when a Session actually starts. The endpoint is read-only. Anonymous public quick games
+may call the pending-settings form only without a Group; a Group preview requires
+authenticated ownership of the selected DataSpace and Group. The Room form instead
+requires a valid participant credential, resolves the policy owner on the server, never
+changes presence, and does not expose DataSpace policy details or the credential in a URL.
+
+The server resolves Catalog metadata, then DataSpace scope default, ordered DataSpace
+rules, DataSpace exact Card, Group scope default, ordered Group rules, Group exact Card,
+Session property directives, and finally Session availability. A deliberate one-Session
+`INCLUDE` can reverse persistent availability. Lifecycle, localization, profile
+taxonomy/sensitivity, adult confirmation, and player-count validity remain
+non-overridable engine gates. Session start compiles the effective policy and Catalog
+provenance into an immutable runtime snapshot. Card draw additionally checks the
+authoritative current player count.
+
+The optional `settings.cardPolicy` object on Room and Couch creation contains only
+Session-scope `scopeDefault`, ordered `conditionalRules`, and `exactCards`. Omission means
+all Session directives inherit. `PROFILE_CHILD_FRIENDLY` supplies the child-safe
+quick-start content combination as ordinary editable profile settings. Extra preset
+fields and endpoints from the earlier unreleased shape are not part of this contract. The
+portable policy format changes from v1 to v2 for the same reason.

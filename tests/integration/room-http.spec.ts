@@ -6,6 +6,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { AppDataSource, initDataSource } from "../../src/modules/database/dataSource";
 import { RoomParticipantEntity } from "../../src/modules/database/entities/game/RoomParticipantEntity";
 import settings from "../../src/modules/settings";
+import { defaultRoomGameSettings } from "../../src/packages/application/roomGameSettings";
 
 let app: import("express").Express;
 let directory: string;
@@ -31,6 +32,149 @@ afterAll(async () => {
 });
 
 describe("Room HTTP API", () => {
+    it("manages sparse Card policy through the local DataSpace ownership boundary", async () => {
+        const initial = await request(app).get("/api/v1/card-policy/default").expect(200);
+        expect(initial.body.scopeDefault).toEqual({ directives: {}, revision: 0 });
+
+        const savedDefault = await request(app)
+            .put("/api/v1/card-policy/default")
+            .send({ directives: { availability: "EXCLUDE" }, expectedRevision: 0 })
+            .expect(200);
+        expect(savedDefault.body.scopeDefault.revision).toBe(1);
+
+        const rule = await request(app)
+            .post("/api/v1/card-policy/rules")
+            .send({
+                name: "Personal Cards",
+                enabled: true,
+                predicate: { socialSensitivities: ["PERSONAL"] },
+                directives: { availability: "INCLUDE" },
+            })
+            .expect(201);
+        expect(rule.body.rule).toMatchObject({ name: "Personal Cards", order: 10, revision: 1 });
+
+        const preview = await request(app)
+            .post("/api/v1/card-policy/rules/preview")
+            .send({ predicate: { socialSensitivities: ["PERSONAL"] }, locale: "en-GB" })
+            .expect(200);
+        expect(preview.body.matchCount).toBe(2);
+
+        const page = await request(app)
+            .get("/api/v1/card-policy/cards?locale=en-GB&limit=2")
+            .expect(200);
+        expect(page.body.cards).toHaveLength(2);
+        expect(page.body.total).toBe(4);
+        expect(page.body.nextCursor).toBeTypeOf("string");
+        const personalCard = page.body.cards.find(
+            ({ producer }: { producer: { socialSensitivity: string } }) =>
+                producer.socialSensitivity === "PERSONAL",
+        );
+        expect(personalCard).toMatchObject({
+            producer: { socialSensitivity: "PERSONAL", playerCount: { minimum: 2, maximum: null } },
+            effective: { availability: "INCLUDE" },
+            provenance: { availability: "DataSpace rule “Personal Cards”" },
+        });
+
+        const exact = await request(app)
+            .put(`/api/v1/card-policy/cards/${personalCard.id}`)
+            .send({ directives: { intensity: { mode: "SET", value: 4 } }, expectedRevision: 0 })
+            .expect(200);
+        expect(exact.body.policy.revision).toBe(1);
+
+        const sessionPage = await request(app)
+            .post("/api/v1/card-policy/session/cards")
+            .send({
+                sessionPolicy: {
+                    scopeDefault: { availability: "INCLUDE" },
+                    conditionalRules: [],
+                    exactCards: [
+                        {
+                            cardId: personalCard.id,
+                            directives: { intensity: { mode: "SET", value: 5 } },
+                        },
+                    ],
+                },
+                search: { locale: "en-GB", limit: 2 },
+            })
+            .expect(200);
+        expect(
+            sessionPage.body.cards.find(({ id }: { id: string }) => id === personalCard.id),
+        ).toMatchObject({
+            effective: { availability: "INCLUDE", intensity: 5 },
+            localDirectives: { intensity: { mode: "SET", value: 5 } },
+            provenance: {
+                availability: "Session Scope Default",
+                intensity: "Session Exact Card",
+            },
+        });
+
+        const portable = await request(app).get("/api/v1/card-policy/export").expect(200);
+        expect(portable.headers["content-disposition"]).toContain("card-policy.json");
+        expect(portable.body).toMatchObject({
+            format: "party-game-card-policy/v2",
+            scopeDefault: { availability: "EXCLUDE" },
+            rules: [{ name: "Personal Cards" }],
+            exactCards: [{ cardId: personalCard.id }],
+        });
+        await request(app)
+            .delete(`/api/v1/card-policy/cards/${personalCard.id}?expectedRevision=1`)
+            .expect(204);
+        await request(app)
+            .delete(`/api/v1/card-policy/rules/${rule.body.rule.id}?expectedRevision=1`)
+            .expect(204);
+        await request(app)
+            .post("/api/v1/card-policy/import")
+            .send({ ...portable.body, scopeDefault: { availability: "INCLUDE" } })
+            .expect(200)
+            .expect(({ body }) =>
+                expect(body.scope.scopeDefault).toEqual({
+                    directives: { availability: "INCLUDE" },
+                    revision: 1,
+                }),
+            );
+        await request(app)
+            .post("/api/v1/card-policy/import")
+            .send({
+                ...portable.body,
+                exactCards: [
+                    {
+                        cardId: "99999999-9999-4999-8999-999999999999",
+                        directives: { availability: "EXCLUDE" },
+                    },
+                ],
+            })
+            .expect(400);
+        await request(app)
+            .get("/api/v1/card-policy/default")
+            .expect(200)
+            .expect(({ body }) =>
+                expect(body.scopeDefault.directives).toEqual({ availability: "INCLUDE" }),
+            );
+
+        await request(app)
+            .post("/api/v1/card-policy/cards/bulk")
+            .send({
+                filters: { locale: "en-GB", socialSensitivity: "PERSONAL" },
+                directives: { repeatableInSession: "ENABLE" },
+                confirmedCount: 2,
+            })
+            .expect(200)
+            .expect(({ body }) => expect(body.appliedCount).toBe(2));
+        await request(app)
+            .post("/api/v1/card-policy/cards/bulk")
+            .send({
+                filters: { locale: "en-GB", socialSensitivity: "PERSONAL" },
+                directives: { repeatableInSession: "DISABLE" },
+                confirmedCount: 1,
+            })
+            .expect(409);
+
+        await request(app)
+            .put("/api/v1/card-policy/default")
+            .send({ directives: {}, expectedRevision: 0 })
+            .expect(409);
+    });
+
     it("lists database-backed Card locales and localized taxonomies", async () => {
         const locales = await request(app).get("/api/v1/catalog/locales").expect(200);
         expect(locales.body).toMatchObject({
@@ -44,9 +188,80 @@ describe("Room HTTP API", () => {
             .expect(200);
         expect(taxonomies.body.questionCategories).toContainEqual({
             id: "CAT_EVERYDAY",
-            label: "Everyday life",
+            label: "Everyday",
             description: null,
         });
+    });
+
+    it("previews the authoritative eligible Card pool before a game starts", async () => {
+        const gameSettings = defaultRoomGameSettings();
+        gameSettings.cardLocale = "en-GB";
+        const response = await request(app)
+            .post("/api/v1/card-policy/session/eligibility-preview")
+            .send({ settings: gameSettings, playerCount: 2 })
+            .expect(200);
+
+        expect(response.body).toMatchObject({
+            playerCount: 2,
+            byType: {
+                QUESTION: expect.any(Number),
+                DARE: expect.any(Number),
+                CONVERSATION_META: 0,
+            },
+        });
+        expect(response.body.total).toBeGreaterThan(0);
+        expect(response.body.availableAtStart).toBeLessThanOrEqual(response.body.total);
+
+        const room = await request(app)
+            .post("/api/v1/rooms")
+            .send({ displayName: "Preview Host", settings: gameSettings })
+            .expect(201);
+        const roomPreview = await request(app)
+            .post("/api/v1/card-policy/session/eligibility-preview")
+            .send({
+                roomCode: room.body.roomCode,
+                participantCredential: room.body.participantCredential,
+            })
+            .expect(200);
+        expect(roomPreview.body).toMatchObject({
+            total: response.body.total,
+            playerCount: 2,
+        });
+        await request(app)
+            .post("/api/v1/card-policy/session/eligibility-preview")
+            .send({
+                roomCode: room.body.roomCode,
+                participantCredential: "x".repeat(43),
+            })
+            .expect(404);
+    });
+
+    it("returns the active DataSpace with persisted sensitivity defaults", async () => {
+        const initial = await request(app).get("/api/v1/game-settings").expect(200);
+        expect(initial.body.dataSpace).toMatchObject({
+            id: expect.any(String),
+            name: expect.any(String),
+        });
+        expect(initial.body.settings.maximumSocialSensitivity).toBe("PERSONAL");
+
+        await request(app)
+            .put("/api/v1/game-settings")
+            .send({
+                preferredProfileId: "PROFILE_FRIENDS",
+                startingIntensity: 1,
+                maximumIntensity: 3,
+                maximumSocialSensitivity: "DEEP_PERSONAL",
+                intensityProgressionUnit: "CARDS",
+                intensityProgressionInterval: 2,
+                intensityProgressionIncrement: 1,
+                randomQuestionRatio: 0.6,
+                letsTalkMetaInterval: 5,
+                defaultGroupId: null,
+            })
+            .expect(200);
+        const saved = await request(app).get("/api/v1/game-settings").expect(200);
+        expect(saved.body.settings.maximumSocialSensitivity).toBe("DEEP_PERSONAL");
+        expect(saved.body.dataSpace.id).toBe(initial.body.dataSpace.id);
     });
 
     it("rejects a Room Card locale that is not active in the catalog", async () => {
@@ -55,7 +270,7 @@ describe("Room HTTP API", () => {
             profileId: "PROFILE_FRIENDS",
             groupId: null,
             adultContentConfirmed: false,
-            cardLocale: "fr-FR",
+            cardLocale: "es-ES",
             configuration: {
                 enabledQuestionCategoryIds: ["CAT_EVERYDAY"],
                 enabledDareTypeIds: ["DARE_SILLY"],
@@ -124,12 +339,31 @@ describe("Room HTTP API", () => {
             editorialStatus: "PUBLISHED",
         });
         expect(
-            response.body.profiles.find(({ id }: { id: string }) => id === "PROFILE_COUPLES_SPICY"),
+            response.body.profiles.find(({ id }: { id: string }) => id === "PROFILE_SPICY"),
         ).toMatchObject({ requiresAdultConfirmation: true });
+        expect(response.body.profiles.map(({ name }: { name: string }) => name)).toEqual([
+            "Child-friendly",
+            "Acquaintances & colleagues",
+            "Good friends",
+            "Close friends",
+            "Spicy",
+            "Custom",
+        ]);
+        expect(
+            response.body.profiles.find(
+                ({ id }: { id: string }) => id === "PROFILE_CHILD_FRIENDLY",
+            ),
+        ).toMatchObject({
+            name: "Child-friendly",
+            requiresAdultConfirmation: false,
+            maximumSocialSensitivity: "DEEP_PERSONAL",
+            maximumIntensity: 3,
+        });
         expect(
             response.body.profiles.find(({ id }: { id: string }) => id === "PROFILE_CUSTOM"),
         ).toMatchObject({
             immutable: false,
+            maximumSocialSensitivity: "EXPLICIT",
             startingIntensity: 1,
             maximumIntensity: 1,
             intensityProgressionUnit: "CARDS",

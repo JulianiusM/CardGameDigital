@@ -18,7 +18,7 @@ The four modes vary selection and transitions inside this shared lifecycle:
 - Ich hab noch nie selects only yes/no-capable questions, freezes the current Card's
   voter set, and collects votes. Its Session-owned reveal policy defaults to anonymous
   aggregate and may authorize named answers only after every required vote exists.
-- Let's Talk selects ordinary questions and schedules `CONVERSATION` meta cards
+- Let's Talk selects ordinary questions and schedules `CONVERSATION_META` Cards
   separately; exhausted meta cards fall back to normal questions.
 
 Every accepted command checks the caller's expected revision. Invalid states
@@ -51,13 +51,19 @@ Cards, avoiding a four-point band jump. Never Have I Ever advances a round after
 completed all-player Card; Card pacing uses displayed appearance count. Exhaustion never
 advances progression early.
 
-Persisted GameSession runtime is version 3. Version 2 introduced progression policy
+Persisted GameSession runtime is version 5. Version 2 introduced progression policy
 inside the frozen Session profile; version 3 records `completed`, `skipped`, and
-`vetoed` as separate authoritative CardAppearance outcomes. The accompanying database
-migration upgrades stored active runtimes and appearance rows instead of inferring old
-versions during normal gameplay. Because version 2 encoded both skip and veto as
-`skipped`, migrated historical vetoes remain classified as skips; version 3 records all
-new outcomes exactly.
+`vetoed` as separate authoritative CardAppearance outcomes; version 4 adds the immutable
+compiled Card-policy snapshot and pending Session policy. Version 5 compacts that
+snapshot into per-Card positional values. Persistence then removes the compact compiled
+policy and frozen Group history from the hot runtime row, stores each independently by
+content digest in compressed bounded chunks, and rehydrates both before restoring the
+aggregate. Group history uses an exact bitset against the frozen compiled Card order, so
+its storage is one bit per current Card rather than one UUID per seen Card. Played-Card
+history is rehydrated from its normalized appearance rows instead of being duplicated in runtime JSON. Accompanying database migrations upgrade stored
+active runtimes instead of inferring old versions during normal gameplay. Because
+version 2 encoded both skip and veto as `skipped`, migrated historical vetoes remain
+classified as skips; version 3 and later record all new outcomes exactly.
 
 `AlwaysEligible` ignores Group history only. `RepeatableInSession` is required
 for same-Session repetition. Cooldown counts other displayed cards since the

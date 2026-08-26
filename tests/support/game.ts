@@ -4,6 +4,7 @@ import {
     DARE_TYPES,
     INTENSITY_PROGRESSION_UNITS,
     QUESTION_CATEGORIES,
+    SOCIAL_SENSITIVITIES,
 } from "../../src/packages/game-core";
 
 export function card(overrides: Partial<PlayableCard> & Pick<PlayableCard, "id">): PlayableCard {
@@ -22,6 +23,9 @@ export function card(overrides: Partial<PlayableCard> & Pick<PlayableCard, "id">
         repeatableInSession: false,
         repeatCooldown: 0,
         weight: 1,
+        socialSensitivity: SOCIAL_SENSITIVITIES.GENERAL,
+        minimumPlayerCount: 2,
+        maximumPlayerCount: null,
         active: true,
         operationalFlags: [],
         ...properties,
@@ -35,6 +39,7 @@ export function profile(overrides: Partial<GameProfile> = {}): GameProfile {
         enabledQuestionCategoryIds: new Set(Object.values(QUESTION_CATEGORIES)),
         enabledDareTypeIds: new Set(Object.values(DARE_TYPES)),
         blockedOperationalFlags: new Set(),
+        maximumSocialSensitivity: SOCIAL_SENSITIVITIES.EXPLICIT,
         startingIntensity: 1,
         maximumIntensity: 5,
         intensityProgressionUnit: INTENSITY_PROGRESSION_UNITS.ROUNDS,

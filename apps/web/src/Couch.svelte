@@ -8,7 +8,7 @@
     import NeverHaveIEverVoting from "./NeverHaveIEverVoting.svelte";
     import PlayerNameRow from "./PlayerNameRow.svelte";
     import UiIcon from "./UiIcon.svelte";
-    import { presentation } from "./presentation";
+    import { presentation, type AtmospherePresentation } from "./presentation";
     import { atmosphereFor, effectForCommand, sceneFor } from "./presentationMapping";
     import { messages, gameModes } from "./i18n";
     import { elapsedMinutes as minutesSince } from "./elapsedTime";
@@ -18,10 +18,12 @@
     import {
         loadCardLocales,
         loadGameProfiles,
+        loadHostConfiguration,
         type CardLocaleSummary,
         type GameProfileSummary,
     } from "./multiplayer";
     import { authentication, refreshAuthentication } from "./authentication";
+    import EligibleCardPreview from "./EligibleCardPreview.svelte";
 
     const setup = loadSetup();
     const sessionStorageKey = "party-game:couch-session";
@@ -34,18 +36,25 @@
     let busy = false;
     let settingsOpen = false;
     let lastCardId: string | undefined;
+    let lastGameAtmosphere: AtmospherePresentation | null = null;
     let exhausted = false;
     let cardLocales: CardLocaleSummary[] = [];
     let profiles: GameProfileSummary[] = [];
+    let activeDataSpace: { id: string; name: string } | null = null;
     $: currentGameSettings = session?.settings ?? setupRoomSettings(setup);
+    $: pendingGameSettings = { ...setupRoomSettings(setup), mode };
+    $: pendingPlayerCount = Math.max(2, playerNames.filter((name) => name.trim()).length);
     $: cardAtmosphere = atmosphereFor(session?.currentCard);
+    $: gameInProgress = Boolean(session && session.state !== "ENDED");
+    $: if (cardAtmosphere) lastGameAtmosphere = cardAtmosphere;
+    $: if (!gameInProgress && !cardAtmosphere) lastGameAtmosphere = null;
     $: {
         const cardId = session?.currentCard?.id;
         if (cardId && cardId !== lastCardId) presentation.playEffect("reveal");
         lastCardId = cardId;
         presentation.setScene(
             sceneFor(session?.state, session?.currentCard, Boolean(session)),
-            cardAtmosphere,
+            cardAtmosphere ?? (gameInProgress ? lastGameAtmosphere : null),
         );
     }
 
@@ -61,6 +70,14 @@
                 ]);
             cardLocales = loadedLocales.locales;
             profiles = loadedProfiles;
+            if (authenticationStatus.deploymentMode === "local") {
+                activeDataSpace = (await loadHostConfiguration()).dataSpace;
+            } else if (authenticationStatus.account?.activeDataSpaceId) {
+                activeDataSpace =
+                    authenticationStatus.account.dataSpaces.find(
+                        ({ id }) => id === authenticationStatus.account?.activeDataSpaceId,
+                    ) ?? null;
+            }
             if (restoredSession) session = restoredSession;
             else if (storedSessionId) sessionStorage.removeItem(sessionStorageKey);
             prefillAccountPlayer(authenticationStatus.account?.user.name ?? "");
@@ -118,13 +135,16 @@
         void run(() =>
             couchApi.create({
                 persistence:
-                    setup.groupChoice === "SELECT" && setup.groupId ? "DATASPACE" : "EPHEMERAL",
+                    $authentication.deploymentMode === "local" || $authentication.authenticated
+                        ? "DATASPACE"
+                        : "EPHEMERAL",
                 mode,
                 players,
                 configuration: {
                     enabledQuestionCategoryIds: setup.enabledQuestionCategoryIds,
                     enabledDareTypeIds: setup.enabledDareTypeIds,
                     blockedOperationalFlags: setup.blockedOperationalFlags,
+                    maximumSocialSensitivity: setup.maximumSocialSensitivity,
                     startingIntensity: setup.startingIntensity,
                     maximumIntensity: setup.maximumIntensity,
                     intensityProgressionUnit: setup.intensityProgressionUnit,
@@ -141,6 +161,13 @@
                 cardFallbackEnabled: setup.cardFallbackEnabled,
                 cardFallbackLocales: setup.cardFallbackLocales,
                 neverHaveIEverRevealMode: setup.neverHaveIEverRevealMode,
+                cardPolicy: structuredClone(
+                    setup.cardPolicy ?? {
+                        scopeDefault: {},
+                        conditionalRules: [],
+                        exactCards: [],
+                    },
+                ),
             }),
         );
     }
@@ -179,6 +206,23 @@
 </script>
 
 <main class:playing={session} class="couch-shell">
+    {#if !session && activeDataSpace}
+        <div class="home-context-status">
+            {#if $authentication.authenticationAvailable && $authentication.authenticated}
+                <a class="active-dataspace-indicator" href="/play/account?returnTo=%2Fplay%2Fcouch">
+                    <span aria-hidden="true"><UiIcon name="group" /></span>
+                    <small>{messages.menu.activeDataSpace}</small>
+                    <strong>{activeDataSpace.name}</strong>
+                </a>
+            {:else}
+                <div class="active-dataspace-indicator" role="status">
+                    <span aria-hidden="true"><UiIcon name="group" /></span>
+                    <small>{messages.menu.activeDataSpace}</small>
+                    <strong>{activeDataSpace.name}</strong>
+                </div>
+            {/if}
+        </div>
+    {/if}
     <SettingsTrigger onOpen={() => (settingsOpen = true)} />
     {#if !session}
         <header>
@@ -193,10 +237,13 @@
         >
         <section class="player-setup card-panel">
             <div class="setup-summary">
-                <span>{gameModes.find((item) => item[0] === mode)?.[1]}</span><a
-                    class="text-action"
-                    href={setupHref("mode")}>{messages.common.change}</a
-                >
+                <span>
+                    <strong>{gameModes.find((item) => item[0] === mode)?.[1]}</strong>
+                    <small>
+                        {messages.room.maximumSocialSensitivity}: {messages.cardManagement
+                            .sensitivityNames[setup.maximumSocialSensitivity]}
+                    </small>
+                </span><a class="text-action" href={setupHref("mode")}>{messages.common.change}</a>
             </div>
             <div class="players">
                 {#each playerNames as name, index}
@@ -212,6 +259,11 @@
                     >{messages.common.addPerson}</button
                 >
             </div>
+            <EligibleCardPreview
+                settings={pendingGameSettings}
+                playerCount={pendingPlayerCount}
+                compact
+            />
             <button
                 class="primary primary-action"
                 disabled={busy || playerNames.filter((name) => name.trim()).length < 2}
@@ -236,11 +288,13 @@
     {:else}
         <section class="game-shell">
             <div class="status">
-                <span>{messages.common.round} {session.roundNumber}</span><span
-                    >{session.cardsShown} {messages.common.cards}</span
+                <span data-adaptive-contrast>{messages.common.round} {session.roundNumber}</span
+                ><span data-adaptive-contrast>{session.cardsShown} {messages.common.cards}</span
+                ><span class="remaining-cards" data-adaptive-contrast
+                    >{messages.common.remainingCards(session.remainingCardCount)}</span
                 >
             </div>
-            {#if session.activePlayer}<p class="active-player">
+            {#if session.activePlayer}<p class="active-player" data-adaptive-contrast>
                     <span>{messages.common.nowPlaying}</span>{session.activePlayer.name}
                 </p>{/if}
             {#if exhausted}
@@ -302,6 +356,7 @@
         {currentGameSettings}
         gameProfiles={profiles}
         {cardLocales}
+        currentGamePlayerCount={pendingPlayerCount}
         defaultTab={session && session.state !== "ENDED" ? "session" : "audio"}
     />
 </main>

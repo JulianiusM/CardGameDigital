@@ -63,16 +63,18 @@ export const de = {
         "game.playerIdsUnique": "Personen-IDs müssen eindeutig sein.",
         "game.unknownPlayer": "Unbekannte Person.",
         "game.alreadyVoted": "Diese Person hat bereits abgestimmt.",
-        "profile.colleagues.name": "Kollegen",
-        "profile.colleagues.description": "Niedriges Risiko für Kolleg:innen und Bekannte.",
-        "profile.friends.name": "Freunde",
-        "profile.friends.description": "Allgemeine Freundesgruppen mit spielerischer Nähe.",
-        "profile.bestFriends.name": "Beste Freunde",
-        "profile.bestFriends.description": "Persönlichere Gespräche für vertraute Gruppen.",
-        "profile.couples.name": "Paare",
-        "profile.couples.description": "Romantische Partner:innen mit intimeren Inhalten.",
-        "profile.couplesSpicy.name": "Paare – Spicy",
-        "profile.couplesSpicy.description":
+        "profile.acquaintances.name": "Bekannte & Kolleg:innen",
+        "profile.acquaintances.description": "Lockere, unverfängliche Inhalte für neue Gruppen.",
+        "profile.childFriendly.name": "Kinderfreundlich",
+        "profile.childFriendly.description":
+            "Verspielte, nicht sexuelle Karten, wenn Kinder mitspielen.",
+        "profile.friends.name": "Gute Freunde",
+        "profile.friends.description": "Persönliche, verspielte Inhalte für vertraute Freunde.",
+        "profile.closeFriends.name": "Enge Freunde",
+        "profile.closeFriends.description":
+            "Intime, vertrauensvolle Inhalte für sehr enge Gruppen.",
+        "profile.spicy.name": "Spicy",
+        "profile.spicy.description":
             "Explizite Inhalte für einwilligende Erwachsene; zusätzliche Freigabe erforderlich.",
         "profile.custom.name": "Custom",
         "profile.custom.description": "Neutral starten und alle Optionen selbst festlegen.",

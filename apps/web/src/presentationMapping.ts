@@ -4,6 +4,7 @@ import type {
     PresentationScene,
     VisualFamily,
 } from "./presentation";
+import { motifSymbolsForFamily } from "./motifFamilies";
 
 export type PresentedCard = {
     id: string;
@@ -23,7 +24,7 @@ export function sceneFor(
 ): PresentationScene {
     if (state === "ENDED") return "END";
     if (card?.cardType === "DARE") return "DARE";
-    if (card?.cardType === "CONVERSATION") return "CONVERSATION";
+    if (card?.cardType === "CONVERSATION_META") return "CONVERSATION";
     if (card?.cardType === "QUESTION") return "QUESTION";
     return connected ? "LOBBY" : "MENU";
 }
@@ -59,13 +60,24 @@ const dareFamilies: Record<string, VisualFamily> = {
     DARE_OTHER: "GENERIC_DARE",
 };
 
-function visualFamilyFor(card: PresentedCard): VisualFamily {
-    if (card.cardType === "CONVERSATION") return "CONVERSATION";
+export function visualFamilyFor(card: PresentedCard): VisualFamily {
+    if (card.cardType === "CONVERSATION_META") return "CONVERSATION";
     if (card.cardType === "QUESTION" && card.questionCategoryId)
         return questionFamilies[card.questionCategoryId] ?? "CURIOSITY";
     if (card.cardType === "DARE" && card.dareTypeId)
         return dareFamilies[card.dareTypeId] ?? "GENERIC_DARE";
     return "GENERAL";
+}
+
+/** Stable pseudo-random choice: varied across Cards, unchanged across reactive rerenders. */
+export function motifSymbolFor(card: PresentedCard): string {
+    const symbols = motifSymbolsForFamily(visualFamilyFor(card));
+    let hash = 2_166_136_261;
+    for (const character of card.id) {
+        hash ^= character.codePointAt(0) ?? 0;
+        hash = Math.imul(hash, 16_777_619);
+    }
+    return symbols[(hash >>> 0) % symbols.length];
 }
 
 function presentationIntensity(value: number): 1 | 2 | 3 | 4 | 5 {
@@ -80,7 +92,7 @@ export function atmosphereFor(
     if (!card) return null;
     return {
         family: visualFamilyFor(card),
-        intensity: presentationIntensity(card.cardIntensity),
+        intensity: presentationIntensity(card.intensity),
     };
 }
 

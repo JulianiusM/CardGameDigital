@@ -5,9 +5,23 @@ import {
     validateCardCatalogArtifact,
     type ValidatedCardCatalogArtifact,
 } from "../../packages/card-catalog-contract";
-import { applyCardCatalogSnapshot } from "../../packages/persistence/applyCardCatalogSnapshot";
+import {
+    applyCardCatalogSnapshot,
+    isDevelopmentCardCatalogVersion,
+} from "../../packages/persistence/applyCardCatalogSnapshot";
+
+let catalogPathForTests: string | undefined;
+
+/** Keeps broad integration suites small while dedicated startup coverage uses production bytes. */
+export function setBundledCardCatalogPathForTests(file: string): void {
+    if (process.env.NODE_ENV !== "test") {
+        throw new Error("The bundled Card catalog test path is available only under NODE_ENV=test");
+    }
+    catalogPathForTests = path.resolve(file);
+}
 
 export function bundledCardCatalogPath(): string {
+    if (catalogPathForTests) return catalogPathForTests;
     const packaged = path.resolve(__dirname, "../../catalog/card-catalog.json");
     if (fs.existsSync(packaged)) return packaged;
     return path.resolve(process.cwd(), "catalog/card-catalog.json");
@@ -23,8 +37,7 @@ export function bundledCardCatalogArtifact(
     if (
         deploymentMode === "public" &&
         !allowDevelopmentFixture &&
-        (artifact.catalog.catalogId === "development" ||
-            artifact.catalog.catalogVersion.startsWith("development-fixture"))
+        isDevelopmentCardCatalogVersion(artifact.catalog.catalogVersion)
     ) {
         throw new Error("Public deployment refuses the bundled development Card catalog");
     }

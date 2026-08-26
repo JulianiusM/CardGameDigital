@@ -29,6 +29,7 @@
     import { accountApi } from "./accountApi";
     import { setAuthenticatedAccount } from "./authentication";
     import { showNotification } from "./notifications";
+    import type { RoomEligibilityAccess } from "./cardPolicyApi";
 
     export let open = false;
     export let showContent = false;
@@ -45,6 +46,8 @@
     export let cardLocales: readonly CardLocaleSummary[] = [];
     export let roomCode = "";
     export let qr = "";
+    export let currentGamePlayerCount = 2;
+    export let roomAccess: RoomEligibilityAccess | undefined = undefined;
     export let defaultTab = "audio";
     let preferences = presentation.preferences;
     let languagePreferences: LanguagePreferences = loadLanguagePreferences();
@@ -188,6 +191,9 @@
                 settings={currentGameSettings}
                 profiles={gameProfiles}
                 {cardLocales}
+                playerCount={currentGamePlayerCount}
+                {roomAccess}
+                showEligibility
             />
         {:else if tab === "audio"}
             <label class="setting-row"

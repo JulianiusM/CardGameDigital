@@ -50,6 +50,7 @@ The game should transform the existing card database into a cohesive multiplayer
 
 The same game engine should work for:
 
+- children and families using the Child-friendly profile;
 - colleagues;
 - casual friends;
 - close friends;
@@ -681,7 +682,7 @@ It does not replace DareType filtering.
 
 Every Card has a relative Intensity from 1 to 5 within its Question Category or DareType.
 The game owns a hard-coded base offset for each taxonomy. These values are internal game
-policy: they are not part of card catalog v1, taxonomy persistence, or the public taxonomy
+policy: they are not part of card catalog v2, taxonomy persistence, or the public taxonomy
 API.
 
 Recommended scale:
@@ -738,9 +739,10 @@ both shown on the Card as separate symbol-led five-mark indicators. A Card symbo
 identifies relative intensity and a globe symbol identifies global intensity; accessible
 labels name both values without adding descriptive text to the visible Card surface.
 
-The adaptive background uses the relative Card Intensity. Question Category or DareType
-already selects a separately tuned visual family, so applying the global intensity would
-count the taxonomy offset twice in the presentation.
+Question Category or DareType selects the adaptive background family, while the Card's
+derived global Intensity tunes that family's presentation. Between Cards, the most recent
+active family and global Intensity persist so the atmosphere follows game progression
+without snapping back to lobby defaults.
 
 For questions, relative intensity describes personal or emotional intensity within the
 Question Category.
@@ -779,6 +781,13 @@ Escalation expands the eligible ceiling; it does not force every new Card to be 
 does not bypass history, and is never raised early when a phase pool is exhausted.
 
 A disabled DareType can never become eligible through intensity escalation.
+
+Game settings also expose a separate **maximum social sensitivity** scale:
+General → Personal → Close personal → Deep personal → Intimate → Explicit. This is an
+ordinary, explicit eligibility ceiling for disclosure and closeness; it is not derived
+from Card intensity or taxonomy. Built-in profiles provide sensible starting values from
+General for Acquaintances & Colleagues through Explicit for Spicy. Hosts can change the ceiling
+under Customize Experience, and every settings summary shows the selected value.
 
 ---
 
@@ -1122,7 +1131,7 @@ An external producer/editorial pipeline owns:
 - translation review;
 - catalog release assembly.
 
-The game consumes one normalized, versioned FULL `game-card-catalog/v1` snapshot.
+The game consumes one normalized, versioned FULL `game-card-catalog/v2` snapshot.
 
 ---
 
@@ -1467,6 +1476,12 @@ The same Card remains available to Group B.
 
 History is language-independent because it references the logical Card ID.
 
+An ordinary release within the same stable catalog lineage preserves that history, including
+text-only updates to an existing Card ID. Replacing the catalog lineage, such as moving from a
+development catalog to the production catalog, starts a new eligibility epoch for existing
+Groups. Earlier appearances remain in account history and exports but do not empty the
+replacement catalog's playable pool.
+
 ---
 
 # 45. Session History
@@ -1627,21 +1642,27 @@ Custom GameProfiles use the name entered by the user and are not automatically t
 
 Canonical profile concepts include:
 
-- Kollegen;
-- Freunde;
-- Beste Freunde;
-- Paare;
-- Paare – Spicy;
+- Kinderfreundlich;
+- Bekannte & Kolleg:innen;
+- Gute Freunde;
+- Enge Freunde;
+- Spicy;
 - Custom.
 
 The current release uses conservative, data-driven operational defaults. Every
 built-in profile blocks third-party, alcohol, and recreational-drug requirements.
-Colleagues additionally blocks contact, private-space, clothing-removal, and
-nudity requirements. Friends and Best Friends progressively permit consensual
-contact-related rules. Couples presets permit the private/contact rules that fit
-their declared content range. Custom starts neutral with every additional rule
-blocked until the Host explicitly enables it. These values remain catalog data
-and should be reviewed alongside each production Card release.
+Child-friendly allows everyday, childhood, personality, scenario, friendship,
+relationship, and body questions; only silly, ordinary-contact, and generic dares; a
+Deep personal sensitivity ceiling; and no third-party, substance, clothing-removal, or
+nudity requirements. It is an ordinary editable profile rather than a second policy
+mechanism.
+Acquaintances & Colleagues additionally blocks contact, private-space,
+clothing-removal, and nudity requirements. Good Friends permits ordinary consensual
+contact. Close Friends combines the trusted-group breadth and intimate range that were
+previously split across best-friend and couple-specific choices. Spicy exposes the full
+adult range without assuming a relationship structure. Custom starts neutral with every
+additional rule blocked until the Host explicitly enables it. These values remain
+catalog data and should be reviewed alongside each production Card release.
 
 ---
 
@@ -1764,6 +1785,11 @@ overwrite either snapshot. Anonymous public quick rounds never write one.
 
 Select Group is disabled while the current DataSpace has no Groups. Deleting the final
 Group immediately returns setup to No Group rather than presenting an empty selector.
+Whenever a local or authenticated DataSpace is active, the main menu names it in a
+small contextual status chip away from the primary play actions. This makes the ownership
+boundary visible before
+a person continues a Group or opens Card management; authenticated players can use the
+row to reach Account management.
 The setup wizard keeps only the frequent in-context actions: select an existing Group or
 quickly create one. Renaming people, resetting Card history, and fully deleting a Group
 belong to the dedicated Groups section of the Account screen. Both selection surfaces
@@ -2352,7 +2378,87 @@ The design is correctly implemented when:
 
 ---
 
-# 89. Final Product Summary
+# 89. Scoped Card management
+
+People can manage Card behavior at their current DataSpace and at an optional saved
+Group. A scope has one catch-all **Scope Default**, ordered **Conditional Rules** over
+stable metadata, and sparse **Exact Card policies**. Within a scope the order is Scope
+Default → Conditional Rules → Exact Card. Across scopes it is DataSpace → Group →
+pending Session, so a Group default may deliberately replace even a DataSpace exact
+decision.
+
+Managed properties are availability, Group-history eligibility, Session repeatability,
+cooldown, relative Card intensity, selection weight, social sensitivity, and one atomic
+minimum/maximum player-count range. Scalars support Inherit, Catalog, and Set. Booleans
+support Inherit, Enable, and Disable. Availability supports Inherit, Include, and
+Exclude. Untouched quick games remain entirely inherited.
+
+The pending-Session workspace does not repeat editable social-sensitivity directives.
+The Host already owns the explicit maximum social-sensitivity ceiling in Customize
+Experience. Catalog sensitivity remains available as a Card-search and rule condition,
+and persistent DataSpace/Group policy may still correct Card metadata.
+
+## Management flow
+
+The default path stays deliberately small: choose a scope, leave inherited values in
+place, and start the game. The workspace reveals complexity in three tiers:
+
+1. **Scope Defaults** set the broad baseline.
+2. **Conditional Rules** refine stable producer metadata. A new rule starts disabled,
+   and its current conditions must be previewed against the complete catalog before it
+   can be saved or enabled.
+3. **Card Overrides** handle the rare exception one Card at a time, while showing the
+   producer value, effective value, local decision, and winning source for every managed
+   property.
+
+DataSpace, Group, rule, and Card collections must remain usable at large scale. Search
+narrows each collection, only bounded pages are rendered, and Card pages are fetched
+from the server rather than accumulating the entire catalog in the browser. Rule
+previews return a full match count and only a few localized examples. Bulk exact-Card
+changes require an inline summary confirmation; the server rechecks the count before
+materializing stable Card UUIDs. Imports and deletions also use inline confirmation
+states rather than browser dialogs.
+
+Every visible term in the workspace is localized. Stable IDs and directive keywords are
+transport values, not player-facing copy. Main policy choices use explicit themed
+segmented controls; native browser presentation must not break the Golden Mischief
+interface. At narrow-phone widths master and detail areas stack without page overflow,
+while the selected item remains the only expanded editor.
+
+A DataSpace or Group scope can be moved through a versioned policy package. Import is an
+explicit replacement action, validates stable taxonomy and Card references, and does
+not carry source ownership identifiers into the target scope. Portable packages use
+`party-game-card-policy/v2`; earlier package shapes are intentionally not accepted.
+
+Child-safety is represented by the built-in **Child-friendly** profile described above.
+Selecting it copies ordinary editable game settings, so the host can inspect and change
+every value under Customize Experience. Persistent or one-game exceptions continue to
+use the same Card policy controls as every other game.
+
+At Session start the server resolves persistent and pending policy once against the
+installed v2 catalog. The immutable snapshot records catalog identity/digest, policy
+revisions, and compact per-Card effective values. A later policy or catalog edit
+affects a future Session, not the active one. Player-count eligibility uses the
+authoritative Session roster on every next-Card selection; displays do not count, late
+Players count from the next Card, and temporary disconnections remain counted.
+
+Before start, setup and lobby surfaces show a small, visually subordinate
+server-calculated eligible Card count for
+the current language, mode, profile, explicit sensitivity ceiling, inherited policy,
+Group history, and proposed player count. The primary number covers Cards that can appear
+over the full configured intensity progression; a secondary number states how many are
+available at the starting intensity. The preview never receives private player
+boundaries and clearly warns that they can reduce the pool at Session start.
+On a Party Screen lobby this same information stays in the compact settings-status area;
+it must not replace or shrink the player roster. During play the Room code uses the same
+adaptive-contrast status-chip treatment as round and Card progress.
+
+Availability is resolved as producer → DataSpace → Group → Session. A deliberate
+Session Include can reverse persistent policy for that game, but it can never bypass
+lifecycle, localization, game-mode/type, profile taxonomy and sensitivity, private
+boundaries, adult confirmation, or the product minimum of two players.
+
+# 90. Final Product Summary
 
 The game is one multilingual-capable social-card platform built around stable logical content.
 

@@ -68,3 +68,44 @@ platform-specific native bindings. Kodi and Android-family native clients are de
 from the current release scope; the responsive web client covers Couch, Personal, and
 Party Screen device modes. The canonical production Card catalog is still required
 before the complete Core Release can be labelled verified.
+
+## Card management
+
+The runtime now requires the canonical strict `game-card-catalog/v2` envelope: fixed
+`catalogId=core`, required `snapshotKind=FULL`, nested `taxonomy`, canonical lowercase
+UUIDs, `CONVERSATION_META`, and the closed operational-flag vocabulary. The shipped
+JSON Schema and delivery contract match the provider handoff exactly; historical v1
+artifacts remain published unchanged. Runtime persists resolved social sensitivity and
+player-count metadata. DataSpace/Group Card policy is sparse,
+optimistically revisioned, ownership-scoped, portably exportable/importable, and
+available through the Golden Mischief SPA in both local no-auth and authenticated public
+deployments. Faceted Card search is cursor-paged; confirmed bulk results materialize
+stable UUID exceptions. Room and Couch setup accept additive Session policy, and active
+Sessions carry an immutable version-4 compiled policy snapshot.
+
+Maximum social sensitivity is now an explicit profile/game-setting eligibility gate,
+persisted for DataSpace quick-game defaults by migration `1787352000000`. The
+Child-friendly built-in profile provides ordinary,
+fully editable category, DareType, flag, intensity, and sensitivity defaults. A
+read-only server preview reports mode-specific eligible totals at starting and maximum
+intensity using compiled policy, localization, shared Group history, and proposed player
+count without exposing private boundaries.
+
+The Golden Mischief management workspace is complete in both deployment modes. It uses
+searchable eight-item scope/DataSpace/Group pages, ten-item rule pages, and server-backed
+24-Card pages; only the selected rule or Card is expanded. New rules start disabled and
+require a current bounded server preview. Responsive provenance cards replace wide
+tables, all controls and confirmation states are styled, and German/English catalogs
+cover every visible state. Standalone management uses the established page Card and its
+Account tab uses the compact tab-explainer hierarchy. Account-contained and narrower
+workspaces stack master/detail panes; scope actions remain uniform and scope labels wrap
+without loss. The picker visibly separates the DataSpace baseline from Group overrides;
+selected Cards show full UUIDs, pager actions are equal width, and wide Conditions use
+document flow without a master-pane scrollbar. Ordered custom values use one themed
+scale with remembered drafts and least-restrictive initial values. The page is audited
+without horizontal overflow at desktop and narrow-phone widths.
+New policy controls use the shared tactile hover/press motion and reduced-motion rules.
+The main menu names the active DataSpace, while setup, editor, Couch setup, and lobby
+surfaces reuse one localized eligible-Card panel.
+Empty policies still inherit every producer/profile default, so quick setup remains
+unchanged.

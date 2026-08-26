@@ -30,6 +30,7 @@
         applyCardLanguageSettings,
         applyGameProfile,
         resetSetup,
+        repairUnavailableGameProfile,
         saveSetup,
         setupConfiguration,
         setupRoomSettings,
@@ -45,6 +46,7 @@
     import { accountApi } from "./accountApi";
     import { setAuthenticatedAccount } from "./authentication";
     import { announceGroupChange, subscribeToGroupChanges } from "./groupChanges";
+    import EligibleCardPreview from "./EligibleCardPreview.svelte";
 
     const query = new URLSearchParams(location.search);
     let setup: GameSetupState = loadSetup();
@@ -58,6 +60,7 @@
     let authenticationLoaded = false;
     let authenticationResolved = false;
     let savedGameSettings: GameSettings | null = null;
+    let activeDataSpace: { id: string; name: string } | null = null;
     let groupName = "";
     let groupMembers = "";
     let joinName = "";
@@ -69,6 +72,13 @@
     $: progressSteps = hostSteps.map((step) => messages.setup.stepLabels[step]);
     $: presentation.setScene(screen === "menu" ? "MENU" : "LOBBY");
     $: editorSettings = setupRoomSettings(setup);
+    $: eligiblePreviewPlayerCount = Math.max(
+        2,
+        setup.groupMembers.filter((name) => name.trim()).length,
+    );
+    $: dataSpaceRelevant = Boolean(
+        activeDataSpace && (screen === "menu" || setup.intent === "HOST"),
+    );
     $: homePhaseKey = screen === "menu" ? "menu" : `${setup.intent ?? "setup"}:${setup.step}`;
     $: persistenceAvailable =
         authenticationResolved &&
@@ -100,6 +110,11 @@
             authenticationLoaded = true;
             authenticationResolved = true;
             profiles = loadedProfiles;
+            const repairedSetup = repairUnavailableGameProfile(setup, profiles);
+            if (repairedSetup !== setup) {
+                setup = repairedSetup;
+                saveSetup(setup);
+            }
             cardLocales = catalogLocales.locales;
             defaultCardLocale = catalogLocales.defaultLocale;
             if (!catalogLocales.locales.some(({ id }) => id === setup.cardLocale)) {
@@ -125,6 +140,7 @@
                 const configuration = await loadHostConfiguration();
                 groups = configuration.groups;
                 savedGameSettings = configuration.settings;
+                activeDataSpace = configuration.dataSpace;
                 groupsAvailable = true;
                 if (!groups.length && setup.groupChoice === "SELECT") chooseGroup(null);
             }
@@ -215,7 +231,7 @@
         if (profile) {
             const customConfiguration = customConfigurationFor(profile, group);
             next = applyGameProfile(next, profile, customConfiguration);
-        }
+        } else next = repairUnavailableGameProfile(next, profiles);
         next = group?.cardLanguageSettings
             ? applyAvailableCardLanguageSettings(next, group.cardLanguageSettings)
             : quickRoundCardLanguageSettings(next);
@@ -267,9 +283,11 @@
             cardFallbackEnabled: settings.cardFallbackEnabled,
             cardFallbackLocales: [...settings.cardFallbackLocales],
             neverHaveIEverRevealMode: settings.neverHaveIEverRevealMode,
+            cardPolicy: structuredClone(settings.cardPolicy),
             enabledQuestionCategoryIds: [...settings.configuration.enabledQuestionCategoryIds],
             enabledDareTypeIds: [...settings.configuration.enabledDareTypeIds],
             blockedOperationalFlags: [...settings.configuration.blockedOperationalFlags],
+            maximumSocialSensitivity: settings.configuration.maximumSocialSensitivity,
             startingIntensity: settings.configuration.startingIntensity,
             maximumIntensity: settings.configuration.maximumIntensity,
             intensityProgressionUnit: settings.configuration.intensityProgressionUnit,
@@ -298,6 +316,7 @@
         const configuration = await loadHostConfiguration();
         groups = configuration.groups;
         savedGameSettings = configuration.settings;
+        activeDataSpace = configuration.dataSpace;
         groupsAvailable = true;
         if (setup.groupChoice !== "SELECT") return;
         const selected = groups.find(({ id }) => id === setup.groupId);
@@ -331,6 +350,7 @@
                     savedGameSettings.startingIntensity as GameSetupState["startingIntensity"],
                 maximumIntensity:
                     savedGameSettings.maximumIntensity as GameSetupState["maximumIntensity"],
+                maximumSocialSensitivity: savedGameSettings.maximumSocialSensitivity,
                 intensityProgressionUnit: savedGameSettings.intensityProgressionUnit,
                 intensityProgressionInterval: savedGameSettings.intensityProgressionInterval,
                 intensityProgressionIncrement: savedGameSettings.intensityProgressionIncrement,
@@ -379,6 +399,7 @@
             preferredProfileId: setup.profileId,
             startingIntensity: setup.startingIntensity,
             maximumIntensity: setup.maximumIntensity,
+            maximumSocialSensitivity: setup.maximumSocialSensitivity,
             intensityProgressionUnit: setup.intensityProgressionUnit,
             intensityProgressionInterval: setup.intensityProgressionInterval,
             intensityProgressionIncrement: setup.intensityProgressionIncrement,
@@ -461,8 +482,7 @@
                 return;
             }
             if (!setup.hostName.trim()) return;
-            const persistence =
-                setup.groupChoice === "SELECT" && setup.groupId ? "DATASPACE" : "EPHEMERAL";
+            const persistence = persistenceAvailable ? "DATASPACE" : "EPHEMERAL";
             const join = await rooms.create(
                 setup.hostName.trim(),
                 persistence,
@@ -510,22 +530,48 @@
 </script>
 
 <main class="home-shell">
-    {#if authenticationLoaded && $authentication.authenticationAvailable}<a
-            class="account-status-pill"
-            href="/play/account?returnTo=%2Fplay%2F"
-            on:click|preventDefault={() =>
-                navigate("/play/account?returnTo=%2Fplay%2F", { force: true })}
-            aria-label={$authentication.authenticated
-                ? messages.account.openAccount
-                : messages.account.loginTitle}
-        >
-            <UiIcon name="account" />
-            <span
-                >{$authentication.authenticated && $authentication.account
-                    ? $authentication.account.user.name
-                    : messages.account.login}</span
-            >
-        </a>{/if}
+    {#if (authenticationLoaded && $authentication.authenticationAvailable) || dataSpaceRelevant}
+        <div class="home-context-status">
+            {#if authenticationLoaded && $authentication.authenticationAvailable}
+                <a
+                    class="account-status-pill"
+                    href="/play/account?returnTo=%2Fplay%2F"
+                    on:click|preventDefault={() =>
+                        navigate("/play/account?returnTo=%2Fplay%2F", { force: true })}
+                    aria-label={$authentication.authenticated
+                        ? messages.account.openAccount
+                        : messages.account.loginTitle}
+                >
+                    <UiIcon name="account" />
+                    <span
+                        >{$authentication.authenticated && $authentication.account
+                            ? $authentication.account.user.name
+                            : messages.account.login}</span
+                    >
+                </a>
+            {/if}
+            {#if dataSpaceRelevant && activeDataSpace}
+                {#if $authentication.authenticationAvailable && $authentication.authenticated}
+                    <a
+                        class="active-dataspace-indicator"
+                        href="/play/account?returnTo=%2Fplay%2F"
+                        on:click|preventDefault={() =>
+                            navigate("/play/account?returnTo=%2Fplay%2F", { force: true })}
+                    >
+                        <span aria-hidden="true"><UiIcon name="group" /></span>
+                        <small>{messages.menu.activeDataSpace}</small>
+                        <strong>{activeDataSpace.name}</strong>
+                    </a>
+                {:else}
+                    <div class="active-dataspace-indicator" role="status">
+                        <span aria-hidden="true"><UiIcon name="group" /></span>
+                        <small>{messages.menu.activeDataSpace}</small>
+                        <strong>{activeDataSpace.name}</strong>
+                    </div>
+                {/if}
+            {/if}
+        </div>
+    {/if}
     <header class="hero">
         <span class="spark" aria-hidden="true"><UiIcon name="spark" /></span><span class="eyebrow"
             >{messages.brand}</span
@@ -564,6 +610,13 @@
                             ><strong
                                 >{messages.menu.continueGroup}: {continueGroupTarget.name}</strong
                             ></button
+                        >{/if}
+                    {#if persistenceAvailable}<a class="menu-tile" href="/play/cards"
+                            ><span class="tile-symbol" aria-hidden="true"
+                                ><UiIcon name="content" /></span
+                            ><strong>{messages.cardManagement.title}</strong><small
+                                >{messages.cardManagement.menuHint}</small
+                            ></a
                         >{/if}
                 </nav>
                 {#if authenticationLoaded}<LegalLinks
@@ -735,8 +788,11 @@
                             settings={editorSettings}
                             {profiles}
                             {cardLocales}
+                            sessionManagementHref="/play/cards?scope=session&returnTo=%2Fplay%2F%3Fsetup%3Dcustomize"
                             showMode={false}
                             showProfile={false}
+                            showEligibility={false}
+                            playerCount={eligiblePreviewPlayerCount}
                             onChange={applyEditor}
                             onCardLocaleSelect={rememberCardLocale}
                         />
@@ -759,25 +815,34 @@
                                 /></label
                             >{/if}
                     {/if}
-                    {#if setup.intent === "HOST"}<button
-                            class="primary primary-action wizard-next"
-                            disabled={busy ||
-                                (setup.step === "group" &&
-                                    setup.groupChoice === "SELECT" &&
-                                    !setup.groupId) ||
-                                (setup.step === "group" && setup.groupChoice === "NEW") ||
-                                (setup.step === "screen" &&
-                                    setup.deviceMode !== "couch" &&
-                                    !setup.hostName.trim()) ||
-                                (setup.step === "profile" &&
-                                    profiles.find(({ id }) => id === setup.profileId)
-                                        ?.requiresAdultConfirmation &&
-                                    !setup.adultContentConfirmed)}
-                            on:click={next}
-                            >{setup.step === "screen"
-                                ? messages.setup.continue
-                                : messages.common.next}<span>→</span></button
-                        >{/if}
+                    {#if setup.intent === "HOST"}
+                        <footer class="wizard-footer">
+                            <EligibleCardPreview
+                                settings={editorSettings}
+                                playerCount={eligiblePreviewPlayerCount}
+                                compact
+                            />
+                            <button
+                                class="primary primary-action wizard-next"
+                                disabled={busy ||
+                                    (setup.step === "group" &&
+                                        setup.groupChoice === "SELECT" &&
+                                        !setup.groupId) ||
+                                    (setup.step === "group" && setup.groupChoice === "NEW") ||
+                                    (setup.step === "screen" &&
+                                        setup.deviceMode !== "couch" &&
+                                        !setup.hostName.trim()) ||
+                                    (setup.step === "profile" &&
+                                        profiles.find(({ id }) => id === setup.profileId)
+                                            ?.requiresAdultConfirmation &&
+                                        !setup.adultContentConfirmed)}
+                                on:click={next}
+                                >{setup.step === "screen"
+                                    ? messages.setup.continue
+                                    : messages.common.next}<span>→</span></button
+                            >
+                        </footer>
+                    {/if}
                 </section>
             {/if}
         </div>

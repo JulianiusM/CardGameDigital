@@ -20,9 +20,10 @@
     import { saveLanguagePreferences } from "./languagePreferences";
     import { reloadWithoutNavigationPrompt } from "./router";
     import GroupManagement from "./GroupManagement.svelte";
+    import CardManagement from "./CardManagement.svelte";
 
     type Screen = "login" | "register" | "activation" | "forgot" | "reset" | "dashboard";
-    type DashboardTab = "data-spaces" | "groups" | "devices" | "account-data";
+    type DashboardTab = "data-spaces" | "groups" | "cards" | "devices" | "account-data";
 
     let screen: Screen = "login";
     let dashboardTab: DashboardTab = "data-spaces";
@@ -39,17 +40,30 @@
     let activeDataSpaceDefault = false;
     let deleteDataSpaceId: string | null = null;
     let deleteDataSpaceConfirmation = "";
+    let dataSpaceQuery = "";
+    let dataSpacePage = 0;
     let deleteConfirmation = "";
     let resetToken = "";
     let busy = false;
+    const dataSpacePageSize = 8;
     const returnTo = safeReturnTo(new URL(location.href).searchParams.get("returnTo"));
 
     $: configuration = status;
     $: activeDataSpace = account?.dataSpaces.find(({ id }) => id === account?.activeDataSpaceId);
     $: dataSpaceToDelete = account?.dataSpaces.find(({ id }) => id === deleteDataSpaceId);
+    $: matchingDataSpaces = (account?.dataSpaces ?? []).filter(({ name }) =>
+        name.toLocaleLowerCase().includes(dataSpaceQuery.trim().toLocaleLowerCase()),
+    );
+    $: dataSpacePageCount = Math.max(1, Math.ceil(matchingDataSpaces.length / dataSpacePageSize));
+    $: if (dataSpacePage >= dataSpacePageCount) dataSpacePage = dataSpacePageCount - 1;
+    $: visibleDataSpaces = matchingDataSpaces.slice(
+        dataSpacePage * dataSpacePageSize,
+        dataSpacePage * dataSpacePageSize + dataSpacePageSize,
+    );
     $: dashboardTabs = [
         { id: "data-spaces", label: messages.account.dataSpacesTab, icon: "service" },
         { id: "groups", label: messages.account.groupsTab, icon: "group" },
+        { id: "cards", label: messages.cardManagement.title, icon: "content" },
         { id: "devices", label: messages.account.devicesTab, icon: "session" },
         { id: "account-data", label: messages.account.accountDataTab, icon: "account" },
     ] satisfies ResponsiveTab[];
@@ -140,6 +154,12 @@
         const active = snapshot.dataSpaces.find(({ id }) => id === snapshot.activeDataSpaceId);
         activeDataSpaceName = active?.name ?? "";
         activeDataSpaceDefault = active?.defaultForOwner ?? false;
+        if (!dataSpaceQuery.trim()) {
+            const activeIndex = snapshot.dataSpaces.findIndex(
+                ({ id }) => id === snapshot.activeDataSpaceId,
+            );
+            dataSpacePage = Math.max(0, Math.floor(activeIndex / dataSpacePageSize));
+        }
         if (!snapshot.dataSpaces.some(({ id }) => id === deleteDataSpaceId)) {
             cancelDataSpaceDeletion();
         }
@@ -285,8 +305,41 @@
                             </div>
                             <span class="account-count-badge">{account.dataSpaces.length}</span>
                         </div>
+                        <label class="data-space-search">
+                            <span>{messages.account.searchDataSpaces}</span>
+                            <span class="data-space-search-control">
+                                <UiIcon name="service" />
+                                <input
+                                    type="search"
+                                    value={dataSpaceQuery}
+                                    placeholder={messages.account.searchDataSpacesPlaceholder}
+                                    on:input={(event) => {
+                                        dataSpaceQuery = event.currentTarget.value;
+                                        dataSpacePage = 0;
+                                    }}
+                                />
+                            </span>
+                        </label>
+                        <div class="data-space-list-summary" aria-live="polite">
+                            <strong
+                                >{messages.account.dataSpaceResults(
+                                    matchingDataSpaces.length,
+                                )}</strong
+                            >
+                            <span
+                                >{messages.account.dataSpaceResultRange(
+                                    matchingDataSpaces.length
+                                        ? dataSpacePage * dataSpacePageSize + 1
+                                        : 0,
+                                    Math.min(
+                                        dataSpacePage * dataSpacePageSize + dataSpacePageSize,
+                                        matchingDataSpaces.length,
+                                    ),
+                                )}</span
+                            >
+                        </div>
                         <div class="data-space-list">
-                            {#each account.dataSpaces as space}
+                            {#each visibleDataSpaces as space (space.id)}
                                 <article
                                     class:active={space.id === account.activeDataSpaceId}
                                     class="data-space-card"
@@ -379,8 +432,36 @@
                                         </div>
                                     {/if}
                                 </article>
+                            {:else}
+                                <div class="data-space-empty" role="status">
+                                    <span aria-hidden="true"><UiIcon name="search" /></span>
+                                    <strong>{messages.account.noMatchingDataSpaces}</strong>
+                                    <p>{messages.account.noMatchingDataSpacesHint}</p>
+                                </div>
                             {/each}
                         </div>
+                        {#if dataSpacePageCount > 1}
+                            <nav
+                                class="data-space-pagination"
+                                aria-label={messages.account.dataSpacePages}
+                            >
+                                <button
+                                    class="secondary"
+                                    type="button"
+                                    disabled={dataSpacePage === 0}
+                                    on:click={() => (dataSpacePage -= 1)}
+                                    >‹ {messages.common.previous}</button
+                                >
+                                <span>{dataSpacePage + 1} / {dataSpacePageCount}</span>
+                                <button
+                                    class="secondary"
+                                    type="button"
+                                    disabled={dataSpacePage === dataSpacePageCount - 1}
+                                    on:click={() => (dataSpacePage += 1)}
+                                    >{messages.common.next} ›</button
+                                >
+                            </nav>
+                        {/if}
                         {#if account.dataSpaces.length === 1}
                             <p class="account-note">{messages.account.lastDataSpaceHint}</p>
                         {/if}
@@ -459,6 +540,12 @@
                 {#key activeDataSpace.id}
                     <GroupManagement dataSpaceName={activeDataSpace.name} />
                 {/key}
+            {:else if dashboardTab === "cards" && activeDataSpace}
+                <div class="account-tab-panel" role="tabpanel">
+                    {#key activeDataSpace.id}
+                        <CardManagement embedded />
+                    {/key}
+                </div>
             {:else if dashboardTab === "devices"}
                 <div class="account-tab-panel" role="tabpanel">
                     <section

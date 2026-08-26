@@ -1,9 +1,14 @@
 import { AppDataSource } from "./database/dataSource";
 import { RoomService } from "../packages/application/roomService";
 import { CryptoRandomSource } from "../packages/application/cryptoRandomSource";
-import { TypeOrmCardRepository, TypeOrmRealtimeRoomRepository } from "../packages/persistence";
+import {
+    TypeOrmCardPolicyRepository,
+    TypeOrmCardRepository,
+    TypeOrmRealtimeRoomRepository,
+} from "../packages/persistence";
 import { CardEntity } from "./database/entities/card/CardEntity";
 import settings from "./settings";
+import { CardPolicyService } from "../packages/application/cardPolicyService";
 
 let instance: RoomService | undefined;
 export function getRoomService(): RoomService {
@@ -21,5 +26,6 @@ export function getRoomService(): RoomService {
             maximumParticipants: settings.value.roomMaximumParticipants,
             maximumPlayers: settings.value.roomMaximumPlayers,
         },
+        new CardPolicyService(new TypeOrmCardPolicyRepository(AppDataSource)),
     ));
 }

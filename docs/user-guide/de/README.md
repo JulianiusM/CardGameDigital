@@ -13,7 +13,8 @@ sicheren Spielabend und typische Verbindungsprobleme.
 4. **Grenzen und respektvolles Spielen** – Grenzen setzen, Karten ablehnen und
    Einvernehmen bewahren.
 5. **Konten und gespeicherte Daten** – schnelle Runden, DataSpaces, Gruppen und Export.
-6. **Probleme lösen** – Hilfe bei Verbindung, fehlenden Karten und Hostausfall.
+6. **Kartenverwaltung** – geerbte Standards, sichere Regeln und einzelne Ausnahmen.
+7. **Probleme lösen** – Hilfe bei Verbindung, fehlenden Karten und Hostausfall.
 
 Wähle oben ein Hilfethema. Für eine spontane Runde reichen normalerweise Schnellstart
 und Grenzen; die anderen Seiten kannst du während des Spiels öffnen.

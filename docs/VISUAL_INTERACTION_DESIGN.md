@@ -7,8 +7,8 @@ Warm, playful, card-first, and adaptive. A golden-orange visual universe that ch
 |                     |                                                                                 |
 | ------------------- | ------------------------------------------------------------------------------- |
 | **Document status** | Canonical visual and interaction design reference                               |
-| **Version**         | 1.2                                                                             |
-| **Date**            | 23 August 2026                                                                  |
+| **Version**         | 1.3                                                                             |
+| **Date**            | 25 August 2026                                                                  |
 | **Scope**           | Look, feel, visual hierarchy, iconography, motion, and interaction presentation |
 
 _Companion references: Game Design Document v1.4 for gameplay/product behavior; Technical Architecture Document v1.2 for implementation constraints. This document is authoritative within its visual-design scope._
@@ -261,12 +261,17 @@ from local credentials by a labelled horizontal divider. It uses an espresso sur
 warm-paper text, a sunflower icon block, provider name, and a short redirect hint so it
 cannot visually merge into the containing card or appear attached to a corner.
 
-**Account overview.** Authenticated management uses four golden-capsule tabs:
-DataSpaces, Groups, signed-in devices, and data/account actions. The first tab begins with a
+**Account overview.** Authenticated management uses five golden-capsule tabs:
+DataSpaces, Groups, Card management, signed-in devices, and data/account actions. The first tab begins with a
 short explanation of what a DataSpace separates and explicitly notes that quick rounds
 remain unsaved. The selected DataSpace is visible in the page header and in its list
 row. Create, rename/default, device revocation, export, sign-out, and destructive actions
 live in individually bounded sections rather than one continuous control list.
+
+**Main-menu ownership status.** When a DataSpace is available, a small warm context chip
+in the corner status area names it without interrupting the hero-to-play hierarchy. It
+remains readable with long names; authenticated use may link the chip to Account
+management. Anonymous public quick play shows no misleading DataSpace status.
 
 **Group management.** The Account Groups tab uses a searchable, paged master/detail
 layout: the bounded list stays quick with hundreds of Groups and the selected Group owns
@@ -348,11 +353,12 @@ meaning._
 
 # 11. Intensity gradient
 
-The intensity used to tune the adaptive background is the relative Card intensity within
-its Question Category or DareType. The category/type already selects a separately tuned
-family, so the derived global intensity is informative but must not tune the family a
-second time. A Childhood question stays golden/amber and a SEX dare stays berry/raspberry
-regardless of their position in the global progression.
+Question Category or DareType selects the adaptive background family. The Card's derived
+global intensity tunes that family's color, density, opacity, and motion so the atmosphere
+tracks the same progression players see in the global meter. Between Cards, the last active
+family and global intensity remain in place instead of jumping back to a generic lobby scene.
+A Childhood question therefore stays golden/amber and a SEX dare stays berry/raspberry,
+while both still deepen consistently as global intensity rises.
 
 The active Card shows both values as a compact pair of symbol-led five-mark meters: a Card
 symbol for relative Card intensity and a globe symbol for derived global intensity. No
@@ -500,5 +506,85 @@ following are true:
   within each column, and keep individual player rows visually neutral.
 
 - Reduced-motion presentation remains complete and visually coherent.
+
+## Card-management workspace
+
+Card management uses the same Warm Paper surfaces, rounded edges, tactile controls,
+Sunflower primary actions, Espresso text, icon language, and visible focus treatment as
+game setup. It is a bounded master/detail workspace, never an unstyled administration
+table. Every input—including search, numeric fields, file import, and structured filter
+selects—receives an intentional Golden Mischief surface, focus ring, and touch target.
+Main directive choices use themed segmented controls instead of browser-native selects.
+Ordinal custom values use a shared themed range control, with the least intense value
+on the left and the most intense value on the right. This includes General → Explicit
+social sensitivity and Card intensity 1 → 5. Returning to Custom restores the person's
+last in-editor value. A new custom sensitivity begins at Explicit, while a new custom
+Card-intensity replacement begins at 1 and explains that the value replaces every
+matching Card rather than limiting allowed intensity. The same scale component presents
+the explicit game-level maximum social sensitivity in Customize Experience. The
+Child-friendly profile appears in the ordinary profile
+selector and copies editable topic, action, flag, sensitivity, and pacing defaults into
+the same Customize Experience controls as every other profile.
+The one-game Card-management workspace omits editable Card-sensitivity directives because
+Customize Experience already exposes the Session's maximum social-sensitivity ceiling.
+Sensitivity remains a searchable Card facet and rule condition.
+
+The scope summary precedes three consistently named tiers: Scope Defaults, Conditional
+Rules, and Card Overrides. Its picker opens only on request, labels DataSpace baseline
+and Group overrides as distinct policy levels, and supplies search plus bounded Group
+pages. Three-state controls always contain text; color is supplementary.
+Defaults group availability/history separately from the explicitly titled **Replace
+Card properties** section. Card detail presents each property as a responsive provenance
+card showing
+Catalog value, effective value, local directive, and source together—never as a wide
+table. The rule editor exposes collapsible groups of structured metadata fields rather
+than a free-form expression language and shows a full preview count plus a few Card
+examples, including a prominent zero-match warning. New rules are disabled drafts and
+may be saved without previewing. Preview is clearly labelled as an optional read-only
+confidence check; a condition edit only invalidates an earlier preview.
+
+Searchable rule lists render ten entries at a time. Card results are server-filtered and
+cursor-paged, render 24 entries at a time, and visibly disclose that only the bounded
+page is loaded. DataSpace and policy-scope Group browsers similarly render eight entries
+at a time; setup and account Group browsers use bounded pages sized for their context.
+Previous and Next actions occupy equal columns. A selected Card exposes its complete
+canonical UUID with safe wrapping; IDs are never shortened into ambiguous prefixes.
+The taxonomy label and UUID share one aligned metadata row with a visible divider.
+Long names truncate in master rows without hiding their selected detail. Empty, loading,
+disabled, destructive-confirmation, and no-preview states use complete styled surfaces;
+the interface never invokes a native confirmation dialog.
+
+At narrow-phone width the master and detail regions stack, action targets remain at
+least 44 CSS pixels, provenance cards become one column, and the page does not overflow.
+Tabs may scroll within their own labelled control without widening the viewport. Play
+profiles remain the only quick-start content preset, so ordinary games require no
+additional policy concept or decision.
+The Account version also stacks master/detail regions inside the Account panel even on
+a wide viewport, because available component width—not just viewport width—governs
+readability. It uses the standard compact Account-tab explainer instead of introducing
+a second page-scale heading. Standalone Card management uses the same outer Card frame
+as Help and Account. Scope actions share motion, shape, touch size, and no-wrap behavior,
+while scope option names and descriptions wrap rather than truncate. In a wide standalone
+master/detail view, expanding Card-search Conditions uses normal document flow; the
+master pane itself must not gain a competing vertical scrollbar while page space is
+available. Only the bounded result list may scroll independently when its own result
+height requires it.
+Every Card-management button family—including scope rows, segmented decisions, value
+chips, rules, and Card results—uses the standard tactile hover lift and press compression.
+Scale thumbs and selected ticks respond smoothly. Expanded filters and policy content
+enter and leave with a short restrained reveal. Workspace tabs, selected rule/Card
+details, inline confirmations, loading/empty states, and the embedded Account tab use the
+same restrained panel transition so layout changes never appear as hard jumps. All such
+motion obeys both the product reduced-motion preference and the operating-system
+preference.
+
+Before-start settings surfaces use one small eligible-Card status chip: a compact numeric
+total, proposed player count, and optional starting-pool line. It uses a quiet warm
+surface without a raised shadow, updates after a short debounce, retains an accessible
+live status, and presents a clear zero/error state without blocking the rest of setup.
+The Party Screen lobby keeps this chip beside the compact settings actions so the player
+roster remains the dominant content. Once play begins, the Room code joins the round,
+Card, remaining-pool, and live chips and receives the same adaptive contrast treatment.
+Links from active-game settings open Card management separately and preserve the game.
 
 **End of canonical visual-design scope.**

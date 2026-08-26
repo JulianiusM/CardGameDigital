@@ -9,6 +9,7 @@ import {
     OPERATIONAL_FLAGS,
     QUESTION_CATEGORIES,
     SequenceRandomSource,
+    SOCIAL_SENSITIVITIES,
     selectWeighted,
 } from "../../src/packages/game-core";
 import { boundaries, card, profile } from "../support/game";
@@ -104,6 +105,30 @@ describe("composable card eligibility", () => {
                 ],
             }),
         ).toContain("OPERATIONAL_FLAG");
+    });
+
+    it("applies the explicit social-sensitivity ceiling independently from intensity", () => {
+        const intimate = card({
+            id: "intimate" as never,
+            intensity: 1,
+            socialSensitivity: SOCIAL_SENSITIVITIES.INTIMATE,
+        });
+        expect(
+            eligibilityReasons(intimate, {
+                ...request(),
+                profile: profile({
+                    maximumSocialSensitivity: SOCIAL_SENSITIVITIES.DEEP_PERSONAL,
+                }),
+            }),
+        ).toContain("SOCIAL_SENSITIVITY");
+        expect(
+            eligibilityReasons(intimate, {
+                ...request(),
+                profile: profile({
+                    maximumSocialSensitivity: SOCIAL_SENSITIVITIES.INTIMATE,
+                }),
+            }),
+        ).not.toContain("SOCIAL_SENSITIVITY");
     });
 
     it("enforces Session history, Group history, AlwaysEligible and repeat cooldown", () => {

@@ -1,5 +1,12 @@
 import { z } from "zod";
-import { DARE_TYPES, OPERATIONAL_FLAGS, QUESTION_CATEGORIES } from "../game-core";
+import {
+    DARE_TYPES,
+    OPERATIONAL_FLAGS,
+    QUESTION_CATEGORIES,
+    SOCIAL_SENSITIVITIES,
+} from "../game-core";
+export * from "./cardPolicy";
+import { sessionCardPolicySchema } from "./cardPolicy";
 
 export const PROTOCOL_VERSION = 2 as const;
 export const protocolErrorCodeSchema = z.enum([
@@ -74,6 +81,7 @@ export const effectiveGameSettingsSchema = z
         enabledQuestionCategoryIds: z.array(z.enum(QUESTION_CATEGORIES)),
         enabledDareTypeIds: z.array(z.enum(DARE_TYPES)),
         blockedOperationalFlags: z.array(z.enum(OPERATIONAL_FLAGS)),
+        maximumSocialSensitivity: z.enum(SOCIAL_SENSITIVITIES).default("EXPLICIT"),
         startingIntensity: z
             .union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5)])
             .default(1),
@@ -121,6 +129,7 @@ export const roomGameSettingsSchema = z
         neverHaveIEverRevealMode: z
             .enum(["ANONYMOUS_AGGREGATE", "NAMED_ANSWERS"])
             .default("ANONYMOUS_AGGREGATE"),
+        cardPolicy: sessionCardPolicySchema,
         configuration: effectiveGameSettingsSchema,
     })
     .strict();

@@ -11,6 +11,7 @@ import {
     SESSION_STATES,
     SequenceRandomSource,
     StaleSessionRevisionError,
+    compactCompiledCardPolicyEntry,
 } from "../../src/packages/game-core";
 import { boundaries, card, profile } from "../support/game";
 
@@ -53,6 +54,69 @@ describe("shared GameSession state machine", () => {
         session.advance(4);
         expect(session.roundNumber).toBe(2);
         expect(session.activePlayer?.id).toBe("a");
+    });
+
+    it("projects the distinct authoritative Card pool remaining after history", () => {
+        const session = new GameSession(
+            {
+                id: "pool",
+                mode: GAME_MODES.CLASSIC,
+                players,
+                profile: profile(),
+                cardLocale: "en-GB",
+            },
+            new SequenceRandomSource([0]),
+        );
+        const first = card({ id: "first" as never });
+        const second = card({ id: "second" as never });
+        const dare = card({
+            id: "pool-dare" as never,
+            cardType: CARD_TYPES.DARE,
+            questionCategoryId: null,
+            dareTypeId: DARE_TYPES.SILLY,
+        });
+        const cards = [first, second, dare];
+
+        expect(session.remainingEligibleCardCount(cards)).toBe(3);
+        session.chooseCardType(0, CARD_TYPES.QUESTION, cards);
+        expect(session.remainingEligibleCardCount(cards)).toBe(2);
+    });
+
+    it("applies compact compiled policy before Group-history eligibility", () => {
+        const seen = card({ id: "compiled-history" as never });
+        const session = new GameSession(
+            {
+                id: "compiled-policy",
+                mode: GAME_MODES.CLASSIC,
+                players,
+                profile: profile(),
+                cardLocale: "en-GB",
+                groupHistoryCardIds: new Set([seen.id]),
+                compiledCardPolicy: {
+                    catalog: {
+                        catalogId: "test",
+                        sequence: 1,
+                        catalogVersion: "test-1",
+                        contract: "game-card-catalog/v2",
+                        artifactDigest: "0".repeat(64),
+                    },
+                    policyRevisions: { dataSpace: 1, group: null },
+                    cards: [
+                        compactCompiledCardPolicyEntry({
+                            ...seen,
+                            policyAvailable: true,
+                            alwaysEligible: true,
+                        }),
+                    ],
+                },
+            },
+            new SequenceRandomSource([0]),
+        );
+
+        expect(session.remainingEligibleCardCount([seen])).toBe(1);
+        expect(
+            GameSession.restore(session.toRuntimeState(), new SequenceRandomSource([0])),
+        ).toBeInstanceOf(GameSession);
     });
 
     it("rejects stale revisions and commands invalid for the current mode/state", () => {
@@ -268,13 +332,13 @@ describe("shared GameSession state machine", () => {
         const question = card({ id: "question" as never, repeatableInSession: true });
         const blockedConversation = card({
             id: "blocked-conversation" as never,
-            cardType: CARD_TYPES.CONVERSATION,
+            cardType: CARD_TYPES.CONVERSATION_META,
             questionCategoryId: null,
             operationalFlags: [OPERATIONAL_FLAGS.REQUIRES_PHYSICAL_CONTACT],
         });
         const allowedConversation = card({
             id: "allowed-conversation" as never,
-            cardType: CARD_TYPES.CONVERSATION,
+            cardType: CARD_TYPES.CONVERSATION_META,
             questionCategoryId: null,
         });
 

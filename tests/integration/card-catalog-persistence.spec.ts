@@ -7,6 +7,10 @@ import { CardCatalogVersionEntity } from "../../src/modules/database/entities/ca
 import { CardEntity } from "../../src/modules/database/entities/card/CardEntity";
 import { CardLocalizationEntity } from "../../src/modules/database/entities/card/CardLocalizationEntity";
 import { LocaleEntity } from "../../src/modules/database/entities/card/LocaleEntity";
+import { QuestionCategoryEntity } from "../../src/modules/database/entities/card/QuestionCategoryEntity";
+import { DataSpaceGameSettingsEntity } from "../../src/modules/database/entities/game/DataSpaceGameSettingsEntity";
+import { GroupEntity } from "../../src/modules/database/entities/game/GroupEntity";
+import { DataSpace } from "../../src/modules/database/entities/user/DataSpace";
 import { dataSourceOptions } from "../../src/modules/database/dataSource";
 import { resolveSettings } from "../../src/modules/settings";
 import { TypeOrmCardRepository } from "../../src/packages/persistence";
@@ -68,6 +72,91 @@ describe("bundled Card catalog FULL reconciliation", () => {
         ).rejects.toThrow("version 'test-1' was reused");
     });
 
+    it("continues sequence ordering across the immutable v1 to v2 cutover", async () => {
+        const db = await database();
+        const versions = db.getRepository(CardCatalogVersionEntity);
+        const appliedAt = new Date("2026-08-01T00:00:00.000Z");
+        await versions.insert({
+            catalogId: "core",
+            sequence: 7,
+            contract: "game-card-catalog/v1",
+            catalogVersion: "2026.08.01-1",
+            artifactDigest: "a".repeat(64),
+            generatedAt: appliedAt,
+            appliedAt,
+            defaultLocale: "de-DE",
+            cardCount: 1,
+            localeCount: 1,
+        });
+
+        await expect(
+            applyCardCatalogSnapshot(
+                db,
+                catalogArtifact(cardCatalog({ sequence: 8, catalogVersion: "2026.09.01-1" })),
+            ),
+        ).resolves.toBe("APPLIED");
+        expect(
+            (await versions.find({ order: { sequence: "ASC" } })).map(({ sequence, contract }) => ({
+                sequence,
+                contract,
+            })),
+        ).toEqual([
+            { sequence: 7, contract: "game-card-catalog/v1" },
+            { sequence: 8, contract: "game-card-catalog/v2" },
+        ]);
+    });
+
+    it("replaces a higher-sequence development fixture with the first producer release", async () => {
+        const db = await database();
+        const versions = db.getRepository(CardCatalogVersionEntity);
+        const appliedAt = new Date("2026-08-01T00:00:00.000Z");
+        await versions.insert({
+            catalogId: "development",
+            sequence: 1,
+            contract: "game-card-catalog/v1",
+            catalogVersion: "development-fixture-1",
+            artifactDigest: "a".repeat(64),
+            generatedAt: appliedAt,
+            appliedAt,
+            defaultLocale: "de-DE",
+            cardCount: 4,
+            localeCount: 2,
+        });
+        const fixture = cardCatalog({
+            sequence: 20,
+            catalogVersion: "development-fixture-20",
+        });
+        const release = cardCatalog({
+            sequence: 1,
+            catalogVersion: "2026.08.25-1",
+        });
+
+        await expect(applyCardCatalogSnapshot(db, catalogArtifact(fixture))).resolves.toBe(
+            "APPLIED",
+        );
+        await expect(applyCardCatalogSnapshot(db, catalogArtifact(release))).resolves.toBe(
+            "APPLIED",
+        );
+
+        expect(
+            await versions.find({
+                order: { sequence: "ASC" },
+            }),
+        ).toMatchObject([
+            {
+                catalogId: "core",
+                sequence: 1,
+                catalogVersion: "2026.08.25-1",
+            },
+        ]);
+        await expect(applyCardCatalogSnapshot(db, catalogArtifact(release))).resolves.toBe(
+            "UNCHANGED",
+        );
+        await expect(applyCardCatalogSnapshot(db, catalogArtifact(fixture))).resolves.toBe(
+            "NEWER_INSTALLED",
+        );
+    });
+
     it("updates text without changing UUID and soft-disables/re-enables localizations", async () => {
         const db = await database();
         const first = cardCatalog();
@@ -79,13 +168,13 @@ describe("bundled Card catalog FULL reconciliation", () => {
             { locale: "fr-FR", text: "Une question" },
         ];
         second.locales.push({ id: "fr-FR", nativeName: "Français", active: true });
-        second.questionCategories[0].localizations.push({
+        second.taxonomy.questionCategories[0].localizations.push({
             locale: "fr-FR",
             label: "Quotidien",
             description: null,
         });
-        second.questionCategories[0].localizations[1].label = "Daily life";
-        second.cards[0].operationalFlags = ["REQUIRES_PRIVATE_SPACE"];
+        second.taxonomy.questionCategories[0].localizations[1].label = "Daily life";
+        second.cards[0].operationalFlags = ["REQUIRES_PHYSICAL_CONTACT"];
         await applyCardCatalogSnapshot(db, catalogArtifact(second));
         expect(
             await db.getRepository(CardEntity).findOneByOrFail({ id: first.cards[0].id }),
@@ -106,7 +195,7 @@ describe("bundled Card catalog FULL reconciliation", () => {
             await db.query("SELECT flag FROM card_operational_flags WHERE card_id = ?", [
                 first.cards[0].id,
             ]),
-        ).toEqual([{ flag: "REQUIRES_PRIVATE_SPACE" }]);
+        ).toEqual([{ flag: "REQUIRES_PHYSICAL_CONTACT" }]);
         expect(
             await db.query(
                 "SELECT label FROM question_category_translations WHERE category_id = ? AND locale = ?",
@@ -127,6 +216,192 @@ describe("bundled Card catalog FULL reconciliation", () => {
         );
     });
 
+    it("removes saved Card-language choices that the incoming catalog no longer offers", async () => {
+        const db = await database();
+        await applyCardCatalogSnapshot(db, catalogArtifact(cardCatalog()));
+        const dataSpace = await db
+            .getRepository(DataSpace)
+            .save({ name: "Catalog locale", defaultForOwner: true });
+        await db.getRepository(DataSpaceGameSettingsEntity).save({
+            dataSpaceId: dataSpace.id,
+            preferredProfileId: "PROFILE_FRIENDS",
+            startingIntensity: 1,
+            maximumIntensity: 3,
+            maximumSocialSensitivity: "PERSONAL",
+            intensityProgressionUnit: "CARDS",
+            intensityProgressionInterval: 2,
+            intensityProgressionIncrement: 1,
+            randomQuestionRatio: 0.6,
+            letsTalkMetaInterval: 5,
+            defaultGroupId: null,
+            customConfigurationJson: null,
+            cardLanguageSettingsJson: JSON.stringify({
+                cardLocale: "en-GB",
+                cardFallbackEnabled: true,
+                cardFallbackLocales: ["de-DE"],
+            }),
+            updatedAt: new Date(),
+        });
+        const group = await db.getRepository(GroupEntity).save({
+            id: "10000000-0000-4000-8000-000000000020",
+            dataSpaceId: dataSpace.id,
+            name: "Catalog locale group",
+            membersJson: "[]",
+            createdAt: new Date(),
+            updatedAt: new Date(),
+            historyResetAt: null,
+            preferredProfileId: "PROFILE_FRIENDS",
+            customConfigurationJson: null,
+            cardLanguageSettingsJson: JSON.stringify({
+                cardLocale: "de-DE",
+                cardFallbackEnabled: true,
+                cardFallbackLocales: ["en-GB"],
+            }),
+        });
+
+        const next = cardCatalog({ sequence: 2, catalogVersion: "test-2" });
+        next.locales = next.locales.filter(({ id }) => id === "de-DE");
+        next.cards[0].localizations = next.cards[0].localizations.filter(
+            ({ locale }) => locale === "de-DE",
+        );
+        next.taxonomy.questionCategories[0].localizations =
+            next.taxonomy.questionCategories[0].localizations.filter(
+                ({ locale }) => locale === "de-DE",
+            );
+        next.taxonomy.dareTypes[0].localizations = next.taxonomy.dareTypes[0].localizations.filter(
+            ({ locale }) => locale === "de-DE",
+        );
+        await applyCardCatalogSnapshot(db, catalogArtifact(next));
+
+        expect(
+            await db.getRepository(DataSpaceGameSettingsEntity).findOneByOrFail({
+                dataSpaceId: dataSpace.id,
+            }),
+        ).toMatchObject({ cardLanguageSettingsJson: null });
+        expect(
+            JSON.parse(
+                (await db.getRepository(GroupEntity).findOneByOrFail({ id: group.id }))
+                    .cardLanguageSettingsJson!,
+            ),
+        ).toEqual({
+            cardLocale: "de-DE",
+            cardFallbackEnabled: false,
+            cardFallbackLocales: [],
+        });
+    });
+
+    it("starts a fresh Group history epoch only when the catalog lineage changes", async () => {
+        const db = await database();
+        await applyCardCatalogSnapshot(
+            db,
+            catalogArtifact(
+                cardCatalog({
+                    sequence: 20,
+                    catalogVersion: "development-fixture-20",
+                }),
+            ),
+        );
+        const dataSpace = await db
+            .getRepository(DataSpace)
+            .save({ name: "Catalog history", defaultForOwner: true });
+        const group = await db.getRepository(GroupEntity).save({
+            id: "10000000-0000-4000-8000-000000000030",
+            dataSpaceId: dataSpace.id,
+            name: "Catalog history group",
+            membersJson: "[]",
+            createdAt: new Date("2026-08-01T00:00:00.000Z"),
+            updatedAt: new Date("2026-08-01T00:00:00.000Z"),
+            historyResetAt: null,
+            preferredProfileId: "PROFILE_FRIENDS",
+            customConfigurationJson: null,
+            cardLanguageSettingsJson: null,
+        });
+        const beforeReplacement = Date.now();
+        await expect(
+            applyCardCatalogSnapshot(
+                db,
+                catalogArtifact(
+                    cardCatalog({
+                        sequence: 1,
+                        catalogVersion: "2026.08.25-1",
+                    }),
+                ),
+            ),
+        ).resolves.toBe("APPLIED");
+
+        const rebased = await db.getRepository(GroupEntity).findOneByOrFail({ id: group.id });
+        expect(rebased.historyResetAt?.getTime()).toBeGreaterThanOrEqual(beforeReplacement);
+
+        const currentGroup = await db.getRepository(GroupEntity).save({
+            ...group,
+            id: "10000000-0000-4000-8000-000000000031",
+            name: "Current catalog group",
+            createdAt: new Date(),
+            updatedAt: new Date(),
+            historyResetAt: null,
+        });
+        await expect(
+            applyCardCatalogSnapshot(
+                db,
+                catalogArtifact(cardCatalog({ sequence: 2, catalogVersion: "2026.08.26-1" })),
+            ),
+        ).resolves.toBe("APPLIED");
+        await expect(
+            db.getRepository(GroupEntity).findOneByOrFail({ id: currentGroup.id }),
+        ).resolves.toMatchObject({ historyResetAt: null });
+    });
+
+    it("persists effective taxonomy defaults and recalculates inherited Card baselines", async () => {
+        const db = await database();
+        const categories = db.getRepository(QuestionCategoryEntity);
+        const cards = db.getRepository(CardEntity);
+        const first = cardCatalog();
+        await applyCardCatalogSnapshot(db, catalogArtifact(first));
+
+        expect(await categories.findOneByOrFail({ id: "CAT_EVERYDAY" })).toMatchObject({
+            defaultSocialSensitivity: "PERSONAL",
+            defaultMinimumPlayerCount: 2,
+            defaultMaximumPlayerCount: null,
+        });
+        expect(await cards.findOneByOrFail({ id: first.cards[0].id })).toMatchObject({
+            socialSensitivity: "PERSONAL",
+            minimumPlayerCount: 2,
+            maximumPlayerCount: null,
+        });
+
+        const second = cardCatalog({ sequence: 2, catalogVersion: "test-2" });
+        second.taxonomy.questionCategories[0].defaultSocialSensitivity = "DEEP_PERSONAL";
+        second.taxonomy.questionCategories[0].defaultMinimumPlayerCount = 3;
+        second.taxonomy.questionCategories[0].defaultMaximumPlayerCount = 7;
+        second.cards[0].socialSensitivity = "EXPLICIT";
+        second.cards[0].minimumPlayerCount = 4;
+        second.cards[0].maximumPlayerCount = null;
+        await applyCardCatalogSnapshot(db, catalogArtifact(second));
+
+        expect(await categories.findOneByOrFail({ id: "CAT_EVERYDAY" })).toMatchObject({
+            defaultSocialSensitivity: "DEEP_PERSONAL",
+            defaultMinimumPlayerCount: 3,
+            defaultMaximumPlayerCount: 7,
+        });
+        expect(await cards.findOneByOrFail({ id: second.cards[0].id })).toMatchObject({
+            socialSensitivity: "EXPLICIT",
+            minimumPlayerCount: 4,
+            maximumPlayerCount: null,
+        });
+
+        const third = cardCatalog({ sequence: 3, catalogVersion: "test-3" });
+        third.taxonomy.questionCategories[0].defaultSocialSensitivity = "INTIMATE";
+        third.taxonomy.questionCategories[0].defaultMinimumPlayerCount = 5;
+        third.taxonomy.questionCategories[0].defaultMaximumPlayerCount = 6;
+        await applyCardCatalogSnapshot(db, catalogArtifact(third));
+
+        expect(await cards.findOneByOrFail({ id: third.cards[0].id })).toMatchObject({
+            socialSensitivity: "INTIMATE",
+            minimumPlayerCount: 5,
+            maximumPlayerCount: 6,
+        });
+    });
+
     it("uses exact database Card locales and excludes missing localizations", async () => {
         const db = await database();
         const input = cardCatalog();
@@ -135,11 +410,11 @@ describe("bundled Card catalog FULL reconciliation", () => {
             { locale: "de-DE", text: "Nur Deutsch" },
             { locale: "fr-FR", text: "Seulement français" },
         ];
-        input.questionCategories[0].localizations = [
+        input.taxonomy.questionCategories[0].localizations = [
             { locale: "de-DE", label: "Alltag", description: null },
             { locale: "fr-FR", label: "Quotidien", description: null },
         ];
-        input.dareTypes[0].localizations.push({
+        input.taxonomy.dareTypes[0].localizations.push({
             locale: "fr-FR",
             label: "Drôle",
             description: null,
@@ -164,10 +439,23 @@ describe("bundled Card catalog FULL reconciliation", () => {
     it("soft-retires missing Cards, reactivates their UUID, and never downgrades", async () => {
         const db = await database();
         const first = cardCatalog();
+        const retained = structuredClone(first.cards[0]);
+        retained.id = "10000000-0000-4000-8000-000000000002";
+        retained.localizations = [
+            { locale: "de-DE", text: "Eine zweite Frage" },
+            { locale: "en-GB", text: "A second question" },
+        ];
+        first.cards.push(retained);
         await applyCardCatalogSnapshot(db, catalogArtifact(first));
         await applyCardCatalogSnapshot(
             db,
-            catalogArtifact(cardCatalog({ sequence: 2, catalogVersion: "test-2", cards: [] })),
+            catalogArtifact(
+                cardCatalog({
+                    sequence: 2,
+                    catalogVersion: "test-2",
+                    cards: [retained],
+                }),
+            ),
         );
         expect(
             await db.getRepository(CardEntity).findOneByOrFail({ id: first.cards[0].id }),

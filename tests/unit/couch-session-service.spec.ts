@@ -23,7 +23,7 @@ const cards = [
         dareTypeId: "DARE_SILLY",
         repeatableInSession: true,
     }),
-    card({ id: "meta" as never, cardType: CARD_TYPES.CONVERSATION, questionCategoryId: null }),
+    card({ id: "meta" as never, cardType: CARD_TYPES.CONVERSATION_META, questionCategoryId: null }),
 ];
 const repository: CardRepository = {
     isLocaleActive: async () => true,
@@ -157,13 +157,13 @@ describe("CouchSessionService", () => {
         await expect(
             service.create({
                 ...input(GAME_MODES.CLASSIC),
-                profileId: "PROFILE_COUPLES_SPICY",
+                profileId: "PROFILE_SPICY",
             }),
         ).rejects.toThrow("game.adultConfirmationRequired");
         expect(
             await service.create({
                 ...input(GAME_MODES.CLASSIC),
-                profileId: "PROFILE_COUPLES_SPICY",
+                profileId: "PROFILE_SPICY",
                 adultContentConfirmed: true,
             }),
         ).toMatchObject({ revision: 0 });
