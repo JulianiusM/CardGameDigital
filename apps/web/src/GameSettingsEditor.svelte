@@ -2,7 +2,8 @@
     import { gameModes, messages } from "./i18n";
     import NumberInput from "./NumberInput.svelte";
     import type { CardLocaleSummary, GameProfileSummary, RoomGameSettings } from "./multiplayer";
-    import { dareTypeIds, operationalFlagIds, questionCategoryIds } from "./gameSettingsOptions";
+    import { operationalFlagIds } from "./gameSettingsOptions";
+    import { cardTaxonomies, requestCardTaxonomy } from "./cardTaxonomy";
     import { updateLinkedRange } from "./linkedRange";
     import BulkSelectionActions from "./BulkSelectionActions.svelte";
     import LanguageSelector from "./LanguageSelector.svelte";
@@ -40,6 +41,10 @@
     $: localeOptions = cardLocales.length
         ? cardLocales
         : [{ id: settings.cardLocale, nativeName: settings.cardLocale, coverage: 1 }];
+    $: requestCardTaxonomy(settings.cardLocale);
+    $: taxonomy = $cardTaxonomies[settings.cardLocale];
+    $: questionCategories = taxonomy?.questionCategories ?? [];
+    $: dareTypes = taxonomy?.dareTypes ?? [];
 
     function update(next: Partial<RoomGameSettings>): void {
         onChange({ ...settings, ...next });
@@ -382,24 +387,28 @@
             <BulkSelectionActions
                 onAll={() =>
                     updateConfiguration({
-                        enabledQuestionCategoryIds: [...questionCategoryIds],
+                        enabledQuestionCategoryIds: questionCategories.map(({ id }) => id),
                     })}
                 onNone={() => updateConfiguration({ enabledQuestionCategoryIds: [] })}
             />
         </div>
         <div class="toggle-chip-grid">
-            {#each questionCategoryIds as id}
+            {#each questionCategories as category (category.id)}
                 <button
                     type="button"
-                    class:selected={settings.configuration.enabledQuestionCategoryIds.includes(id)}
-                    aria-pressed={settings.configuration.enabledQuestionCategoryIds.includes(id)}
+                    class:selected={settings.configuration.enabledQuestionCategoryIds.includes(
+                        category.id,
+                    )}
+                    aria-pressed={settings.configuration.enabledQuestionCategoryIds.includes(
+                        category.id,
+                    )}
                     on:click={() =>
                         updateConfiguration({
                             enabledQuestionCategoryIds: toggle(
                                 settings.configuration.enabledQuestionCategoryIds,
-                                id,
+                                category.id,
                             ),
-                        })}>{messages.taxonomy[id] ?? id}</button
+                        })}>{category.label}</button
                 >
             {/each}
         </div>
@@ -410,23 +419,30 @@
             <div class="selection-section-heading">
                 <h3>{messages.setup.daresHeading}</h3>
                 <BulkSelectionActions
-                    onAll={() => updateConfiguration({ enabledDareTypeIds: [...dareTypeIds] })}
+                    onAll={() =>
+                        updateConfiguration({
+                            enabledDareTypeIds: dareTypes.map(({ id }) => id),
+                        })}
                     onNone={() => updateConfiguration({ enabledDareTypeIds: [] })}
                 />
             </div>
             <div class="toggle-chip-grid">
-                {#each dareTypeIds as id}
+                {#each dareTypes as dareType (dareType.id)}
                     <button
                         type="button"
-                        class:selected={settings.configuration.enabledDareTypeIds.includes(id)}
-                        aria-pressed={settings.configuration.enabledDareTypeIds.includes(id)}
+                        class:selected={settings.configuration.enabledDareTypeIds.includes(
+                            dareType.id,
+                        )}
+                        aria-pressed={settings.configuration.enabledDareTypeIds.includes(
+                            dareType.id,
+                        )}
                         on:click={() =>
                             updateConfiguration({
                                 enabledDareTypeIds: toggle(
                                     settings.configuration.enabledDareTypeIds,
-                                    id,
+                                    dareType.id,
                                 ),
-                            })}>{messages.taxonomy[id] ?? id}</button
+                            })}>{dareType.label}</button
                     >
                 {/each}
             </div>

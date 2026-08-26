@@ -8,6 +8,7 @@
     import type { Participant, Presence, Role, SessionView } from "./multiplayer";
 
     export let session: SessionView;
+    export let cardLocale: string;
     export let role: Role;
     export let onCommand: (type: string, payload?: object) => void;
     export let onOpenSettings: () => void;
@@ -129,6 +130,7 @@
             {#key `${session.currentCard.id}:${cardReplacementSequence}`}
                 <GameCard
                     card={session.currentCard}
+                    {cardLocale}
                     showIntensity
                     compact={role === "DISPLAY" && showingVotingResults}
                     replacementDraw={Boolean(cardReplacementReason)}

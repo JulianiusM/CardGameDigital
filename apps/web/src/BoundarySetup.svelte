@@ -1,7 +1,9 @@
 <script lang="ts">
     import { messages } from "./i18n";
     import BulkSelectionActions from "./BulkSelectionActions.svelte";
+    import { cardTaxonomies, requestCardTaxonomy } from "./cardTaxonomy";
     export let onSave: (boundaries: BoundarySelection) => void;
+    export let cardLocale: string;
 
     export type BoundarySelection = {
         disabledQuestionCategoryIds: string[];
@@ -9,9 +11,12 @@
         blockedOperationalFlags: string[];
     };
 
-    const questionCategories = Object.entries(messages.boundaries.questionCategories);
-    const dareTypes = Object.entries(messages.boundaries.dareTypes);
     const operationalFlags = Object.entries(messages.boundaries.flags);
+
+    $: requestCardTaxonomy(cardLocale);
+    $: taxonomy = $cardTaxonomies[cardLocale];
+    $: questionCategories = taxonomy?.questionCategories ?? [];
+    $: dareTypes = taxonomy?.dareTypes ?? [];
 
     let disabledQuestions: string[] = [];
     let disabledDares: string[] = [];
@@ -38,16 +43,16 @@
         <legend>{messages.boundaries.questions}</legend>
         <BulkSelectionActions
             onAll={() => (disabledQuestions = [])}
-            onNone={() => (disabledQuestions = questionCategories.map(([id]) => id))}
+            onNone={() => (disabledQuestions = questionCategories.map(({ id }) => id))}
         />
-        {#each questionCategories as category}
+        {#each questionCategories as category (category.id)}
             <label>
                 <input
                     type="checkbox"
-                    checked={disabledQuestions.includes(category[0])}
-                    on:change={() => (disabledQuestions = toggle(disabledQuestions, category[0]))}
+                    checked={disabledQuestions.includes(category.id)}
+                    on:change={() => (disabledQuestions = toggle(disabledQuestions, category.id))}
                 />
-                {category[1]}
+                {category.label}
             </label>
         {/each}
     </fieldset>
@@ -56,16 +61,16 @@
         <legend>{messages.boundaries.dares}</legend>
         <BulkSelectionActions
             onAll={() => (disabledDares = [])}
-            onNone={() => (disabledDares = dareTypes.map(([id]) => id))}
+            onNone={() => (disabledDares = dareTypes.map(({ id }) => id))}
         />
-        {#each dareTypes as dareType}
+        {#each dareTypes as dareType (dareType.id)}
             <label>
                 <input
                     type="checkbox"
-                    checked={disabledDares.includes(dareType[0])}
-                    on:change={() => (disabledDares = toggle(disabledDares, dareType[0]))}
+                    checked={disabledDares.includes(dareType.id)}
+                    on:change={() => (disabledDares = toggle(disabledDares, dareType.id))}
                 />
-                {dareType[1]}
+                {dareType.label}
             </label>
         {/each}
     </fieldset>

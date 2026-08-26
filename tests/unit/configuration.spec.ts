@@ -30,7 +30,41 @@ describe("deployment configuration", () => {
             roomMaximumPlayers: 100,
             roomReconnectGraceSeconds: 180,
             logErrorDetails: "standard",
+            httpBind: "::",
+            publicUrlConfigured: false,
         });
+    });
+
+    it("requires an explicit PUBLIC_URL for every public runtime", () => {
+        expect(() =>
+            resolveSettings(
+                {
+                    DEPLOYMENT_MODE: "public",
+                    PUBLIC_RUNTIME_SECURITY: "development",
+                    AUTH_MODE: "none",
+                    DB_TYPE: "sqlite",
+                },
+                "/definitely/missing/settings.csv",
+            ),
+        ).toThrow(/explicit PUBLIC_URL/);
+    });
+
+    it("accepts only a credential-free HTTP(S) origin as a local QR override", () => {
+        expect(
+            resolveSettings(
+                { PUBLIC_URL: "https://cards.lan.example" },
+                "/definitely/missing/settings.csv",
+            ),
+        ).toMatchObject({
+            publicUrl: "https://cards.lan.example",
+            publicUrlConfigured: true,
+        });
+        expect(() =>
+            resolveSettings(
+                { PUBLIC_URL: "https://cards.lan.example/subpath" },
+                "/definitely/missing/settings.csv",
+            ),
+        ).toThrow(/credential-free HTTP\(S\) origin/);
     });
 
     it("allows an administrator to run public behavior with explicit development security", () => {

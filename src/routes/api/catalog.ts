@@ -6,6 +6,7 @@ import { CardLocalizationEntity } from "../../modules/database/entities/card/Car
 import { DareTypeTranslationEntity } from "../../modules/database/entities/card/DareTypeTranslationEntity";
 import { LocaleEntity } from "../../modules/database/entities/card/LocaleEntity";
 import { QuestionCategoryTranslationEntity } from "../../modules/database/entities/card/QuestionCategoryTranslationEntity";
+import { DARE_TYPE_IDS, QUESTION_CATEGORY_IDS } from "../../packages/game-core";
 import { MESSAGE_KEYS } from "../../packages/localization/keys";
 import { detectLocale, translate } from "../../packages/localization/messages";
 
@@ -62,25 +63,26 @@ router.get("/taxonomies", async (request, response, next) => {
             });
             return;
         }
-        const questionCategories = await AppDataSource.getRepository(
+        const questionCategoryTranslations = await AppDataSource.getRepository(
             QuestionCategoryTranslationEntity,
-        ).find({ where: { locale }, order: { categoryId: "ASC" } });
-        const dareTypes = await AppDataSource.getRepository(DareTypeTranslationEntity).find({
-            where: { locale },
-            order: { dareTypeId: "ASC" },
-        });
+        ).find({ where: { locale } });
+        const dareTypeTranslations = await AppDataSource.getRepository(
+            DareTypeTranslationEntity,
+        ).find({ where: { locale } });
+        const questionCategoriesById = new Map(
+            questionCategoryTranslations.map((item) => [item.categoryId, item]),
+        );
+        const dareTypesById = new Map(dareTypeTranslations.map((item) => [item.dareTypeId, item]));
         response.json({
             locale,
-            questionCategories: questionCategories.map((item) => ({
-                id: item.categoryId,
-                label: item.label,
-                description: item.description,
-            })),
-            dareTypes: dareTypes.map((item) => ({
-                id: item.dareTypeId,
-                label: item.label,
-                description: item.description,
-            })),
+            questionCategories: QUESTION_CATEGORY_IDS.flatMap((id) => {
+                const item = questionCategoriesById.get(id);
+                return item ? [{ id, label: item.label, description: item.description }] : [];
+            }),
+            dareTypes: DARE_TYPE_IDS.flatMap((id) => {
+                const item = dareTypesById.get(id);
+                return item ? [{ id, label: item.label, description: item.description }] : [];
+            }),
         });
     } catch (error) {
         next(error);

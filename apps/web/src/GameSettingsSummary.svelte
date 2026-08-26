@@ -1,6 +1,7 @@
 <script lang="ts">
     import { gameModes, messages } from "./i18n";
-    import { dareTypeIds, operationalFlagIds, questionCategoryIds } from "./gameSettingsOptions";
+    import { operationalFlagIds } from "./gameSettingsOptions";
+    import { cardTaxonomies, requestCardTaxonomy } from "./cardTaxonomy";
     import type {
         CardLocaleSummary,
         GameProfileSummary,
@@ -22,17 +23,21 @@
     $: cardLocale = cardLocales.find(({ id }) => id === settings.cardLocale);
     $: eligibilitySettings = "groupId" in settings ? settings : null;
     $: includesDares = ["CLASSIC_TRUTH_OR_DARE", "RANDOM_TRUTH_OR_DARE"].includes(settings.mode);
-    $: enabledQuestions = questionCategoryIds.filter((id) =>
+    $: requestCardTaxonomy(settings.cardLocale);
+    $: taxonomy = $cardTaxonomies[settings.cardLocale];
+    $: questionCategories = taxonomy?.questionCategories ?? [];
+    $: dareTypes = taxonomy?.dareTypes ?? [];
+    $: enabledQuestions = questionCategories.filter(({ id }) =>
         settings.configuration.enabledQuestionCategoryIds.includes(id),
     );
-    $: disabledQuestions = questionCategoryIds.filter(
-        (id) => !settings.configuration.enabledQuestionCategoryIds.includes(id),
+    $: disabledQuestions = questionCategories.filter(
+        ({ id }) => !settings.configuration.enabledQuestionCategoryIds.includes(id),
     );
-    $: enabledDares = dareTypeIds.filter((id) =>
+    $: enabledDares = dareTypes.filter(({ id }) =>
         settings.configuration.enabledDareTypeIds.includes(id),
     );
-    $: disabledDares = dareTypeIds.filter(
-        (id) => !settings.configuration.enabledDareTypeIds.includes(id),
+    $: disabledDares = dareTypes.filter(
+        ({ id }) => !settings.configuration.enabledDareTypeIds.includes(id),
     );
     $: enabledRules = operationalFlagIds.filter(
         (id) => !settings.configuration.blockedOperationalFlags.includes(id),
@@ -125,11 +130,11 @@
         <h3>{messages.setup.questionsHeading}</h3>
         <p>
             <strong>{messages.room.enabled}</strong>
-            {enabledQuestions.map((id) => messages.taxonomy[id]).join(", ") || "–"}
+            {enabledQuestions.map(({ label }) => label).join(", ") || "–"}
         </p>
         <p>
             <strong>{messages.room.disabled}</strong>
-            {disabledQuestions.map((id) => messages.taxonomy[id]).join(", ") || "–"}
+            {disabledQuestions.map(({ label }) => label).join(", ") || "–"}
         </p>
     </section>
     {#if includesDares}
@@ -137,11 +142,11 @@
             <h3>{messages.setup.daresHeading}</h3>
             <p>
                 <strong>{messages.room.enabled}</strong>
-                {enabledDares.map((id) => messages.taxonomy[id]).join(", ") || "–"}
+                {enabledDares.map(({ label }) => label).join(", ") || "–"}
             </p>
             <p>
                 <strong>{messages.room.disabled}</strong>
-                {disabledDares.map((id) => messages.taxonomy[id]).join(", ") || "–"}
+                {disabledDares.map(({ label }) => label).join(", ") || "–"}
             </p>
         </section>
     {/if}

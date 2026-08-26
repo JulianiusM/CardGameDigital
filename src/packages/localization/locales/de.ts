@@ -68,11 +68,10 @@ export const de = {
         "profile.childFriendly.name": "Kinderfreundlich",
         "profile.childFriendly.description":
             "Verspielte, nicht sexuelle Karten, wenn Kinder mitspielen.",
-        "profile.friends.name": "Gute Freunde",
-        "profile.friends.description": "Persönliche, verspielte Inhalte für vertraute Freunde.",
+        "profile.friends.name": "Freunde",
+        "profile.friends.description": "Persönliche, verspielte Inhalte für Freunde.",
         "profile.closeFriends.name": "Enge Freunde",
-        "profile.closeFriends.description":
-            "Intime, vertrauensvolle Inhalte für sehr enge Gruppen.",
+        "profile.closeFriends.description": "Intime, vertrauensvolle Inhalte für enge Gruppen.",
         "profile.spicy.name": "Spicy",
         "profile.spicy.description":
             "Explizite Inhalte für einwilligende Erwachsene; zusätzliche Freigabe erforderlich.",

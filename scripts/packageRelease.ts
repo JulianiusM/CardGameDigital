@@ -122,7 +122,7 @@ if (edition === "portable") {
     fs.chmodSync(path.join(target, "runtime", runtimeName), 0o755);
     fs.writeFileSync(
         path.join(target, "config", "settings.csv"),
-        "DEPLOYMENT_MODE,local\nAUTH_MODE,none\nDB_TYPE,sqlite\nDB_FILE,data/game.sqlite\nHTTP_BIND,0.0.0.0\nHTTP_PORT,3000\n",
+        "DEPLOYMENT_MODE,local\nAUTH_MODE,none\nDB_TYPE,sqlite\nDB_FILE,data/game.sqlite\nHTTP_BIND,::\nHTTP_PORT,3000\n",
     );
     if (process.platform === "win32") {
         fs.writeFileSync(

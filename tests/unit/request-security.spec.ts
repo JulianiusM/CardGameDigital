@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { isTrustedOrigin, requestPathForLog } from "../../src/modules/requestSecurity";
+import {
+    isTrustedOrigin,
+    requestPathForLog,
+    websocketConnectSource,
+} from "../../src/modules/requestSecurity";
 
 describe("public request origin validation", () => {
     it("accepts only the configured public origin", () => {
@@ -15,5 +19,35 @@ describe("public request origin validation", () => {
             "/api/v1/account/oidc/callback",
         );
         expect(requestPathForLog(undefined)).toBe("-");
+    });
+
+    it("authorizes the request-visible WebSocket origin locally, including IPv6", () => {
+        expect(
+            websocketConnectSource({
+                deploymentMode: "local",
+                publicUrl: "http://localhost:3000",
+                requestProtocol: "http",
+                requestHost: "192.168.1.20:3000",
+            }),
+        ).toBe("ws://192.168.1.20:3000");
+        expect(
+            websocketConnectSource({
+                deploymentMode: "local",
+                publicUrl: "http://localhost:3000",
+                requestProtocol: "https",
+                requestHost: "[2001:db8::20]:3000",
+            }),
+        ).toBe("wss://[2001:db8::20]:3000");
+    });
+
+    it("authorizes only the configured WebSocket origin in public mode", () => {
+        expect(
+            websocketConnectSource({
+                deploymentMode: "public",
+                publicUrl: "https://cards.example",
+                requestProtocol: "http",
+                requestHost: "192.168.1.20:3000",
+            }),
+        ).toBe("wss://cards.example");
     });
 });

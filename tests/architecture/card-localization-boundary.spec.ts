@@ -33,4 +33,32 @@ describe("card localization boundary", () => {
         expect(home).toMatch(/loadCardLocales/);
         expect(home).not.toMatch(/import \{[^}]*cardLocale[^}]*\} from "\.\/i18n"/);
     });
+
+    it("keeps all player-facing taxonomy copy in the Card catalog", () => {
+        const uiCatalogs = ["de", "en"]
+            .map((locale) => fs.readFileSync(`apps/web/src/locales/${locale}.ts`, "utf8"))
+            .join("\n");
+        const domainTaxonomy = fs.readFileSync("src/packages/game-core/cards/taxonomy.ts", "utf8");
+        const browserOptions = fs.readFileSync("apps/web/src/gameSettingsOptions.ts", "utf8");
+        const taxonomyClient = fs.readFileSync("apps/web/src/cardTaxonomy.ts", "utf8");
+        const multiplayer = fs.readFileSync("apps/web/src/multiplayer.ts", "utf8");
+        const consumers = [
+            "BoundarySetup.svelte",
+            "CardManagement.svelte",
+            "GameCard.svelte",
+            "GameSettingsEditor.svelte",
+            "GameSettingsSummary.svelte",
+        ]
+            .map((file) => fs.readFileSync(`apps/web/src/${file}`, "utf8"))
+            .join("\n");
+
+        expect(uiCatalogs).not.toMatch(/\b(?:CAT|DARE)_[A-Z_]+\s*:/);
+        expect(domainTaxonomy).not.toMatch(/(?:QUESTION_CATEGORY|DARE_TYPE)_LABELS/);
+        expect(browserOptions).not.toMatch(/\b(?:CAT|DARE)_[A-Z_]+/);
+        expect(multiplayer).toMatch(/\/api\/v1\/catalog\/taxonomies\?locale=/);
+        expect(taxonomyClient).toMatch(/loadCardTaxonomies/);
+        expect(consumers).not.toMatch(
+            /messages\.taxonomy|boundaries\.(?:questionCategories|dareTypes)/,
+        );
+    });
 });

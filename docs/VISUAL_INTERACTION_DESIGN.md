@@ -453,6 +453,15 @@ live status, the current Card, and public progress/result headings stay visible.
 roster exceeds the available region, advance through measured pages automatically and
 wrap to the first page. Do not introduce document scrolling or participation controls.
 
+**Room access addresses.** Every QR treatment also includes the complete Room URL list
+as quiet, warm-paper supporting copy. Long URLs wrap within their surface. Personal
+devices may use a bounded scroll region for many local interfaces; passive displays use
+the established measured automatic paging treatment instead of document scrolling.
+
+**Room departure.** The Leave Room action is the first action in the Room settings tab,
+before join information and service links. Its quiet danger surface keeps it easy to
+find without competing with the active game outside settings.
+
 **Small displays.** Option grids collapse before individual choices
 become cramped. The settings tabs may scroll horizontally; essential
 labels remain readable.

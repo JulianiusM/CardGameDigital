@@ -20,6 +20,9 @@ export const QUESTION_CATEGORIES = {
     SEX_EXPERIENCE: "CAT_SEX_EXPERIENCE",
 } as const;
 export type QuestionCategoryId = (typeof QUESTION_CATEGORIES)[keyof typeof QUESTION_CATEGORIES];
+/** Canonical presentation order for every Question Category choice group. */
+export const QUESTION_CATEGORY_IDS: readonly QuestionCategoryId[] =
+    Object.values(QUESTION_CATEGORIES);
 
 export const DARE_TYPES = {
     SILLY: "DARE_SILLY",
@@ -37,6 +40,8 @@ export const DARE_TYPES = {
     OTHER: "DARE_OTHER",
 } as const;
 export type DareTypeId = (typeof DARE_TYPES)[keyof typeof DARE_TYPES];
+/** Canonical presentation order for every DareType choice group. */
+export const DARE_TYPE_IDS: readonly DareTypeId[] = Object.values(DARE_TYPES);
 
 export const OPERATIONAL_FLAGS = {
     REQUIRES_TARGET_PLAYER: "REQUIRES_TARGET_PLAYER",
@@ -48,33 +53,3 @@ export const OPERATIONAL_FLAGS = {
     INVOLVES_RECREATIONAL_SUBSTANCES: "INVOLVES_RECREATIONAL_SUBSTANCES",
 } as const;
 export type OperationalFlag = (typeof OPERATIONAL_FLAGS)[keyof typeof OPERATIONAL_FLAGS];
-
-export const QUESTION_CATEGORY_LABELS: Record<QuestionCategoryId, string> = {
-    CAT_EVERYDAY: "Alltag",
-    CAT_CHILDHOOD: "Kindheit",
-    CAT_PERSONALITY: "Persönlichkeit",
-    CAT_SCENARIO: "Szenario",
-    CAT_INTOXICATION: "Trunkenheit",
-    CAT_FRIENDSHIP: "Freundschaft",
-    CAT_RELATIONSHIP: "Beziehung",
-    CAT_BODY: "Körper",
-    CAT_SEXUALITY: "Sexualität",
-    CAT_SEX_OPENNESS: "Sex-Offenheit",
-    CAT_SEX_TENSION: "Sex-Spannung",
-    CAT_SEX_EXPERIENCE: "Sex-Erfahrung",
-};
-export const DARE_TYPE_LABELS: Record<DareTypeId, string> = {
-    DARE_SILLY: "Blödsinn",
-    DARE_THIRD_PARTY: "Unbeteiligte Dritte",
-    DARE_KISS: "Kuss",
-    DARE_KISS_SPICY: "Kuss-Spicy",
-    DARE_TOUCH: "Berührung",
-    DARE_TOUCH_SPICY: "Berührung-Spicy",
-    DARE_TOUCH_SEXY: "Berührung-Sexy",
-    DARE_CLOTHING: "Kleidung",
-    DARE_NUDITY: "Nacktheit",
-    DARE_SEXUAL_TENSION: "Sexuelle Spannung",
-    DARE_BORDERLINE_SEX: "Borderline Sex",
-    DARE_SEX: "Sex",
-    DARE_OTHER: "Sonstiges",
-};

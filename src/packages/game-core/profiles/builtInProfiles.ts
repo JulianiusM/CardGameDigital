@@ -78,16 +78,14 @@ const externalSubstanceFlags = [
     OPERATIONAL_FLAGS.INVOLVES_ALCOHOL,
     OPERATIONAL_FLAGS.INVOLVES_RECREATIONAL_SUBSTANCES,
 ] as const;
-const acquaintancesBlockedFlags = [
-    ...externalSubstanceFlags,
-    OPERATIONAL_FLAGS.REQUIRES_PHYSICAL_CONTACT,
-    OPERATIONAL_FLAGS.REMOVES_CLOTHING,
-    OPERATIONAL_FLAGS.REQUIRES_NUDITY,
-] as const;
 const friendsBlockedFlags = [
     ...externalSubstanceFlags,
     OPERATIONAL_FLAGS.REMOVES_CLOTHING,
     OPERATIONAL_FLAGS.REQUIRES_NUDITY,
+] as const;
+const acquaintancesBlockedFlags = [
+    ...friendsBlockedFlags,
+    OPERATIONAL_FLAGS.REQUIRES_PHYSICAL_CONTACT,
 ] as const;
 export const BUILT_IN_GAME_PROFILES: readonly BuiltInGameProfile[] = [
     profile({
@@ -97,7 +95,7 @@ export const BUILT_IN_GAME_PROFILES: readonly BuiltInGameProfile[] = [
         questions: [...commonQuestions, QUESTION_CATEGORIES.RELATIONSHIP, QUESTION_CATEGORIES.BODY],
         dares: [...playfulDares, DARE_TYPES.TOUCH],
         blockedFlags: friendsBlockedFlags,
-        maximumSocialSensitivity: SOCIAL_SENSITIVITIES.DEEP_PERSONAL,
+        maximumSocialSensitivity: SOCIAL_SENSITIVITIES.CLOSE_PERSONAL,
         maximumIntensity: 3,
     }),
     profile({
@@ -107,17 +105,24 @@ export const BUILT_IN_GAME_PROFILES: readonly BuiltInGameProfile[] = [
         questions: commonQuestions,
         dares: playfulDares,
         blockedFlags: acquaintancesBlockedFlags,
-        maximumSocialSensitivity: SOCIAL_SENSITIVITIES.GENERAL,
+        maximumSocialSensitivity: SOCIAL_SENSITIVITIES.PERSONAL,
         maximumIntensity: 2,
     }),
     profile({
         id: BUILT_IN_PROFILE_IDS.FRIENDS,
         nameKey: MESSAGE_KEYS.PROFILE_FRIENDS_NAME,
         descriptionKey: MESSAGE_KEYS.PROFILE_FRIENDS_DESCRIPTION,
-        questions: [...commonQuestions, QUESTION_CATEGORIES.RELATIONSHIP, QUESTION_CATEGORIES.BODY],
-        dares: [...playfulDares, DARE_TYPES.TOUCH, DARE_TYPES.KISS, DARE_TYPES.CLOTHING],
+        questions: [
+            ...commonQuestions,
+            QUESTION_CATEGORIES.RELATIONSHIP,
+            QUESTION_CATEGORIES.BODY,
+            QUESTION_CATEGORIES.SEXUALITY,
+            QUESTION_CATEGORIES.SEX_OPENNESS,
+            QUESTION_CATEGORIES.INTOXICATION,
+        ],
+        dares: [...playfulDares, DARE_TYPES.TOUCH, DARE_TYPES.TOUCH_SPICY],
         blockedFlags: friendsBlockedFlags,
-        maximumSocialSensitivity: SOCIAL_SENSITIVITIES.PERSONAL,
+        maximumSocialSensitivity: SOCIAL_SENSITIVITIES.DEEP_PERSONAL,
         maximumIntensity: 3,
     }),
     profile({
@@ -128,6 +133,7 @@ export const BUILT_IN_GAME_PROFILES: readonly BuiltInGameProfile[] = [
             ...commonQuestions,
             QUESTION_CATEGORIES.RELATIONSHIP,
             QUESTION_CATEGORIES.BODY,
+            QUESTION_CATEGORIES.INTOXICATION,
             QUESTION_CATEGORIES.SEXUALITY,
             QUESTION_CATEGORIES.SEX_OPENNESS,
             QUESTION_CATEGORIES.SEX_TENSION,
@@ -137,8 +143,8 @@ export const BUILT_IN_GAME_PROFILES: readonly BuiltInGameProfile[] = [
             ...playfulDares,
             DARE_TYPES.TOUCH,
             DARE_TYPES.TOUCH_SPICY,
+            DARE_TYPES.TOUCH_SEXY,
             DARE_TYPES.KISS,
-            DARE_TYPES.KISS_SPICY,
             DARE_TYPES.CLOTHING,
             DARE_TYPES.NUDITY,
             DARE_TYPES.SEXUAL_TENSION,

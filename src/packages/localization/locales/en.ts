@@ -68,7 +68,7 @@ export const en = {
         "profile.childFriendly.name": "Child-friendly",
         "profile.childFriendly.description":
             "Playful, non-sexual Cards suitable when children are taking part.",
-        "profile.friends.name": "Good friends",
+        "profile.friends.name": "Friends",
         "profile.friends.description": "Personal, playful content for established friends.",
         "profile.closeFriends.name": "Close friends",
         "profile.closeFriends.description": "Intimate, trusting content for very close groups.",

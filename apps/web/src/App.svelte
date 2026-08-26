@@ -24,6 +24,7 @@
         loadCardLocales,
         loadGameProfiles,
         loadLastJoin,
+        loadServerInfo,
         RoomSocket,
         type GameProfileSummary,
         type CardLocaleSummary,
@@ -45,11 +46,13 @@
     import { updateLocalLanguagePreferences } from "./languagePreferences";
     import { accountApi } from "./accountApi";
     import { authentication, setAuthenticatedAccount } from "./authentication";
+    import { roomJoinUrls } from "./roomAccessUrls";
 
     let route: AppRoute = routeFromLocation();
     let joined: Join | null = null;
     let connection: RoomSocket | null = null;
     let qr = "";
+    let roomUrls: string[] = [];
     let profiles: GameProfileSummary[] = [];
     let cardLocales: CardLocaleSummary[] = [];
     let settingsDraft: RoomGameSettings | null = null;
@@ -201,19 +204,24 @@
             },
             (reason) => leaveCompleted(value, reason),
         );
-        qr = await QRCode.toDataURL(`${location.origin}/play/?room=${value.roomCode}`, {
-            margin: 1,
-            width: 260,
-            color: { dark: "#3b2416", light: "#fff8e8" },
-        });
         try {
-            const [loadedProfiles, loadedLocales] = await Promise.all([
+            const [loadedProfiles, loadedLocales, serverInfo] = await Promise.all([
                 loadGameProfiles(),
                 loadCardLocales(),
+                loadServerInfo(),
             ]);
             profiles = loadedProfiles;
             cardLocales = loadedLocales.locales;
+            const access = roomJoinUrls(serverInfo, location.origin, value.roomCode);
+            roomUrls = access.urls;
+            qr = await QRCode.toDataURL(access.qrUrl, {
+                margin: 1,
+                width: 260,
+                color: { dark: "#3b2416", light: "#fff8e8" },
+            });
         } catch (cause) {
+            qr = "";
+            roomUrls = [];
             showNotification(
                 cause instanceof Error ? cause.message : messages.common.connectionFailed,
                 "error",
@@ -248,6 +256,8 @@
         lastCardId = undefined;
         lastSettingsNoticeId = 0;
         lastRoomNoticeId = 0;
+        qr = "";
+        roomUrls = [];
     }
 
     function defaultSettingsTab(role: Role | undefined, sessionState?: string): string {
@@ -463,6 +473,7 @@
                             {effectiveRole}
                             boundaryConfigured={snapshot.boundaryConfigured}
                             {qr}
+                            {roomUrls}
                             code={roomCode}
                             roomAccess={{
                                 roomCode,
@@ -486,6 +497,7 @@
                     {:else}
                         <RoomGameplay
                             {session}
+                            cardLocale={snapshot.settings.cardLocale}
                             role={effectiveRole}
                             {participants}
                             presence={roomPresence}
@@ -517,10 +529,13 @@
                         onCloseRoom={effectiveRole === "HOST" ? closeRoom : undefined}
                         onLeave={leaveRoom}
                         currentGameSettings={session ? snapshot.settings : undefined}
+                        cardLocale={snapshot.settings.cardLocale}
                         gameProfiles={profiles}
                         {cardLocales}
                         {roomCode}
                         {qr}
+                        {roomUrls}
+                        autoPageRoomUrls={effectiveRole === "DISPLAY"}
                         currentGamePlayerCount={Math.max(2, representedPlayerCount)}
                         roomAccess={{
                             roomCode,

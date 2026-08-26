@@ -329,7 +329,11 @@
                     >
                 </div>
             {:else if session.currentCard}
-                <GameCard card={session.currentCard} showIntensity />
+                <GameCard
+                    card={session.currentCard}
+                    cardLocale={session.settings.cardLocale}
+                    showIntensity
+                />
                 {#if session.neverHaveIEverVoting}<NeverHaveIEverVoting
                         voting={session.neverHaveIEverVoting}
                         controllablePlayerIds={session.neverHaveIEverVoting.progress.map(

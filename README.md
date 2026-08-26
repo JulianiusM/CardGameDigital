@@ -58,9 +58,9 @@ npm run run
 ```
 
 Open <http://localhost:3000/play/>. Defaults use SQLite at
-`./data/card-game.sqlite`, bind to `127.0.0.1`, and disable accounts. To make a local
-instance reachable on the LAN, configure `HTTP_BIND=0.0.0.0`; do not expose that
-account-free configuration to the public internet.
+`./data/card-game.sqlite`, bind to all IPv4 and IPv6 interfaces, and disable accounts.
+The Room screen lists the detected LAN addresses, including bracketed IPv6 URLs. Do not
+expose that account-free configuration to the public internet.
 
 For development with server reloads:
 
@@ -94,10 +94,10 @@ Common settings:
 | `DEPLOYMENT_MODE`                                         | `local`                   | `local` or `public` product/runtime behavior.                                     |
 | `PUBLIC_RUNTIME_SECURITY`                                 | `enforced`                | `enforced`, or explicit unsafe `development` override for administrator testing.  |
 | `AUTH_MODE`                                               | `none`                    | `none` or `account`; enforced public mode requires `account`.                     |
-| `HTTP_BIND` / `HTTP_PORT`                                 | `127.0.0.1` / `3000`      | Listen address and port.                                                          |
+| `HTTP_BIND` / `HTTP_PORT`                                 | `::` / `3000`             | Dual-stack all-interface listen address and port.                                 |
 | `ROOM_MAX_PARTICIPANTS` / `ROOM_MAX_PLAYERS`              | `100` / `100`             | Active device and represented-player limits per Room (2–1000).                    |
 | `ROOM_RECONNECT_GRACE_SECONDS`                            | `180`                     | Time a disconnected device can reclaim its place (minimum 120 seconds).           |
-| `PUBLIC_URL`                                              | `http://localhost:3000`   | Canonical origin for links and origin checks.                                     |
+| `PUBLIC_URL`                                              | browser origin locally    | Optional local QR/link override; required canonical public origin.                |
 | `DB_TYPE`                                                 | `sqlite`                  | `sqlite`, `mariadb`, or `mysql`.                                                  |
 | `DB_FILE`                                                 | `./data/card-game.sqlite` | SQLite database path.                                                             |
 | `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD` | varies                    | Public database connection.                                                       |
@@ -113,6 +113,10 @@ Common settings:
 
 All settings and validation rules are defined in
 [`src/modules/settings.ts`](./src/modules/settings.ts).
+
+When `PUBLIC_URL` is omitted in local mode, each browser puts its own current origin in
+the Room QR code. Setting it explicitly overrides that payload. Public mode always
+requires and uses `PUBLIC_URL`; it never derives Room links from the browser address.
 
 For administrator-controlled development of public behavior, set
 `PUBLIC_RUNTIME_SECURITY=development`. This intentionally permits HTTP, SQLite,

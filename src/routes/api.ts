@@ -20,6 +20,7 @@ import { ExpectedError } from "../modules/lib/errors";
 import { MESSAGE_KEYS } from "../packages/localization/keys";
 
 import settings from "../modules/settings";
+import { roomAccessConfiguration } from "../modules/roomAccessUrls";
 import couchRouter from "./api/couch";
 import roomsRouter from "./api/rooms";
 import gameProfilesRouter from "./api/gameProfiles";
@@ -43,6 +44,7 @@ router.get("/v1/server-info", (_req, res) =>
             maximumParticipants: settings.value.roomMaximumParticipants,
             maximumPlayers: settings.value.roomMaximumPlayers,
         },
+        roomAccess: roomAccessConfiguration(settings.value),
     }),
 );
 router.use("/v1/couch", couchRouter);

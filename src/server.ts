@@ -56,10 +56,16 @@ async function bootstrap() {
         const websocketServer = attachWebSocketServer(server, getRoomService(), {
             hostDisconnectGraceMs: settings.value.roomReconnectGraceSeconds * 1_000,
         });
+        const bindAddress = settings.value.httpBind === "[::]" ? "::" : settings.value.httpBind;
+        const listenOptions = {
+            port: settings.value.httpPort,
+            host: bindAddress,
+            ...(bindAddress === "::" ? { ipv6Only: false } : {}),
+        };
         await new Promise<void>((resolve, reject) => {
             const onError = (error: Error) => reject(error);
             server.once("error", onError);
-            server.listen(settings.value.httpPort, settings.value.httpBind, () => {
+            server.listen(listenOptions, () => {
                 server.off("error", onError);
                 resolve();
             });
@@ -67,7 +73,14 @@ async function bootstrap() {
         logEvent(
             "info",
             "server.listening",
-            { publicOrigin: new URL(settings.value.publicUrl).origin },
+            {
+                bindAddress,
+                port: settings.value.httpPort,
+                configuredPublicOrigin:
+                    settings.value.deploymentMode === "public" || settings.value.publicUrlConfigured
+                        ? new URL(settings.value.publicUrl).origin
+                        : null,
+            },
             settings.value.logLevel,
         );
 

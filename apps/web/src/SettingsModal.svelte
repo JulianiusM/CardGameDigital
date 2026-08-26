@@ -30,6 +30,7 @@
     import { setAuthenticatedAccount } from "./authentication";
     import { showNotification } from "./notifications";
     import type { RoomEligibilityAccess } from "./cardPolicyApi";
+    import RoomAvailabilityUrls from "./RoomAvailabilityUrls.svelte";
 
     export let open = false;
     export let showContent = false;
@@ -42,10 +43,13 @@
     export let onLeave: (() => void) | undefined;
     export let onCloseRoom: (() => void) | undefined;
     export let currentGameSettings: PublicGameSettings | undefined;
+    export let cardLocale: string | undefined = undefined;
     export let gameProfiles: readonly GameProfileSummary[] = [];
     export let cardLocales: readonly CardLocaleSummary[] = [];
     export let roomCode = "";
     export let qr = "";
+    export let roomUrls: string[] = [];
+    export let autoPageRoomUrls = false;
     export let currentGamePlayerCount = 2;
     export let roomAccess: RoomEligibilityAccess | undefined = undefined;
     export let defaultTab = "audio";
@@ -289,12 +293,13 @@
                 /></label
             >
         {:else if tab === "content" && onBoundaries}
-            <BoundarySetup
-                onSave={(value) => {
-                    onBoundaries?.(value);
-                    open = false;
-                }}
-            />
+            {#if cardLocale}<BoundarySetup
+                    {cardLocale}
+                    onSave={(value) => {
+                        onBoundaries?.(value);
+                        open = false;
+                    }}
+                />{/if}
             {#if showPlayers}<button class="secondary wide" on:click={onShowPlayers}
                     >{messages.settings.managePlayers}</button
                 >{/if}
@@ -310,9 +315,15 @@
                     >
                 </div>{/if}
         {:else if tab === "services"}
+            {#if onLeave}<div class="room-leave-action">
+                    <button class="danger wide" on:click={onLeave}>{messages.settings.leave}</button
+                    >
+                    <small>{messages.settings.leaveHint}</small>
+                </div>{/if}
             {#if roomCode}<div class="settings-join-info">
                     <strong>{messages.setup.roomCode}: {roomCode}</strong>
                     {#if qr}<img src={qr} alt={messages.accessibility.roomQrCode(roomCode)} />{/if}
+                    <RoomAvailabilityUrls urls={roomUrls} autoPage={autoPageRoomUrls} />
                 </div>{/if}
             <div class="service-actions">
                 <SettingsAction
@@ -334,9 +345,6 @@
                 imprintUrl={$authentication.imprintUrl}
                 privacyPolicyUrl={$authentication.privacyPolicyUrl}
             />
-            {#if onLeave}<p>{messages.settings.leaveHint}</p>
-                <button class="danger wide" on:click={onLeave}>{messages.settings.leave}</button
-                >{/if}
         {:else if tab === "advanced"}
             <slot name="advanced" />
         {/if}

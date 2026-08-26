@@ -13,12 +13,14 @@
     } from "./multiplayer";
     import EligibleCardPreview from "./EligibleCardPreview.svelte";
     import type { RoomEligibilityAccess } from "./cardPolicyApi";
+    import RoomAvailabilityUrls from "./RoomAvailabilityUrls.svelte";
 
     export let participants: Participant[];
     export let presence: Presence[];
     export let effectiveRole: Role;
     export let boundaryConfigured: boolean;
     export let qr: string;
+    export let roomUrls: string[] = [];
     export let code: string;
     export let settings: VersionedRoomGameSettings;
     export let roomAccess: RoomEligibilityAccess;
@@ -147,7 +149,7 @@
                 </p>{/if}
             <details class="advanced">
                 <summary>{messages.boundaries.heading}</summary>
-                <BoundarySetup onSave={onSaveBoundaries} />
+                <BoundarySetup cardLocale={settings.cardLocale} onSave={onSaveBoundaries} />
             </details>
         {/if}
         <div class="lobby-actions">
@@ -161,6 +163,7 @@
         <h2>{messages.room.phoneJoin}</h2>
         {#if qr}<img src={qr} alt={messages.accessibility.roomQrCode(code)} />{/if}
         <strong>{code}</strong>
+        <RoomAvailabilityUrls urls={roomUrls} autoPage={effectiveRole === "DISPLAY"} />
         <p>{messages.room.qrPrivacy}</p>
     </div>
 </section>

@@ -199,6 +199,16 @@ export type GameSettings = {
     cardLanguageSettings: CardLanguageSettings | null;
 };
 export type CardLocaleSummary = { id: string; nativeName: string; coverage: number };
+export type CardTaxonomyEntry = {
+    id: string;
+    label: string;
+    description: string | null;
+};
+export type CardTaxonomyCatalog = {
+    locale: string;
+    questionCategories: CardTaxonomyEntry[];
+    dareTypes: CardTaxonomyEntry[];
+};
 export type Join = {
     roomId: string;
     roomCode: string;
@@ -243,6 +253,11 @@ export async function loadCardLocales(): Promise<{
     locales: CardLocaleSummary[];
 }> {
     return json("/api/v1/catalog/locales", { method: "GET" });
+}
+export async function loadCardTaxonomies(cardLocale: string): Promise<CardTaxonomyCatalog> {
+    return json(`/api/v1/catalog/taxonomies?locale=${encodeURIComponent(cardLocale)}`, {
+        method: "GET",
+    });
 }
 export async function loadHostConfiguration(): Promise<{
     groups: GroupSummary[];
@@ -304,12 +319,17 @@ export async function resetGroupHistory(groupId: string): Promise<GroupSummary> 
 export async function deleteGroup(groupId: string): Promise<void> {
     await json<void>(`/api/v1/groups/${groupId}`, { method: "DELETE" });
 }
-export async function loadServerInfo(): Promise<{
+export type ServerInfo = {
     deploymentMode: "local" | "public";
     publicRuntimeSecurity: "enforced" | "development";
     authenticationAvailable: boolean;
     roomCapacity: { maximumParticipants: number; maximumPlayers: number };
-}> {
+    roomAccess: {
+        configuredBaseUrl: string | null;
+        availableBaseUrls: string[];
+    };
+};
+export async function loadServerInfo(): Promise<ServerInfo> {
     return json("/api/v1/server-info", { method: "GET" });
 }
 

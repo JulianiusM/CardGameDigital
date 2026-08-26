@@ -6,6 +6,12 @@ Die Spielleitung teilt den sechsstelligen Raumcode oder den QR-Code. Der Code da
 öffentlich gezeigt werden; der geheime Gerätezugang wird erst beim Beitritt erzeugt und
 bleibt auf diesem Gerät. Verschicke keine gespeicherten Zugangslinks oder Browserdaten.
 
+Bei jedem QR-Code stehen zusätzlich die Adressen, über die dieser Raum erreichbar sein
+soll. Ein lokaler Server kann bei mehreren Netzwerkschnittstellen mehrere LAN-Adressen
+anzeigen; nutze eine Adresse, die das beitretende Gerät erreicht. IPv6-Adressen stehen
+in eckigen Klammern, wie es bei URLs üblich ist. Auf einem Party Screen wechselt eine
+lange Liste automatisch weiter.
+
 Mehrere Geschwistergruppen können gleichzeitig im selben Netz spielen: Jeder Raum hat
 einen eigenen Code, Zustand und Befehlskanal. Prüfe vor dem Beitritt den Code, damit du
 nicht versehentlich in der anderen Runde landest.

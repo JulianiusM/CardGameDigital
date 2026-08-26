@@ -2,17 +2,19 @@
     import { messages } from "./i18n";
     import { motifSymbolFor, type PresentedCard } from "./presentationMapping";
     import UiIcon from "./UiIcon.svelte";
+    import { cardTaxonomies, requestCardTaxonomy, taxonomyLabel } from "./cardTaxonomy";
 
     export let card: PresentedCard;
+    export let cardLocale: string;
     export let showIntensity = false;
     export let replacementDraw = false;
     export let compact = false;
 
     $: motifSymbol = motifSymbolFor(card);
+    $: requestCardTaxonomy(cardLocale);
+    $: taxonomy = $cardTaxonomies[cardLocale];
     $: classificationId = card.questionCategoryId ?? card.dareTypeId;
-    $: classification = classificationId
-        ? (messages.taxonomy[classificationId] ?? classificationId)
-        : "";
+    $: classification = classificationId ? taxonomyLabel(taxonomy, classificationId) : "";
 </script>
 
 <article

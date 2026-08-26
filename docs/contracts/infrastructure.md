@@ -59,6 +59,25 @@ participant credential.
 
 Do not publish a local `AUTH_MODE=none` instance to the internet.
 
+## Room access discovery
+
+The server listens on the dual-stack wildcard `HTTP_BIND=::` by default, with IPv6-only
+mode disabled so both IPv6 and IPv4 interfaces accept HTTP and WebSocket connections.
+Detected IPv6 origins use the required bracketed URL form. In local mode, omitting
+`PUBLIC_URL` makes each browser use its current origin for the Room QR payload; an
+explicit `PUBLIC_URL` is the administrator override. The discovery response also lists
+HTTP origins for the non-internal network interfaces covered by a wildcard bind. These
+origins contain no Room or participant credentials.
+
+Local response CSP authorizes the WebSocket origin derived from the validated request
+protocol and Host, so a page opened through any bound IPv4 or bracketed IPv6 address can
+connect back to that same server. Public response CSP continues to authorize only the
+WebSocket form of the configured `PUBLIC_URL` origin.
+
+Every public runtime, including the explicit development policy, requires an explicit
+`PUBLIC_URL`. Public Room QR payloads and displayed availability URLs use only that
+configured origin and never the current browser origin or detected server interfaces.
+
 `ROOM_MAX_PARTICIPANTS` and `ROOM_MAX_PLAYERS` configure the per-Room active-device
 and represented-player ceilings. Both default to 100 and accept 2 through 1000. The
 values are advertised for display, but joins and device-player changes are enforced in

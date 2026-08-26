@@ -101,20 +101,111 @@ async function expectInsideViewport(page: Page, selector: string): Promise<void>
     expect(bounds.bottom).toBeLessThanOrEqual(bounds.viewportHeight + 1);
 }
 
+test("taxonomy copy follows the Card language in settings and private boundaries", async ({
+    browser,
+}) => {
+    test.setTimeout(60_000);
+    const expectedQuestionOrder = [
+        "Alltag",
+        "Kindheit",
+        "Persönlichkeit",
+        "Szenario",
+        "Rausch",
+        "Freundschaft",
+        "Beziehung",
+        "Körper",
+        "Sexualität",
+        "Sexuelle Offenheit",
+        "Sexuelle Vorlieben",
+        "Sexuelle Erfahrung",
+    ];
+    const expectedDareOrder = [
+        "Unsinn",
+        "Unbeteiligte Dritte",
+        "Freundschaftliche Küsse",
+        "Intime Küsse",
+        "Einfache Berührung",
+        "Nahegehende Berührung",
+        "Intime Berührung",
+        "Kleidung",
+        "Nacktheit",
+        "Sexuelle Spannung",
+        "Borderline Sex",
+        "Sex",
+        "Sonstiges",
+    ];
+    const context = await browser.newContext({
+        locale: "en-GB",
+        viewport: { width: 360, height: 740 },
+    });
+    const page = await context.newPage();
+
+    await page.goto("/play/");
+    await page.getByRole("button", { name: /Host game/ }).click();
+    await page.getByRole("button", { name: /No group/ }).click();
+    await page.getByRole("button", { name: /^Next/ }).click();
+    await page.getByRole("button", { name: /Truth or Dare/ }).click();
+    await page.getByRole("button", { name: /^Next/ }).click();
+    await page.getByRole("button", { name: /^Friends / }).click();
+    await page.getByRole("button", { name: /^Next/ }).click();
+
+    await page.getByLabel("Card language", { exact: true }).fill("Deutsch");
+    await page.getByRole("option", { name: /Deutsch \(Deutschland\)/ }).click();
+    await expect(page.getByRole("button", { name: "Körper", exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Body", exact: true })).toHaveCount(0);
+    const questionSettings = page
+        .getByRole("heading", { name: "Which topics would you like to discuss?" })
+        .locator("../..");
+    const dareSettings = page
+        .getByRole("heading", { name: "Which kinds of dares are okay?" })
+        .locator("../..");
+    await expect(questionSettings.locator(".toggle-chip-grid button")).toHaveText(
+        expectedQuestionOrder,
+    );
+    await expect(dareSettings.locator(".toggle-chip-grid button")).toHaveText(expectedDareOrder);
+
+    await page.getByRole("button", { name: /^Next/ }).click();
+    await page.getByRole("button", { name: /One device each/ }).click();
+    await page.getByLabel("Host name").fill("Host Anna");
+    await page.getByRole("button", { name: /Continue to lobby/ }).click();
+    await page.locator("details.advanced > summary").click();
+
+    const boundaries = page.locator(".boundary-panel");
+    const questions = boundaries.getByRole("group", { name: "Skip these question topics" });
+    const dares = boundaries.getByRole("group", { name: "Skip these dare types" });
+    await expect(questions.getByRole("checkbox")).toHaveCount(12);
+    await expect(dares.getByRole("checkbox")).toHaveCount(13);
+    await expect(questions.locator("label")).toHaveText(expectedQuestionOrder);
+    await expect(dares.locator("label")).toHaveText(expectedDareOrder);
+    await expect(questions.getByText("Körper", { exact: true })).toBeVisible();
+    await expect(questions.getByText("Body", { exact: true })).toHaveCount(0);
+    await expect
+        .poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
+        .toBe(true);
+
+    await context.close();
+});
+
 test("host creates a Party Screen Room and exposes safe QR join information", async ({
     browser,
 }) => {
+    test.setTimeout(60_000);
     const hostContext = await browser.newContext({ locale: "de-DE" });
     const displayContext = await browser.newContext({
         locale: "de-DE",
         viewport: { width: 1920, height: 1080 },
     });
     const host = await hostContext.newPage();
-    const code = await hostRoom(host);
+    const code = await hostRoom(host, "party", /^Freunde /);
     expect(code).toMatch(/^[A-Z2-9]{6}$/);
     const display = await displayContext.newPage();
     await joinRoom(display, code, "", true);
     await expect(display.getByAltText(`QR-Code für Raum ${code}`)).toBeVisible();
+    const expectedJoinUrl = `${new URL(host.url()).origin}/play/?room=${code}`;
+    await expect(host.locator(".room-availability-urls")).toContainText(expectedJoinUrl);
+    await expect(display.locator(".room-availability-urls.auto-page")).toContainText(
+        expectedJoinUrl,
+    );
     await expect(host.getByText("Party Screen", { exact: true })).toBeVisible();
     await expect(display.getByRole("button", { name: "Lobby verlassen" })).toBeVisible();
     await expect(display.locator(".public-stage-lobby")).toBeVisible();
@@ -130,6 +221,21 @@ test("host creates a Party Screen Room and exposes safe QR join information", as
             () => document.scrollingElement!.scrollHeight <= window.innerHeight + 1,
         ),
     ).toBe(true);
+    await host.setViewportSize({ width: 360, height: 740 });
+    await expect
+        .poll(() => host.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
+        .toBe(true);
+    await host.getByRole("button", { name: "Einstellungen", exact: true }).click();
+    await host.getByRole("tab", { name: "Raum" }).click();
+    const leaveRoom = host.getByRole("button", { name: "Spiel verlassen" });
+    const settingsJoinInfo = host.locator(".settings-join-info");
+    await expect(settingsJoinInfo.locator(".room-availability-urls")).toContainText(
+        expectedJoinUrl,
+    );
+    await expect(leaveRoom).toBeVisible();
+    expect((await leaveRoom.boundingBox())!.y).toBeLessThan(
+        (await settingsJoinInfo.boundingBox())!.y,
+    );
     await hostContext.close();
     await displayContext.close();
 });

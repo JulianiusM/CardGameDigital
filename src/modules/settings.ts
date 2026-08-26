@@ -38,6 +38,7 @@ export const settingsSchema = z
         roomMaximumPlayers: numberValue.pipe(z.number().int().min(2).max(1_000)),
         roomReconnectGraceSeconds: numberValue.pipe(z.number().int().min(120).max(3_600)),
         publicUrl: z.string().url(),
+        publicUrlConfigured: z.boolean(),
         dbType: z.enum(["sqlite", "mariadb", "mysql"]),
         dbFile: z.string().min(1),
         dbHost: z.string().min(1),
@@ -72,6 +73,30 @@ export const settingsSchema = z
     .superRefine((value, context) => {
         const publicSecurityEnforced =
             value.deploymentMode === "public" && value.publicRuntimeSecurity === "enforced";
+        if (value.deploymentMode === "public" && !value.publicUrlConfigured) {
+            context.addIssue({
+                code: "custom",
+                path: ["publicUrl"],
+                message: "public deployment requires an explicit PUBLIC_URL",
+            });
+        }
+        if (value.publicUrlConfigured) {
+            const configuredUrl = new URL(value.publicUrl);
+            if (
+                !["http:", "https:"].includes(configuredUrl.protocol) ||
+                configuredUrl.username ||
+                configuredUrl.password ||
+                configuredUrl.pathname !== "/" ||
+                configuredUrl.search ||
+                configuredUrl.hash
+            ) {
+                context.addIssue({
+                    code: "custom",
+                    path: ["publicUrl"],
+                    message: "PUBLIC_URL must be a credential-free HTTP(S) origin",
+                });
+            }
+        }
         if (value.deploymentMode === "local" && value.dbType !== "sqlite" && !value.testMode) {
             context.addIssue({
                 code: "custom",
@@ -211,12 +236,13 @@ const defaults = {
     deploymentMode: "local",
     publicRuntimeSecurity: "enforced",
     authMode: "none",
-    httpBind: "127.0.0.1",
+    httpBind: "::",
     httpPort: 3000,
     roomMaximumParticipants: 100,
     roomMaximumPlayers: 100,
     roomReconnectGraceSeconds: 180,
     publicUrl: "http://localhost:3000",
+    publicUrlConfigured: false,
     dbType: "sqlite",
     dbFile: "./data/card-game.sqlite",
     dbHost: "localhost",
@@ -317,10 +343,13 @@ export function resolveSettings(
         const value = e2eValue ?? environment[external];
         if (value !== undefined && value !== "") fromEnvironment[internal] = value;
     }
+    const publicUrlConfigured =
+        Object.hasOwn(fromFile, "publicUrl") || Object.hasOwn(fromEnvironment, "publicUrl");
     const parsed = settingsSchema.parse({
         ...defaults,
         ...fromFile,
         ...fromEnvironment,
+        publicUrlConfigured,
         file: configFile,
         testMode: environment.NODE_ENV === "e2e",
     });

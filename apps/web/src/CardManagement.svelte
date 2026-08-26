@@ -18,7 +18,8 @@
         type GroupSummary,
         type SessionCardPolicy,
     } from "./multiplayer";
-    import { dareTypeIds, operationalFlagIds, questionCategoryIds } from "./gameSettingsOptions";
+    import { operationalFlagIds } from "./gameSettingsOptions";
+    import { cardTaxonomies, ensureCardTaxonomy, taxonomyLabel } from "./cardTaxonomy";
     import { dismissNotification, showNotification } from "./notifications";
     import { animateState, panelTransition, revealTransition } from "./motion";
     import { loadSetup, saveSetup } from "./setup";
@@ -161,10 +162,14 @@
         lifecycle && lifecycle !== "ACTIVE" ? lifecycle : "",
     ].filter(Boolean).length;
     $: localDirectiveCount = Object.keys(cardDirectives).length;
+    $: taxonomy = $cardTaxonomies[cardLocale];
+    $: questionCategoryIds = taxonomy?.questionCategories.map(({ id }) => id) ?? [];
+    $: dareTypeIds = taxonomy?.dareTypes.map(({ id }) => id) ?? [];
     onMount(async () => {
         try {
             if (sessionMode) {
                 const setup = loadSetup();
+                cardLocale = setup.cardLocale;
                 groupId = setup.groupChoice === "SELECT" ? setup.groupId : null;
                 sessionPolicy = structuredClone(
                     setup.cardPolicy ?? {
@@ -181,6 +186,7 @@
             groups = [...loadedGroups].sort((left, right) => left.name.localeCompare(right.name));
             const supported = locales.locales.find(({ id }) => id === cardLocale);
             cardLocale = supported?.id ?? locales.defaultLocale;
+            await ensureCardTaxonomy(cardLocale);
             await reloadScope();
         } catch (cause) {
             unavailable = true;
@@ -1276,7 +1282,7 @@
                                                             togglePredicateList(
                                                                 "questionCategoryIds",
                                                                 id,
-                                                            )}>{messages.taxonomy[id]}</button
+                                                            )}>{taxonomyLabel(taxonomy, id)}</button
                                                     >
                                                 {/each}
                                             </div>
@@ -1297,7 +1303,7 @@
                                                         )}
                                                         on:click={() =>
                                                             togglePredicateList("dareTypeIds", id)}
-                                                        >{messages.taxonomy[id]}</button
+                                                        >{taxonomyLabel(taxonomy, id)}</button
                                                     >
                                                 {/each}
                                             </div>
@@ -1320,7 +1326,7 @@
                                                             togglePredicateList(
                                                                 "dareAffinityCategoryIds",
                                                                 id,
-                                                            )}>{messages.taxonomy[id]}</button
+                                                            )}>{taxonomyLabel(taxonomy, id)}</button
                                                     >
                                                 {/each}
                                             </div>
@@ -1733,7 +1739,7 @@
                                                 >
                                                 {#each questionCategoryIds as id}
                                                     <option value={id}
-                                                        >{messages.taxonomy[id]}</option
+                                                        >{taxonomyLabel(taxonomy, id)}</option
                                                     >
                                                 {/each}
                                             </select>
@@ -1748,7 +1754,7 @@
                                                 >
                                                 {#each dareTypeIds as id}
                                                     <option value={id}
-                                                        >{messages.taxonomy[id]}</option
+                                                        >{taxonomyLabel(taxonomy, id)}</option
                                                     >
                                                 {/each}
                                             </select>

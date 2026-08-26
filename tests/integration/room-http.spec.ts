@@ -7,6 +7,7 @@ import { AppDataSource, initDataSource } from "../../src/modules/database/dataSo
 import { RoomParticipantEntity } from "../../src/modules/database/entities/game/RoomParticipantEntity";
 import settings from "../../src/modules/settings";
 import { defaultRoomGameSettings } from "../../src/packages/application/roomGameSettings";
+import { DARE_TYPE_IDS, QUESTION_CATEGORY_IDS } from "../../src/packages/game-core";
 
 let app: import("express").Express;
 let directory: string;
@@ -191,6 +192,16 @@ describe("Room HTTP API", () => {
             label: "Everyday",
             description: null,
         });
+        const returnedQuestionCategoryIds = taxonomies.body.questionCategories.map(
+            ({ id }: { id: string }) => id,
+        );
+        const returnedDareTypeIds = taxonomies.body.dareTypes.map(({ id }: { id: string }) => id);
+        expect(returnedQuestionCategoryIds).toEqual(
+            QUESTION_CATEGORY_IDS.filter((id) => returnedQuestionCategoryIds.includes(id)),
+        );
+        expect(returnedDareTypeIds).toEqual(
+            DARE_TYPE_IDS.filter((id) => returnedDareTypeIds.includes(id)),
+        );
     });
 
     it("previews the authoritative eligible Card pool before a game starts", async () => {
@@ -296,12 +307,34 @@ describe("Room HTTP API", () => {
             maximumParticipants: 20,
             maximumPlayers: 20,
         });
+        expect(response.body.roomAccess).toMatchObject({
+            configuredBaseUrl: null,
+            availableBaseUrls: expect.any(Array),
+        });
         expect(response.headers["x-content-type-options"]).toBe("nosniff");
         expect(response.headers["x-frame-options"]).toBe("DENY");
         expect(response.headers["content-security-policy"]).toContain("script-src 'self'");
         expect(response.headers["cache-control"]).toBe("no-store");
         expect(response.headers["x-request-id"]).toMatch(
             /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+        );
+    });
+
+    it("authorizes WebSockets on the local request host for IPv4 and IPv6", async () => {
+        const ipv4 = await request(app)
+            .get("/api/v1/server-info")
+            .set("Host", "192.168.1.20:3000")
+            .expect(200);
+        expect(ipv4.headers["content-security-policy"]).toContain(
+            "connect-src 'self' ws://192.168.1.20:3000",
+        );
+
+        const ipv6 = await request(app)
+            .get("/api/v1/server-info")
+            .set("Host", "[2001:db8::20]:3000")
+            .expect(200);
+        expect(ipv6.headers["content-security-policy"]).toContain(
+            "connect-src 'self' ws://[2001:db8::20]:3000",
         );
     });
 

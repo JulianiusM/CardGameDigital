@@ -6,6 +6,11 @@ The host shares the six-character Room code or QR code. The code is public; a se
 device credential is issued only after joining and stays on that device. Do not share
 stored credentials or browser storage.
 
+Every QR display also lists the addresses that can open this Room. A local server may
+show several LAN addresses when it is connected through several network interfaces;
+use one reachable from the joining device. IPv6 addresses appear in brackets, which is
+the normal URL format. Long lists advance automatically on a Party Screen.
+
 Several groups can play on one network at the same time. Every Room has an independent
 code, state, and command queue. Confirm the code when siblings or nearby groups are
 playing simultaneously.

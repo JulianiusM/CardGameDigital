@@ -56,9 +56,17 @@ for every locale. Adding or repositioning a topic does not require renaming docu
 the API or browser tab implementation.
 
 `GET /server-info` returns `deploymentMode`, `publicRuntimeSecurity` (`enforced` or
-`development`), `authenticationAvailable`, `protocolVersions`, and the authoritative
-`roomCapacity` ceilings. The runtime-security field is informational for clients and
-operations; clients receive no additional authority from it.
+`development`), `authenticationAvailable`, `protocolVersions`, the authoritative
+`roomCapacity` ceilings, and `roomAccess`. `roomAccess` contains nullable
+`configuredBaseUrl` and `availableBaseUrls`. In local mode the configured value is null
+unless `PUBLIC_URL` was explicitly set, and the available list contains detected
+credential-free interface origins. In public mode both fields contain only the required
+configured origin. The runtime-security and discovery fields are informational for
+clients and operations; clients receive no additional authority from them.
+
+`GET /catalog/taxonomies` always returns Question Categories and DareTypes in the
+canonical order declared by `game-core/cards/taxonomy.ts`; database/content ordering
+never controls choice-group presentation.
 
 ## Rooms
 

@@ -27,7 +27,7 @@ import { AccountSession } from "./modules/database/entities/session/AccountSessi
 import { asyncHandler } from "./modules/lib/asyncHandler";
 import { ExpectedError } from "./modules/lib/errors";
 import settings, { isPublicRuntimeSecurityEnforced } from "./modules/settings";
-import { isTrustedOrigin } from "./modules/requestSecurity";
+import { isTrustedOrigin, websocketConnectSource } from "./modules/requestSecurity";
 import { structuredRequestLogger } from "./modules/structuredLogger";
 import { regenerateSession } from "./modules/lib/session";
 import { detectLocale, translate } from "./packages/localization/messages";
@@ -37,10 +37,15 @@ const app = express();
 app.disable("x-powered-by");
 
 app.use(structuredRequestLogger(() => settings.value.logLevel));
-app.use((_request, response, next) => {
-    const publicUrl = new URL(settings.value.publicUrl);
-    const websocketOrigin = new URL(settings.value.publicUrl);
-    websocketOrigin.protocol = publicUrl.protocol === "https:" ? "wss:" : "ws:";
+app.use((request, response, next) => {
+    const websocketSource = websocketConnectSource({
+        deploymentMode: settings.value.deploymentMode,
+        publicUrl: settings.value.publicUrl,
+        requestProtocol: request.protocol,
+        requestHost: request.get("host"),
+    });
+    const connectSources = ["'self'"];
+    if (websocketSource) connectSources.push(websocketSource);
     response.setHeader("X-Content-Type-Options", "nosniff");
     response.setHeader("X-Frame-Options", "DENY");
     response.setHeader("Referrer-Policy", "no-referrer");
@@ -55,7 +60,7 @@ app.use((_request, response, next) => {
         [
             "default-src 'self'",
             "base-uri 'none'",
-            `connect-src 'self' ${websocketOrigin.origin}`,
+            `connect-src ${connectSources.join(" ")}`,
             "font-src 'self'",
             "form-action 'self'",
             "frame-ancestors 'none'",

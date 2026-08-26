@@ -392,6 +392,8 @@ Characteristics:
 - SQLite;
 - no mandatory user accounts;
 - LAN HTTP/WS permitted;
+- dual-stack IPv4/IPv6 all-interface HTTP and WebSocket bind by default;
+- browser-origin Room QR links unless `PUBLIC_URL` explicitly overrides them;
 - all assets local;
 - portable package;
 - internet not required.
@@ -1634,6 +1636,15 @@ Supported mechanisms:
 3. optional mDNS.
 
 mDNS is convenience only.
+
+Local Room discovery advertises the HTTP origins for every external interface covered
+by the configured bind. The browser uses its current origin for the QR payload unless
+an administrator explicitly configured `PUBLIC_URL`; the displayed list includes that
+payload origin, the current browser origin, and the advertised interface origins without
+duplicates. Public deployments require `PUBLIC_URL`, use it for both the QR payload and
+the single displayed address, and never trust the browser origin for either decision.
+IPv6 origins are bracketed. Local response CSP derives its explicit WebSocket source
+from the request-visible protocol and Host; public CSP derives it only from `PUBLIC_URL`.
 
 ---
 
