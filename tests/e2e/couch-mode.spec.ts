@@ -1238,14 +1238,22 @@ test("Couch lobby has canonical Settings and zero-card start stays with a warnin
     await expect(backToMain).toBeVisible();
     await expect(backToMain).toHaveClass(/text-action/);
     await expect(backToMain).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
-    const backBox = (await backToMain.boundingBox())!;
-    const setupBox = (await page.locator(".player-setup").boundingBox())!;
-    expect(backBox.y + backBox.height).toBeLessThanOrEqual(setupBox.y);
-    const addPlayer = page.getByRole("button", { name: /Person hinzufügen/ });
-    const start = page.getByRole("button", { name: /Spiel starten/ });
-    const addBox = (await addPlayer.boundingBox())!;
-    const startBox = (await start.boundingBox())!;
-    expect(startBox.y - (addBox.y + addBox.height)).toBeGreaterThanOrEqual(12);
+    const layoutGaps = await page.locator(".player-setup").evaluate((setup) => {
+        const back = setup.previousElementSibling;
+        const addPlayer = setup.querySelector(".add-player");
+        const start = setup.querySelector(".primary-action");
+        if (!back || !addPlayer || !start) throw new Error("Incomplete Couch lobby layout");
+        const backBox = back.getBoundingClientRect();
+        const setupBox = setup.getBoundingClientRect();
+        const addBox = addPlayer.getBoundingClientRect();
+        const startBox = start.getBoundingClientRect();
+        return {
+            backToSetup: setupBox.top - backBox.bottom,
+            addToStart: startBox.top - addBox.bottom,
+        };
+    });
+    expect(layoutGaps.backToSetup).toBeGreaterThanOrEqual(0);
+    expect(layoutGaps.addToStart).toBeGreaterThanOrEqual(12);
     await page.getByRole("button", { name: /Spiel starten/ }).click();
     await expect(page.getByRole("alert")).toContainText(
         "Mit dem aktuellen Profil und den Einstellungen sind keine Karten verfügbar.",
