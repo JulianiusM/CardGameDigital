@@ -18,6 +18,7 @@
 - [Bundled Card catalog](contracts/card-catalog-v2.md)
 - [Historical immutable Card catalog v1](contracts/card-catalog-v1.md)
 - [Infrastructure integrations](contracts/infrastructure.md)
+- [Release bundles](contracts/release-bundles.md)
 
 ## Players
 

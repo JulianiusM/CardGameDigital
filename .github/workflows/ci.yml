@@ -127,6 +127,17 @@ jobs:
       - name: Build application
         run: npm run build
 
+      - name: Assemble and smoke-test the standalone server-web bundle
+        run: |
+          set -euo pipefail
+          npm run package:server-web:portable
+          BUNDLE=$(find artifacts -maxdepth 1 -type d -name 'party-game-server-web-*-portable-*' | head -1)
+          if [ -z "${BUNDLE}" ]; then
+            echo "Standalone server-web bundle was not created."
+            exit 1
+          fi
+          npm run package:server-web:smoke -- "${BUNDLE}"
+
       - name: Type-check tests
         run: npm run typecheck:test
 

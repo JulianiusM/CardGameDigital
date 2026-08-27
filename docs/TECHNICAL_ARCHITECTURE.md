@@ -82,6 +82,10 @@ Permanent deviations from MUST-level decisions require an Architecture Decision 
 
 Portable and public editions MUST use one server codebase.
 
+That server and the Svelte browser client MUST form one `server-web` release unit. They
+share one application version, build, manifest, archive, tag namespace, and release
+workflow. Neither is released independently.
+
 Differences are implemented through:
 
 - configuration;
@@ -478,9 +482,9 @@ Security behavior comes from:
 
 ---
 
-# 16. Portable Distribution
+# 16. Server-Web Distribution
 
-Local users must not install:
+Users of a server-web archive must not install:
 
 - Node;
 - npm;
@@ -498,13 +502,18 @@ Release archives include:
 - media;
 - migration code.
 
-Packages are built per OS/architecture.
+Portable and public editions are assembled from the same compiled server and Svelte
+output. Both contain the runtime and production dependency graph. Packages are built
+and smoke-tested natively for Linux, Windows, and macOS on x64 and arm64. The public
+edition still requires its configured database, TLS/proxy, secret, authentication, and
+mail services.
 
 ---
 
 # 17. Public Deployment
 
-The same compiled application runs under the web host's Node environment.
+The same compiled application runs through the Node runtime embedded in its
+platform-specific server-web archive.
 
 Requirements:
 
@@ -1623,6 +1632,8 @@ UI string localization is client-owned.
 
 Catalog text comes from server APIs/messages.
 
+The compiled client is served by and released only with its matching server version.
+
 ---
 
 # 74. Kodi Client
@@ -1978,10 +1989,8 @@ Lockfiles are mandatory.
 
 CI should produce:
 
-- server bundle;
-- web assets;
-- portable archives;
-- public deployment bundle;
+- one coupled server-web build;
+- platform-specific portable and public server-web archives;
 - protocol schemas;
 - catalog bundle;
 - translation/language bundles where configured;
@@ -1994,11 +2003,16 @@ CI should produce:
 At minimum, track independently:
 
 ```text id="rbx83w"
-application_version
+server_web_application_version
 database_schema_version
 catalog_version
 protocol_version
 ```
+
+`server_web_application_version` applies to both the server and browser client. Kodi,
+Android TV, and any other native clients have independent application versions and
+release bundles. Native client versions must never replace or alias the server-web
+version; compatibility is negotiated through `protocol_version`.
 
 Locale packs may additionally expose:
 
@@ -2162,6 +2176,8 @@ The architecture is being followed when:
 - FULL catalog snapshots preserve producer-owned stable UUIDs while soft-disabling removed runtime content;
 - locales can be added through catalog releases without schema redesign;
 - web/Kodi/TV clients all use the same protocol;
+- server and web always share one server-web release version and artifact;
+- Kodi, Android TV, and other native clients use independent release units and versions;
 - database behavior is tested on SQLite and MariaDB;
 - catalog and schema versions are independently tracked;
 - no runtime CDN is required for local play;

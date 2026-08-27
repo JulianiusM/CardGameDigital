@@ -12,6 +12,7 @@ semantics, lifecycle, security, and failure behavior that types alone cannot exp
 | Bundled Card catalog v2                | `card-catalog-contract`, catalog reconciler         | [Card catalog v2](card-catalog-v2.md) |
 | Bundled Card catalog v1 (historical)   | Immutable producer contract                         | [Card catalog v1](card-catalog-v1.md) |
 | Database, SMTP, OIDC, proxy and health | `src/modules/*`                                     | [Infrastructure](infrastructure.md)   |
+| Release bundles                        | `scripts/packageRelease.ts`, release workflow       | [Release bundles](release-bundles.md) |
 
 ## Compatibility policy
 

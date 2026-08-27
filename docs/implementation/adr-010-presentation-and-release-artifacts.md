@@ -44,17 +44,26 @@ Implemented for Phase 9; platform archives remain CI-verified.
   rounds, and duration secondary, with actions for another round or a new game.
 - German editorial UI copy is centralized in `messages.de.ts`. Components retain
   only protocol/state identifiers and non-editorial technical values.
-- Portable and public artifacts are generated from the same `dist` output and
-  locked production dependency graph. Portable output includes the current Node
-  runtime, native Argon2 and SQLite bindings, the launcher for its build platform,
-  local configuration, and writable data directory. Public output omits the embedded
-  runtime and refuses the development Card fixture.
+- Server and browser presentation form the indivisible `server-web` release unit. They
+  share one version, manifest, tag namespace, archive, and release workflow. No release
+  command publishes either component independently.
+- Portable and public artifacts are generated from the same `dist` output and locked
+  production dependency graph. Both include the current Node runtime, native Argon2
+  and SQLite bindings, a launcher for the build platform, and an edition configuration
+  template. Portable output additionally includes a writable data directory. Public
+  output refuses the development Card fixture and still expects separately operated
+  infrastructure services.
+- Kodi and Android-family clients are separate release units with independent versions,
+  manifests, workflows, tag namespaces, and archives. They remain protocol consumers
+  and are never folded into the server-web artifact.
 - Release smoke checks assert the server, Svelte bundle, lockfile, native
-  dependencies, license, CycloneDX SBOM, protocol schemas, and portable
-  runtime/data/config layout before archives upload. Version tags are pushed only after
-  both editions build, pass their smoke checks, and have been archived successfully.
+  dependencies, license, CycloneDX SBOM, protocol schemas, release manifest, embedded
+  runtime, and edition layout before archives upload. A platform matrix builds Linux,
+  Windows, and macOS x64/arm64 archives on their matching hosts. The namespaced version
+  tag is pushed only after every platform and edition builds, passes its smoke check,
+  and has been archived successfully.
 
 ## Remaining platform gate
 
-CI must execute packaging independently on every supported OS/architecture; a
-single machine cannot produce or validate another platform's native bindings.
+The configured release matrix must complete on every supported OS/architecture; a
+single development machine cannot validate another platform's native bindings.

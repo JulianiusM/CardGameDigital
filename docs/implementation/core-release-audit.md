@@ -38,12 +38,14 @@ required service/platform is unavailable in this repository environment.
   browser account flows require staging infrastructure.
 - Playwright browser workflows must pass in release CI; public account, OIDC, and proxy
   browser flows additionally require staging configuration.
-- Portable server archives must be produced independently on every supported OS and
-  architecture because native Node bindings cannot be cross-packaged safely.
+- The server-web release workflow is configured to produce both editions independently
+  on Linux, Windows, and macOS x64/arm64. A successful manual release run remains the
+  external proof that all native runners and bindings are available.
 
 Kodi and Android-family native clients remain part of the longer-term architecture but
 are explicitly deferred from this release. The responsive browser client covers all
-three initial device modes: Couch, Personal, and Party Screen.
+three initial device modes: Couch, Personal, and Party Screen. Their future artifacts
+have independent release-unit and tag namespaces and cannot be added to server-web.
 
 ## Canonical content blocker
 

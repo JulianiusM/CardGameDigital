@@ -1,174 +1,236 @@
-name: Manual Release
+name: Server + Web Release
 
 on:
-  workflow_dispatch:
-    inputs:
-      version:
-        description: "Release version (e.g. 1.2.3, 1.2.3-alpha.1, 1.2.3-rc.2)"
-        required: true
-        type: string
+    workflow_dispatch:
+        inputs:
+            version:
+                description: "Server + web version (e.g. 1.2.3, 1.2.3-alpha.1, 1.2.3-rc.2)"
+                required: true
+                type: string
 
 permissions:
-  contents: write
+    contents: write
 
 jobs:
-  # 1) Full CI verification on the selected branch/commit
-  ci:
-    name: Run full CI on selected branch
-    uses: ./.github/workflows/ci.yml
-    secrets: inherit
+    ci:
+        name: Run full CI on selected branch
+        uses: ./.github/workflows/ci.yml
+        secrets: inherit
 
-  # 2) If CI passes, bump version, tag, build, and create release
-  release:
-    name: Bump version, tag, build & create release
-    needs: ci
-    runs-on: ubuntu-latest
+    validate:
+        name: Validate server-web release
+        needs: ci
+        runs-on: ubuntu-24.04
 
-    steps:
-      - name: Checkout selected branch
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ github.ref }}
-          fetch-depth: 0
+        steps:
+            - name: Checkout selected branch
+              uses: actions/checkout@v4
+              with:
+                  ref: ${{ github.ref }}
+                  fetch-depth: 0
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 24.15.0
-          cache: npm
-          cache-dependency-path: package-lock.json
+            - name: Validate requested version and check tag availability
+              env:
+                  RELEASE_VERSION: ${{ inputs.version }}
+              run: |
+                  set -euo pipefail
 
-      - name: Install dependencies
-        run: npm ci
+                  node << 'EOF'
+                  const version = process.env.RELEASE_VERSION || '';
+                  const semverLike = /^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?$/;
 
-      - name: Validate requested version and check tag availability
-        env:
-          RELEASE_VERSION: ${{ inputs.version }}
-        run: |
-          set -e
+                  if (!semverLike.test(version)) {
+                    console.error(`ERROR: Version '${version}' is not valid release semver.`);
+                    process.exit(1);
+                  }
+                  if (/dev/i.test(version)) {
+                    console.error("ERROR: 'dev' is not allowed in release versions.");
+                    process.exit(1);
+                  }
 
-          echo "Requested release version: ${RELEASE_VERSION}"
+                  const prerelease = version.split('-', 2)[1];
+                  if (prerelease && !/^(alpha|beta|rc)(\.|$)/.test(prerelease)) {
+                    console.error(`ERROR: Pre-release identifier must start with alpha, beta, or rc (got '${prerelease}').`);
+                    process.exit(1);
+                  }
+                  EOF
 
-          node << 'EOF'
-          const v = process.env.RELEASE_VERSION || '';
+                  git fetch --tags --quiet
+                  if git tag -l "server-web-v${RELEASE_VERSION}" | grep -q .; then
+                    echo "ERROR: Tag server-web-v${RELEASE_VERSION} already exists."
+                    exit 1
+                  fi
 
-          const semverLike = /^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?$/;
+    package-server-web:
+        name: Package server + web (${{ matrix.target }})
+        needs: validate
+        strategy:
+            fail-fast: false
+            matrix:
+                include:
+                    - runner: ubuntu-24.04
+                      target: linux-x64
+                    - runner: ubuntu-24.04-arm
+                      target: linux-arm64
+                    - runner: windows-2025
+                      target: win32-x64
+                    - runner: windows-11-arm
+                      target: win32-arm64
+                    - runner: macos-15-intel
+                      target: darwin-x64
+                    - runner: macos-15
+                      target: darwin-arm64
+        runs-on: ${{ matrix.runner }}
 
-          if (!semverLike.test(v)) {
-            console.error(`ERROR: Version '${v}' is not a valid semver (e.g. 1.2.3 or 1.2.3-alpha.1).`);
-            process.exit(1);
-          }
+        steps:
+            - name: Checkout selected branch
+              uses: actions/checkout@v4
+              with:
+                  ref: ${{ github.ref }}
 
-          if (/dev/i.test(v)) {
-            console.error("ERROR: 'dev' is not allowed in release versions.");
-            process.exit(1);
-          }
+            - name: Setup Node.js
+              uses: actions/setup-node@v4
+              with:
+                  node-version: 24.15.0
+                  cache: npm
+                  cache-dependency-path: package-lock.json
 
-          const prereleaseIndex = v.indexOf('-');
-          if (prereleaseIndex !== -1) {
-            const pre = v.slice(prereleaseIndex + 1); // e.g. "alpha.1"
-            if (!/^(alpha|beta|rc)(\.|$)/.test(pre)) {
-              console.error(`ERROR: Pre-release identifier must start with alpha, beta, or rc (got: '${pre}')`);
-              process.exit(1);
-            }
-          }
+            - name: Install platform dependencies
+              run: npm ci
 
-          console.log(`Version '${v}' is syntactically valid.`);
-          process.exit(0);
-          EOF
+            - name: Apply release version without creating a tag
+              env:
+                  RELEASE_VERSION: ${{ inputs.version }}
+              run: npm version "$RELEASE_VERSION" --no-git-tag-version
+              shell: bash
 
-          git fetch --tags --quiet
-          if git tag -l "v${RELEASE_VERSION}" | grep -q .; then
-            echo "ERROR: Tag v${RELEASE_VERSION} already exists."
-            exit 1
-          fi
+            - name: Build coupled server-web editions
+              env:
+                  RELEASE_VERSION: ${{ inputs.version }}
+              run: npm run package:server-web
+              shell: bash
 
-          echo "Tag 'v${RELEASE_VERSION}' is free."
+            - name: Smoke-test bundled runtime and layouts
+              run: |
+                  set -euo pipefail
+                  for directory in artifacts/party-game-server-web-*; do
+                    [ -d "$directory" ] || continue
+                    npm run package:server-web:smoke -- "$directory"
+                  done
+              shell: bash
 
-      - name: Update package.json to requested version (no tag yet)
-        env:
-          RELEASE_VERSION: ${{ inputs.version }}
-        run: |
-          set -e
-          npm version "${RELEASE_VERSION}" --no-git-tag-version
-          node -p "require('./package.json').version"
+            - name: Create platform archives
+              run: |
+                  set -euo pipefail
+                  for directory in artifacts/party-game-server-web-*; do
+                    [ -d "$directory" ] || continue
+                    name=$(basename "$directory")
+                    tar -czf "artifacts/${name}.tar.gz" -C "$directory" .
+                  done
+              shell: bash
 
-      - name: Build application for release
-        run: npm run build
+            - name: Upload platform archives
+              uses: actions/upload-artifact@v4
+              with:
+                  name: server-web-${{ matrix.target }}
+                  path: artifacts/party-game-server-web-*.tar.gz
+                  if-no-files-found: error
+                  retention-days: 7
 
-      - name: Build portable and public distributions
-        env:
-          RELEASE_VERSION: ${{ inputs.version }}
-        run: |
-          npx ts-node --project tsconfig.server.json scripts/packageRelease.ts portable
-          npx ts-node --project tsconfig.server.json scripts/packageRelease.ts public
+    release:
+        name: Publish server + web release
+        needs: package-server-web
+        runs-on: ubuntu-24.04
 
-      - name: Smoke-test release layouts
-        run: |
-          PORTABLE=$(find artifacts -maxdepth 1 -type d -name '*-portable-*' | head -1)
-          PUBLIC=$(find artifacts -maxdepth 1 -type d -name '*-public-*' | head -1)
-          npm run package:smoke -- "$PORTABLE"
-          npm run package:smoke -- "$PUBLIC"
+        steps:
+            - name: Checkout selected branch
+              uses: actions/checkout@v4
+              with:
+                  ref: ${{ github.ref }}
+                  fetch-depth: 0
 
-      - name: Create release archives
-        env:
-          RELEASE_VERSION: ${{ inputs.version }}
-        run: |
-          set -e
-          for directory in artifacts/party-game-*; do
-            [ -d "$directory" ] || continue
-            name=$(basename "$directory")
-            tar -czf "artifacts/${name}.tar.gz" -C "$directory" .
-          done
-          find artifacts -maxdepth 1 -type f -name '*.tar.gz' -print
+            - name: Setup Node.js
+              uses: actions/setup-node@v4
+              with:
+                  node-version: 24.15.0
+                  cache: npm
+                  cache-dependency-path: package-lock.json
 
-      - name: Commit verified version bump and create tag
-        env:
-          RELEASE_VERSION: ${{ inputs.version }}
-        run: |
-          set -e
+            - name: Download all platform archives
+              uses: actions/download-artifact@v4
+              with:
+                  pattern: server-web-*
+                  path: artifacts
+                  merge-multiple: true
 
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
+            - name: Verify complete server-web artifact set
+              run: |
+                  node << 'EOF'
+                  const fs = require('node:fs');
+                  const archives = fs.readdirSync('artifacts').filter((name) => name.endsWith('.tar.gz'));
+                  const expectedTargets = [
+                    'linux-x64',
+                    'linux-arm64',
+                    'win32-x64',
+                    'win32-arm64',
+                    'darwin-x64',
+                    'darwin-arm64',
+                  ];
+                  const missing = expectedTargets.flatMap((target) =>
+                    ['portable', 'public']
+                      .filter((edition) => !archives.some((name) => name.includes(`-${edition}-${target}.tar.gz`)))
+                      .map((edition) => `${edition}-${target}`),
+                  );
+                  if (missing.length > 0 || archives.length !== expectedTargets.length * 2) {
+                    console.error(`ERROR: Incomplete server-web artifacts. Missing: ${missing.join(', ') || 'unknown duplicate'}`);
+                    process.exit(1);
+                  }
+                  EOF
 
-          git add package.json package-lock.json
-          if git diff --cached --quiet; then
-            echo "No changes detected after version bump; aborting."
-            exit 1
-          fi
+            - name: Commit server-web version and create namespaced tag
+              env:
+                  RELEASE_VERSION: ${{ inputs.version }}
+              run: |
+                  set -euo pipefail
+                  npm version "${RELEASE_VERSION}" --no-git-tag-version
 
-          git commit -m "chore: release v${RELEASE_VERSION}"
-          git tag -a "v${RELEASE_VERSION}" -m "Release v${RELEASE_VERSION}"
-          git push origin "HEAD:${GITHUB_REF_NAME}"
-          git push origin "v${RELEASE_VERSION}"
+                  git config user.name "github-actions[bot]"
+                  git config user.email "github-actions[bot]@users.noreply.github.com"
+                  git add package.json package-lock.json
+                  if git diff --cached --quiet; then
+                    echo "No version changes detected; aborting."
+                    exit 1
+                  fi
 
-      - name: Create GitHub Release
-        id: create_release
-        uses: softprops/action-gh-release@v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tag_name: v${{ inputs.version }}
-          name: v${{ inputs.version }}
-          prerelease: ${{ contains(inputs.version, '-') }}
-          draft: ${{ contains(inputs.version, '-') }}
-          make_latest: ${{ contains(inputs.version, '-') && 'false' || 'true' }}
-          files: |
-            artifacts/*.tar.gz
+                  git commit -m "chore: release server-web v${RELEASE_VERSION}"
+                  git tag -a "server-web-v${RELEASE_VERSION}" -m "Server + Web v${RELEASE_VERSION}"
+                  git push origin "HEAD:${GITHUB_REF_NAME}"
+                  git push origin "server-web-v${RELEASE_VERSION}"
 
-      - name: Publish prerelease after assets upload
-        if: ${{ contains(inputs.version, '-') }}
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RELEASE_ID: ${{ steps.create_release.outputs.id }}
-        run: |
-          set -euo pipefail
+            - name: Create GitHub release
+              id: create_release
+              uses: softprops/action-gh-release@v2
+              env:
+                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+              with:
+                  tag_name: server-web-v${{ inputs.version }}
+                  name: Server + Web v${{ inputs.version }}
+                  prerelease: ${{ contains(inputs.version, '-') }}
+                  draft: ${{ contains(inputs.version, '-') }}
+                  make_latest: ${{ contains(inputs.version, '-') && 'false' || 'true' }}
+                  files: artifacts/*.tar.gz
 
-          if [ -z "${RELEASE_ID:-}" ]; then
-            echo "ERROR: release ID was not returned by the release creation step."
-            exit 1
-          fi
-
-          gh api -X PATCH "repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}" \
-            -f draft=false \
-            -f prerelease=true
+            - name: Publish prerelease after assets upload
+              if: ${{ contains(inputs.version, '-') }}
+              env:
+                  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+                  RELEASE_ID: ${{ steps.create_release.outputs.id }}
+              run: |
+                  set -euo pipefail
+                  if [ -z "${RELEASE_ID:-}" ]; then
+                    echo "ERROR: release ID was not returned by the release creation step."
+                    exit 1
+                  fi
+                  gh api -X PATCH "repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}" \
+                    -f draft=false \
+                    -f prerelease=true

@@ -14,29 +14,48 @@ import {
     snapshotRequestEnvelopeSchema,
 } from "../src/packages/protocol";
 import { bundledCardCatalogArtifact } from "../src/modules/database/bundledCardCatalog";
+import {
+    createServerWebReleaseManifest,
+    removeExistingReleaseTarget,
+    releaseEditionSchema,
+    releaseVersionSchema,
+    serverWebArchitectureSchema,
+    serverWebReleaseDirectoryName,
+    serverWebPlatformSchema,
+} from "./releaseBundle";
 
-type Edition = "portable" | "public";
-const edition = process.argv[2] as Edition;
-if (edition !== "portable" && edition !== "public") {
-    throw new Error("Usage: packageRelease.ts <portable|public>");
+function releaseReadme(edition: "portable" | "public", platform: NodeJS.Platform): string {
+    const launcher = platform === "win32" ? "start.cmd" : "./start.sh";
+    if (edition === "portable") {
+        return `Start with ${launcher}. Open http://localhost:3000/play/. No internet or installed Node.js is required.\n`;
+    }
+    return `Start with ${launcher}. The Node runtime, server, and web client are bundled. Configure MariaDB, HTTPS/proxying, PUBLIC_URL, SESSION_SECRET, TRUST_PROXY, authentication, and SMTP before starting.\n`;
 }
+
+const editionResult = releaseEditionSchema.safeParse(process.argv[2]);
+if (!editionResult.success) throw new Error("Usage: packageRelease.ts <portable|public>");
+const edition = editionResult.data;
 if (edition === "public") bundledCardCatalogArtifact("public");
 
 const root = process.cwd();
 const packageVersion = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8")).version;
-const version = process.env.RELEASE_VERSION || packageVersion;
-if (!/^[0-9A-Za-z][0-9A-Za-z._-]*$/.test(version)) {
-    throw new Error("Release version contains unsafe path characters");
-}
+const version = releaseVersionSchema.parse(process.env.RELEASE_VERSION || packageVersion);
+const platform = serverWebPlatformSchema.parse(process.platform);
+const architecture = serverWebArchitectureSchema.parse(process.arch);
 const artifactsRoot = path.resolve(root, "artifacts");
 const target = path.resolve(
     artifactsRoot,
-    `party-game-${version}-${edition}-${process.platform}-${process.arch}`,
+    serverWebReleaseDirectoryName({
+        version,
+        edition,
+        platform,
+        architecture,
+    }),
 );
 if (path.dirname(target) !== artifactsRoot) {
     throw new Error("Release target must be an immediate child of the artifacts directory");
 }
-fs.rmSync(target, { recursive: true, force: true });
+removeExistingReleaseTarget(target);
 fs.mkdirSync(path.join(target, "app"), { recursive: true });
 fs.cpSync(path.join(root, "dist"), path.join(target, "app", "dist"), { recursive: true });
 fs.copyFileSync(path.join(root, "package-lock.json"), path.join(target, "package-lock.json"));
@@ -44,9 +63,8 @@ fs.copyFileSync(path.join(root, "LICENSE.md"), path.join(target, "LICENSE.md"));
 
 const sourcePackage = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
 delete sourcePackage.devDependencies;
-sourcePackage.scripts = { start: "node app/dist/server.js" };
+delete sourcePackage.scripts;
 fs.writeFileSync(path.join(target, "package.json"), `${JSON.stringify(sourcePackage, null, 2)}\n`);
-sourcePackage.scripts = { start: "node dist/server.js" };
 fs.writeFileSync(
     path.join(target, "app", "package.json"),
     `${JSON.stringify(sourcePackage, null, 2)}\n`,
@@ -113,38 +131,51 @@ for (const source of productionPaths) {
     fs.cpSync(source, path.join(target, relative), { recursive: true, dereference: false });
 }
 
+fs.mkdirSync(path.join(target, "runtime"), { recursive: true });
+fs.mkdirSync(path.join(target, "config"), { recursive: true });
+const runtimeName = process.platform === "win32" ? "node.exe" : "node";
+fs.copyFileSync(process.execPath, path.join(target, "runtime", runtimeName));
+fs.chmodSync(path.join(target, "runtime", runtimeName), 0o755);
+
 if (edition === "portable") {
-    fs.mkdirSync(path.join(target, "runtime"), { recursive: true });
     fs.mkdirSync(path.join(target, "data"), { recursive: true });
-    fs.mkdirSync(path.join(target, "config"), { recursive: true });
-    const runtimeName = process.platform === "win32" ? "node.exe" : "node";
-    fs.copyFileSync(process.execPath, path.join(target, "runtime", runtimeName));
-    fs.chmodSync(path.join(target, "runtime", runtimeName), 0o755);
     fs.writeFileSync(
         path.join(target, "config", "settings.csv"),
         "DEPLOYMENT_MODE,local\nAUTH_MODE,none\nDB_TYPE,sqlite\nDB_FILE,data/game.sqlite\nHTTP_BIND,::\nHTTP_PORT,3000\n",
     );
-    if (process.platform === "win32") {
-        fs.writeFileSync(
-            path.join(target, "start.cmd"),
-            "@echo off\r\ncd /d %~dp0\r\nset SETTINGS_FILE=config/settings.csv\r\nruntime\\node.exe app\\dist\\server.js\r\n",
-        );
-    } else {
-        fs.writeFileSync(
-            path.join(target, "start.sh"),
-            '#!/bin/sh\ncd "$(dirname "$0")"\nexport SETTINGS_FILE=config/settings.csv\nexec runtime/node app/dist/server.js\n',
-            { mode: 0o755 },
-        );
-    }
+} else {
+    fs.writeFileSync(
+        path.join(target, "config", "settings.csv"),
+        "DEPLOYMENT_MODE,public\nPUBLIC_RUNTIME_SECURITY,enforced\nAUTH_MODE,account\nDB_TYPE,mariadb\nHTTP_BIND,::\nHTTP_PORT,3000\n",
+    );
 }
 
+if (process.platform === "win32") {
+    fs.writeFileSync(
+        path.join(target, "start.cmd"),
+        "@echo off\r\ncd /d %~dp0\r\nset SETTINGS_FILE=config/settings.csv\r\nruntime\\node.exe app\\dist\\server.js\r\n",
+    );
+} else {
+    fs.writeFileSync(
+        path.join(target, "start.sh"),
+        '#!/bin/sh\ncd "$(dirname "$0")"\nexport SETTINGS_FILE=config/settings.csv\nexec runtime/node app/dist/server.js\n',
+        { mode: 0o755 },
+    );
+}
+
+const releaseManifest = createServerWebReleaseManifest({
+    version,
+    edition,
+    platform,
+    architecture,
+    nodeVersion: process.version,
+    protocolVersion: PROTOCOL_VERSION,
+});
 fs.writeFileSync(
-    path.join(target, "README.txt"),
-    edition === "portable"
-        ? process.platform === "win32"
-            ? "Start with start.cmd. Open http://localhost:3000/play/. No internet or installed Node.js is required.\n"
-            : "Start with ./start.sh. Open http://localhost:3000/play/. No internet or installed Node.js is required.\n"
-        : "Public deployment bundle. Supply a producer-approved Card catalog and configure DEPLOYMENT_MODE=public, MariaDB, an HTTPS origin PUBLIC_URL, an explicit SESSION_SECRET, numeric TRUST_PROXY hop count, authentication, and SMTP before running npm start.\n",
+    path.join(target, "release-manifest.json"),
+    `${JSON.stringify(releaseManifest, null, 2)}\n`,
 );
+
+fs.writeFileSync(path.join(target, "README.txt"), releaseReadme(edition, process.platform));
 
 console.log(target);

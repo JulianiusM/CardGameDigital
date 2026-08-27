@@ -203,10 +203,20 @@ ignored `TEST_DB_*` values into its server process without printing or duplicati
 Release layouts can be built and verified with:
 
 ```bash
-npm run package:portable
-npm run package:public
-npm run package:smoke -- artifacts/<package-directory>
+npm run package:server-web:portable
+npm run package:server-web:public
+npm run package:server-web:smoke -- artifacts/<package-directory>
 ```
+
+Server and browser code form one `server-web` release unit with one version. Both
+portable and public archives embed Node and all production packages for their exact
+OS/architecture; an operator does not install Node or npm. Public operation still needs
+the configured database, TLS/proxy, secrets, authentication, and mail services. Manual
+release CI produces Linux, Windows, and macOS archives for x64 and arm64.
+
+Kodi and Android-family clients are separate release units with independent versions,
+tags, and artifacts. They consume the versioned protocol and are never added to the
+server-web archive. See the [release bundle contract](./docs/contracts/release-bundles.md).
 
 ## Repository map
 
@@ -233,6 +243,7 @@ tests/                       Unit, integration, simulation, E2E, architecture te
 - [Bundled Card catalog](./docs/contracts/card-catalog-v2.md)
 - [Historical immutable Card catalog v1](./docs/contracts/card-catalog-v1.md)
 - [Infrastructure integrations](./docs/contracts/infrastructure.md)
+- [Release bundles](./docs/contracts/release-bundles.md)
 
 ## Contributing
 

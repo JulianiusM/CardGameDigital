@@ -231,11 +231,19 @@ validated at startup, and open separately so active setup or gameplay remains in
 
 ## Release bundles
 
-- `portable` includes a Node runtime, production dependencies, local settings template,
-  and start scripts. It is intended for one machine or LAN server.
-- `public` includes the built app and production dependencies but requires external
-  database, TLS/proxy, stable secrets, authentication, and email configuration.
-- Both editions include `LICENSE.md`, a CycloneDX JSON SBOM, and protocol-v2 JSON
-  schemas with a versioned manifest.
+- `server-web` is the indivisible application release unit. Its `portable` and `public`
+  editions include the same-version server and complete Vite client, a platform Node
+  runtime, production dependencies, a non-secret settings template, and start scripts.
+- `portable` is intended for one machine or LAN server and includes a writable SQLite
+  data directory. `public` requires deployment services including MariaDB, TLS/proxy,
+  stable secrets, authentication, and email, but does not require installed Node/npm or
+  separately installed application packages.
+- Both editions include `LICENSE.md`, a CycloneDX JSON SBOM, protocol-v2 JSON schemas,
+  and a `party-game-release/v1` manifest that gives server and web the same version.
+- Kodi and Android-family applications are separate native-client release units. They
+  are never added to a server-web archive and have independent versions and tags.
 - `scripts/smokeRelease.ts` validates required layout only; it does not prove external
   database, SMTP, OIDC, DNS, certificates, or firewall correctness.
+
+Artifact names, supported platforms, manifest fields, tag namespaces, and compatibility
+impact are defined in the [release bundle contract](./release-bundles.md).
