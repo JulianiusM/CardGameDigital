@@ -825,7 +825,7 @@ test("each Group restores its own Custom and Card-language settings", async ({ p
             cardLanguageSettings: {
                 cardLocale: "de-DE",
                 cardFallbackEnabled: true,
-                cardFallbackLocales: ["en-GB"],
+                cardFallbackLocales: ["en-US"],
             },
         },
     });
@@ -837,7 +837,7 @@ test("each Group restores its own Custom and Card-language settings", async ({ p
             preferredProfileId: "PROFILE_CUSTOM",
             customConfiguration: secondCustom,
             cardLanguageSettings: {
-                cardLocale: "en-GB",
+                cardLocale: "en-US",
                 cardFallbackEnabled: false,
                 cardFallbackLocales: ["de-DE"],
             },
@@ -859,7 +859,7 @@ test("each Group restores its own Custom and Card-language settings", async ({ p
             cardLanguageSettings: {
                 cardLocale: "de-DE",
                 cardFallbackEnabled: false,
-                cardFallbackLocales: ["en-GB"],
+                cardFallbackLocales: ["en-US"],
             },
         },
     });
@@ -903,7 +903,7 @@ test("each Group restores its own Custom and Card-language settings", async ({ p
     await openCustomization(secondName);
     await expect(page.getByLabel("Startintensität")).toHaveValue("3");
     await expect(page.getByLabel("Endintensität")).toHaveValue("5");
-    await expect(cardLanguages().getByRole("option", { name: /en-GB/ })).toHaveAttribute(
+    await expect(cardLanguages().getByRole("option", { name: /en-US/ })).toHaveAttribute(
         "aria-selected",
         "true",
     );
@@ -955,14 +955,14 @@ test("Custom profile exposes the full shared customization editor", async ({ pag
     await expect(page.getByRole("heading", { name: /Themen/ })).toBeVisible();
     await expect(page.getByRole("heading", { name: /Arten von Pflichten/ })).toBeVisible();
     await expect(page.getByRole("heading", { name: /Zusätzliche Inhaltsregeln/ })).toBeVisible();
-    await expect(page.getByRole("button", { name: "ALLTAG" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "KUSS", exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Alltag" })).toBeVisible();
+    await expect(
+        page.getByRole("button", { name: "Freundschaftliche Küsse", exact: true }),
+    ).toBeVisible();
     await expect(
         page.getByRole("option", { name: /Deutsch \(Deutschland\).*de-DE/ }),
     ).toBeVisible();
-    await expect(
-        page.getByRole("option", { name: /English \(United Kingdom\).*en-GB/ }),
-    ).toBeVisible();
+    await expect(page.getByRole("option", { name: /English \(USA\).*en-US/ })).toBeVisible();
 
     const intensitySection = page.locator(".behavior-settings");
     const startingIntensity = intensitySection.getByLabel("Startintensität");
@@ -976,7 +976,7 @@ test("Custom profile exposes the full shared customization editor", async ({ pag
         has: page.getByRole("heading", { name: /Themen/ }),
     });
     await questions.getByRole("button", { name: "Alle aktiv" }).click();
-    await expect(questions.getByRole("button", { name: "ALLTAG" })).toHaveClass(/selected/);
+    await expect(questions.getByRole("button", { name: "Alltag" })).toHaveClass(/selected/);
     await questions.getByRole("button", { name: "Keine aktiv" }).click();
     await expect(questions.locator(".toggle-chip-grid button.selected")).toHaveCount(0);
 
@@ -1026,7 +1026,7 @@ test("a completed no-group Custom setup restores only its dedicated DataSpace sn
         has: page.getByRole("heading", { name: /Themen/ }),
     });
     await questions.getByRole("button", { name: "Keine aktiv" }).click();
-    await questions.getByRole("button", { name: "FREUNDSCHAFT" }).click();
+    await questions.getByRole("button", { name: "Freundschaft" }).click();
     await page.getByRole("button", { name: /^Weiter/ }).click();
     await page.getByRole("button", { name: /Nur dieser Bildschirm/ }).click();
     await page.getByRole("button", { name: /Weiter zur Lobby/ }).click();
@@ -1060,7 +1060,7 @@ test("a completed no-group Custom setup restores only its dedicated DataSpace sn
     await expect(behavior.getByLabel("Startintensität")).toHaveValue("2");
     await expect(behavior.getByLabel("Endintensität")).toHaveValue("4");
     await expect(questions.locator(".toggle-chip-grid button.selected")).toHaveCount(1);
-    await expect(questions.getByRole("button", { name: "FREUNDSCHAFT" })).toHaveClass(/selected/);
+    await expect(questions.getByRole("button", { name: "Freundschaft" })).toHaveClass(/selected/);
 });
 
 test("interface language defaults to the browser and can be explicitly overridden", async ({
@@ -1222,6 +1222,14 @@ test("Couch lobby has canonical Settings and zero-card start stays with a warnin
     await page.getByRole("button", { name: /^Weiter/ }).click();
     await page.getByRole("button", { name: /^Custom/ }).click();
     await page.getByRole("button", { name: /^Weiter/ }).click();
+    const questions = page.locator(".settings-section-card", {
+        has: page.getByRole("heading", { name: /Themen/ }),
+    });
+    const dares = page.locator(".settings-section-card", {
+        has: page.getByRole("heading", { name: /Arten von Pflichten/ }),
+    });
+    await questions.getByRole("button", { name: "Keine aktiv" }).click();
+    await dares.getByRole("button", { name: "Keine aktiv" }).click();
     await page.getByRole("button", { name: /^Weiter/ }).click();
     await page.getByRole("button", { name: /Nur dieser Bildschirm/ }).click();
     await page.getByRole("button", { name: /Weiter zur Lobby/ }).click();
@@ -1294,6 +1302,7 @@ test("a fresh Couch game after the summary restores the authenticated account na
     await firstPlayer.fill("Gastgeber auf Zeit");
     await page.getByRole("button", { name: /Spiel starten/ }).click();
     await page.getByLabel("Einstellungen").click();
+    await page.getByRole("tab", { name: "Session" }).click();
     await page.getByRole("button", { name: "Spiel beenden" }).click();
     await page.getByRole("button", { name: "Neues Spiel" }).click();
     await expect(page.locator(".player-name-row").first().getByRole("textbox")).toHaveValue(

@@ -40,11 +40,9 @@ const reporters: ReporterDescription[] =
 
 export default defineConfig({
     testDir: "tests/e2e",
-    testMatch: "**/*.spec.ts",
+    testMatch: "public-account.spec.ts",
     timeout: 30_000,
     expect: { timeout: 5_000 },
-    // Both spec files share one authoritative server/database. Keep each file ordered
-    // while still running the Couch and Party Screen files alongside one another.
     fullyParallel: false,
     workers: 2,
     reporter: reporters,

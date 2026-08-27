@@ -23,8 +23,20 @@ async function hostRoom(
     await page.getByRole("button", { name: /^Weiter/ }).click();
     if (mode) await page.getByRole("button", { name: mode }).click();
     await page.getByRole("button", { name: /^Weiter/ }).click();
-    await page.getByRole("button", { name: profile }).click();
+    const profileOption = page.getByRole("button", { name: profile });
+    const customProfile = /^Custom\b/.test((await profileOption.innerText()).trim());
+    await profileOption.click();
     await page.getByRole("button", { name: /^Weiter/ }).click();
+    if (customProfile) {
+        const questions = page.locator(".settings-section-card", {
+            has: page.getByRole("heading", { name: /Themen/ }),
+        });
+        const dares = page.locator(".settings-section-card", {
+            has: page.getByRole("heading", { name: /Arten von Pflichten/ }),
+        });
+        await questions.getByRole("button", { name: "Keine aktiv" }).click();
+        await dares.getByRole("button", { name: "Keine aktiv" }).click();
+    }
     if (mode?.test("Ich hab noch nie")) {
         await page
             .getByRole("button", { name: reveal === "named" ? /^Antworten offen/ : /^Anonym/ })

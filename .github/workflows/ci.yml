@@ -144,7 +144,16 @@ jobs:
         if: steps.playwright-cache.outputs.cache-hit != 'true'
         run: npx playwright install --with-deps chromium
 
-      - name: Run focused Playwright E2E suite with JUnit report
+      - name: Run local Couch and Party Screen Playwright E2E suite
+        env:
+          CI: true
+          PLAYWRIGHT_JUNIT_OUTPUT: artifacts/junit-playwright-couch.xml
+          PLAYWRIGHT_HTML_OUTPUT_DIR: artifacts/playwright-report-couch
+        run: |
+          mkdir -p artifacts
+          npm run e2e:couch
+
+      - name: Run public-account Playwright E2E suite
         env:
           CI: true
           PLAYWRIGHT_JUNIT_OUTPUT: artifacts/junit-playwright.xml
@@ -161,7 +170,9 @@ jobs:
           path: |
             artifacts/junit-vitest.xml
             artifacts/junit-playwright.xml
+            artifacts/junit-playwright-couch.xml
             artifacts/playwright-report/
+            artifacts/playwright-report-couch/
             coverage/lcov.info
             coverage/coverage-final.json
           retention-days: 7
@@ -179,7 +190,7 @@ jobs:
         with:
           args: >
             -Dsonar.projectVersion=${{ steps.package.outputs.version }}
-            -Dsonar.junit.reportPaths=artifacts/junit-vitest.xml,artifacts/junit-playwright.xml
+            -Dsonar.junit.reportPaths=artifacts/junit-vitest.xml,artifacts/junit-playwright.xml,artifacts/junit-playwright-couch.xml
             -Dsonar.javascript.lcov.reportPaths=coverage/lcov.info
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}

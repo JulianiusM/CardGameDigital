@@ -35,6 +35,12 @@ npm run test:mariadb:public
 npm run test:ci
 ```
 
+`npm run e2e` runs the authenticated public-account browser scenarios against the
+prepared E2E database. `npm run e2e:couch` starts its own local, no-auth SQLite
+deployment and runs the Couch and Party Screen scenarios, including LAN and IPv6
+origin coverage. CI runs both commands and publishes a separate report for each
+deployment profile.
+
 The Card-policy scale simulation compiles 10,000 and 50,000 Cards against 200 ordered
 rules, then measures O(1) compiled snapshot lookup. The Room HTTP/SQLite suites cover
 ownership, cursor search, provenance, optimistic conflicts, atomic portable import, and

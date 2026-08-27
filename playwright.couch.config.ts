@@ -1,10 +1,32 @@
+import type { ReporterDescription } from "@playwright/test";
 import { defineConfig, devices } from "@playwright/test";
 
 const port = 3011;
+const isCi = process.env.CI === "true" || process.env.CI === "1";
+const htmlReportDirectory = process.env.PLAYWRIGHT_HTML_OUTPUT_DIR ?? "playwright-report";
+let junitReporter: ReporterDescription | null = null;
+if (process.env.PLAYWRIGHT_JUNIT_OUTPUT) {
+    junitReporter = ["junit", { outputFile: process.env.PLAYWRIGHT_JUNIT_OUTPUT }];
+} else if (isCi) {
+    junitReporter = ["junit"];
+}
+
+const reporters: ReporterDescription[] =
+    isCi || junitReporter
+        ? [
+              [isCi ? "line" : "list"],
+              ...(junitReporter ? [junitReporter] : []),
+              ["html", { open: "never", outputFolder: htmlReportDirectory }],
+          ]
+        : [["list"], ["html", { open: "never" }]];
+
 export default defineConfig({
     testDir: "tests/e2e",
     testMatch: ["couch-mode.spec.ts", "party-screen.spec.ts"],
     timeout: 30_000,
+    fullyParallel: false,
+    workers: 2,
+    reporter: reporters,
     use: {
         baseURL: `http://127.0.0.1:${port}`,
         screenshot: "only-on-failure",
@@ -20,7 +42,7 @@ export default defineConfig({
             AUTH_MODE: "none",
             DB_TYPE: "sqlite",
             DB_FILE: ".tmp/couch-e2e.sqlite",
-            HTTP_BIND: "127.0.0.1",
+            HTTP_BIND: "::",
             HTTP_PORT: String(port),
             PUBLIC_URL: `http://127.0.0.1:${port}`,
             SESSION_SECRET: "couch_e2e_session_secret_123",
