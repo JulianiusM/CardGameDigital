@@ -18,6 +18,10 @@ import http from "node:http";
 import { AppDataSource, initDataSource } from "./modules/database/dataSource";
 import settings from "./modules/settings";
 import { configuredErrorLogFields, logEvent } from "./modules/structuredLogger";
+import {
+    CiaoLocalServiceAdvertiser,
+    LocalDiscoveryController,
+} from "./modules/localDiscovery";
 
 function closeServer(server: http.Server): Promise<void> {
     return new Promise((resolve, reject) => {
@@ -83,6 +87,16 @@ async function bootstrap() {
             },
             settings.value.logLevel,
         );
+        await websocketServer.roomLifecycleReady;
+        const localDiscovery = new LocalDiscoveryController(
+            new CiaoLocalServiceAdvertiser(),
+            async () => {
+                if (!AppDataSource.isInitialized) return false;
+                await AppDataSource.query("SELECT 1");
+                return true;
+            },
+        );
+        await localDiscovery.start();
 
         let shuttingDown = false;
         const shutdown = async (signal: string) => {
@@ -94,6 +108,7 @@ async function bootstrap() {
                 process.exit(1);
             }, 10_000);
             deadline.unref();
+            await localDiscovery.stop();
             for (const client of websocketServer.clients) client.close(1001, "server shutdown");
             const websocketClosed = new Promise<void>((resolve, reject) => {
                 websocketServer.close((error?: Error) => {

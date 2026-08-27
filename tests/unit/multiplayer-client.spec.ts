@@ -28,9 +28,15 @@ class FakeWebSocket {
 }
 
 function installBrowserGlobals(): void {
+    const sessionValues = new Map<string, string>();
     vi.stubGlobal("WebSocket", FakeWebSocket);
     vi.stubGlobal("location", { protocol: "http:", host: "example.test" });
     vi.stubGlobal("localStorage", { getItem: () => null, setItem: () => undefined });
+    vi.stubGlobal("sessionStorage", {
+        getItem: (key: string) => sessionValues.get(key) ?? null,
+        setItem: (key: string, value: string) => sessionValues.set(key, value),
+        removeItem: (key: string) => sessionValues.delete(key),
+    });
     vi.stubGlobal("navigator", { languages: ["de-DE"], onLine: true });
     vi.stubGlobal("window", {
         setTimeout: globalThis.setTimeout,
@@ -50,6 +56,135 @@ afterEach(() => {
 });
 
 describe("authoritative multiplayer client events", () => {
+    it("sends client.hello when randomUUID is unavailable on a plain-HTTP origin", async () => {
+        installBrowserGlobals();
+        vi.stubGlobal("crypto", {
+            getRandomValues(array: Uint8Array) {
+                for (let index = 0; index < array.length; index += 1) array[index] = index;
+                return array;
+            },
+        });
+        const { RoomSocket } = await import("../../apps/web/src/multiplayer");
+        const connection = new RoomSocket(
+            {
+                roomId: "00000000-0000-4000-8000-000000000010",
+                roomCode: "ABC234",
+                participantId: "00000000-0000-4000-8000-000000000011",
+                participantCredential: "credential".repeat(5),
+                role: "PLAYER",
+            },
+            () => undefined,
+        );
+        const socket = FakeWebSocket.instances[0];
+
+        socket.onopen?.();
+
+        expect(socket.sent).toHaveLength(1);
+        const hello = JSON.parse(socket.sent[0]) as {
+            type: string;
+            requestId: string;
+            payload: { roomCode: string };
+        };
+        expect(hello).toMatchObject({
+            type: "client.hello",
+            payload: { roomCode: "ABC234" },
+        });
+        expect(hello.requestId).toBe("00010203-0405-4607-8809-0a0b0c0d0e0f");
+        connection.dispose();
+    }, 15_000);
+
+    it("reuses a pending display-bootstrap idempotency key after a lost response", async () => {
+        installBrowserGlobals();
+        const responseBody = {
+            roomId: "00000000-0000-4000-8000-000000000010",
+            roomCode: "ABC234",
+            participantId: "00000000-0000-4000-8000-000000000011",
+            participantCredential: "credential".repeat(5),
+            role: "DISPLAY",
+            bootstrapMode: "DISPLAY_WAITING_FOR_HOST",
+            hostStatus: {
+                state: "AWAITING_FIRST_HOST",
+                participantId: null,
+                displayName: null,
+                deadline: null,
+            },
+        };
+        const fetchMock = vi
+            .fn()
+            .mockRejectedValueOnce(new Error("response lost"))
+            .mockResolvedValueOnce({
+                ok: true,
+                status: 201,
+                json: async () => responseBody,
+            });
+        vi.stubGlobal("fetch", fetchMock);
+        const { rooms } = await import("../../apps/web/src/multiplayer");
+        const roomSettings = { mode: "CLASSIC_TRUTH_OR_DARE" } as never;
+
+        await expect(
+            rooms.create("Party Screen", "EPHEMERAL", roomSettings, "DISPLAY_WAITING_FOR_HOST"),
+        ).rejects.toThrow("Verbindung fehlgeschlagen");
+        await expect(
+            rooms.create("Party Screen", "EPHEMERAL", roomSettings, "DISPLAY_WAITING_FOR_HOST"),
+        ).resolves.toEqual(responseBody);
+
+        const firstHeaders = fetchMock.mock.calls[0][1].headers as Headers;
+        const secondHeaders = fetchMock.mock.calls[1][1].headers as Headers;
+        expect(firstHeaders.get("Idempotency-Key")).toMatch(
+            /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+        );
+        expect(secondHeaders.get("Idempotency-Key")).toBe(firstHeaders.get("Idempotency-Key"));
+        expect(fetchMock.mock.calls[1][1].body).toBe(fetchMock.mock.calls[0][1].body);
+        expect(sessionStorage.getItem("party-game:display-bootstrap-create")).toBeNull();
+    }, 10_000);
+
+    it("reuses the pending key in memory when session storage is unavailable", async () => {
+        installBrowserGlobals();
+        vi.stubGlobal("sessionStorage", {
+            getItem: () => {
+                throw new Error("storage blocked");
+            },
+            setItem: () => {
+                throw new Error("storage blocked");
+            },
+            removeItem: () => {
+                throw new Error("storage blocked");
+            },
+        });
+        const responseBody = {
+            roomId: "00000000-0000-4000-8000-000000000010",
+            roomCode: "ABC234",
+            participantId: "00000000-0000-4000-8000-000000000011",
+            participantCredential: "credential".repeat(5),
+            role: "DISPLAY",
+            bootstrapMode: "DISPLAY_WAITING_FOR_HOST",
+            hostStatus: {
+                state: "AWAITING_FIRST_HOST",
+                participantId: null,
+                displayName: null,
+                deadline: null,
+            },
+        };
+        const fetchMock = vi
+            .fn()
+            .mockRejectedValueOnce(new Error("response lost"))
+            .mockResolvedValueOnce({ ok: true, status: 201, json: async () => responseBody });
+        vi.stubGlobal("fetch", fetchMock);
+        const { rooms } = await import("../../apps/web/src/multiplayer");
+        const roomSettings = { mode: "CLASSIC_TRUTH_OR_DARE" } as never;
+
+        await expect(
+            rooms.create("Party Screen", "EPHEMERAL", roomSettings, "DISPLAY_WAITING_FOR_HOST"),
+        ).rejects.toThrow();
+        await expect(
+            rooms.create("Party Screen", "EPHEMERAL", roomSettings, "DISPLAY_WAITING_FOR_HOST"),
+        ).resolves.toEqual(responseBody);
+
+        const firstHeaders = fetchMock.mock.calls[0][1].headers as Headers;
+        const secondHeaders = fetchMock.mock.calls[1][1].headers as Headers;
+        expect(secondHeaders.get("Idempotency-Key")).toBe(firstHeaders.get("Idempotency-Key"));
+    }, 10_000);
+
     it("reports HTTP and realtime connection failures instead of silently ignoring play", async () => {
         installBrowserGlobals();
         vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("offline")));

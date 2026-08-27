@@ -69,6 +69,7 @@
     let settingsOpen = false;
     let currentSettingsOpen = false;
     let recoveringRoom = false;
+    let connectingParticipantId = "";
     let openSettingsAfterReset = false;
     let lastConnectionNotice = "";
     let lastSettingsNoticeId = 0;
@@ -191,25 +192,32 @@
     }
 
     async function connect(value: Join): Promise<void> {
-        if (joined?.participantId === value.participantId && connection) return;
+        if (
+            joined?.participantId === value.participantId &&
+            (connection || connectingParticipantId === value.participantId)
+        )
+            return;
         connection?.dispose();
         resetRoomOverlays();
         joined = value;
         recoveringRoom = true;
-        connection = new RoomSocket(
-            value,
-            () => {
-                updateCounter++;
-                recoveringRoom = !connection?.authenticated;
-            },
-            (reason) => leaveCompleted(value, reason),
-        );
+        connectingParticipantId = value.participantId;
         try {
             const [loadedProfiles, loadedLocales, serverInfo] = await Promise.all([
                 loadGameProfiles(),
                 loadCardLocales(),
                 loadServerInfo(),
             ]);
+            if (joined?.participantId !== value.participantId) return;
+            connection = new RoomSocket(
+                value,
+                () => {
+                    updateCounter++;
+                    recoveringRoom = !connection?.authenticated;
+                },
+                (reason) => leaveCompleted(value, reason),
+                serverInfo.endpoints.webSocketPath,
+            );
             profiles = loadedProfiles;
             cardLocales = loadedLocales.locales;
             const access = roomJoinUrls(serverInfo, location.origin, value.roomCode);
@@ -226,6 +234,8 @@
                 cause instanceof Error ? cause.message : messages.common.connectionFailed,
                 "error",
             );
+        } finally {
+            if (connectingParticipantId === value.participantId) connectingParticipantId = "";
         }
     }
 
@@ -471,6 +481,8 @@
                             {participants}
                             presence={roomPresence}
                             {effectiveRole}
+                            bootstrapMode={snapshot.bootstrapMode}
+                            hostStatus={snapshot.hostStatus}
                             boundaryConfigured={snapshot.boundaryConfigured}
                             {qr}
                             {roomUrls}

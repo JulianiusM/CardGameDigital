@@ -154,6 +154,18 @@ export const en = {
         playerCount: (current: number, maximum: number) =>
             `${current} / ${maximum} people in the Room`,
         displayName: "Party Screen",
+        awaitingFirstHost: "Waiting for the first Host",
+        awaitingFirstHostHint:
+            "Scan the QR code with a phone. The first playing person to connect automatically becomes Host.",
+        hostConnecting: (name: string) => `${name || "The first Host"} is connecting …`,
+        hostConnectingHint: "Host controls are being activated securely.",
+        hostConnected: (name: string) => `${name || "The Host"} is running the game`,
+        hostConnectedHint: "The Party Screen is ready. More people can join.",
+        hostReconnecting: (name: string) => `${name || "The Host"} is reconnecting …`,
+        hostReconnectingHint: "Host authority stays reserved during the reconnection window.",
+        awaitingReplacementHost: "Waiting for a new Host",
+        awaitingReplacementHostHint:
+            "The next connected playing person will take over automatically.",
         namePlaceholder: "Alex",
     },
     cardTypes: {
@@ -422,6 +434,11 @@ export const en = {
         groupDeleted: "Group completely deleted.",
         joinName: "Your name",
         hostName: "Host name",
+        partyBootstrapTitle: "This screen becomes the Party Screen",
+        partyBootstrapHint:
+            "After opening the Room, the first playing person scans the QR code. Their phone automatically receives Host controls.",
+        partyBootstrapUnavailable:
+            "This server is not accepting display-only Room opening right now.",
         roomCode: "Room code",
         joinAction: "Join Room",
         step: (current: number, total: number) => `STEP ${current} OF ${total}`,
@@ -429,7 +446,7 @@ export const en = {
         deviceOptions: [
             ["couch", "couch", "This screen only", "Every action on one device"],
             ["personal", "phone", "One device each", "Cards and actions on every phone"],
-            ["party", "party", "TV + phones", "Big stage with private controls"],
+            ["party", "party", "TV + phones", "Open the Party Screen; Host from a phone"],
         ],
         profiles: [
             ["PROFILE_CHILD_FRIENDLY", "Child-friendly", "Playful and non-sexual"],

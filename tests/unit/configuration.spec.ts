@@ -29,10 +29,83 @@ describe("deployment configuration", () => {
             roomMaximumParticipants: 100,
             roomMaximumPlayers: 100,
             roomReconnectGraceSeconds: 180,
+            roomDisplayBootstrapEnabled: true,
+            roomInitialActivationSeconds: 300,
+            unactivatedParticipantTtlSeconds: 300,
+            roomCreateIdempotencyTombstoneSeconds: 86_400,
+            serverDisplayName: "Party Game",
+            mdnsDiscoveryEnabled: true,
+            mdnsServiceType: "_partycard._tcp",
+            mdnsAdvertisedPort: 3000,
+            webSocketPath: "/ws",
+            roomJoinPathTemplate: "/play/?room={roomCode}",
             logErrorDetails: "standard",
             httpBind: "::",
             publicUrlConfigured: false,
         });
+    });
+
+    it("keeps discovery and display bootstrap off by default for public deployments", () => {
+        expect(
+            resolveSettings(safePublicEnvironment, "/definitely/missing/settings.csv"),
+        ).toMatchObject({
+            roomDisplayBootstrapEnabled: false,
+            roomDisplayBootstrapConfigured: false,
+            mdnsDiscoveryEnabled: false,
+            mdnsDiscoveryConfigured: false,
+        });
+        expect(
+            resolveSettings(
+                {
+                    ...safePublicEnvironment,
+                    ROOM_DISPLAY_BOOTSTRAP_ENABLED: "true",
+                    MDNS_DISCOVERY_ENABLED: "true",
+                    MDNS_ADVERTISED_TLS: "true",
+                    MDNS_ADVERTISED_PORT: "443",
+                },
+                "/definitely/missing/settings.csv",
+            ),
+        ).toMatchObject({
+            roomDisplayBootstrapEnabled: true,
+            mdnsDiscoveryEnabled: true,
+            mdnsAdvertisedTls: true,
+        });
+    });
+
+    it("validates discovery endpoints and Room lifecycle durations", () => {
+        expect(() =>
+            resolveSettings(
+                { ROOM_INITIAL_ACTIVATION_SECONDS: "10" },
+                "/definitely/missing/settings.csv",
+            ),
+        ).toThrow();
+        expect(() =>
+            resolveSettings(
+                { ROOM_JOIN_PATH_TEMPLATE: "/play/no-room-code" },
+                "/definitely/missing/settings.csv",
+            ),
+        ).toThrow(/roomCode/);
+        expect(() =>
+            resolveSettings(
+                { WEB_SOCKET_PATH: "/ws?token=value" },
+                "/definitely/missing/settings.csv",
+            ),
+        ).toThrow(/query or fragment/);
+        expect(() =>
+            resolveSettings(
+                {
+                    MDNS_INTERFACE_ALLOWLIST: "WiFi",
+                    MDNS_INTERFACE_DENYLIST: "WiFi",
+                },
+                "/definitely/missing/settings.csv",
+            ),
+        ).toThrow(/must not overlap/);
+        expect(() =>
+            resolveSettings(
+                { MDNS_SERVICE_TYPE: "_test-party._tcp" },
+                "/definitely/missing/settings.csv",
+            ),
+        ).toThrow(/release constant/);
     });
 
     it("requires an explicit PUBLIC_URL for every public runtime", () => {
@@ -52,7 +125,11 @@ describe("deployment configuration", () => {
     it("accepts only a credential-free HTTP(S) origin as a local QR override", () => {
         expect(
             resolveSettings(
-                { PUBLIC_URL: "https://cards.lan.example" },
+                {
+                    PUBLIC_URL: "https://cards.lan.example",
+                    MDNS_ADVERTISED_TLS: "true",
+                    MDNS_ADVERTISED_PORT: "443",
+                },
                 "/definitely/missing/settings.csv",
             ),
         ).toMatchObject({
@@ -65,6 +142,15 @@ describe("deployment configuration", () => {
                 "/definitely/missing/settings.csv",
             ),
         ).toThrow(/credential-free HTTP\(S\) origin/);
+        expect(() =>
+            resolveSettings(
+                { PUBLIC_URL: "https://cards.lan.example" },
+                "/definitely/missing/settings.csv",
+            ),
+        ).toThrow(/TLS metadata/);
+        expect(() =>
+            resolveSettings({ MDNS_ADVERTISED_PORT: "4444" }, "/definitely/missing/settings.csv"),
+        ).toThrow(/mDNS port/);
     });
 
     it("allows an administrator to run public behavior with explicit development security", () => {

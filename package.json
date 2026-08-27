@@ -16,6 +16,7 @@
         "typeorm:sync": "npm run typeorm -- schema:sync migrationDataSource.ts",
         "typeorm:migrate": "npm run typeorm -- migration:run migrationDataSource.ts",
         "typeorm:reset-db": "npm run generate:db-index && npm run typeorm:drop && npm run typeorm:sync && npm run typeorm:migrate",
+        "installation:reset": "ts-node --project tsconfig.server.json scripts/resetInstallationIdentity.ts",
         "generate:db-index": "ts-node --project tsconfig.server.json scripts/genTypeormIdx.ts",
         "generate": "npm run generate:db-index",
         "card:catalog:validate": "ts-node --project tsconfig.server.json src/tooling/card-catalog/cli.ts",
@@ -41,8 +42,8 @@
         "e2e:couch": "playwright test --config playwright.couch.config.ts",
         "test:all": "npm test && npm run build && npm run e2e",
         "test:ci": "vitest run --coverage --reporter=default --reporter=junit --outputFile.junit=artifacts/junit-vitest.xml",
-        "format": "prettier --write \"apps/web/**/*.{ts,js,svelte,css,json,html}\" \"src/packages/**/*.ts\" \"src/migrations/**/*.ts\" \"src/tooling/**/*.ts\" \"tests/**/*.ts\" \"scripts/**/*.ts\" \"docs/**/*.md\" \"README.md\" \"AGENTS.md\" \"src/modules/{settings,realtime,websocket,requestSecurity,passwordHash,fixedWindowRateLimiter,structuredLogger}.ts\" \"src/modules/database/**/*.ts\" \"src/routes/api/**/*.ts\" \"migrationDataSource.ts\" \"vite.config.mts\" \"vitest.config.mts\" \"playwright.config.ts\" \"playwright.couch.config.ts\" \"package.json\" \".prettierrc.json\"",
-        "format:check": "prettier --check \"apps/web/**/*.{ts,js,svelte,css,json,html}\" \"src/packages/**/*.ts\" \"src/migrations/**/*.ts\" \"src/tooling/**/*.ts\" \"tests/**/*.ts\" \"scripts/**/*.ts\" \"docs/**/*.md\" \"README.md\" \"AGENTS.md\" \"src/modules/{settings,realtime,websocket,requestSecurity,passwordHash,fixedWindowRateLimiter,structuredLogger}.ts\" \"src/modules/database/**/*.ts\" \"src/routes/api/**/*.ts\" \"migrationDataSource.ts\" \"vite.config.mts\" \"vitest.config.mts\" \"playwright.config.ts\" \"playwright.couch.config.ts\" \"package.json\" \".prettierrc.json\"",
+        "format": "prettier --write \"apps/web/**/*.{ts,js,svelte,css,json,html}\" \"src/packages/**/*.ts\" \"src/migrations/**/*.ts\" \"src/tooling/**/*.ts\" \"tests/**/*.ts\" \"scripts/**/*.ts\" \"docs/**/*.md\" \"README.md\" \"AGENTS.md\" \"src/modules/{settings,realtime,websocket,requestSecurity,passwordHash,fixedWindowRateLimiter,structuredLogger,installationIdentity,installationIdentityReset,localDiscovery,localDiscoveryState,localNetworkInterfaces,roomAccessUrls,roomCreateProtection,roomObservability}.ts\" \"src/modules/database/**/*.ts\" \"src/routes/api/**/*.ts\" \"migrationDataSource.ts\" \"vite.config.mts\" \"vitest.config.mts\" \"playwright.config.ts\" \"playwright.couch.config.ts\" \"package.json\" \".prettierrc.json\"",
+        "format:check": "prettier --check \"apps/web/**/*.{ts,js,svelte,css,json,html}\" \"src/packages/**/*.ts\" \"src/migrations/**/*.ts\" \"src/tooling/**/*.ts\" \"tests/**/*.ts\" \"scripts/**/*.ts\" \"docs/**/*.md\" \"README.md\" \"AGENTS.md\" \"src/modules/{settings,realtime,websocket,requestSecurity,passwordHash,fixedWindowRateLimiter,structuredLogger,installationIdentity,installationIdentityReset,localDiscovery,localDiscoveryState,localNetworkInterfaces,roomAccessUrls,roomCreateProtection,roomObservability}.ts\" \"src/modules/database/**/*.ts\" \"src/routes/api/**/*.ts\" \"migrationDataSource.ts\" \"vite.config.mts\" \"vitest.config.mts\" \"playwright.config.ts\" \"playwright.couch.config.ts\" \"package.json\" \".prettierrc.json\"",
         "copy:docs": "cpx \"docs/user-guide/**/*\" dist/docs/user-guide",
         "copy:catalog": "cpx \"catalog/card-catalog.json\" dist/catalog"
     },
@@ -52,6 +53,7 @@
         }
     },
     "dependencies": {
+        "@homebridge/ciao": "^1.3.4",
         "argon2": "^0.45.1",
         "better-sqlite3": "^12.11.1",
         "connect-typeorm": "^2.0.0",

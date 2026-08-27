@@ -9,6 +9,15 @@ The server authenticates the credential and ignores claimed role/capability auth
 It returns `server.hello` with the authoritative participant ID and role, followed by a
 viewer-specific `room.snapshot` and presence.
 
+For a `DISPLAY_WAITING_FOR_HOST` Room, no Host exists at HTTP creation time. The first
+credential-authenticated `PLAYER` whose activation commits while the Room is hostless is
+atomically promoted before `server.hello`; that message therefore already reports
+`HOST`. The server then sends that socket `room.roleChanged` with
+`{previousRole:"PLAYER",role:"HOST",reason:"INITIAL_HOST_ASSIGNED"}`, followed by the
+fresh snapshot and presence. Concurrent activations serialize through the same Room
+lifecycle decision, so at most one wins. A `DISPLAY` is never eligible. Reconnecting the
+same participant preserves its persisted role.
+
 Messages are JSON text, processed sequentially per socket, and limited to 64 KiB.
 Binary messages are rejected and WebSocket compression is disabled. These transport
 limits are independent from the participant-stable command and pairing rate limits.
@@ -18,6 +27,9 @@ administrator testing on a trusted network.
 
 Participant credentials are bearer secrets. They are never valid in URLs or QR codes.
 A reload reconnects the same RoomParticipant; it does not create another participant.
+If the same credential authenticates from a second socket, the new authenticated socket
+replaces the old one and the old transport closes with code `4002`; it does not create a
+second presence or trigger Host fallback.
 
 After authentication, browser clients send `client.ping` with an empty payload and
 `revision:null` while the connection is otherwise idle. The server answers
@@ -58,6 +70,18 @@ Each snapshot also contains authoritative
 `capacity:{maximumParticipants,maximumPlayers}`. Clients may display the represented
 player count against `maximumPlayers`, but the repository transaction remains the
 enforcement boundary for joins and device-player changes.
+Every snapshot also contains `bootstrapMode` (`CREATOR_HOST` or
+`DISPLAY_WAITING_FOR_HOST`) and the derived `hostStatus`:
+
+```text
+{state,participantId,displayName,deadline}
+state = AWAITING_FIRST_HOST | CONNECTING | CONNECTED | RECONNECTING |
+        AWAITING_REPLACEMENT_HOST
+```
+
+The participant fields and deadline are nullable. `AWAITING_FIRST_HOST` is distinct
+from replacement after a Room has previously had a Host. Clients render this projection
+but never infer authority from it.
 
 Intensity settings include public 1–5 `startingIntensity` and `maximumIntensity`, plus
 `intensityProgressionUnit` (`ROUNDS` or `CARDS`) and a positive
@@ -117,6 +141,14 @@ participant becomes `LEFT`; a disconnected Host may then be reassigned to an eli
 connected Player. Explicit Host transfer updates server authorization immediately and
 broadcasts `room.roleChanged` plus fresh snapshots.
 
+New Rooms and newly joined participants begin unactivated. The first successful
+WebSocket authentication records `firstConnectedAt` and activates the Room regardless
+of role. A Room that never authenticates closes after the configured initial activation
+lease (300 seconds by default). An HTTP-only participant expires after its separate
+unactivated-participant TTL and receives no reconnect grace. Every activation,
+disconnect, leave, transfer, expiry, and scheduled/restart reconciliation uses the same
+central Host-selection decision and persisted lifecycle transaction.
+
 If no active Host or Player remains after an explicit leave or all reconnect grace
 periods expire, the server closes the Room unless a DISPLAY connection is currently
 `CONNECTED`. A connected display keeps the join code live for new Players but never
@@ -133,6 +165,9 @@ visible to every client.
 
 Server messages are `server.hello`, `server.pong`, `room.snapshot`, `room.presence`,
 `room.roleChanged`, `room.participantLeft`, `session.cardReplaced`, and `error`.
+`room.roleChanged` contains `{role,previousRole,reason}`. Reason is one of
+`INITIAL_HOST_ASSIGNED`, `HOST_TRANSFERRED`, `HOST_LEFT`,
+`HOST_DISCONNECT_EXPIRED`, `HOST_REVOKED`, or `HOST_ACTIVATION_EXPIRED`.
 `room.participantLeft` contains `{participantId,displayName,reason}` where `reason` is
 `LEFT` or `DISCONNECT_EXPIRED`; it is sent to remaining connected Room devices after
 the leave/removal commits. `session.cardReplaced` contains `{reason}` where `reason` is
@@ -158,3 +193,6 @@ and built-in profile behavior selected by the server.
 The defaulted `configuration.maximumSocialSensitivity` field is likewise additive;
 older clients that omit it retain the former unrestricted (`EXPLICIT`) ceiling.
 `session.remainingCardCount` is an additive display-only field within v2.
+`bootstrapMode`, `hostStatus`, and the expanded `room.roleChanged` payload are additive
+within v2. Role authority was already server-owned; clients must use `server.hello` and
+the latest snapshot instead of assuming that every Room creator is Host.

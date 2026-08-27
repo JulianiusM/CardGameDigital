@@ -15,12 +15,15 @@ than three gameplay implementations:
   PLAYER client. Every client receives the authoritative card projection and
   only the participant allowed by the current state receives the corresponding
   controls.
-- **Party screen:** the Personal topology gains one or more DISPLAY clients.
-  Displays receive the public card/session projection and no command actions.
+- **Party screen:** the setup browser opens the Room as a DISPLAY and players join on
+  phones. Displays receive the public card/session projection and no command actions.
 
-Only the Room creator can be HOST; the join contract accepts PLAYER or DISPLAY.
-Session settings and start/end authority remain host capabilities. Private
-boundary configuration is a separate per-player capability, not a Room setting.
+Ordinary creation assigns the creator HOST. Display-bootstrap creation assigns the
+creator DISPLAY and deliberately has no Host until the first authenticated PLAYER
+WebSocket activation commits. The HTTP join contract still accepts only PLAYER or
+DISPLAY and cannot reserve Host. Session settings and start/end authority remain Host
+capabilities. Private boundary configuration is a separate per-player capability, not a
+Room setting.
 
 After an ended hosted Session, **New Game** reuses the Room. The Host clears the
 Room's current-Session pointer and reopens its in-Room game settings; PLAYER and
@@ -82,7 +85,8 @@ Local mode uses the same Room service. Room IDs, codes, command queues, runtime,
 and participants are isolated per Room, allowing unrelated groups to play
 concurrently through one LAN server.
 
-Topology calculation is centralized in `roomParticipants.ts`: it builds Session
-players, expands device boundaries, calculates per-device control, and selects a
-fallback host. Controllers, WebSockets, and Svelte components do not duplicate
-these rules or branch on game mode.
+Topology calculation in `roomParticipants.ts` builds Session players, expands device
+boundaries, and calculates per-device control. Every initial assignment, explicit
+transfer, leave, disconnect expiry, and recovery Host decision is centralized separately
+in `roomHostSelection.ts`. Controllers, repositories, WebSockets, and Svelte components
+do not implement their own election rules or branch on game mode.

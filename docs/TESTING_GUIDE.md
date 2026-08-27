@@ -26,6 +26,8 @@ npm run test:quick
 npx vitest run tests/unit/card-catalog-contract.spec.ts tests/integration/card-catalog-persistence.spec.ts
 npx vitest run tests/unit/card-policy.spec.ts tests/simulation/card-policy-scale.spec.ts
 npx vitest run tests/integration/room-http.spec.ts tests/integration/sqlite-migrations.spec.ts
+npx vitest run tests/unit/room-host-selection.spec.ts tests/unit/room-create-idempotency.spec.ts tests/unit/room-observability.spec.ts tests/unit/local-discovery.spec.ts
+npx vitest run tests/integration/websocket-rooms.spec.ts tests/integration/room-http.spec.ts tests/integration/sqlite-migrations.spec.ts
 npm run e2e:couch
 npm run e2e
 npm run test:mariadb:reset
@@ -38,6 +40,16 @@ rules, then measures O(1) compiled snapshot lookup. The Room HTTP/SQLite suites 
 ownership, cursor search, provenance, optimistic conflicts, atomic portable import, and
 confirmed-count bulk writes. `test:mariadb:public` runs the same persistent policy seam
 inside the authenticated public workflow against a guarded disposable MariaDB schema.
+
+Display-bootstrap coverage must prove no Host exists at create time, exact-response
+replay after a lost HTTP response, changed-body conflict, terminal tombstones, concurrent
+first-phone activation with exactly one Host, duplicate-socket replacement, reconnect
+grace, restart reconciliation, explicit close, deterministic invariant repair, claimed
+role rejection as authority, and DISPLAY exclusion. The pure decision suite maintains
+the complete 22-case Host matrix. Observability tests scan metric snapshots for private
+labels and cover both hostless phases. Discovery coverage checks exact
+TXT order/privacy, interface/address policy, configuration gating, stable installation
+identity, and advertiser lifecycle without relying on internet DNS.
 
 Card-management browser coverage must also verify the presentation boundary: no more
 than the configured page size is rendered for large DataSpace, Group, rule, or Card
@@ -75,15 +87,16 @@ operator-selected unsafe profile and must be confined to a trusted development n
 
 ## Choosing a test
 
-| Risk                                                     | Preferred coverage                          |
-| -------------------------------------------------------- | ------------------------------------------- |
-| Eligibility, history, selection, state transition        | Unit test with deterministic random source. |
-| Mode balance over many turns                             | Simulation test.                            |
-| Migration, reconciliation, transactions, authorization   | Integration test with disposable database.  |
-| HTTP error/status/body or account cookie behavior        | Supertest integration test.                 |
-| Handshake, revisions, role transfer, private projections | WebSocket integration test.                 |
-| Layering or “must never return” rule                     | Architecture test.                          |
-| Navigation, layout, browser audio/control behavior       | Playwright E2E.                             |
+| Risk                                                     | Preferred coverage                            |
+| -------------------------------------------------------- | --------------------------------------------- |
+| Eligibility, history, selection, state transition        | Unit test with deterministic random source.   |
+| Mode balance over many turns                             | Simulation test.                              |
+| Migration, reconciliation, transactions, authorization   | Integration test with disposable database.    |
+| HTTP error/status/body or account cookie behavior        | Supertest integration test.                   |
+| Handshake, revisions, role transfer, private projections | WebSocket integration test.                   |
+| Plain-HTTP LAN browser capability differences            | Unit fallback plus Playwright LAN-origin E2E. |
+| Layering or “must never return” rule                     | Architecture test.                            |
+| Navigation, layout, browser audio/control behavior       | Playwright E2E.                               |
 
 Prefer observable outcomes over private-method assertions. Do not mock the domain rule
 being tested. Use production schemas/adapters in integration tests and deterministic

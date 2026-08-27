@@ -37,7 +37,7 @@ describe("public request origin validation", () => {
                 requestProtocol: "https",
                 requestHost: "[2001:db8::20]:3000",
             }),
-        ).toBe("wss://[2001:db8::20]:3000");
+        ).toBe("wss:");
     });
 
     it("authorizes only the configured WebSocket origin in public mode", () => {
@@ -49,5 +49,16 @@ describe("public request origin validation", () => {
                 requestHost: "192.168.1.20:3000",
             }),
         ).toBe("wss://cards.example");
+    });
+
+    it("uses a valid scheme source when a public origin is an IPv6 literal", () => {
+        expect(
+            websocketConnectSource({
+                deploymentMode: "public",
+                publicUrl: "https://[2001:db8::20]",
+                requestProtocol: "https",
+                requestHost: "[2001:db8::20]",
+            }),
+        ).toBe("wss:");
     });
 });

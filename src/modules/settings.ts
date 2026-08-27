@@ -13,6 +13,42 @@ const booleanValue = z
     .union([z.boolean(), z.enum(["1", "0", "true", "false", "yes", "no", "on", "off"])])
     .transform((value) => (typeof value === "boolean" ? value : /^(1|true|yes|on)$/i.test(value)));
 const numberValue = z.union([z.number(), z.string()]).transform(Number).pipe(z.number().finite());
+const commaSeparatedValues = z
+    .union([z.array(z.string()), z.string()])
+    .transform((value) => (Array.isArray(value) ? value : value.split(",")))
+    .transform((values) => values.map((value) => value.trim()).filter(Boolean));
+const normalizedDisplayName = z
+    .string()
+    .transform((value) => value.trim().normalize("NFC"))
+    .pipe(
+        z
+            .string()
+            .min(1)
+            .refine((value) => [...value].length <= 80, "must contain at most 80 Unicode scalars")
+            .refine(
+                (value) => !/[\u0000-\u001f\u007f-\u009f]/u.test(value),
+                "must not contain controls",
+            ),
+    );
+const relativeEndpointPath = z
+    .string()
+    .startsWith("/")
+    .refine((value) => !value.startsWith("//") && !value.includes("://"));
+const webSocketEndpointPath = relativeEndpointPath
+    .refine((value) => !/[?#]/u.test(value), "must be a path without query or fragment")
+    .refine(
+        (value) => !/(credential|token|secret|idempotency|participantId)/i.test(value),
+        "must be credential-free",
+    );
+const roomJoinPathTemplate = relativeEndpointPath
+    .refine(
+        (value) => value.split("{roomCode}").length === 2,
+        "must contain exactly one {roomCode} placeholder",
+    )
+    .refine(
+        (value) => !/(credential|token|secret|idempotency|participantId)/i.test(value),
+        "must be credential-free",
+    );
 const trustProxyString = z
     .string()
     .regex(/^(?:true|false|yes|no|on|off|\d+)$/i)
@@ -37,6 +73,32 @@ export const settingsSchema = z
         roomMaximumParticipants: numberValue.pipe(z.number().int().min(2).max(1_000)),
         roomMaximumPlayers: numberValue.pipe(z.number().int().min(2).max(1_000)),
         roomReconnectGraceSeconds: numberValue.pipe(z.number().int().min(120).max(3_600)),
+        roomDisplayBootstrapEnabled: booleanValue,
+        roomDisplayBootstrapConfigured: z.boolean(),
+        roomInitialActivationSeconds: numberValue.pipe(z.number().int().min(30).max(3_600)),
+        unactivatedParticipantTtlSeconds: numberValue.pipe(z.number().int().min(30).max(3_600)),
+        roomCreateIdempotencyTombstoneSeconds: numberValue.pipe(
+            z.number().int().min(3_600).max(604_800),
+        ),
+        roomCreateSecret: z.string(),
+        roomCreateSecretFile: z.string().min(1),
+        serverDisplayName: normalizedDisplayName,
+        mdnsDiscoveryEnabled: booleanValue,
+        mdnsDiscoveryConfigured: z.boolean(),
+        mdnsServiceType: z.string().regex(/^_[a-z][a-z0-9-]{0,14}\._tcp$/),
+        mdnsInstanceName: z.string(),
+        mdnsHostLabel: z
+            .string()
+            .min(1)
+            .max(63)
+            .regex(/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/),
+        mdnsInterfaceAllowlist: commaSeparatedValues,
+        mdnsInterfaceDenylist: commaSeparatedValues,
+        mdnsAllowPublicIpv4: booleanValue,
+        mdnsAdvertisedPort: numberValue.pipe(z.number().int().min(1).max(65_535)),
+        mdnsAdvertisedTls: booleanValue,
+        webSocketPath: webSocketEndpointPath,
+        roomJoinPathTemplate,
         publicUrl: z.string().url(),
         publicUrlConfigured: z.boolean(),
         dbType: z.enum(["sqlite", "mariadb", "mysql"]),
@@ -102,6 +164,52 @@ export const settingsSchema = z
                 code: "custom",
                 path: ["dbType"],
                 message: "local deployment requires DB_TYPE=sqlite",
+            });
+        }
+        const overlappingInterfaces = value.mdnsInterfaceAllowlist.filter((name) =>
+            value.mdnsInterfaceDenylist.includes(name),
+        );
+        if (overlappingInterfaces.length) {
+            context.addIssue({
+                code: "custom",
+                path: ["mdnsInterfaceAllowlist"],
+                message: "mDNS interface allowlist and denylist must not overlap",
+            });
+        }
+        if (
+            value.mdnsDiscoveryEnabled &&
+            value.mdnsServiceType !== "_partycard._tcp" &&
+            !value.testMode
+        ) {
+            context.addIssue({
+                code: "custom",
+                path: ["mdnsServiceType"],
+                message: "MDNS_SERVICE_TYPE is the release constant _partycard._tcp",
+            });
+        }
+        const endpointUsesTls = value.publicUrlConfigured
+            ? new URL(value.publicUrl).protocol === "https:"
+            : false;
+        const configuredFrontDoor = value.publicUrlConfigured ? new URL(value.publicUrl) : null;
+        const frontDoorPort = configuredFrontDoor
+            ? Number(
+                  configuredFrontDoor.port ||
+                      (configuredFrontDoor.protocol === "https:" ? "443" : "80"),
+              )
+            : value.httpPort;
+        if (value.mdnsDiscoveryEnabled && value.mdnsAdvertisedTls !== endpointUsesTls) {
+            context.addIssue({
+                code: "custom",
+                path: ["mdnsAdvertisedTls"],
+                message: "mDNS TLS metadata must match the advertised HTTP front door",
+            });
+        }
+        if (value.mdnsDiscoveryEnabled && value.mdnsAdvertisedPort !== frontDoorPort) {
+            context.addIssue({
+                code: "custom",
+                path: ["mdnsAdvertisedPort"],
+                message:
+                    "mDNS port must match the configured HTTP listener or PUBLIC_URL front door",
             });
         }
         if (publicSecurityEnforced && value.dbType === "sqlite") {
@@ -241,6 +349,26 @@ const defaults = {
     roomMaximumParticipants: 100,
     roomMaximumPlayers: 100,
     roomReconnectGraceSeconds: 180,
+    roomDisplayBootstrapEnabled: true,
+    roomDisplayBootstrapConfigured: false,
+    roomInitialActivationSeconds: 300,
+    unactivatedParticipantTtlSeconds: 300,
+    roomCreateIdempotencyTombstoneSeconds: 86_400,
+    roomCreateSecret: "",
+    roomCreateSecretFile: "./data/room-create-idempotency.key",
+    serverDisplayName: "Party Game",
+    mdnsDiscoveryEnabled: true,
+    mdnsDiscoveryConfigured: false,
+    mdnsServiceType: "_partycard._tcp",
+    mdnsInstanceName: "",
+    mdnsHostLabel: "party-game",
+    mdnsInterfaceAllowlist: [],
+    mdnsInterfaceDenylist: [],
+    mdnsAllowPublicIpv4: false,
+    mdnsAdvertisedPort: 3000,
+    mdnsAdvertisedTls: false,
+    webSocketPath: "/ws",
+    roomJoinPathTemplate: "/play/?room={roomCode}",
     publicUrl: "http://localhost:3000",
     publicUrlConfigured: false,
     dbType: "sqlite",
@@ -285,6 +413,24 @@ const keyMap: Record<string, keyof typeof defaults> = {
     ROOM_MAX_PARTICIPANTS: "roomMaximumParticipants",
     ROOM_MAX_PLAYERS: "roomMaximumPlayers",
     ROOM_RECONNECT_GRACE_SECONDS: "roomReconnectGraceSeconds",
+    ROOM_DISPLAY_BOOTSTRAP_ENABLED: "roomDisplayBootstrapEnabled",
+    ROOM_INITIAL_ACTIVATION_SECONDS: "roomInitialActivationSeconds",
+    UNACTIVATED_PARTICIPANT_TTL_SECONDS: "unactivatedParticipantTtlSeconds",
+    ROOM_CREATE_IDEMPOTENCY_TOMBSTONE_SECONDS: "roomCreateIdempotencyTombstoneSeconds",
+    ROOM_CREATE_SECRET: "roomCreateSecret",
+    ROOM_CREATE_SECRET_FILE: "roomCreateSecretFile",
+    SERVER_DISPLAY_NAME: "serverDisplayName",
+    MDNS_DISCOVERY_ENABLED: "mdnsDiscoveryEnabled",
+    MDNS_SERVICE_TYPE: "mdnsServiceType",
+    MDNS_INSTANCE_NAME: "mdnsInstanceName",
+    MDNS_HOST_LABEL: "mdnsHostLabel",
+    MDNS_INTERFACE_ALLOWLIST: "mdnsInterfaceAllowlist",
+    MDNS_INTERFACE_DENYLIST: "mdnsInterfaceDenylist",
+    MDNS_ALLOW_PUBLIC_IPV4: "mdnsAllowPublicIpv4",
+    MDNS_ADVERTISED_PORT: "mdnsAdvertisedPort",
+    MDNS_ADVERTISED_TLS: "mdnsAdvertisedTls",
+    WEB_SOCKET_PATH: "webSocketPath",
+    ROOM_JOIN_PATH_TEMPLATE: "roomJoinPathTemplate",
     PUBLIC_URL: "publicUrl",
     ROOT_URL: "publicUrl",
     DB_TYPE: "dbType",
@@ -345,11 +491,32 @@ export function resolveSettings(
     }
     const publicUrlConfigured =
         Object.hasOwn(fromFile, "publicUrl") || Object.hasOwn(fromEnvironment, "publicUrl");
+    const roomDisplayBootstrapConfigured =
+        Object.hasOwn(fromFile, "roomDisplayBootstrapEnabled") ||
+        Object.hasOwn(fromEnvironment, "roomDisplayBootstrapEnabled");
+    const mdnsDiscoveryConfigured =
+        Object.hasOwn(fromFile, "mdnsDiscoveryEnabled") ||
+        Object.hasOwn(fromEnvironment, "mdnsDiscoveryEnabled");
+    const combined = { ...defaults, ...fromFile, ...fromEnvironment };
+    const deploymentMode = combined.deploymentMode;
+    const localDeployment = deploymentMode === "local";
+    const httpPort = Number(combined.httpPort);
     const parsed = settingsSchema.parse({
-        ...defaults,
-        ...fromFile,
-        ...fromEnvironment,
+        ...combined,
         publicUrlConfigured,
+        roomDisplayBootstrapConfigured,
+        roomDisplayBootstrapEnabled: roomDisplayBootstrapConfigured
+            ? combined.roomDisplayBootstrapEnabled
+            : localDeployment,
+        mdnsDiscoveryConfigured,
+        mdnsDiscoveryEnabled: mdnsDiscoveryConfigured
+            ? combined.mdnsDiscoveryEnabled
+            : localDeployment,
+        mdnsAdvertisedPort:
+            Object.hasOwn(fromFile, "mdnsAdvertisedPort") ||
+            Object.hasOwn(fromEnvironment, "mdnsAdvertisedPort")
+                ? combined.mdnsAdvertisedPort
+                : httpPort,
         file: configFile,
         testMode: environment.NODE_ENV === "e2e",
     });

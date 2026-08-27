@@ -45,7 +45,13 @@
     });
 </script>
 
-<div class="auto-page-region" bind:this={viewport} aria-label={label}>
+<div
+    class="auto-page-region"
+    bind:this={viewport}
+    aria-label={label}
+    data-page-size={pageSize}
+    data-page-count={pageCount}
+>
     {#key page}
         <div class="auto-page-content">
             <slot {start} {end} {page} {pageCount} />

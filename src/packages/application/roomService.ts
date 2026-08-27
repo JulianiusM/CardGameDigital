@@ -18,16 +18,24 @@ import {
 import type {
     RealtimeRoomRepository,
     RoomCapacity,
+    RoomBootstrapMode,
+    RoomCreateIdempotencyRecord,
     RoomJoinResult,
+    RoomLifecycleTransitionResult,
     RoomParticipant,
     RoomRole,
 } from "./realtimeRooms";
 import {
     boundariesForSessionPlayers,
     controlledPlayerIds,
-    fallbackHost,
     sessionPlayers,
 } from "./roomParticipants";
+import { derivePersistedRoomHostStatus } from "./roomHostSelection";
+import {
+    ROOM_CREATE_RESPONSE_SCHEMA_VERSION,
+    ROOM_CREATE_ROUTE_KEY,
+    type RoomCreateIdempotencyProtection,
+} from "./roomCreateIdempotency";
 import {
     defaultRoomGameSettings,
     normalizeRoomGameSettings,
@@ -39,6 +47,11 @@ import {
 import { projectNeverHaveIEverVoting } from "./neverHaveIEverVoting";
 import { projectCardIntensities } from "./cardIntensityProjection";
 import type { CardPolicyService } from "./cardPolicyService";
+import {
+    NOOP_ROOM_LIFECYCLE_OBSERVABILITY,
+    type RoomCreateIdempotencyOutcome,
+    type RoomLifecycleObservability,
+} from "./roomLifecycleObservability";
 
 const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 export const DEFAULT_ROOM_CAPACITY: Readonly<RoomCapacity> = Object.freeze({
@@ -130,15 +143,49 @@ export type RoomCommand =
 export type RoomSnapshot = {
     roomId: string;
     capacity: Readonly<RoomCapacity>;
-    participants: readonly RoomParticipant[];
+    participants: readonly import("./realtimeRooms").PublicRoomParticipant[];
+    bootstrapMode: RoomBootstrapMode;
+    hostStatus: import("./realtimeRooms").RoomHostStatus;
     boundaryConfigured: boolean;
     settings: VersionedRoomGameSettings;
     session: ReturnType<RoomService["project"]> | null;
 };
 
+export type RoomConnectionActivation = RoomParticipant & {
+    roleChanges: import("./realtimeRooms").RoomRoleChange[];
+};
+
+export type CreateRoomOptions = {
+    bootstrapMode?: RoomBootstrapMode;
+    idempotency?: {
+        key: string;
+        principalScope: string;
+        requestBody: unknown;
+    };
+};
+
+type RoomLifecycleOptions = {
+    displayBootstrapEnabled: boolean;
+    initialActivationMs: number;
+    unactivatedParticipantTtlMs: number;
+    reconnectGraceMs: number;
+    idempotencyProtection: RoomCreateIdempotencyProtection | null;
+    observability: RoomLifecycleObservability;
+};
+
+const DEFAULT_ROOM_LIFECYCLE: RoomLifecycleOptions = {
+    displayBootstrapEnabled: false,
+    initialActivationMs: 300_000,
+    unactivatedParticipantTtlMs: 300_000,
+    reconnectGraceMs: 180_000,
+    idempotencyProtection: null,
+    observability: NOOP_ROOM_LIFECYCLE_OBSERVABILITY,
+};
+
 export class RoomService {
     private readonly sessions = new Map<string, GameSession>();
     private readonly queues = new Map<string, Promise<unknown>>();
+    private readonly lifecycle: RoomLifecycleOptions;
     constructor(
         private readonly repository: RealtimeRoomRepository,
         private readonly cards: CardRepository,
@@ -149,13 +196,73 @@ export class RoomService {
         > = DEFAULT_CARD_TRANSLATION_POLICY,
         private readonly capacity: Readonly<RoomCapacity> = DEFAULT_ROOM_CAPACITY,
         private readonly cardPolicies?: CardPolicyService,
-    ) {}
+        lifecycle: Partial<RoomLifecycleOptions> = {},
+    ) {
+        this.lifecycle = { ...DEFAULT_ROOM_LIFECYCLE, ...lifecycle };
+    }
 
     async createRoom(
         displayName: string,
         dataSpaceId: string | null = null,
         initialSettings?: RoomGameSettings,
+        options: CreateRoomOptions = {},
     ): Promise<RoomJoinResult> {
+        return (
+            await this.createRoomWithOutcome(displayName, dataSpaceId, initialSettings, options)
+        ).response;
+    }
+
+    async createRoomWithOutcome(
+        displayName: string,
+        dataSpaceId: string | null = null,
+        initialSettings?: RoomGameSettings,
+        options: CreateRoomOptions = {},
+    ): Promise<{ response: RoomJoinResult; outcome: "CREATED" | "REPLAYED" }> {
+        const bootstrapMode = options.bootstrapMode ?? "CREATOR_HOST";
+        const protection = this.lifecycle.idempotencyProtection;
+        let idempotency:
+            | {
+                  principalScopeDigest: string;
+                  keyDigest: string;
+                  requestFingerprint: string;
+              }
+            | undefined;
+        if (options.idempotency) {
+            if (!protection) {
+                this.lifecycle.observability.roomCreateIdempotency("PROTECTION_UNAVAILABLE", null);
+                throw Object.assign(new Error(MESSAGE_KEYS.ROOM_BOOTSTRAP_UNSUPPORTED), {
+                    code: "ROOM_BOOTSTRAP_MODE_UNSUPPORTED",
+                });
+            }
+            idempotency = {
+                principalScopeDigest: protection.principalScopeDigest(
+                    options.idempotency.principalScope,
+                ),
+                keyDigest: protection.keyDigest(options.idempotency.key),
+                requestFingerprint: protection.requestFingerprint(options.idempotency.requestBody),
+            };
+            const replay = await this.repository.findRoomCreateIdempotency(
+                idempotency.principalScopeDigest,
+                ROOM_CREATE_ROUTE_KEY,
+                idempotency.keyDigest,
+            );
+            if (replay) {
+                const response = this.replayRoomCreate(replay, idempotency.requestFingerprint);
+                this.observeRoomCreate(response, bootstrapMode, "REPLAYED");
+                return {
+                    response,
+                    outcome: "REPLAYED",
+                };
+            }
+        }
+        if (
+            bootstrapMode === "DISPLAY_WAITING_FOR_HOST" &&
+            !this.lifecycle.displayBootstrapEnabled
+        ) {
+            throw Object.assign(new Error(MESSAGE_KEYS.ROOM_BOOTSTRAP_UNSUPPORTED), {
+                code: "ROOM_BOOTSTRAP_MODE_UNSUPPORTED",
+            });
+        }
         const settings = normalizeRoomGameSettings(
             initialSettings ?? {
                 ...defaultRoomGameSettings(),
@@ -173,29 +280,110 @@ export class RoomService {
         const roomId = randomUUID();
         const participantId = randomUUID();
         const credential = randomBytes(32).toString("base64url");
-        await this.repository.createRoom({
-            roomId,
-            code,
-            dataSpaceId,
-            expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
-            settings,
-            participant: {
-                id: participantId,
-                roomId,
-                role: "HOST",
-                displayName,
-                devicePlayers: [],
-                connectionStatus: "TEMPORARILY_DISCONNECTED",
-                credentialHash: this.hashCredential(credential),
-            },
-        });
-        return {
+        const createdAt = Date.now();
+        const activationDeadline = createdAt + this.lifecycle.initialActivationMs;
+        const activationExpiresAt = createdAt + this.lifecycle.unactivatedParticipantTtlMs;
+        const role: RoomRole = bootstrapMode === "DISPLAY_WAITING_FOR_HOST" ? "DISPLAY" : "HOST";
+        const hostStatus =
+            role === "HOST"
+                ? {
+                      state: "CONNECTING" as const,
+                      participantId,
+                      displayName,
+                      deadline: activationExpiresAt,
+                  }
+                : {
+                      state: "AWAITING_FIRST_HOST" as const,
+                      participantId: null,
+                      displayName: null,
+                      deadline: null,
+                  };
+        const response: RoomJoinResult = {
             roomId,
             roomCode: code,
             participantId,
             participantCredential: credential,
-            role: "HOST",
+            role,
+            bootstrapMode,
+            hostStatus,
         };
+        const replayBinding = idempotency
+            ? {
+                  routeKey: ROOM_CREATE_ROUTE_KEY,
+                  principalScopeDigest: idempotency.principalScopeDigest,
+                  keyDigest: idempotency.keyDigest,
+                  requestFingerprint: idempotency.requestFingerprint,
+                  resourceId: roomId,
+                  responseSchemaVersion: ROOM_CREATE_RESPONSE_SCHEMA_VERSION,
+              }
+            : null;
+        let persisted: Awaited<ReturnType<RealtimeRoomRepository["createRoom"]>>;
+        try {
+            persisted = await this.repository.createRoom({
+                roomId,
+                code,
+                dataSpaceId,
+                createdAt,
+                expiresAt: new Date(createdAt + 24 * 60 * 60 * 1000),
+                bootstrapMode,
+                firstHostAssignedAt: role === "HOST" ? createdAt : null,
+                activationDeadline,
+                settings,
+                participant: {
+                    id: participantId,
+                    roomId,
+                    role,
+                    displayName,
+                    devicePlayers: [],
+                    connectionStatus: "TEMPORARILY_DISCONNECTED",
+                    joinedAt: createdAt,
+                    firstConnectedAt: null,
+                    lastConnectedAt: null,
+                    reconnectDeadline: null,
+                    activationExpiresAt,
+                    leftAt: null,
+                    revokedAt: null,
+                    credentialHash: this.hashCredential(credential),
+                },
+                idempotency:
+                    idempotency && protection && replayBinding
+                        ? {
+                              id: randomUUID(),
+                              ...idempotency,
+                              routeKey: ROOM_CREATE_ROUTE_KEY,
+                              lookupKeyId: protection.lookupKeyId,
+                              state: "REPLAYABLE",
+                              statusCode: 201,
+                              responseSchemaVersion: ROOM_CREATE_RESPONSE_SCHEMA_VERSION,
+                              responseKeyId: protection.responseKeyId,
+                              responseCiphertext: protection.encryptResponse(
+                                  replayBinding,
+                                  response,
+                              ),
+                              resourceId: roomId,
+                              creatorParticipantId: participantId,
+                              createdAt,
+                          }
+                        : undefined,
+            });
+        } catch (error) {
+            if (idempotency) this.observeIdempotencyError(error, roomId);
+            throw error;
+        }
+        if (!persisted.created) {
+            const replayed = this.replayRoomCreate(
+                persisted.record,
+                idempotency!.requestFingerprint,
+            );
+            this.observeRoomCreate(replayed, bootstrapMode, "REPLAYED");
+            return {
+                response: replayed,
+                outcome: "REPLAYED",
+            };
+        }
+        this.observeRoomCreate(response, bootstrapMode, "CREATED", createdAt);
+        if (idempotency) this.lifecycle.observability.roomCreateIdempotency("CREATED", roomId);
+        return { response, outcome: "CREATED" };
     }
 
     async joinRoom(
@@ -205,6 +393,7 @@ export class RoomService {
     ): Promise<RoomJoinResult> {
         const participantId = randomUUID();
         const credential = randomBytes(32).toString("base64url");
+        const joinedAt = Date.now();
         // The repository resolves the non-secret code to the real Room ID.
         await this.repository.joinRoom(
             {
@@ -214,6 +403,13 @@ export class RoomService {
                 displayName,
                 devicePlayers: [],
                 connectionStatus: "TEMPORARILY_DISCONNECTED",
+                joinedAt,
+                firstConnectedAt: null,
+                lastConnectedAt: null,
+                reconnectDeadline: null,
+                activationExpiresAt: joinedAt + this.lifecycle.unactivatedParticipantTtlMs,
+                leftAt: null,
+                revokedAt: null,
                 credentialHash: this.hashCredential(credential),
             },
             this.capacity,
@@ -235,16 +431,30 @@ export class RoomService {
         };
     }
 
-    async authenticate(roomCode: string, credential: string): Promise<RoomParticipant | null> {
-        const participant = await this.repository.authenticate(
-            roomCode,
-            this.hashCredential(credential),
-        );
+    async authenticate(
+        roomCode: string,
+        credential: string,
+    ): Promise<RoomConnectionActivation | null> {
+        const credentialHash = this.hashCredential(credential);
+        const participant = await this.repository.authenticate(roomCode, credentialHash);
         if (!participant) return null;
-        await this.repository.setConnectionStatus(participant.id, "CONNECTED");
-        const connected = { ...participant, connectionStatus: "CONNECTED" as const };
-        await this.serialize(participant.roomId, () => this.addConnectedParticipant(connected));
-        return connected;
+        return this.serialize(participant.roomId, async () => {
+            const lifecycleTransition = {
+                type: "ACTIVATE",
+                roomId: participant.roomId,
+                participantId: participant.id,
+                credentialHash,
+                at: Date.now(),
+            } as const;
+            const result = await this.repository.applyLifecycleTransition(lifecycleTransition);
+            this.observeLifecycleTransition(lifecycleTransition, result);
+            if (!result.participant || result.roomClosed) return null;
+            await this.addConnectedParticipant(result.participant);
+            return {
+                ...result.participant,
+                roleChanges: [...result.roleChanges],
+            };
+        });
     }
 
     /** Resolve the current lobby pool for an authenticated Room participant without
@@ -278,36 +488,93 @@ export class RoomService {
         });
     }
 
-    async markConnected(participant: RoomParticipant): Promise<void> {
-        await this.repository.setConnectionStatus(participant.id, "CONNECTED");
+    initializeConnectionLifecycle(
+        reconnectGraceMs = this.lifecycle.reconnectGraceMs,
+    ): Promise<readonly RoomParticipant[]> {
+        const at = Date.now();
+        return this.repository.resetConnectedParticipants(at, at + reconnectGraceMs);
     }
 
-    initializeConnectionLifecycle(): Promise<readonly RoomParticipant[]> {
-        return this.repository.resetConnectedParticipants();
-    }
-
-    async markTemporarilyDisconnected(participant: RoomParticipant): Promise<void> {
-        const current = await this.repository.getParticipant(participant.roomId, participant.id);
-        if (current?.connectionStatus === "CONNECTED")
-            await this.repository.setConnectionStatus(participant.id, "TEMPORARILY_DISCONNECTED");
-    }
-
-    async expireDisconnectedParticipant(roomId: string, participantId: string): Promise<boolean> {
-        return this.serialize(roomId, async () => {
-            const participant = await this.repository.getParticipant(roomId, participantId);
-            if (!participant || participant.connectionStatus !== "TEMPORARILY_DISCONNECTED")
-                return false;
-            await this.leaveParticipant(roomId, participant);
-            return true;
+    async markTemporarilyDisconnected(
+        participant: RoomParticipant,
+        reconnectGraceMs = this.lifecycle.reconnectGraceMs,
+    ): Promise<RoomLifecycleTransitionResult> {
+        return this.serialize(participant.roomId, async () => {
+            const at = Date.now();
+            const transition = {
+                type: "DISCONNECT",
+                roomId: participant.roomId,
+                participantId: participant.id,
+                at,
+                reconnectDeadline: at + reconnectGraceMs,
+            } as const;
+            const result = await this.repository.applyLifecycleTransition(transition);
+            this.observeLifecycleTransition(transition, result);
+            return result;
         });
     }
 
+    async expireDisconnectedParticipant(
+        roomId: string,
+        participantId: string,
+    ): Promise<RoomLifecycleTransitionResult> {
+        return this.serialize(roomId, async () => {
+            const before = await this.repository.getParticipant(roomId, participantId);
+            const transition = {
+                type: "EXPIRE",
+                roomId,
+                participantId,
+                at: Date.now(),
+            } as const;
+            const result = await this.repository.applyLifecycleTransition(transition);
+            this.observeLifecycleTransition(transition, result);
+            if (before && result.expiredParticipants.some(({ id }) => id === participantId)) {
+                await this.removeParticipantFromSession(roomId, before);
+            }
+            await this.endRuntimeIfRoomClosed(roomId, result.roomClosed);
+            return result;
+        });
+    }
+
+    async reconcileDueRooms(limit = 100): Promise<
+        readonly {
+            roomId: string;
+            result: RoomLifecycleTransitionResult;
+        }[]
+    > {
+        const at = Date.now();
+        const roomIds = await this.repository.findDueRoomIds(at, limit);
+        const results = [];
+        for (const roomId of roomIds) {
+            const result = await this.serialize(roomId, async () => {
+                const before = await this.repository.listParticipants(roomId);
+                const transition = {
+                    type: "RECONCILE",
+                    roomId,
+                    at,
+                } as const;
+                const reconciled = await this.repository.applyLifecycleTransition(transition);
+                this.observeLifecycleTransition(transition, reconciled);
+                for (const expired of reconciled.expiredParticipants) {
+                    const participant = before.find(({ id }) => id === expired.id);
+                    if (participant) await this.removeParticipantFromSession(roomId, participant);
+                }
+                await this.endRuntimeIfRoomClosed(roomId, reconciled.roomClosed);
+                return reconciled;
+            });
+            results.push({ roomId, result });
+        }
+        await this.repository.deleteExpiredRoomCreateTombstones(at, limit);
+        return results;
+    }
+
     async snapshot(roomId: string, viewer?: RoomParticipant): Promise<RoomSnapshot> {
-        const [session, participants, boundaries, roomSettings] = await Promise.all([
+        const [session, participants, boundaries, roomSettings, room] = await Promise.all([
             this.loadSession(roomId),
             this.repository.listParticipants(roomId),
             this.repository.listBoundaries(roomId),
             this.repository.loadSettings(roomId),
+            this.repository.loadRoomState(roomId),
         ]);
         const remainingCardCount = session
             ? session.remainingEligibleCardCount(
@@ -317,7 +584,18 @@ export class RoomService {
         return {
             roomId,
             capacity: this.capacity,
-            participants,
+            participants: participants.map(
+                ({ id, roomId, role, displayName, devicePlayers, connectionStatus }) => ({
+                    id,
+                    roomId,
+                    role,
+                    displayName,
+                    devicePlayers,
+                    connectionStatus,
+                }),
+            ),
+            bootstrapMode: room.bootstrapMode,
+            hostStatus: derivePersistedRoomHostStatus(room, participants),
             boundaryConfigured: viewer ? boundaries.has(viewer.id) : false,
             settings: roomSettings,
             session: session
@@ -366,34 +644,28 @@ export class RoomService {
         this.sessions.set(participant.roomId, proposed);
     }
 
-    /** Promote the oldest connected PLAYER after the host's reconnect grace period. */
-    async reassignDisconnectedHost(
+    private async leaveParticipant(
         roomId: string,
-        disconnectedHostId: string,
-        connectedParticipantIds: ReadonlySet<string>,
-    ): Promise<boolean> {
-        const participants = await this.repository.listParticipants(roomId);
-        const fallback = fallbackHost(participants, connectedParticipantIds);
-        if (!fallback) return false;
-        try {
-            await this.repository.transferHost(roomId, disconnectedHostId, fallback.id);
-            return true;
-        } catch {
-            return false;
-        }
+        participant: RoomParticipant,
+    ): Promise<RoomLifecycleTransitionResult> {
+        await this.removeParticipantFromSession(roomId, participant);
+        const transition = {
+            type: "LEAVE",
+            roomId,
+            participantId: participant.id,
+            at: Date.now(),
+        } as const;
+        const result = await this.repository.applyLifecycleTransition(transition);
+        this.observeLifecycleTransition(transition, result);
+        await this.endRuntimeIfRoomClosed(roomId, result.roomClosed);
+        return result;
     }
 
-    private async leaveParticipant(roomId: string, participant: RoomParticipant): Promise<void> {
+    private async removeParticipantFromSession(
+        roomId: string,
+        participant: RoomParticipant,
+    ): Promise<void> {
         const participants = await this.repository.listParticipants(roomId);
-        if (participant.role === "HOST") {
-            const connectedIds = new Set(
-                participants
-                    .filter(({ connectionStatus }) => connectionStatus === "CONNECTED")
-                    .map(({ id }) => id),
-            );
-            connectedIds.delete(participant.id);
-            await this.reassignDisconnectedHost(roomId, participant.id, connectedIds);
-        }
         const current = await this.loadSession(roomId);
         if (current && participant.role !== "DISPLAY") {
             const controlledIds = controlledPlayerIds(participant, participants);
@@ -408,20 +680,21 @@ export class RoomService {
                 this.sessions.set(roomId, proposed);
             }
         }
-        await this.repository.setConnectionStatus(participant.id, "LEFT");
-        if (await this.repository.closeRoomIfNoPlayers(roomId)) {
-            const closingSession = await this.loadSession(roomId);
-            if (closingSession && closingSession.state !== "ENDED") {
-                const ended = GameSession.restore(closingSession.toRuntimeState(), this.random);
-                ended.end(closingSession.revision);
-                await this.repository.commitRuntime(
-                    roomId,
-                    closingSession.revision,
-                    ended.toRuntimeState(),
-                );
-            }
-            this.sessions.delete(roomId);
+    }
+
+    private async endRuntimeIfRoomClosed(roomId: string, roomClosed: boolean): Promise<void> {
+        if (!roomClosed) return;
+        const closingSession = await this.loadSession(roomId);
+        if (closingSession && closingSession.state !== "ENDED") {
+            const ended = GameSession.restore(closingSession.toRuntimeState(), this.random);
+            ended.end(closingSession.revision);
+            await this.repository.commitRuntime(
+                roomId,
+                closingSession.revision,
+                ended.toRuntimeState(),
+            );
         }
+        this.sessions.delete(roomId);
     }
 
     private async executeSerialized(
@@ -455,7 +728,14 @@ export class RoomService {
                 );
                 this.sessions.set(roomId, proposed);
             }
-            await this.repository.closeRoom(roomId, participant.id);
+            const transition = {
+                type: "CLOSE",
+                roomId,
+                participantId: participant.id,
+                at: Date.now(),
+            } as const;
+            const result = await this.repository.applyLifecycleTransition(transition);
+            this.observeLifecycleTransition(transition, result);
             const closedSnapshot = await this.snapshot(roomId);
             this.sessions.delete(roomId);
             return closedSnapshot;
@@ -490,11 +770,15 @@ export class RoomService {
                     code: "NOT_AUTHORIZED",
                 });
             }
-            await this.repository.transferHost(
+            const transition = {
+                type: "TRANSFER_HOST",
                 roomId,
-                participant.id,
-                command.payload.participantId,
-            );
+                participantId: participant.id,
+                targetParticipantId: command.payload.participantId,
+                at: Date.now(),
+            } as const;
+            const result = await this.repository.applyLifecycleTransition(transition);
+            this.observeLifecycleTransition(transition, result);
             return this.snapshot(roomId);
         }
         if (command.type === "command.updateRoomSettings") {
@@ -758,6 +1042,104 @@ export class RoomService {
             };
         }
         return { locale: session.cardLocale, ...this.cardTranslationPolicy };
+    }
+    private replayRoomCreate(
+        record: RoomCreateIdempotencyRecord,
+        requestFingerprint: string,
+    ): RoomJoinResult {
+        const protection = this.lifecycle.idempotencyProtection;
+        if (!protection) {
+            this.lifecycle.observability.roomCreateIdempotency(
+                "PROTECTION_UNAVAILABLE",
+                record.resourceId,
+            );
+            throw new Error("Room-create replay protection is unavailable");
+        }
+        if (!protection.matchesFingerprint(record.requestFingerprint, requestFingerprint)) {
+            this.lifecycle.observability.roomCreateIdempotency("CONFLICT", record.resourceId);
+            throw Object.assign(new Error(MESSAGE_KEYS.ROOM_IDEMPOTENCY_REUSED), {
+                code: "IDEMPOTENCY_KEY_REUSED",
+            });
+        }
+        if (record.state === "RESOURCE_GONE") {
+            this.lifecycle.observability.roomCreateIdempotency("GONE", record.resourceId);
+            throw Object.assign(new Error(MESSAGE_KEYS.ROOM_IDEMPOTENCY_GONE), {
+                code: "IDEMPOTENCY_RESULT_GONE",
+            });
+        }
+        if (
+            record.statusCode !== 201 ||
+            record.responseSchemaVersion !== ROOM_CREATE_RESPONSE_SCHEMA_VERSION ||
+            record.lookupKeyId !== protection.lookupKeyId ||
+            record.responseKeyId !== protection.responseKeyId ||
+            !record.responseCiphertext ||
+            !record.resourceId
+        ) {
+            this.lifecycle.observability.roomCreateIdempotency(
+                "PROTECTION_UNAVAILABLE",
+                record.resourceId,
+            );
+            throw new Error("Stored Room-create replay metadata is inconsistent");
+        }
+        try {
+            const response = protection.decryptResponse(
+                {
+                    routeKey: record.routeKey,
+                    principalScopeDigest: record.principalScopeDigest,
+                    keyDigest: record.keyDigest,
+                    requestFingerprint: record.requestFingerprint,
+                    resourceId: record.resourceId,
+                    responseSchemaVersion: record.responseSchemaVersion,
+                },
+                record.responseCiphertext,
+            );
+            this.lifecycle.observability.roomCreateIdempotency("REPLAYED", response.roomId);
+            return response;
+        } catch (error) {
+            this.lifecycle.observability.roomCreateIdempotency(
+                "PROTECTION_UNAVAILABLE",
+                record.resourceId,
+            );
+            throw error;
+        }
+    }
+    private observeRoomCreate(
+        response: RoomJoinResult,
+        bootstrapMode: RoomBootstrapMode,
+        result: "CREATED" | "REPLAYED",
+        at = Date.now(),
+    ): void {
+        if (!response.hostStatus) {
+            throw new Error("Room-create response is missing authoritative Host status");
+        }
+        this.lifecycle.observability.roomCreate({
+            roomId: response.roomId,
+            bootstrapMode,
+            creatorRole: response.role,
+            hostStatus: response.hostStatus,
+            at,
+            result,
+        });
+    }
+    private observeIdempotencyError(error: unknown, roomId: string | null): void {
+        const code = (error as { code?: string }).code;
+        let outcome: RoomCreateIdempotencyOutcome | null = null;
+        if (code === "IDEMPOTENCY_KEY_REUSED") outcome = "CONFLICT";
+        else if (code === "IDEMPOTENCY_RESULT_GONE") outcome = "GONE";
+        else if (code === "IDEMPOTENCY_REQUEST_IN_PROGRESS") outcome = "IN_PROGRESS";
+        if (outcome) this.lifecycle.observability.roomCreateIdempotency(outcome, roomId);
+    }
+    private observeLifecycleTransition(
+        transition: import("./realtimeRooms").RoomLifecycleTransition,
+        result: RoomLifecycleTransitionResult,
+    ): void {
+        this.lifecycle.observability.lifecycleTransition({
+            roomId: transition.roomId,
+            participantId: "participantId" in transition ? transition.participantId : null,
+            trigger: transition.type,
+            at: transition.at,
+            result,
+        });
     }
     private hashCredential(credential: string): string {
         return createHash("sha256").update(credential).digest("hex");

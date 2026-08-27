@@ -10,6 +10,7 @@
         loadGameProfiles,
         loadCardLocales,
         loadHostConfiguration,
+        loadServerInfo,
         rooms,
         saveGameSettings,
         saveJoin,
@@ -59,6 +60,7 @@
     let groupsAvailable = false;
     let authenticationLoaded = false;
     let authenticationResolved = false;
+    let displayBootstrapAvailable: boolean | null = null;
     let savedGameSettings: GameSettings | null = null;
     let activeDataSpace: { id: string; name: string } | null = null;
     let groupName = "";
@@ -102,11 +104,14 @@
         }
         if (roomCode && !setup.intent) persist({ intent: "JOIN", step: "intent" });
         try {
-            const [loadedProfiles, catalogLocales, authStatus] = await Promise.all([
+            const [loadedProfiles, catalogLocales, authStatus, serverInfo] = await Promise.all([
                 loadGameProfiles(),
                 loadCardLocales(),
                 refreshAuthentication(),
+                loadServerInfo(),
             ]);
+            displayBootstrapAvailable =
+                serverInfo.capabilities?.displayBootstrapRoomCreation === true;
             authenticationLoaded = true;
             authenticationResolved = true;
             profiles = loadedProfiles;
@@ -481,12 +486,14 @@
                 navigate("/play/couch", { force: true });
                 return;
             }
-            if (!setup.hostName.trim()) return;
+            if (setup.deviceMode === "personal" && !setup.hostName.trim()) return;
             const persistence = persistenceAvailable ? "DATASPACE" : "EPHEMERAL";
+            const displayBootstrap = setup.deviceMode === "party";
             const join = await rooms.create(
-                setup.hostName.trim(),
+                displayBootstrap ? messages.room.displayName : setup.hostName.trim(),
                 persistence,
                 setupRoomSettings(setup),
+                displayBootstrap ? "DISPLAY_WAITING_FOR_HOST" : "CREATOR_HOST",
             );
             saveJoin(join);
             navigate("/play/room", { force: true });
@@ -802,18 +809,40 @@
                             {#each messages.setup.deviceOptions as item}<button
                                     class:selected={setup.deviceMode === item[0]}
                                     class="option-card"
+                                    disabled={item[0] === "party" &&
+                                        displayBootstrapAvailable === false}
                                     on:click={() => persist({ deviceMode: item[0] })}
                                     ><span class="option-symbol"><UiIcon name={item[1]} /></span
-                                    ><strong>{item[2]}</strong><small>{item[3]}</small></button
+                                    ><strong>{item[2]}</strong><small
+                                        >{item[0] === "party" && displayBootstrapAvailable === false
+                                            ? messages.setup.partyBootstrapUnavailable
+                                            : item[3]}</small
+                                    ></button
                                 >{/each}
                         </div>
-                        {#if setup.deviceMode !== "couch"}<label class="host-name-field"
+                        {#if setup.deviceMode === "personal"}<label class="host-name-field"
                                 >{messages.setup.hostName}<input
                                     bind:value={setup.hostName}
                                     on:input={() => saveSetup(setup)}
                                     maxlength="40"
                                 /></label
                             >{/if}
+                        {#if setup.deviceMode === "party"}<div
+                                class="party-bootstrap-note"
+                                role="status"
+                            >
+                                <span class="option-symbol" aria-hidden="true"
+                                    ><UiIcon name="party" /></span
+                                >
+                                <div>
+                                    <strong>{messages.setup.partyBootstrapTitle}</strong>
+                                    <p>
+                                        {displayBootstrapAvailable === false
+                                            ? messages.setup.partyBootstrapUnavailable
+                                            : messages.setup.partyBootstrapHint}
+                                    </p>
+                                </div>
+                            </div>{/if}
                     {/if}
                     {#if setup.intent === "HOST"}
                         <footer class="wizard-footer">
@@ -830,8 +859,11 @@
                                         !setup.groupId) ||
                                     (setup.step === "group" && setup.groupChoice === "NEW") ||
                                     (setup.step === "screen" &&
-                                        setup.deviceMode !== "couch" &&
+                                        setup.deviceMode === "personal" &&
                                         !setup.hostName.trim()) ||
+                                    (setup.step === "screen" &&
+                                        setup.deviceMode === "party" &&
+                                        displayBootstrapAvailable === false) ||
                                     (setup.step === "profile" &&
                                         profiles.find(({ id }) => id === setup.profileId)
                                             ?.requiresAdultConfirmation &&

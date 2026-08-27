@@ -79,12 +79,14 @@
         overflow-wrap: anywhere;
     }
     .room-availability-urls.auto-page {
+        grid-template-rows: auto minmax(0, 1fr);
+        min-height: 0;
         max-height: none;
         overflow: hidden;
     }
     .room-url-pages {
         width: 100%;
-        height: clamp(3.4rem, 10vh, 6rem);
+        height: clamp(5.5rem, 18vh, 10rem);
         min-height: 0;
     }
 </style>

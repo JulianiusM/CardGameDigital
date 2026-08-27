@@ -30,11 +30,16 @@ beforeAll(async () => {
     repository = new TypeOrmRealtimeRoomRepository(AppDataSource);
     roomId = randomUUID();
     participantId = randomUUID();
+    const createdAt = Date.now();
     await repository.createRoom({
         roomId,
         code: "SAFE23",
         dataSpaceId: null,
-        expiresAt: new Date(Date.now() + 60_000),
+        createdAt,
+        expiresAt: new Date(createdAt + 60_000),
+        bootstrapMode: "CREATOR_HOST",
+        firstHostAssignedAt: createdAt,
+        activationDeadline: createdAt + 30_000,
         settings: defaultRoomGameSettings(),
         participant: {
             id: participantId,
@@ -43,6 +48,13 @@ beforeAll(async () => {
             displayName: "Host",
             devicePlayers: [],
             connectionStatus: "TEMPORARILY_DISCONNECTED",
+            joinedAt: createdAt,
+            firstConnectedAt: null,
+            lastConnectedAt: null,
+            reconnectDeadline: null,
+            activationExpiresAt: createdAt + 30_000,
+            leftAt: null,
+            revokedAt: null,
             credentialHash: "a".repeat(64),
         },
     });
@@ -72,7 +84,12 @@ describe("private boundary persistence", () => {
     });
 
     it("persists Room closure and excludes every participant and future join", async () => {
-        await repository.closeRoom(roomId, participantId);
+        await repository.applyLifecycleTransition({
+            type: "CLOSE",
+            roomId,
+            participantId,
+            at: Date.now(),
+        });
 
         expect(await repository.listParticipants(roomId)).toEqual([]);
         await expect(
@@ -84,6 +101,13 @@ describe("private boundary persistence", () => {
                     displayName: "Late joiner",
                     devicePlayers: [],
                     connectionStatus: "CONNECTED",
+                    joinedAt: Date.now(),
+                    firstConnectedAt: Date.now(),
+                    lastConnectedAt: Date.now(),
+                    reconnectDeadline: null,
+                    activationExpiresAt: Date.now() + 30_000,
+                    leftAt: null,
+                    revokedAt: null,
                     credentialHash: "b".repeat(64),
                 },
                 DEFAULT_ROOM_CAPACITY,

@@ -1,7 +1,9 @@
+import { randomUuidV4 } from "./randomUuid";
+
 const GROUP_CHANGE_KEY = "party-game:groups-changed";
 
 export function announceGroupChange(): void {
-    localStorage.setItem(GROUP_CHANGE_KEY, `${Date.now()}:${crypto.randomUUID()}`);
+    localStorage.setItem(GROUP_CHANGE_KEY, `${Date.now()}:${randomUuidV4()}`);
 }
 
 export function subscribeToGroupChanges(listener: () => void): () => void {

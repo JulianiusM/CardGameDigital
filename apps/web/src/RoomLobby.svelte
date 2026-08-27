@@ -9,6 +9,8 @@
         Participant,
         Presence,
         Role,
+        RoomBootstrapMode,
+        RoomHostStatus,
         VersionedRoomGameSettings,
     } from "./multiplayer";
     import EligibleCardPreview from "./EligibleCardPreview.svelte";
@@ -18,6 +20,8 @@
     export let participants: Participant[];
     export let presence: Presence[];
     export let effectiveRole: Role;
+    export let bootstrapMode: RoomBootstrapMode;
+    export let hostStatus: RoomHostStatus;
     export let boundaryConfigured: boolean;
     export let qr: string;
     export let roomUrls: string[] = [];
@@ -49,11 +53,55 @@
     $: selectedProfile = profiles.find(({ id }) => id === settings.profileId);
     $: selectedMode = Object.values(messages.modes).find(([id]) => id === settings.mode);
     $: selectedLocale = cardLocales.find(({ id }) => id === settings.cardLocale);
+    $: hostStatusText = projectHostStatus(hostStatus);
+
+    function projectHostStatus(status: RoomHostStatus): { title: string; detail: string } {
+        switch (status.state) {
+            case "AWAITING_FIRST_HOST":
+                return {
+                    title: messages.room.awaitingFirstHost,
+                    detail: messages.room.awaitingFirstHostHint,
+                };
+            case "CONNECTING":
+                return {
+                    title: messages.room.hostConnecting(status.displayName ?? ""),
+                    detail: messages.room.hostConnectingHint,
+                };
+            case "CONNECTED":
+                return {
+                    title: messages.room.hostConnected(status.displayName ?? ""),
+                    detail: messages.room.hostConnectedHint,
+                };
+            case "RECONNECTING":
+                return {
+                    title: messages.room.hostReconnecting(status.displayName ?? ""),
+                    detail: messages.room.hostReconnectingHint,
+                };
+            case "AWAITING_REPLACEMENT_HOST":
+                return {
+                    title: messages.room.awaitingReplacementHost,
+                    detail: messages.room.awaitingReplacementHostHint,
+                };
+        }
+    }
 </script>
 
 <section class:public-stage-lobby={effectiveRole === "DISPLAY"} class="lobby-grid">
     <div class="card-panel lobby">
         <h2>{messages.room.lobby}</h2>
+
+        {#if effectiveRole === "DISPLAY" && bootstrapMode === "DISPLAY_WAITING_FOR_HOST"}<section
+                class:connected={hostStatus.state === "CONNECTED"}
+                class:attention={hostStatus.state !== "CONNECTED"}
+                class="host-status-banner"
+                aria-live="polite"
+            >
+                <span class="host-status-orb" aria-hidden="true"></span>
+                <div>
+                    <strong>{hostStatusText.title}</strong>
+                    <p>{hostStatusText.detail}</p>
+                </div>
+            </section>{/if}
 
         <section class="room-settings-summary" aria-labelledby="room-settings-heading">
             <div>

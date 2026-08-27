@@ -6,7 +6,10 @@ import {
     participantLeftEventPayloadSchema,
     PROTOCOL_VERSION,
     protocolErrorCodeSchema,
+    roomCreateRequestSchema,
+    roomCreateResponseSchema,
     roomCommandEnvelopeSchema,
+    roomRoleChangedPayloadSchema,
 } from "../../src/packages/protocol";
 import { defaultRoomGameSettings } from "../../src/packages/application/roomGameSettings";
 
@@ -16,6 +19,35 @@ describe("protocol v2 boundary", () => {
             "CARD_LOCALE_UNAVAILABLE",
         );
         expect(protocolErrorCodeSchema.parse("ROOM_FULL")).toBe("ROOM_FULL");
+    });
+
+    it("defaults ordinary creation and validates display-bootstrap wire projections", () => {
+        expect(roomCreateRequestSchema.parse({ displayName: "Host" }).bootstrapMode).toBe(
+            "CREATOR_HOST",
+        );
+        expect(
+            roomCreateResponseSchema.safeParse({
+                roomId: "00000000-0000-4000-8000-000000000001",
+                roomCode: "ABC234",
+                participantId: "00000000-0000-4000-8000-000000000002",
+                participantCredential: "x".repeat(43),
+                role: "DISPLAY",
+                bootstrapMode: "DISPLAY_WAITING_FOR_HOST",
+                hostStatus: {
+                    state: "AWAITING_FIRST_HOST",
+                    participantId: null,
+                    displayName: null,
+                    deadline: null,
+                },
+            }).success,
+        ).toBe(true);
+        expect(
+            roomRoleChangedPayloadSchema.safeParse({
+                role: "HOST",
+                previousRole: "PLAYER",
+                reason: "INITIAL_HOST_ASSIGNED",
+            }).success,
+        ).toBe(true);
     });
 
     it("validates the unauthenticated client hello envelope", () => {

@@ -12,7 +12,11 @@ import {
     type CardReplacedEventPayload,
     type ParticipantLeftEventPayload,
 } from "../packages/protocol";
-import type { RoomParticipant } from "../packages/application/realtimeRooms";
+import type {
+    RoomParticipant,
+    RoomRoleChange,
+    RoomRoleChangeReason,
+} from "../packages/application/realtimeRooms";
 import type { RoomCommand, RoomService } from "../packages/application/roomService";
 import settings, { isPublicRuntimeSecurityEnforced } from "./settings";
 import { isTrustedOrigin } from "./requestSecurity";
@@ -47,12 +51,13 @@ export function attachWebSocketServer(
         participantCommandRateLimit?: { windowMs: number; limit: number };
         devicePairingRateLimit?: { windowMs: number; limit: number };
         maxPayloadBytes?: number;
+        reconciliationIntervalMs?: number;
     } = {},
-): WebSocketServer {
+): WebSocketServer & { roomLifecycleReady: Promise<void> } {
     const sockets = new Set<Context>();
     const disconnectTimers = new Map<string, NodeJS.Timeout>();
-    const orphanedRooms = new Map<string, string>();
     const hostDisconnectGraceMs = options.hostDisconnectGraceMs ?? 180_000;
+    const reconciliationIntervalMs = options.reconciliationIntervalMs ?? 1_000;
     const heartbeatIntervalMs = options.heartbeatIntervalMs ?? 5_000;
     const maxPayloadBytes = options.maxPayloadBytes ?? 64 * 1024;
     const participantCommandRateLimit = options.participantCommandRateLimit ?? {
@@ -71,12 +76,17 @@ export function attachWebSocketServer(
         devicePairingRateLimit.windowMs,
         devicePairingRateLimit.limit,
     );
-    const lifecycleReady = service.initializeConnectionLifecycle();
+    const lifecycleReady = service.initializeConnectionLifecycle(hostDisconnectGraceMs);
     const wss = new WebSocketServer({
         server,
-        path: "/ws",
+        path: settings.value.webSocketPath,
         maxPayload: maxPayloadBytes,
         perMessageDeflate: false,
+    });
+    const roomLifecycleReady = lifecycleReady.then(() => undefined);
+    Object.defineProperty(wss, "roomLifecycleReady", {
+        value: roomLifecycleReady,
+        enumerable: false,
     });
     const responsiveSockets = new WeakSet<WebSocket>();
     const heartbeat = setInterval(() => {
@@ -94,32 +104,26 @@ export function attachWebSocketServer(
     function scheduleDisconnectExpiry(participant: RoomParticipant): void {
         const existing = disconnectTimers.get(participant.id);
         if (existing) clearTimeout(existing);
+        const delay = Math.max(
+            0,
+            (participant.reconnectDeadline ?? Date.now() + hostDisconnectGraceMs) - Date.now(),
+        );
         const timer = setTimeout(async () => {
             try {
                 disconnectTimers.delete(participant.id);
-                const expired = await service.expireDisconnectedParticipant(
+                const result = await service.expireDisconnectedParticipant(
                     participant.roomId,
                     participant.id,
                 );
-                const snapshot = expired ? await service.snapshot(participant.roomId) : null;
-                if (expired && participant.role === "HOST") {
-                    const hasHost = snapshot!.participants.some(({ role }) => role === "HOST");
-                    const canRecover = snapshot!.participants.some(
-                        ({ role, connectionStatus }) =>
-                            role !== "DISPLAY" || connectionStatus === "CONNECTED",
-                    );
-                    if (!hasHost && canRecover)
-                        orphanedRooms.set(participant.roomId, participant.id);
-                }
-                if (expired) {
+                for (const expired of result.expiredParticipants) {
                     broadcastRoomEvent(sockets, participant.roomId, "room.participantLeft", {
-                        participantId: participant.id,
-                        displayName: participant.displayName,
+                        participantId: expired.id,
+                        displayName: expired.displayName,
                         reason: "DISCONNECT_EXPIRED",
                     });
-                    if (snapshot!.participants.length === 0) closeConnectedRoom(participant.roomId);
-                    else await refreshRoom(participant.roomId);
                 }
+                if (result.roomClosed) closeConnectedRoom(participant.roomId);
+                else await refreshRoom(participant.roomId, null, result.roleChanges);
             } catch (error) {
                 logEvent(
                     "error",
@@ -128,7 +132,7 @@ export function attachWebSocketServer(
                     settings.value.logLevel,
                 );
             }
-        }, hostDisconnectGraceMs);
+        }, delay);
         timer.unref();
         disconnectTimers.set(participant.id, timer);
     }
@@ -146,17 +150,66 @@ export function attachWebSocketServer(
             );
         });
 
-    async function refreshRoom(roomId: string, requestId: string | null = null): Promise<void> {
+    let reconciliationRunning = false;
+    const reconciliation = setInterval(() => {
+        if (reconciliationRunning) return;
+        reconciliationRunning = true;
+        void service
+            .reconcileDueRooms()
+            .then(async (rooms) => {
+                for (const { roomId, result } of rooms) {
+                    for (const expired of result.expiredParticipants) {
+                        broadcastRoomEvent(sockets, roomId, "room.participantLeft", {
+                            participantId: expired.id,
+                            displayName: expired.displayName,
+                            reason: "DISCONNECT_EXPIRED",
+                        });
+                    }
+                    if (result.roomClosed) closeConnectedRoom(roomId);
+                    else await refreshRoom(roomId, null, result.roleChanges);
+                }
+            })
+            .catch((error) => {
+                logEvent(
+                    "error",
+                    "realtime.lifecycle_reconciliation_failed",
+                    configuredErrorLogFields(error, settings.value),
+                    settings.value.logLevel,
+                );
+            })
+            .finally(() => {
+                reconciliationRunning = false;
+            });
+    }, reconciliationIntervalMs);
+    reconciliation.unref();
+
+    async function refreshRoom(
+        roomId: string,
+        requestId: string | null = null,
+        roleChanges: readonly RoomRoleChange[] = [],
+        roleNoticeAlreadySent: ReadonlySet<string> = new Set(),
+    ): Promise<void> {
         const participants = (await service.snapshot(roomId)).participants;
         const byId = new Map(participants.map((participant) => [participant.id, participant]));
         for (const peer of sockets) {
             if (peer.participant.roomId !== roomId) continue;
             const refreshed = byId.get(peer.participant.id);
             if (!refreshed) continue;
-            if (refreshed.role !== peer.participant.role) {
-                peer.participant = refreshed;
-                send(peer.socket, "room.roleChanged", null, null, { role: refreshed.role });
-            } else peer.participant = refreshed;
+            const previousRole = peer.participant.role;
+            peer.participant = { ...peer.participant, ...refreshed };
+            const roleChange = roleChanges.find(
+                ({ participantId }) => participantId === peer.participant.id,
+            );
+            if (
+                refreshed.role !== previousRole &&
+                !roleNoticeAlreadySent.has(peer.participant.id)
+            ) {
+                send(peer.socket, "room.roleChanged", null, null, {
+                    role: refreshed.role,
+                    previousRole,
+                    reason: roleChange?.reason ?? "HOST_TRANSFERRED",
+                });
+            }
             if (peer.socket.readyState === WebSocket.OPEN) {
                 const snapshot = await service.snapshot(roomId, peer.participant);
                 send(
@@ -171,7 +224,6 @@ export function attachWebSocketServer(
         broadcastPresence(sockets, roomId);
     }
     function closeConnectedRoom(roomId: string): void {
-        orphanedRooms.delete(roomId);
         for (const peer of [...sockets]) {
             if (peer.participant.roomId !== roomId) continue;
             const timer = disconnectTimers.get(peer.participant.id);
@@ -229,50 +281,50 @@ export function attachWebSocketServer(
                             "PROTOCOL_VERSION_UNSUPPORTED",
                             MESSAGE_KEYS.REALTIME_PROTOCOL_UNSUPPORTED,
                         );
-                    const participant = await service.authenticate(
+                    const activation = await service.authenticate(
                         hello.payload.roomCode,
                         hello.payload.participantCredential,
                     );
-                    if (!participant)
+                    if (!activation)
                         throw coded("ROOM_NOT_FOUND", MESSAGE_KEYS.REALTIME_CREDENTIAL_NOT_FOUND);
+                    const participant = activation;
                     const pendingFallback = disconnectTimers.get(participant.id);
                     if (pendingFallback) {
                         clearTimeout(pendingFallback);
                         disconnectTimers.delete(participant.id);
                     }
+                    for (const existing of [...sockets]) {
+                        if (existing.participant.id !== participant.id) continue;
+                        existing.intentionalLeave = true;
+                        sockets.delete(existing);
+                        existing.socket.close(4002, "connection replaced");
+                    }
                     context = { socket, participant, roomCode: hello.payload.roomCode };
                     sockets.add(context);
-                    await service.markConnected(participant);
-                    const orphanedHostId = orphanedRooms.get(participant.roomId);
-                    if (orphanedHostId && participant.role === "PLAYER") {
-                        const connected = new Set(
-                            [...sockets]
-                                .filter((peer) => peer.participant.roomId === participant.roomId)
-                                .map((peer) => peer.participant.id),
-                        );
-                        if (
-                            await service.reassignDisconnectedHost(
-                                participant.roomId,
-                                orphanedHostId,
-                                connected,
-                            )
-                        ) {
-                            orphanedRooms.delete(participant.roomId);
-                            const refreshed = (
-                                await service.snapshot(participant.roomId)
-                            ).participants.find(({ id }) => id === participant.id);
-                            if (refreshed) context.participant = refreshed;
-                        }
-                    } else if (orphanedHostId === participant.id) {
-                        orphanedRooms.delete(participant.roomId);
-                    }
                     clearTimeout(deadline);
                     send(socket, "server.hello", requestId, null, {
                         protocolVersion: PROTOCOL_VERSION,
-                        participantId: context.participant.id,
-                        role: context.participant.role,
+                        participantId: participant.id,
+                        role: participant.role,
                     });
-                    await refreshRoom(context.participant.roomId, requestId);
+                    const ownRoleChange = activation.roleChanges.find(
+                        ({ participantId }) => participantId === participant.id,
+                    );
+                    const noticesSent = new Set<string>();
+                    if (ownRoleChange) {
+                        send(socket, "room.roleChanged", null, null, {
+                            role: ownRoleChange.role,
+                            previousRole: ownRoleChange.previousRole,
+                            reason: ownRoleChange.reason,
+                        });
+                        noticesSent.add(participant.id);
+                    }
+                    await refreshRoom(
+                        participant.roomId,
+                        requestId,
+                        activation.roleChanges,
+                        noticesSent,
+                    );
                     return;
                 }
                 if (snapshotRequestEnvelopeSchema.safeParse(value).success) {
@@ -312,6 +364,11 @@ export function attachWebSocketServer(
                 const roomId = context.participant.roomId;
                 const leaving = command.type === "command.leaveRoom";
                 const closing = command.type === "command.closeRoom";
+                const priorRoles = new Map(
+                    [...sockets]
+                        .filter((peer) => peer.participant.roomId === roomId)
+                        .map((peer) => [peer.participant.id, peer.participant.role]),
+                );
                 const commandSnapshot = await service.execute(roomId, context.participant, command);
                 if (closing) {
                     closeConnectedRoom(roomId);
@@ -333,19 +390,19 @@ export function attachWebSocketServer(
                         closeConnectedRoom(roomId);
                         return;
                     }
-                    const hasHost = commandSnapshot.participants.some(
-                        ({ role }) => role === "HOST",
-                    );
-                    if (context.participant.role === "HOST" && !hasHost) {
-                        orphanedRooms.set(roomId, context.participant.id);
-                    }
                 }
                 if (command.type === "command.skipCard" || command.type === "command.vetoCard") {
                     broadcastRoomEvent(sockets, roomId, "session.cardReplaced", {
                         reason: command.type === "command.skipCard" ? "SKIPPED" : "VETOED",
                     });
                 }
-                await refreshRoom(roomId, requestId);
+                let roleReason: RoomRoleChangeReason | null = null;
+                if (command.type === "command.transferHost") roleReason = "HOST_TRANSFERRED";
+                else if (leaving && context.participant.role === "HOST") roleReason = "HOST_LEFT";
+                const roleChanges = roleReason
+                    ? roleChangesFromSnapshot(priorRoles, commandSnapshot.participants, roleReason)
+                    : [];
+                await refreshRoom(roomId, requestId, roleChanges);
             } catch (error) {
                 const details = error as { code?: string; message?: string };
                 const expectedCode = details.code
@@ -397,23 +454,60 @@ export function attachWebSocketServer(
                 const participantId = context.participant.id;
                 sockets.delete(context);
                 if ([...sockets].some((peer) => peer.participant.id === participantId)) return;
-                await service.markTemporarilyDisconnected(context.participant);
-                await refreshRoom(roomId);
-                broadcastPresence(sockets, roomId);
-                scheduleDisconnectExpiry(context.participant);
+                try {
+                    const result = await service.markTemporarilyDisconnected(
+                        context.participant,
+                        hostDisconnectGraceMs,
+                    );
+                    if (result.roomClosed) {
+                        closeConnectedRoom(roomId);
+                        return;
+                    }
+                    await refreshRoom(roomId, null, result.roleChanges);
+                    if (result.participant?.id === participantId) {
+                        scheduleDisconnectExpiry(result.participant);
+                    }
+                } catch (error) {
+                    logEvent(
+                        "error",
+                        "realtime.disconnect_transition_failed",
+                        configuredErrorLogFields(error, settings.value),
+                        settings.value.logLevel,
+                    );
+                }
             }
         });
     });
     wss.on("close", () => {
         clearInterval(heartbeat);
+        clearInterval(reconciliation);
         for (const timer of disconnectTimers.values()) clearTimeout(timer);
         disconnectTimers.clear();
-        orphanedRooms.clear();
         participantCommands.clear();
         devicePairings.clear();
     });
-    return wss;
+    return wss as WebSocketServer & { roomLifecycleReady: Promise<void> };
 }
+
+function roleChangesFromSnapshot(
+    previousRoles: ReadonlyMap<string, RoomParticipant["role"]>,
+    participants: readonly Pick<RoomParticipant, "id" | "role">[],
+    reason: RoomRoleChangeReason,
+): RoomRoleChange[] {
+    const changes: RoomRoleChange[] = [];
+    for (const participant of participants) {
+        const previousRole = previousRoles.get(participant.id);
+        if (!previousRole || previousRole === participant.role) continue;
+        changes.push({
+            participantId: participant.id,
+            previousRole,
+            role: participant.role,
+            reason,
+        });
+    }
+    return changes;
+}
+
 function send(
     socket: WebSocket,
     type: string,

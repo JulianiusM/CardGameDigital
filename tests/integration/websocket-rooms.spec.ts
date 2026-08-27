@@ -11,6 +11,7 @@ import {
 import type {
     RealtimeRoomRepository,
     RoomParticipant,
+    RoomState,
 } from "../../src/packages/application/realtimeRooms";
 import type { CardRepository } from "../../src/packages/application/repositories";
 import { card } from "../support/game";
@@ -20,9 +21,10 @@ import {
     type VersionedRoomGameSettings,
 } from "../../src/packages/application/roomGameSettings";
 import { PROTOCOL_VERSION } from "../../src/packages/protocol";
+import { applyMemoryLifecycleTransition } from "../support/realtimeLifecycle";
 
 class Repo implements RealtimeRoomRepository {
-    room!: { id: string; code: string };
+    room!: RoomState;
     participants: Array<RoomParticipant & { credentialHash: string }> = [];
     runtime: GameSessionRuntimeState | null = null;
     boundaries = new Map<string, PlayerBoundaries>();
@@ -31,13 +33,28 @@ class Repo implements RealtimeRoomRepository {
         return false;
     }
     async createRoom(i: Parameters<RealtimeRoomRepository["createRoom"]>[0]) {
-        this.room = { id: i.roomId, code: i.code };
+        this.room = {
+            id: i.roomId,
+            code: i.code,
+            bootstrapMode: i.bootstrapMode,
+            firstHostAssignedAt: i.firstHostAssignedAt,
+            activationDeadline: i.activationDeadline,
+            activatedAt: null,
+            createdAt: i.createdAt,
+            expiresAt: i.expiresAt.getTime(),
+            closedAt: null,
+            creatorParticipantId: i.participant.id,
+        };
         this.participants.push(i.participant);
         this.settings = {
             ...i.settings,
             revision: 0,
             updatedByParticipantId: i.participant.id,
         };
+        return { created: true as const };
+    }
+    async findRoomCreateIdempotency() {
+        return null;
     }
     async joinRoom(i: Parameters<RealtimeRoomRepository["joinRoom"]>[0]) {
         this.participants.push({ ...i, roomId: this.room.id });
@@ -46,28 +63,12 @@ class Repo implements RealtimeRoomRepository {
         const p = this.participants.find(
             (x) => code === this.room.code && x.credentialHash === hash,
         );
-        return p && p.connectionStatus !== "LEFT"
-            ? {
-                  id: p.id,
-                  roomId: p.roomId,
-                  role: p.role,
-                  displayName: p.displayName,
-                  devicePlayers: p.devicePlayers,
-                  connectionStatus: p.connectionStatus,
-              }
-            : null;
+        return p && p.connectionStatus !== "LEFT" ? { ...p } : null;
     }
     async listParticipants(roomId: string) {
         return this.participants
             .filter(({ connectionStatus }) => connectionStatus !== "LEFT")
-            .map(({ id, role, displayName, devicePlayers, connectionStatus }) => ({
-                id,
-                roomId,
-                role,
-                displayName,
-                devicePlayers,
-                connectionStatus,
-            }));
+            .map((participant) => ({ ...participant, roomId }));
     }
     async getParticipant(roomId: string, participantId: string) {
         return (await this.listParticipants(roomId)).find(({ id }) => id === participantId) ?? null;
@@ -76,17 +77,38 @@ class Repo implements RealtimeRoomRepository {
         participantId: string,
         connectionStatus: RoomParticipant["connectionStatus"],
     ) {
-        this.participants.find(({ id }) => id === participantId)!.connectionStatus =
-            connectionStatus;
+        const participant = this.participants.find(({ id }) => id === participantId)!;
+        participant.connectionStatus = connectionStatus;
+        if (connectionStatus === "CONNECTED") {
+            participant.firstConnectedAt ??= Date.now();
+            participant.lastConnectedAt = Date.now();
+            participant.reconnectDeadline = null;
+        }
     }
-    async resetConnectedParticipants() {
+    async loadRoomState() {
+        return { ...this.room };
+    }
+    async applyLifecycleTransition(
+        transition: Parameters<RealtimeRoomRepository["applyLifecycleTransition"]>[0],
+    ) {
+        return applyMemoryLifecycleTransition(this.room, this.participants, transition);
+    }
+    async resetConnectedParticipants(at: number, reconnectDeadline: number) {
         const reset: RoomParticipant[] = [];
         for (const participant of this.participants)
             if (participant.connectionStatus === "CONNECTED") {
                 participant.connectionStatus = "TEMPORARILY_DISCONNECTED";
+                participant.lastConnectedAt = at;
+                participant.reconnectDeadline = reconnectDeadline;
                 reset.push({ ...participant });
             }
         return reset;
+    }
+    async findDueRoomIds() {
+        return [];
+    }
+    async deleteExpiredRoomCreateTombstones() {
+        return 0;
     }
     async saveDevicePlayers(participantId: string, players: RoomParticipant["devicePlayers"]) {
         this.participants.find(({ id }) => id === participantId)!.devicePlayers = players;
@@ -114,6 +136,7 @@ class Repo implements RealtimeRoomRepository {
                 participant.connectionStatus !== "LEFT",
         );
         if (!host) throw Object.assign(new Error("not authorized"), { code: "NOT_AUTHORIZED" });
+        this.room.closedAt = Date.now();
         for (const participant of this.participants)
             if (participant.roomId === roomId) participant.connectionStatus = "LEFT";
     }
@@ -364,6 +387,75 @@ describe("Room WebSocket protocol", () => {
         await new Promise<void>((resolve) => wss.close(() => resolve()));
     });
 
+    it("atomically assigns exactly one first phone as Host for a display-bootstrap Room", async () => {
+        const repository = new Repo();
+        const service = new RoomService(
+            repository,
+            cards,
+            new SequenceRandomSource([0]),
+            undefined,
+            undefined,
+            undefined,
+            { displayBootstrapEnabled: true },
+        );
+        const display = await service.createRoom("Party Screen", null, undefined, {
+            bootstrapMode: "DISPLAY_WAITING_FOR_HOST",
+        });
+        const first = await service.joinRoom(display.roomCode, "First phone", "PLAYER");
+        const second = await service.joinRoom(display.roomCode, "Second phone", "PLAYER");
+        expect(display.role).toBe("DISPLAY");
+        expect(repository.participants.some(({ role }) => role === "HOST")).toBe(false);
+
+        server = http.createServer();
+        const wss = attachWebSocketServer(server, service);
+        await new Promise<void>((resolve) => server!.listen(0, "127.0.0.1", resolve));
+        const port = (server.address() as { port: number }).port;
+        const displayClient = await hello(
+            port,
+            display.roomCode,
+            display.participantCredential,
+            display.role,
+        );
+        expect(
+            displayClient.messages.findLast((message) => message.type === "room.snapshot").payload
+                .hostStatus.state,
+        ).toBe("AWAITING_FIRST_HOST");
+
+        const phoneClients = await Promise.all(
+            [first, second].map((participant, index) =>
+                hello(
+                    port,
+                    participant.roomCode,
+                    participant.participantCredential,
+                    index === 0 ? "HOST" : "DISPLAY",
+                ),
+            ),
+        );
+        const helloRoles = phoneClients.map(
+            ({ messages }) =>
+                messages.find((message) => message.type === "server.hello").payload.role,
+        );
+        expect(helloRoles.filter((role) => role === "HOST")).toHaveLength(1);
+        const promoted = phoneClients.find(({ messages }) =>
+            messages.some(
+                (message) =>
+                    message.type === "room.roleChanged" &&
+                    message.payload.role === "HOST" &&
+                    message.payload.previousRole === "PLAYER" &&
+                    message.payload.reason === "INITIAL_HOST_ASSIGNED",
+            ),
+        );
+        expect(promoted).toBeDefined();
+        expect(
+            repository.participants.filter(
+                ({ role, connectionStatus }) => role === "HOST" && connectionStatus !== "LEFT",
+            ),
+        ).toHaveLength(1);
+
+        for (const client of [displayClient, ...phoneClients]) client.socket.terminate();
+        await new Promise<void>((resolve) => wss.close(() => resolve()));
+    });
+
     it("ends idempotently and starts a new Session without replacing Room participants", async () => {
         const repository = new Repo();
         const service = new RoomService(repository, cards, new SequenceRandomSource([0]));
@@ -393,7 +485,7 @@ describe("Room WebSocket protocol", () => {
             display.participantCredential,
             display.role,
         );
-        const clients = [hostClient, staleHostTab, playerClient, displayClient];
+        const clients = [staleHostTab, playerClient, displayClient];
         const send = (
             client: (typeof clients)[number],
             type: string,
@@ -410,7 +502,7 @@ describe("Room WebSocket protocol", () => {
                 }),
             );
 
-        send(hostClient, "command.startSession", "start-first", null);
+        send(staleHostTab, "command.startSession", "start-first", null);
         await waitFor(() =>
             clients.every((client) =>
                 client.messages.some(
@@ -420,7 +512,7 @@ describe("Room WebSocket protocol", () => {
             ),
         );
         const firstSessionId = repository.runtime!.id;
-        send(hostClient, "command.endSession", "end-first", 0);
+        send(staleHostTab, "command.endSession", "end-first", 0);
         await waitFor(() =>
             clients.every(
                 (client) =>
@@ -440,7 +532,7 @@ describe("Room WebSocket protocol", () => {
             ),
         ).toBe(false);
 
-        send(hostClient, "command.resetSession", "new-game", 1);
+        send(staleHostTab, "command.resetSession", "new-game", 1);
         await waitFor(() =>
             clients.every(
                 (client) =>
@@ -449,13 +541,13 @@ describe("Room WebSocket protocol", () => {
             ),
         );
         expect(repository.participants).toHaveLength(3);
-        send(hostClient, "command.startSession", "start-second", null);
+        send(staleHostTab, "command.startSession", "start-second", null);
         await waitFor(
             () => repository.runtime !== null && repository.runtime.id !== firstSessionId,
         );
         expect(repository.participants).toHaveLength(3);
 
-        for (const client of clients) client.socket.terminate();
+        for (const client of [hostClient, ...clients]) client.socket.terminate();
         await new Promise<void>((resolve) => wss.close(() => resolve()));
     });
 
@@ -493,7 +585,11 @@ describe("Room WebSocket protocol", () => {
             displayName: "Host",
             reason: "DISCONNECT_EXPIRED",
         });
-        expect(repository.participants.filter(({ role }) => role === "HOST")).toHaveLength(1);
+        expect(
+            repository.participants.filter(
+                ({ role, connectionStatus }) => role === "HOST" && connectionStatus !== "LEFT",
+            ),
+        ).toHaveLength(1);
         expect(repository.participants.find(({ id }) => id === player.participantId)?.role).toBe(
             "HOST",
         );

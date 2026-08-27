@@ -29,16 +29,16 @@ response uses `Cache-Control: no-store` and includes a server-generated `X-Reque
 
 ## Discovery and operations
 
-| Method | Path                           | Result                                                                       |
-| ------ | ------------------------------ | ---------------------------------------------------------------------------- |
-| GET    | `/server-info`                 | Deployment/runtime-security/auth availability, protocols, and Room capacity. |
-| GET    | `/healthz`                     | Liveness (`ok`), outside `/api/v1`.                                          |
-| GET    | `/readyz`                      | Database readiness (`ready`), outside `/api/v1`.                             |
-| GET    | `/game-profiles`               | Localized immutable built-in profile summaries.                              |
-| GET    | `/help`                        | Explicitly ordered Help document `{slug,title}` list for requested language. |
-| GET    | `/help/:slug`                  | Rendered `{slug,title,html}` help document.                                  |
-| GET    | `/catalog/locales`             | Active database Card locales, default locale, and coverage.                  |
-| GET    | `/catalog/taxonomies?locale=L` | Database taxonomy labels for Card locale `L`.                                |
+| Method | Path                           | Result                                                                                                                    |
+| ------ | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------- |
+| GET    | `/server-info`                 | Stable installation identity, capabilities, endpoints, discovery status, deployment policy, protocols, and Room capacity. |
+| GET    | `/healthz`                     | Liveness (`ok`), outside `/api/v1`.                                                                                       |
+| GET    | `/readyz`                      | Database readiness (`ready`), outside `/api/v1`.                                                                          |
+| GET    | `/game-profiles`               | Localized immutable built-in profile summaries.                                                                           |
+| GET    | `/help`                        | Explicitly ordered Help document `{slug,title}` list for requested language.                                              |
+| GET    | `/help/:slug`                  | Rendered `{slug,title,html}` help document.                                                                               |
+| GET    | `/catalog/locales`             | Active database Card locales, default locale, and coverage.                                                               |
+| GET    | `/catalog/taxonomies?locale=L` | Database taxonomy labels for Card locale `L`.                                                                             |
 
 `GET /game-profiles` returns the five immutable built-ins
 `PROFILE_CHILD_FRIENDLY`, `PROFILE_ACQUAINTANCES`, `PROFILE_FRIENDS`,
@@ -57,12 +57,41 @@ the API or browser tab implementation.
 
 `GET /server-info` returns `deploymentMode`, `publicRuntimeSecurity` (`enforced` or
 `development`), `authenticationAvailable`, `protocolVersions`, the authoritative
-`roomCapacity` ceilings, and `roomAccess`. `roomAccess` contains nullable
+`roomCapacity` ceilings, and `roomAccess`. It also returns the stable installation UUID
+`serverId`, sanitized `displayName`, and:
+
+```json
+{
+    "capabilities": {
+        "localNetworkDiscovery": true,
+        "displayBootstrapRoomCreation": true
+    },
+    "localNetworkDiscovery": {
+        "advertising": true,
+        "serviceType": "_partycard._tcp",
+        "txtVersion": 1
+    },
+    "endpoints": {
+        "apiBasePath": "/api/v1",
+        "webSocketPath": "/ws",
+        "roomJoinPathTemplate": "/play/?room={roomCode}"
+    }
+}
+```
+
+`localNetworkDiscovery` capability means the binary and effective deployment policy
+support it; `advertising` separately reports whether at least one eligible interface is
+currently published. `displayBootstrapRoomCreation` is true only when policy, schema,
+Room service, and stable encrypted replay protection are available. Endpoint values are
+validated same-origin relative paths and never contain credentials. `roomAccess` contains nullable
 `configuredBaseUrl` and `availableBaseUrls`. In local mode the configured value is null
 unless `PUBLIC_URL` was explicitly set, and the available list contains detected
-credential-free interface origins. In public mode both fields contain only the required
-configured origin. The runtime-security and discovery fields are informational for
-clients and operations; clients receive no additional authority from them.
+credential-free origins for eligible physical interfaces. Virtual adapters and
+scope-dependent link-local IPv6 addresses are excluded; each interface contributes at
+most one global/unique-local IPv6 origin, with global preferred. In public mode both
+fields contain only the required configured origin. The runtime-security and discovery
+fields are informational for clients and operations; clients receive no additional
+authority from them.
 
 `GET /catalog/taxonomies` always returns Question Categories and DareTypes in the
 canonical order declared by `game-core/cards/taxonomy.ts`; database/content ordering
@@ -76,6 +105,7 @@ never controls choice-group presentation.
 {
     "displayName": "Alex",
     "persistence": "EPHEMERAL",
+    "bootstrapMode": "CREATOR_HOST",
     "settings": {
         "mode": "CLASSIC_TRUTH_OR_DARE",
         "profileId": "PROFILE_FRIENDS",
@@ -133,8 +163,59 @@ explicit Card policies apply any separate taxonomy or operational restrictions.
 non-empty, unique, ordered list of active Card locales and must not contain the primary
 `cardLocale`. The server validates all entries and resolves missing Card text in that
 exact order.
-Returns `201` with `roomId`, six-character `roomCode`, `participantId`,
-`participantCredential`, and role `HOST`.
+`bootstrapMode` defaults to `CREATOR_HOST`. It returns `201` with `roomId`, six-character
+`roomCode`, `participantId`, `participantCredential`, role `HOST`, the resolved
+`bootstrapMode`, and `hostStatus`. Before that creator authenticates over WebSocket,
+`hostStatus` is `CONNECTING` with its participant identity and activation deadline.
+
+`DISPLAY_WAITING_FOR_HOST` is the setup wizard's **TV + phones** opening mode. It creates
+exactly one creator participant with role `DISPLAY`, no synthetic or temporary Host, and
+returns:
+
+```json
+{
+    "roomId": "1c886905-9dce-4b9d-9bfa-21748472fd91",
+    "roomCode": "AB12CD",
+    "participantId": "4c72ae95-830a-4c75-9a42-243bedba4187",
+    "participantCredential": "<bearer-secret>",
+    "role": "DISPLAY",
+    "bootstrapMode": "DISPLAY_WAITING_FOR_HOST",
+    "hostStatus": {
+        "state": "AWAITING_FIRST_HOST",
+        "participantId": null,
+        "displayName": null,
+        "deadline": null
+    }
+}
+```
+
+This mode requires exactly one `Idempotency-Key` header. The value is normalized to
+lowercase and must be a canonical UUIDv4; duplicate fields, comma-combined values,
+query/body keys, and other UUID versions are rejected. `CREATOR_HOST` may also opt into
+the same semantics. The fingerprint covers the caller-supplied parsed JSON, preserving
+omitted versus explicit fields. Within the installation, route, and authenticated
+account/local/anonymous principal namespace, an identical retry returns the original
+`201` body—including the same credential—and never creates another Room. Reusing a key
+with a different body is a conflict. A successful replay includes
+`Idempotency-Replayed: true`; the original response does not.
+
+Only HMAC digests of the principal namespace and key are stored. Credential-bearing
+replay bodies use installation-scoped AES-256-GCM protection with purpose-separated
+keys and bound metadata. Retained records identify the derived lookup and replay keys so
+startup can fail closed on unsafe secret rotation. When the creator credential becomes terminal, ciphertext is
+erased and a bounded `RESOURCE_GONE` tombstone prevents the known key from silently
+creating a replacement Room.
+
+Stable create errors are:
+
+| Code                              | Status | Meaning                                                                          |
+| --------------------------------- | -----: | -------------------------------------------------------------------------------- |
+| `ROOM_BOOTSTRAP_MODE_UNSUPPORTED` |    409 | Display bootstrap is disabled or replay protection is unavailable.               |
+| `IDEMPOTENCY_KEY_REQUIRED`        |    400 | Display bootstrap omitted the header.                                            |
+| `IDEMPOTENCY_KEY_INVALID`         |    400 | Header multiplicity or UUIDv4 syntax is invalid.                                 |
+| `IDEMPOTENCY_KEY_REUSED`          |    409 | The scoped key has a different request fingerprint.                              |
+| `IDEMPOTENCY_REQUEST_IN_PROGRESS` |    409 | The matching create is still committing; retry after the supplied `Retry-After`. |
+| `IDEMPOTENCY_RESULT_GONE`         |    410 | The original credential is terminal and its replay body was erased.              |
 
 ### `POST /rooms/:roomCode/participants`
 
@@ -143,7 +224,10 @@ Returns `201` with `roomId`, six-character `roomCode`, `participantId`,
 ```
 
 Role is `PLAYER` or `DISPLAY`; HTTP cannot create another host. Returns the same join
-credential shape with `201`. The room code is public and suitable for QR codes. The
+credential shape with `201`. HTTP join does not reserve Host authority: in a
+display-bootstrap Room, the first credential-authenticated `PLAYER` whose WebSocket
+activation commits is atomically promoted and receives authoritative role `HOST` in
+`server.hello`. A `DISPLAY` is never eligible. The room code is public and suitable for QR codes. The
 participant credential is secret and must only be stored on the joining device.
 Realtime play continues over WebSocket. A Room accepts the server-configured number of
 active device participants and represented players (100 each by default, configurable

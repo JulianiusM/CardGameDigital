@@ -17,6 +17,15 @@ export class RoomEntity {
     @Column("datetime", { name: "created_at" }) createdAt!: Date;
     @Column("datetime", { name: "expires_at" }) expiresAt!: Date;
     @Column("datetime", { name: "closed_at", nullable: true }) closedAt!: Date | null;
+    @Column("varchar", { name: "bootstrap_mode", length: 32, default: "CREATOR_HOST" })
+    bootstrapMode!: "CREATOR_HOST" | "DISPLAY_WAITING_FOR_HOST";
+    @Column("datetime", { name: "first_host_assigned_at", nullable: true })
+    firstHostAssignedAt!: Date | null;
+    @Column("datetime", { name: "activation_deadline", nullable: true })
+    activationDeadline!: Date | null;
+    @Column("datetime", { name: "activated_at", nullable: true }) activatedAt!: Date | null;
+    @Column("varchar", { name: "creator_participant_id", length: 36, nullable: true })
+    creatorParticipantId!: string | null;
     @OneToMany(() => RoomParticipantEntity, (participant) => participant.room)
     participants!: RoomParticipantEntity[];
 }

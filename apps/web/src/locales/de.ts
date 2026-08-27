@@ -158,6 +158,19 @@ export const de = {
             `${current} / ${maximum} Personen im Raum`,
         live: "● LIVE",
         displayName: "Party Screen",
+        awaitingFirstHost: "Wartet auf den ersten Host",
+        awaitingFirstHostHint:
+            "Scannt den QR-Code mit einem Smartphone. Die erste verbundene spielende Person wird automatisch Host.",
+        hostConnecting: (name: string) => `${name || "Der erste Host"} verbindet sich …`,
+        hostConnectingHint: "Die Host-Steuerung wird sicher aktiviert.",
+        hostConnected: (name: string) => `${name || "Der Host"} steuert das Spiel`,
+        hostConnectedHint: "Der Party Screen ist bereit. Weitere Personen können beitreten.",
+        hostReconnecting: (name: string) => `${name || "Der Host"} verbindet sich erneut …`,
+        hostReconnectingHint:
+            "Die Host-Aufgabe bleibt während der Wiederverbindungsfrist reserviert.",
+        awaitingReplacementHost: "Wartet auf einen neuen Host",
+        awaitingReplacementHostHint:
+            "Die nächste verbundene spielende Person übernimmt automatisch.",
         namePlaceholder: "Anna",
         codePlaceholder: "ABC234",
     },
@@ -435,6 +448,11 @@ export const de = {
         groupDeleted: "Gruppe vollständig gelöscht.",
         joinName: "Dein Name",
         hostName: "Name des Hosts",
+        partyBootstrapTitle: "Dieser Bildschirm wird zum Party Screen",
+        partyBootstrapHint:
+            "Nach dem Öffnen scannt die erste spielende Person den QR-Code. Ihr Smartphone übernimmt automatisch die Host-Steuerung.",
+        partyBootstrapUnavailable:
+            "Dieser Server nimmt derzeit keine Eröffnung reiner Anzeigeräume an.",
         roomCode: "Raumcode",
         joinAction: "Raum beitreten",
         step: (current: number, total: number) => `SCHRITT ${current} VON ${total}`,
@@ -442,7 +460,7 @@ export const de = {
         deviceOptions: [
             ["couch", "couch", "Nur dieser Bildschirm", "Alle Aktionen auf einem Gerät"],
             ["personal", "phone", "Alle mit eigenem Gerät", "Karten und Aktionen auf jedem Handy"],
-            ["party", "party", "TV + Smartphones", "Große Bühne, private Steuerung"],
+            ["party", "party", "TV + Smartphones", "Party Screen öffnen, Host per Smartphone"],
         ],
         profiles: [
             ["PROFILE_CHILD_FRIENDLY", "Kinderfreundlich", "Verspielt und nicht sexuell"],

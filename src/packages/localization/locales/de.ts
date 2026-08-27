@@ -30,6 +30,15 @@ export const de = {
         "room.invalidRequest": "Ungültige Raumanfrage.",
         "room.notFound": "Raum nicht gefunden.",
         "room.full": "Der Raum ist voll.",
+        "room.bootstrapUnsupported": "Das Öffnen eines reinen Anzeigeraums ist nicht verfügbar.",
+        "room.idempotencyRequired": "Für diese Anfrage ist ein Idempotenzschlüssel erforderlich.",
+        "room.idempotencyInvalid": "Der Idempotenzschlüssel ist ungültig.",
+        "room.idempotencyReused":
+            "Dieser Idempotenzschlüssel wurde bereits für eine andere Anfrage verwendet.",
+        "room.idempotencyInProgress":
+            "Der Raum wird noch geöffnet. Bitte versuche es gleich erneut.",
+        "room.idempotencyGone":
+            "Die gespeicherte Antwort für diese Raumeröffnung ist nicht mehr verfügbar.",
         "couch.invalidRequest": "Ungültige Anfrage.",
         "realtime.originNotAllowed": "Diese Anfragequelle ist nicht erlaubt.",
         "realtime.handshakeRequired": "Die Verbindung wurde nicht rechtzeitig bestätigt.",
@@ -68,7 +77,7 @@ export const de = {
         "profile.childFriendly.name": "Kinderfreundlich",
         "profile.childFriendly.description":
             "Verspielte, nicht sexuelle Karten, wenn Kinder mitspielen.",
-        "profile.friends.name": "Freunde",
+        "profile.friends.name": "Gute Freunde",
         "profile.friends.description": "Persönliche, verspielte Inhalte für Freunde.",
         "profile.closeFriends.name": "Enge Freunde",
         "profile.closeFriends.description": "Intime, vertrauensvolle Inhalte für enge Gruppen.",

@@ -66,6 +66,43 @@ describe("Room access URLs", () => {
         ]);
     });
 
+    it("keeps one useful IPv6 origin per physical interface", () => {
+        const result = roomAccessConfiguration(
+            {
+                deploymentMode: "local",
+                httpBind: "::",
+                httpPort: 3000,
+                publicUrl: "http://localhost:3000",
+                publicUrlConfigured: false,
+            },
+            {
+                Ethernet: [
+                    networkAddress("192.168.1.20", "IPv4"),
+                    networkAddress("2001:db8::20", "IPv6"),
+                    networkAddress("2001:db8::21", "IPv6"),
+                    networkAddress("fd12:3456::20", "IPv6"),
+                    networkAddress("fe80::20", "IPv6"),
+                ],
+                WiFi: [
+                    networkAddress("10.0.0.7", "IPv4"),
+                    networkAddress("fd98:7654::7", "IPv6"),
+                    networkAddress("fd98:7654::8", "IPv6"),
+                ],
+                "vEthernet (WSL)": [
+                    networkAddress("172.20.0.1", "IPv4"),
+                    networkAddress("2001:db8:ffff::1", "IPv6"),
+                ],
+            },
+        );
+
+        expect(result.availableBaseUrls).toEqual([
+            "http://192.168.1.20:3000",
+            "http://10.0.0.7:3000",
+            "http://[2001:db8::20]:3000",
+            "http://[fd98:7654::7]:3000",
+        ]);
+    });
+
     it("uses the current browser origin locally unless PUBLIC_URL explicitly overrides it", () => {
         const discovered = ["http://10.0.0.7:3000", "http://192.168.1.20:3000"];
         const automatic = roomJoinUrls(

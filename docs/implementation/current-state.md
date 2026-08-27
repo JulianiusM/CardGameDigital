@@ -47,6 +47,13 @@ Room reconnect grace remains authoritative and defaults to 180 seconds. Once no
 Host/Player remains, a connected Party Screen keeps the Room joinable but cannot become
 Host; a newly connected Player takes over. The Room closes when neither a reconnecting
 player device nor a connected display remains.
+The **TV + phones** setup path now opens that Party Screen directly through
+`DISPLAY_WAITING_FOR_HOST`; the Room contains no synthetic creator Host and the first
+authenticated player phone is promoted atomically. Room bootstrap/lifecycle metadata,
+an encrypted idempotent create replay, and a one-Host database guard persist across
+restart. Local installations also own a stable server UUID and advertise a privacy-small
+`_partycard._tcp` DNS-SD profile on eligible interfaces after readiness. Both capabilities
+default off for public deployments unless explicitly enabled.
 
 ## Help and communication
 

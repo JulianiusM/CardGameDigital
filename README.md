@@ -9,7 +9,10 @@ topology, while accounts and persistence remain optional for quick rounds.
 - **Couch mode:** all players, cards, and controls on one device.
 - **Personal mode:** participants play from their own devices; a device may control
   multiple local players.
-- **Party Screen:** personal controls plus a read-only shared display.
+- **Party Screen:** the setup screen opens a read-only Room; the first connected player
+  phone becomes Host and receives the controls.
+- **LAN discovery:** local installations advertise a privacy-minimal DNS-SD service for
+  compatible native discovery clients.
 - **Realtime Rooms:** one host, explicit host transfer, reconnect grace period, and
   automatic fallback host selection.
 - **Private boundaries:** participant restrictions affect eligibility without being
@@ -59,8 +62,15 @@ npm run run
 
 Open <http://localhost:3000/play/>. Defaults use SQLite at
 `./data/card-game.sqlite`, bind to all IPv4 and IPv6 interfaces, and disable accounts.
-The Room screen lists the detected LAN addresses, including bracketed IPv6 URLs. Do not
-expose that account-free configuration to the public internet.
+The Room screen lists eligible physical LAN interfaces. It omits virtual and link-local
+IPv6 routes and keeps at most one useful IPv6 URL per interface. Party Screens fit as
+many URLs as possible on each carousel page. Do not expose that account-free
+configuration to the public internet.
+
+Choosing **TV + phones** in the setup wizard opens that browser directly as the Party
+Screen. It shows the Room code and waits without creating a hidden Host. Join from a
+phone; the first successfully connected player becomes Host. The main-menu **Display
+only** action remains the way to attach another read-only screen to an existing code.
 
 For development with server reloads:
 
@@ -89,27 +99,34 @@ the file.
 
 Common settings:
 
-| Variable                                                  | Default                   | Purpose                                                                           |
-| --------------------------------------------------------- | ------------------------- | --------------------------------------------------------------------------------- |
-| `DEPLOYMENT_MODE`                                         | `local`                   | `local` or `public` product/runtime behavior.                                     |
-| `PUBLIC_RUNTIME_SECURITY`                                 | `enforced`                | `enforced`, or explicit unsafe `development` override for administrator testing.  |
-| `AUTH_MODE`                                               | `none`                    | `none` or `account`; enforced public mode requires `account`.                     |
-| `HTTP_BIND` / `HTTP_PORT`                                 | `::` / `3000`             | Dual-stack all-interface listen address and port.                                 |
-| `ROOM_MAX_PARTICIPANTS` / `ROOM_MAX_PLAYERS`              | `100` / `100`             | Active device and represented-player limits per Room (2–1000).                    |
-| `ROOM_RECONNECT_GRACE_SECONDS`                            | `180`                     | Time a disconnected device can reclaim its place (minimum 120 seconds).           |
-| `PUBLIC_URL`                                              | browser origin locally    | Optional local QR/link override; required canonical public origin.                |
-| `DB_TYPE`                                                 | `sqlite`                  | `sqlite`, `mariadb`, or `mysql`.                                                  |
-| `DB_FILE`                                                 | `./data/card-game.sqlite` | SQLite database path.                                                             |
-| `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD` | varies                    | Public database connection.                                                       |
-| `SESSION_SECRET`                                          | generated locally         | Enforced public mode requires an explicit stable value of at least 32 characters. |
-| `CARD_MISSING_TRANSLATION`                                | `EXCLUDE`                 | `EXCLUDE` or explicit cross-language `FALLBACK`.                                  |
-| `CARD_FALLBACK_LOCALE`                                    | `de-DE`                   | Card locale used only when fallback is enabled.                                   |
-| `SMTP_*`                                                  | empty                     | Account activation, reset, and deletion mail transport.                           |
-| `OIDC_*`                                                  | disabled                  | Optional OpenID Connect provider settings.                                        |
-| `TRUST_PROXY`                                             | `false`                   | Enforced public mode requires the reverse proxy's positive hop count.             |
-| `LOG_LEVEL`                                               | `info`                    | Structured server log threshold, or `silent`.                                     |
-| `LOG_ERROR_DETAILS`                                       | `standard`                | `diagnostic` adds cause stacks and database/driver codes.                         |
-| `IMPRINT_URL` / `PRIVACY_POLICY_URL`                      | empty                     | Public HTTP(S) legal links shown in the SPA menu and settings.                    |
+| Variable                                                                  | Default                   | Purpose                                                                           |
+| ------------------------------------------------------------------------- | ------------------------- | --------------------------------------------------------------------------------- |
+| `DEPLOYMENT_MODE`                                                         | `local`                   | `local` or `public` product/runtime behavior.                                     |
+| `PUBLIC_RUNTIME_SECURITY`                                                 | `enforced`                | `enforced`, or explicit unsafe `development` override for administrator testing.  |
+| `AUTH_MODE`                                                               | `none`                    | `none` or `account`; enforced public mode requires `account`.                     |
+| `HTTP_BIND` / `HTTP_PORT`                                                 | `::` / `3000`             | Dual-stack all-interface listen address and port.                                 |
+| `ROOM_MAX_PARTICIPANTS` / `ROOM_MAX_PLAYERS`                              | `100` / `100`             | Active device and represented-player limits per Room (2–1000).                    |
+| `ROOM_RECONNECT_GRACE_SECONDS`                                            | `180`                     | Time a disconnected device can reclaim its place (minimum 120 seconds).           |
+| `ROOM_DISPLAY_BOOTSTRAP_ENABLED`                                          | local: `true`             | Permit TV-first Room creation; defaults off in public mode.                       |
+| `ROOM_INITIAL_ACTIVATION_SECONDS` / `UNACTIVATED_PARTICIPANT_TTL_SECONDS` | `300` / `300`             | Pending Room and never-connected participant lifetimes.                           |
+| `ROOM_CREATE_SECRET` / `ROOM_CREATE_SECRET_FILE`                          | local key file            | Stable secret source for encrypted idempotent create replay.                      |
+| `SERVER_DISPLAY_NAME`                                                     | `Party Game`              | Human-readable server name; no machine/user name is inferred.                     |
+| `MDNS_DISCOVERY_ENABLED`                                                  | local: `true`             | Advertise `_partycard._tcp` on eligible LAN interfaces; defaults off publicly.    |
+| `MDNS_INTERFACE_ALLOWLIST` / `MDNS_INTERFACE_DENYLIST`                    | empty                     | Exact comma-separated interface policy; deny wins.                                |
+| `MDNS_ADVERTISED_PORT` / `MDNS_ADVERTISED_TLS`                            | HTTP port / `false`       | Reachable front-door port and its actual TLS requirement.                         |
+| `PUBLIC_URL`                                                              | browser origin locally    | Optional local QR/link override; required canonical public origin.                |
+| `DB_TYPE`                                                                 | `sqlite`                  | `sqlite`, `mariadb`, or `mysql`.                                                  |
+| `DB_FILE`                                                                 | `./data/card-game.sqlite` | SQLite database path.                                                             |
+| `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`                 | varies                    | Public database connection.                                                       |
+| `SESSION_SECRET`                                                          | generated locally         | Enforced public mode requires an explicit stable value of at least 32 characters. |
+| `CARD_MISSING_TRANSLATION`                                                | `EXCLUDE`                 | `EXCLUDE` or explicit cross-language `FALLBACK`.                                  |
+| `CARD_FALLBACK_LOCALE`                                                    | `de-DE`                   | Card locale used only when fallback is enabled.                                   |
+| `SMTP_*`                                                                  | empty                     | Account activation, reset, and deletion mail transport.                           |
+| `OIDC_*`                                                                  | disabled                  | Optional OpenID Connect provider settings.                                        |
+| `TRUST_PROXY`                                                             | `false`                   | Enforced public mode requires the reverse proxy's positive hop count.             |
+| `LOG_LEVEL`                                                               | `info`                    | Structured server log threshold, or `silent`.                                     |
+| `LOG_ERROR_DETAILS`                                                       | `standard`                | `diagnostic` adds cause stacks and database/driver codes.                         |
+| `IMPRINT_URL` / `PRIVACY_POLICY_URL`                                      | empty                     | Public HTTP(S) legal links shown in the SPA menu and settings.                    |
 
 All settings and validation rules are defined in
 [`src/modules/settings.ts`](./src/modules/settings.ts).
@@ -117,6 +134,18 @@ All settings and validation rules are defined in
 When `PUBLIC_URL` is omitted in local mode, each browser puts its own current origin in
 the Room QR code. Setting it explicitly overrides that payload. Public mode always
 requires and uses `PUBLIC_URL`; it never derives Room links from the browser address.
+
+Local DNS-SD discovery publishes only protocol/capability hints and reachable interface
+addresses. It does not publish `serverId`, Room data, credentials, names, or Card text,
+and it provides convenience rather than trust. Public mDNS requires an explicit opt-in
+and logs a warning. Full interface, TLS, and endpoint rules are in the
+[infrastructure contract](./docs/contracts/infrastructure.md).
+
+The installation UUID normally never changes. For an intentional offline reset, first
+stop the game server and run `npm run installation:reset`. The command refuses if live
+Rooms or credential-bearing replay results remain. Use
+`npm run installation:reset -- --invalidate-runtime` only when deliberately revoking
+them all.
 
 For administrator-controlled development of public behavior, set
 `PUBLIC_RUNTIME_SECURITY=development`. This intentionally permits HTTP, SQLite,

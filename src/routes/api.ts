@@ -21,6 +21,13 @@ import { MESSAGE_KEYS } from "../packages/localization/keys";
 
 import settings from "../modules/settings";
 import { roomAccessConfiguration } from "../modules/roomAccessUrls";
+import { installationServerId } from "../modules/installationIdentity";
+import {
+    API_BASE_PATH,
+    localDiscoveryStatus,
+    localNetworkDiscoveryCapability,
+} from "../modules/localDiscoveryState";
+import { roomDisplayBootstrapCapability } from "../modules/roomCreateProtection";
 import couchRouter from "./api/couch";
 import roomsRouter from "./api/rooms";
 import gameProfilesRouter from "./api/gameProfiles";
@@ -36,6 +43,8 @@ const router = express.Router();
 router.get("/v1/server-info", (_req, res) =>
     res.json({
         version: 1,
+        serverId: installationServerId(),
+        displayName: settings.value.serverDisplayName,
         deploymentMode: settings.value.deploymentMode,
         publicRuntimeSecurity: settings.value.publicRuntimeSecurity,
         authenticationAvailable: settings.value.authMode === "account",
@@ -45,6 +54,20 @@ router.get("/v1/server-info", (_req, res) =>
             maximumPlayers: settings.value.roomMaximumPlayers,
         },
         roomAccess: roomAccessConfiguration(settings.value),
+        capabilities: {
+            localNetworkDiscovery: localNetworkDiscoveryCapability(),
+            displayBootstrapRoomCreation: roomDisplayBootstrapCapability(),
+        },
+        localNetworkDiscovery: {
+            advertising: localDiscoveryStatus().advertising,
+            serviceType: settings.value.mdnsServiceType,
+            txtVersion: localDiscoveryStatus().txtVersion,
+        },
+        endpoints: {
+            apiBasePath: API_BASE_PATH,
+            webSocketPath: settings.value.webSocketPath,
+            roomJoinPathTemplate: settings.value.roomJoinPathTemplate,
+        },
     }),
 );
 router.use("/v1/couch", couchRouter);

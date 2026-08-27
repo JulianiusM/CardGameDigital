@@ -14,6 +14,12 @@ export const protocolErrorCodeSchema = z.enum([
     "AUTHENTICATION_ERROR",
     "ROOM_NOT_FOUND",
     "ROOM_FULL",
+    "ROOM_BOOTSTRAP_MODE_UNSUPPORTED",
+    "IDEMPOTENCY_KEY_REQUIRED",
+    "IDEMPOTENCY_KEY_INVALID",
+    "IDEMPOTENCY_KEY_REUSED",
+    "IDEMPOTENCY_REQUEST_IN_PROGRESS",
+    "IDEMPOTENCY_RESULT_GONE",
     "CARD_LOCALE_UNAVAILABLE",
     "INVALID_GAME_STATE",
     "NOT_ACTIVE_PLAYER",
@@ -23,6 +29,30 @@ export const protocolErrorCodeSchema = z.enum([
     "PROTOCOL_VERSION_UNSUPPORTED",
 ]);
 export const clientRoleSchema = z.enum(["HOST", "PLAYER", "DISPLAY"]);
+export const roomBootstrapModeSchema = z.enum(["CREATOR_HOST", "DISPLAY_WAITING_FOR_HOST"]);
+export const roomHostStateSchema = z.enum([
+    "AWAITING_FIRST_HOST",
+    "CONNECTING",
+    "CONNECTED",
+    "RECONNECTING",
+    "AWAITING_REPLACEMENT_HOST",
+]);
+export const roomRoleChangeReasonSchema = z.enum([
+    "INITIAL_HOST_ASSIGNED",
+    "HOST_TRANSFERRED",
+    "HOST_LEFT",
+    "HOST_DISCONNECT_EXPIRED",
+    "HOST_REVOKED",
+    "HOST_ACTIVATION_EXPIRED",
+]);
+export const roomHostStatusSchema = z
+    .object({
+        state: roomHostStateSchema,
+        participantId: z.string().uuid().nullable(),
+        displayName: z.string().min(1).max(40).nullable(),
+        deadline: z.number().int().nonnegative().nullable(),
+    })
+    .strict();
 export const clientCapabilitySchema = z.enum([
     "JOIN_ROOM",
     "DISPLAY_SESSION",
@@ -134,6 +164,33 @@ export const roomGameSettingsSchema = z
     })
     .strict();
 export type RoomGameSettingsPayload = z.infer<typeof roomGameSettingsSchema>;
+
+export const roomCreateRequestSchema = z
+    .object({
+        displayName: z.string().trim().min(1).max(40),
+        persistence: z.enum(["EPHEMERAL", "DATASPACE"]).default("EPHEMERAL"),
+        bootstrapMode: roomBootstrapModeSchema.default("CREATOR_HOST"),
+        settings: roomGameSettingsSchema.optional(),
+    })
+    .strict();
+export const roomCreateResponseSchema = z
+    .object({
+        roomId: z.string().uuid(),
+        roomCode: z.string().regex(/^[A-Z2-9]{6}$/),
+        participantId: z.string().uuid(),
+        participantCredential: z.string().min(32),
+        role: clientRoleSchema,
+        bootstrapMode: roomBootstrapModeSchema,
+        hostStatus: roomHostStatusSchema,
+    })
+    .strict();
+export const roomRoleChangedPayloadSchema = z
+    .object({
+        role: clientRoleSchema,
+        previousRole: clientRoleSchema,
+        reason: roomRoleChangeReasonSchema,
+    })
+    .strict();
 
 const emptyPayloadSchema = z.object({}).strict();
 const revisionedCommand = <T extends z.ZodType>(type: string, payload: T) =>

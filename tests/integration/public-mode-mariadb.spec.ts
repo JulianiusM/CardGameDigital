@@ -447,12 +447,28 @@ suite("public mode on MariaDB", () => {
         );
         expect(JSON.stringify(exported.body)).not.toContain("runtimeStateJson");
 
-        await expect(
-            getRoomService().expireDisconnectedParticipant(
-                room.body.roomId,
-                room.body.participantId,
-            ),
-        ).resolves.toBe(true);
+        const roomExpiryAt =
+            Date.now() +
+            Math.max(
+                settings.value.roomInitialActivationSeconds,
+                settings.value.unactivatedParticipantTtlSeconds,
+            ) *
+                1_000 +
+            1;
+        const roomExpiryClock = vi.spyOn(Date, "now").mockReturnValue(roomExpiryAt);
+        try {
+            await expect(
+                getRoomService().expireDisconnectedParticipant(
+                    room.body.roomId,
+                    room.body.participantId,
+                ),
+            ).resolves.toMatchObject({
+                participant: { id: room.body.participantId, connectionStatus: "LEFT" },
+                roomClosed: true,
+            });
+        } finally {
+            roomExpiryClock.mockRestore();
+        }
         const closedRoom = await AppDataSource.getRepository(RoomEntity).findOneByOrFail({
             id: room.body.roomId,
         });

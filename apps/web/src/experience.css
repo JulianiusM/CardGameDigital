@@ -452,6 +452,14 @@ a.active-dataspace-indicator:focus-visible {
         inset 0 0 0 1px var(--color-selection-edge),
         var(--shadow-control);
 }
+.option-card:disabled {
+    color: var(--color-muted-cocoa);
+    cursor: not-allowed;
+    opacity: 0.62;
+    border-style: dashed;
+    background: color-mix(in srgb, var(--color-soft-cream) 55%, var(--color-surface));
+    box-shadow: none;
+}
 .wizard-footer {
     display: flex;
     flex-wrap: wrap;
@@ -2699,6 +2707,30 @@ a.active-dataspace-indicator:focus-visible {
     border-radius: 12px;
     background: rgb(255 248 232 / 98%);
 }
+.party-bootstrap-note {
+    display: flex;
+    align-items: center;
+    gap: 0.9rem;
+    margin-top: 1rem;
+    padding: 1rem 1.1rem;
+    border: 1px solid var(--color-selection-edge);
+    border-radius: 16px;
+    background: linear-gradient(
+        135deg,
+        color-mix(in srgb, var(--color-sunflower) 28%, var(--color-warm-paper)),
+        var(--color-warm-paper)
+    );
+    box-shadow: var(--shadow-control);
+}
+.party-bootstrap-note .option-symbol {
+    flex: 0 0 auto;
+    font-size: 2rem;
+}
+.party-bootstrap-note p {
+    margin: 0.2rem 0 0;
+    color: var(--color-muted-cocoa);
+    line-height: 1.45;
+}
 .service-actions {
     display: grid;
     gap: 0.75rem;
@@ -3305,17 +3337,60 @@ main.display-role:not(.playing) > .ended-stage {
 }
 .public-stage-lobby > .lobby {
     display: grid;
-    grid-template-rows: auto auto minmax(0, 1fr) auto;
+    grid-template-rows: auto auto auto minmax(0, 1fr) auto;
+}
+.host-status-banner {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+    gap: clamp(0.6rem, 1.5vw, 1rem);
+    margin-bottom: clamp(0.5rem, 1.4vh, 0.9rem);
+    padding: clamp(0.65rem, 1.8vh, 1rem);
+    border: 1px solid var(--color-selection-edge);
+    border-radius: 16px;
+    background: color-mix(in srgb, var(--color-sunflower) 24%, var(--color-warm-paper));
+}
+.host-status-banner.connected {
+    border-color: rgb(77 116 63 / 45%);
+    background: rgb(233 244 214 / 92%);
+}
+.host-status-banner strong {
+    display: block;
+    font-size: clamp(0.95rem, 2vw, 1.2rem);
+}
+.host-status-banner p {
+    margin: 0.15rem 0 0;
+    color: var(--color-muted-cocoa);
+    font-size: clamp(0.78rem, 1.6vw, 0.95rem);
+    line-height: 1.35;
+}
+.host-status-orb {
+    width: 0.8rem;
+    height: 0.8rem;
+    border: 3px solid var(--color-warm-paper);
+    border-radius: 50%;
+    background: var(--color-status-active);
+    box-shadow: 0 0 0 2px var(--color-selection-edge);
+}
+.host-status-banner.connected .host-status-orb {
+    background: #5f864c;
+    box-shadow: 0 0 0 2px rgb(77 116 63 / 55%);
 }
 .public-stage-lobby .stage-player-roster {
     height: 100%;
 }
 .public-stage-lobby .join-card {
     display: grid;
-    align-content: center;
+    grid-template-rows: auto auto auto minmax(0, 1fr) auto;
+    align-content: stretch;
 }
 .public-stage-lobby .join-card img {
     width: min(34vh, 260px, 100%);
+}
+.public-stage-lobby .join-card > .room-availability-urls.auto-page,
+.public-stage-lobby .join-card .room-url-pages {
+    height: auto;
+    min-height: 0;
 }
 @media (max-width: 600px) {
     .article-shell {
@@ -3347,6 +3422,10 @@ main.display-role:not(.playing) > .ended-stage {
     }
     .wizard-footer > .eligibility-preview {
         align-self: flex-start;
+    }
+    .party-bootstrap-note {
+        align-items: flex-start;
+        padding: 0.85rem;
     }
     .progression-setting {
         align-items: stretch;

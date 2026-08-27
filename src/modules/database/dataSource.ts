@@ -11,6 +11,8 @@ import { applyBundledCardCatalog, bundledCardCatalogArtifact } from "./bundledCa
 import { LocaleEntity } from "./entities/card/LocaleEntity";
 import { CardCatalogVersionEntity } from "./entities/card/CardCatalogVersionEntity";
 import { logEvent } from "../structuredLogger";
+import { ensureInstallationIdentity } from "../installationIdentity";
+import { validateRetainedRoomCreateProtection } from "../roomCreateProtection";
 
 export function dataSourceOptions(config: Settings): DataSourceOptions {
     const common = {
@@ -70,6 +72,8 @@ export async function initDataSource(): Promise<DataSource> {
         await AppDataSource.query("PRAGMA foreign_keys = ON");
     }
     await AppDataSource.runMigrations({ transaction: "all" });
+    await ensureInstallationIdentity(AppDataSource);
+    await validateRetainedRoomCreateProtection(AppDataSource);
     const catalogResult = await applyBundledCardCatalog(AppDataSource, catalogArtifact);
     const installedCatalog = await AppDataSource.getRepository(CardCatalogVersionEntity).findOne({
         where: { catalogId: catalogArtifact.catalog.catalogId },

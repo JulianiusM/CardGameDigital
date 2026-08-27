@@ -8,14 +8,27 @@ stored credentials or browser storage.
 
 Every QR display also lists the addresses that can open this Room. A local server may
 show several LAN addresses when it is connected through several network interfaces;
-use one reachable from the joining device. IPv6 addresses appear in brackets, which is
-the normal URL format. Long lists advance automatically on a Party Screen.
+use one reachable from the joining device. The list skips virtual adapters and unusable
+link-local IPv6 routes and shows at most one IPv6 address per physical interface. IPv6
+addresses appear in brackets, which is the normal URL format. A Party Screen shows as
+many addresses per page as its available height allows before advancing.
 
 Several groups can play on one network at the same time. Every Room has an independent
 code, state, and command queue. Confirm the code when siblings or nearby groups are
 playing simultaneously.
 Every connected device keeps the current represented-player count and configured
 maximum visible.
+
+## Opening a Party Screen first
+
+In **Host Game**, choose **TV + phones** on the final setup step. That browser becomes
+the read-only Party Screen immediately and shows the code/QR while it waits. No hidden
+Host is created. Join from a phone as a player; the first phone that connects becomes
+Host and receives the start/settings controls. The screen shows who currently controls
+the game and whether that Host is reconnecting.
+
+The main-menu **Display only** action is different: use it to attach another read-only
+screen to a Room code that already exists.
 
 ## Multiple people on one device
 

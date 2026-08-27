@@ -1,7 +1,20 @@
 import { locale, messages } from "./i18n";
 import { fetchJsonResponse } from "./http";
+import { randomUuidV4 } from "./randomUuid";
 
 export type Role = "HOST" | "PLAYER" | "DISPLAY";
+export type RoomBootstrapMode = "CREATOR_HOST" | "DISPLAY_WAITING_FOR_HOST";
+export type RoomHostStatus = {
+    state:
+        | "AWAITING_FIRST_HOST"
+        | "CONNECTING"
+        | "CONNECTED"
+        | "RECONNECTING"
+        | "AWAITING_REPLACEMENT_HOST";
+    participantId: string | null;
+    displayName: string | null;
+    deadline: number | null;
+};
 export type Participant = {
     id: string;
     roomId: string;
@@ -61,6 +74,8 @@ export type RoomSnapshot = {
     roomId: string;
     capacity: { maximumParticipants: number; maximumPlayers: number };
     participants: Participant[];
+    bootstrapMode: RoomBootstrapMode;
+    hostStatus: RoomHostStatus;
     boundaryConfigured: boolean;
     settings: VersionedRoomGameSettings;
     session: SessionView | null;
@@ -215,6 +230,8 @@ export type Join = {
     participantId: string;
     participantCredential: string;
     role: Role;
+    bootstrapMode?: RoomBootstrapMode;
+    hostStatus?: RoomHostStatus;
 };
 type ErrorResponse = { error?: { message?: string } };
 
@@ -227,15 +244,25 @@ async function json<T>(path: string, init: RequestInit): Promise<T> {
     return body as T;
 }
 export const rooms = {
-    create: (
+    create: async (
         displayName: string,
         persistence: "EPHEMERAL" | "DATASPACE",
         settings: RoomGameSettings,
-    ) =>
-        json<Join>("/api/v1/rooms", {
+        bootstrapMode: RoomBootstrapMode = "CREATOR_HOST",
+    ) => {
+        const body = JSON.stringify({ displayName, persistence, settings, bootstrapMode });
+        const idempotencyKey =
+            bootstrapMode === "DISPLAY_WAITING_FOR_HOST"
+                ? displayBootstrapIdempotencyKey(body)
+                : null;
+        const result = await json<Join>("/api/v1/rooms", {
             method: "POST",
-            body: JSON.stringify({ displayName, persistence, settings }),
-        }),
+            headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined,
+            body,
+        });
+        if (idempotencyKey) clearDisplayBootstrapIdempotencyKey(idempotencyKey);
+        return result;
+    },
     join: (roomCode: string, displayName: string, role: Exclude<Role, "HOST">) =>
         json<Join>(`/api/v1/rooms/${roomCode}/participants`, {
             method: "POST",
@@ -320,6 +347,8 @@ export async function deleteGroup(groupId: string): Promise<void> {
     await json<void>(`/api/v1/groups/${groupId}`, { method: "DELETE" });
 }
 export type ServerInfo = {
+    serverId: string;
+    displayName: string;
     deploymentMode: "local" | "public";
     publicRuntimeSecurity: "enforced" | "development";
     authenticationAvailable: boolean;
@@ -327,6 +356,20 @@ export type ServerInfo = {
     roomAccess: {
         configuredBaseUrl: string | null;
         availableBaseUrls: string[];
+    };
+    capabilities: {
+        localNetworkDiscovery: boolean;
+        displayBootstrapRoomCreation: boolean;
+    };
+    localNetworkDiscovery: {
+        advertising: boolean;
+        serviceType: string;
+        txtVersion: number;
+    };
+    endpoints: {
+        apiBasePath: string;
+        webSocketPath: string;
+        roomJoinPathTemplate: string;
     };
 };
 export async function loadServerInfo(): Promise<ServerInfo> {
@@ -376,6 +419,7 @@ export class RoomSocket {
         private changed: () => void,
         private left: (reason: "LEFT" | "ROOM_CLOSED" | "RECONNECT_EXPIRED") => void = () =>
             undefined,
+        private readonly webSocketPath = "/ws",
     ) {
         this.role = joined.role;
         if (typeof window !== "undefined") {
@@ -395,8 +439,10 @@ export class RoomSocket {
         this.reconnectPhase = "CONNECTING";
         this.reconnectSeconds = 0;
         this.changed();
-        const scheme = location.protocol === "https:" ? "wss" : "ws";
-        const socket = new WebSocket(`${scheme}://${location.host}/ws?locale=${locale}`);
+        const endpoint = new URL(this.webSocketPath, `${location.protocol}//${location.host}`);
+        endpoint.protocol = location.protocol === "https:" ? "wss:" : "ws:";
+        endpoint.searchParams.set("locale", locale);
+        const socket = new WebSocket(endpoint.toString());
         this.socket = socket;
         this.connectTimeout = window.setTimeout(() => {
             if (this.socket === socket && !this.authenticated) this.reconnectFrom(socket);
@@ -621,7 +667,7 @@ export class RoomSocket {
                     JSON.stringify({
                         protocol: 2,
                         type,
-                        requestId: crypto.randomUUID(),
+                        requestId: randomUuidV4(),
                         revision,
                         payload,
                     }),
@@ -717,4 +763,42 @@ export function clearJoin(join: Join): void {
     sessionStorage.removeItem(`room:${join.roomCode}:${join.role}`);
     const last = sessionStorage.getItem("party-game:last-room");
     if (last?.includes(join.roomCode)) sessionStorage.removeItem("party-game:last-room");
+}
+
+const DISPLAY_BOOTSTRAP_PENDING_KEY = "party-game:display-bootstrap-create";
+let pendingDisplayBootstrapCreate: { body: string; key: string } | null = null;
+
+function displayBootstrapIdempotencyKey(body: string): string {
+    if (pendingDisplayBootstrapCreate?.body === body) {
+        return pendingDisplayBootstrapCreate.key;
+    }
+    try {
+        const pending = JSON.parse(
+            sessionStorage.getItem(DISPLAY_BOOTSTRAP_PENDING_KEY) ?? "null",
+        ) as { body: string; key: string } | null;
+        if (pending?.body === body && pending.key) {
+            pendingDisplayBootstrapCreate = pending;
+            return pending.key;
+        }
+        const key = randomUuidV4();
+        pendingDisplayBootstrapCreate = { body, key };
+        sessionStorage.setItem(DISPLAY_BOOTSTRAP_PENDING_KEY, JSON.stringify({ body, key }));
+        return key;
+    } catch {
+        const key = randomUuidV4();
+        pendingDisplayBootstrapCreate = { body, key };
+        return key;
+    }
+}
+
+function clearDisplayBootstrapIdempotencyKey(key: string): void {
+    try {
+        const pending = JSON.parse(
+            sessionStorage.getItem(DISPLAY_BOOTSTRAP_PENDING_KEY) ?? "null",
+        ) as { key?: string } | null;
+        if (pending?.key === key) sessionStorage.removeItem(DISPLAY_BOOTSTRAP_PENDING_KEY);
+    } catch {
+        // Storage can be unavailable in privacy-restricted browser contexts.
+    }
+    if (pendingDisplayBootstrapCreate?.key === key) pendingDisplayBootstrapCreate = null;
 }

@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import { RoomService } from "../../src/packages/application/roomService";
 import type {
     RealtimeRoomRepository,
+    RoomCreateIdempotencyRecord,
     RoomParticipant,
+    RoomState,
 } from "../../src/packages/application/realtimeRooms";
 import type { GameSessionRuntimeState, PlayerBoundaries } from "../../src/packages/game-core";
 import type { CardRepository } from "../../src/packages/application/repositories";
@@ -12,10 +14,12 @@ import {
     defaultRoomGameSettings,
     type VersionedRoomGameSettings,
 } from "../../src/packages/application/roomGameSettings";
+import { applyMemoryLifecycleTransition } from "../support/realtimeLifecycle";
 
 class MemoryRooms implements RealtimeRoomRepository {
-    rooms = new Map<string, { id: string; code: string }>();
+    rooms = new Map<string, RoomState>();
     participants: Array<RoomParticipant & { credentialHash: string }> = [];
+    idempotency = new Map<string, RoomCreateIdempotencyRecord>();
     runtimes = new Map<string, GameSessionRuntimeState>();
     boundaries = new Map<string, PlayerBoundaries>();
     settings = new Map<string, VersionedRoomGameSettings>();
@@ -24,13 +28,39 @@ class MemoryRooms implements RealtimeRoomRepository {
         return [...this.rooms.values()].some((room) => room.code === code);
     }
     async createRoom(input: Parameters<RealtimeRoomRepository["createRoom"]>[0]) {
-        this.rooms.set(input.roomId, { id: input.roomId, code: input.code });
+        if (input.idempotency) {
+            const existing = this.idempotency.get(this.idempotencyKey(input.idempotency));
+            if (existing) return { created: false as const, record: existing };
+        }
+        this.rooms.set(input.roomId, {
+            id: input.roomId,
+            code: input.code,
+            bootstrapMode: input.bootstrapMode,
+            firstHostAssignedAt: input.firstHostAssignedAt,
+            activationDeadline: input.activationDeadline,
+            activatedAt: null,
+            createdAt: input.createdAt,
+            expiresAt: input.expiresAt.getTime(),
+            closedAt: null,
+            creatorParticipantId: input.participant.id,
+        });
         this.participants.push(input.participant);
         this.settings.set(input.roomId, {
             ...input.settings,
             revision: 0,
             updatedByParticipantId: input.participant.id,
         });
+        if (input.idempotency) {
+            this.idempotency.set(this.idempotencyKey(input.idempotency), input.idempotency);
+        }
+        return { created: true as const };
+    }
+    async findRoomCreateIdempotency(
+        principalScopeDigest: string,
+        routeKey: string,
+        keyDigest: string,
+    ) {
+        return this.idempotency.get(`${principalScopeDigest}:${routeKey}:${keyDigest}`) ?? null;
     }
     async joinRoom(
         input: Parameters<RealtimeRoomRepository["joinRoom"]>[0],
@@ -63,28 +93,12 @@ class MemoryRooms implements RealtimeRoomRepository {
             (p) =>
                 p.roomId === room?.id && p.credentialHash === hash && p.connectionStatus !== "LEFT",
         );
-        return found
-            ? {
-                  id: found.id,
-                  roomId: found.roomId,
-                  role: found.role,
-                  displayName: found.displayName,
-                  devicePlayers: found.devicePlayers,
-                  connectionStatus: found.connectionStatus,
-              }
-            : null;
+        return found ? { ...found } : null;
     }
     async listParticipants(roomId: string) {
         return this.participants
             .filter((p) => p.roomId === roomId && p.connectionStatus !== "LEFT")
-            .map(({ id, role, displayName, devicePlayers, connectionStatus }) => ({
-                id,
-                roomId,
-                role,
-                displayName,
-                devicePlayers,
-                connectionStatus,
-            }));
+            .map((participant) => ({ ...participant }));
     }
     async getParticipant(roomId: string, participantId: string) {
         return (await this.listParticipants(roomId)).find(({ id }) => id === participantId) ?? null;
@@ -93,17 +107,42 @@ class MemoryRooms implements RealtimeRoomRepository {
         participantId: string,
         connectionStatus: RoomParticipant["connectionStatus"],
     ) {
-        this.participants.find(({ id }) => id === participantId)!.connectionStatus =
-            connectionStatus;
+        const participant = this.participants.find(({ id }) => id === participantId)!;
+        participant.connectionStatus = connectionStatus;
+        if (connectionStatus === "CONNECTED") {
+            participant.firstConnectedAt ??= Date.now();
+            participant.lastConnectedAt = Date.now();
+            participant.reconnectDeadline = null;
+        }
     }
-    async resetConnectedParticipants() {
+    async loadRoomState(roomId: string) {
+        return { ...this.rooms.get(roomId)! };
+    }
+    async applyLifecycleTransition(
+        transition: Parameters<RealtimeRoomRepository["applyLifecycleTransition"]>[0],
+    ) {
+        return applyMemoryLifecycleTransition(
+            this.rooms.get(transition.roomId)!,
+            this.participants,
+            transition,
+        );
+    }
+    async resetConnectedParticipants(at: number, reconnectDeadline: number) {
         const reset: RoomParticipant[] = [];
         for (const participant of this.participants)
             if (participant.connectionStatus === "CONNECTED") {
                 participant.connectionStatus = "TEMPORARILY_DISCONNECTED";
+                participant.lastConnectedAt = at;
+                participant.reconnectDeadline = reconnectDeadline;
                 reset.push({ ...participant });
             }
         return reset;
+    }
+    async findDueRoomIds() {
+        return [];
+    }
+    async deleteExpiredRoomCreateTombstones() {
+        return 0;
     }
     async saveDevicePlayers(participantId: string, players: RoomParticipant["devicePlayers"]) {
         this.participants.find(({ id }) => id === participantId)!.devicePlayers = players;
@@ -131,6 +170,7 @@ class MemoryRooms implements RealtimeRoomRepository {
                 participant.connectionStatus !== "LEFT",
         );
         if (!host) throw Object.assign(new Error("not authorized"), { code: "NOT_AUTHORIZED" });
+        this.rooms.get(roomId)!.closedAt = Date.now();
         for (const participant of this.participants)
             if (participant.roomId === roomId) participant.connectionStatus = "LEFT";
     }
@@ -201,6 +241,14 @@ class MemoryRooms implements RealtimeRoomRepository {
         if (current?.id !== sessionId || current.revision !== revision || current.state !== "ENDED")
             throw Object.assign(new Error("invalid reset"), { code: "INVALID_GAME_STATE" });
         this.runtimes.delete(roomId);
+    }
+    private idempotencyKey(
+        record: Pick<
+            RoomCreateIdempotencyRecord,
+            "principalScopeDigest" | "routeKey" | "keyDigest"
+        >,
+    ): string {
+        return `${record.principalScopeDigest}:${record.routeKey}:${record.keyDigest}`;
     }
 }
 const cards: CardRepository = {
@@ -340,9 +388,15 @@ describe("RoomService", () => {
             "TEMPORARILY_DISCONNECTED",
         );
         await service.authenticate(playerJoin.roomCode, playerJoin.participantCredential);
-        expect(await service.expireDisconnectedParticipant(player.roomId, player.id)).toBe(false);
-        await service.markTemporarilyDisconnected(player);
-        expect(await service.expireDisconnectedParticipant(player.roomId, player.id)).toBe(true);
+        expect(
+            (await service.expireDisconnectedParticipant(player.roomId, player.id))
+                .expiredParticipants,
+        ).toEqual([]);
+        await service.markTemporarilyDisconnected(player, 0);
+        expect(
+            (await service.expireDisconnectedParticipant(player.roomId, player.id))
+                .expiredParticipants,
+        ).toContainEqual(expect.objectContaining({ id: player.id }));
         expect(
             await service.authenticate(playerJoin.roomCode, playerJoin.participantCredential),
         ).toBeNull();
@@ -359,8 +413,10 @@ describe("RoomService", () => {
         ))!;
         await service.authenticate(displayJoin.roomCode, displayJoin.participantCredential);
 
-        await service.markTemporarilyDisconnected(host);
-        expect(await service.expireDisconnectedParticipant(host.roomId, host.id)).toBe(true);
+        await service.markTemporarilyDisconnected(host, 0);
+        expect(
+            (await service.expireDisconnectedParticipant(host.roomId, host.id)).expiredParticipants,
+        ).toContainEqual(expect.objectContaining({ id: host.id }));
         expect(await service.snapshot(host.roomId)).toMatchObject({
             participants: [
                 expect.objectContaining({ role: "DISPLAY", connectionStatus: "CONNECTED" }),
@@ -371,8 +427,10 @@ describe("RoomService", () => {
             displayJoin.roomCode,
             displayJoin.participantCredential,
         ))!;
-        await service.markTemporarilyDisconnected(display);
-        expect(await service.expireDisconnectedParticipant(display.roomId, display.id)).toBe(true);
+        await service.markTemporarilyDisconnected(display, 0);
+        expect(
+            (await service.expireDisconnectedParticipant(display.roomId, display.id)).roomClosed,
+        ).toBe(true);
         expect(await service.snapshot(host.roomId)).toMatchObject({ participants: [] });
     });
 
@@ -904,9 +962,8 @@ describe("RoomService", () => {
             session: { revision: 0 },
         });
 
-        expect(
-            await service.reassignDisconnectedHost(joined.roomId, player.id, new Set([host.id])),
-        ).toBe(true);
+        await service.markTemporarilyDisconnected(player, 0);
+        await service.expireDisconnectedParticipant(joined.roomId, player.id);
         expect((await service.snapshot(joined.roomId)).participants).toContainEqual(
             expect.objectContaining({ id: host.id, role: "HOST" }),
         );

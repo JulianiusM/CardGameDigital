@@ -1,12 +1,30 @@
 import { v5 as uuidv5 } from "uuid";
-import { IsNull, LessThan, MoreThan, Not, type DataSource, type EntityManager } from "typeorm";
+import {
+    In,
+    IsNull,
+    LessThanOrEqual,
+    MoreThan,
+    Not,
+    type DataSource,
+    type EntityManager,
+} from "typeorm";
 import type { CardId, GameSessionRuntimeState, PlayerBoundaries } from "../game-core";
 import type {
     DevicePlayer,
     RealtimeRoomRepository,
     RoomCapacity,
+    RoomCreateIdempotencyRecord,
+    RoomLifecycleTransition,
+    RoomLifecycleTransitionResult,
     RoomParticipant,
+    RoomRoleChange,
+    RoomState,
 } from "../application/realtimeRooms";
+import {
+    decideRoomHost,
+    derivePersistedRoomHostStatus,
+    type HostSelectionTrigger,
+} from "../application/roomHostSelection";
 import {
     normalizeRoomGameSettings,
     type RoomGameSettings,
@@ -17,6 +35,7 @@ import { RoomParticipantEntity } from "../../modules/database/entities/game/Room
 import { GameSessionEntity } from "../../modules/database/entities/game/GameSessionEntity";
 import { CardAppearanceEntity } from "../../modules/database/entities/game/CardAppearanceEntity";
 import { RoomParticipantBoundaryEntity } from "../../modules/database/entities/game/RoomParticipantBoundaryEntity";
+import { RoomCreateIdempotencyEntity } from "../../modules/database/entities/game/RoomCreateIdempotencyEntity";
 import { GroupEntity } from "../../modules/database/entities/game/GroupEntity";
 import { CouchCardAppearanceEntity } from "../../modules/database/entities/game/CouchCardAppearanceEntity";
 import {
@@ -27,7 +46,10 @@ import {
 const APPEARANCE_NAMESPACE = "d2dad6a5-b25c-570d-a102-9e8b9106a77b";
 
 export class TypeOrmRealtimeRoomRepository implements RealtimeRoomRepository {
-    constructor(private readonly source: DataSource) {}
+    constructor(
+        private readonly source: DataSource,
+        private readonly idempotencyTombstoneSeconds = 86_400,
+    ) {}
     async roomCodeExists(code: string): Promise<boolean> {
         return this.source.getRepository(RoomEntity).existsBy({ code });
     }
@@ -35,51 +57,131 @@ export class TypeOrmRealtimeRoomRepository implements RealtimeRoomRepository {
         roomId: string;
         code: string;
         dataSpaceId: string | null;
+        createdAt: number;
         expiresAt: Date;
+        bootstrapMode: "CREATOR_HOST" | "DISPLAY_WAITING_FOR_HOST";
+        firstHostAssignedAt: number | null;
+        activationDeadline: number;
         settings: RoomGameSettings;
         participant: RoomParticipant & { credentialHash: string };
-    }): Promise<void> {
-        await this.source.transaction(async (manager) => {
-            if (input.settings.groupId) {
-                const ownsGroup = input.dataSpaceId
-                    ? await manager.getRepository(GroupEntity).existsBy({
-                          id: input.settings.groupId,
-                          dataSpaceId: input.dataSpaceId,
-                      })
-                    : false;
-                if (!ownsGroup) {
-                    throw Object.assign(new Error("Room Group is outside the DataSpace"), {
-                        code: "NOT_AUTHORIZED",
+        idempotency?: import("../application/realtimeRooms").RoomCreateIdempotencyInput;
+    }): Promise<{ created: true } | { created: false; record: RoomCreateIdempotencyRecord }> {
+        let contentionAttempts = 0;
+        while (true) {
+            try {
+                return await this.source.transaction(async (manager) => {
+                    if (input.idempotency) {
+                        const existing = await manager
+                            .getRepository(RoomCreateIdempotencyEntity)
+                            .findOneBy({
+                                principalScopeDigest: input.idempotency.principalScopeDigest,
+                                routeKey: input.idempotency.routeKey,
+                                keyDigest: input.idempotency.keyDigest,
+                            });
+                        if (existing)
+                            return this.resolveCreateIdempotency(existing, input.idempotency);
+                    }
+                    if (input.settings.groupId) {
+                        const ownsGroup = input.dataSpaceId
+                            ? await manager.getRepository(GroupEntity).existsBy({
+                                  id: input.settings.groupId,
+                                  dataSpaceId: input.dataSpaceId,
+                              })
+                            : false;
+                        if (!ownsGroup) {
+                            throw Object.assign(new Error("Room Group is outside the DataSpace"), {
+                                code: "NOT_AUTHORIZED",
+                            });
+                        }
+                    }
+                    await manager.getRepository(RoomEntity).insert({
+                        id: input.roomId,
+                        code: input.code,
+                        dataSpaceId: input.dataSpaceId,
+                        groupId: input.settings.groupId,
+                        settingsRevision: 0,
+                        gameSettingsJson: JSON.stringify(input.settings),
+                        settingsUpdatedByParticipantId: input.participant.id,
+                        currentSessionId: null,
+                        createdAt: new Date(input.createdAt),
+                        expiresAt: input.expiresAt,
+                        closedAt: null,
+                        bootstrapMode: input.bootstrapMode,
+                        firstHostAssignedAt:
+                            input.firstHostAssignedAt === null
+                                ? null
+                                : new Date(input.firstHostAssignedAt),
+                        activationDeadline: new Date(input.activationDeadline),
+                        activatedAt: null,
+                        creatorParticipantId: input.participant.id,
                     });
+                    await manager.getRepository(RoomParticipantEntity).insert({
+                        id: input.participant.id,
+                        roomId: input.participant.roomId,
+                        role: input.participant.role,
+                        displayName: input.participant.displayName,
+                        credentialHash: input.participant.credentialHash,
+                        devicePlayersJson: JSON.stringify(input.participant.devicePlayers),
+                        connectionStatus: input.participant.connectionStatus,
+                        activeHostRoomId:
+                            input.participant.role === "HOST" ? input.participant.roomId : null,
+                        createdAt: new Date(input.participant.joinedAt),
+                        lastSeenAt: new Date(input.participant.joinedAt),
+                        firstConnectedAt: null,
+                        lastConnectedAt: null,
+                        reconnectDeadline: null,
+                        activationExpiresAt: new Date(input.participant.activationExpiresAt),
+                        leftAt: null,
+                        revokedAt: null,
+                    });
+                    if (input.idempotency) {
+                        await manager.getRepository(RoomCreateIdempotencyEntity).insert({
+                            ...input.idempotency,
+                            resourceType: "ROOM",
+                            createdAt: new Date(input.idempotency.createdAt),
+                            updatedAt: new Date(input.idempotency.createdAt),
+                            tombstoneExpiresAt: null,
+                        });
+                    }
+                    return { created: true } as const;
+                });
+            } catch (error) {
+                if (input.idempotency) {
+                    const existing = await this.findRoomCreateIdempotency(
+                        input.idempotency.principalScopeDigest,
+                        input.idempotency.routeKey,
+                        input.idempotency.keyDigest,
+                    );
+                    if (existing) {
+                        return this.resolveCreateIdempotency(existing, input.idempotency);
+                    }
+                    if (isDatabaseContention(error) && contentionAttempts < 2) {
+                        contentionAttempts += 1;
+                        continue;
+                    }
+                    if (isDatabaseContention(error)) {
+                        throw Object.assign(
+                            new Error("Idempotent Room create is still committing"),
+                            { code: "IDEMPOTENCY_REQUEST_IN_PROGRESS" },
+                        );
+                    }
                 }
+                throw error;
             }
-            // Ephemeral runtime exists only for reconnect during the Room lifetime. It is
-            // cascade-deleted opportunistically and never becomes account history.
-            await manager.getRepository(RoomEntity).delete({
-                dataSpaceId: IsNull(),
-                expiresAt: LessThan(new Date()),
-            });
-            await manager.getRepository(RoomEntity).insert({
-                id: input.roomId,
-                code: input.code,
-                dataSpaceId: input.dataSpaceId,
-                groupId: input.settings.groupId,
-                settingsRevision: 0,
-                gameSettingsJson: JSON.stringify(input.settings),
-                settingsUpdatedByParticipantId: input.participant.id,
-                currentSessionId: null,
-                createdAt: new Date(),
-                expiresAt: input.expiresAt,
-                closedAt: null,
-            });
-            await manager.getRepository(RoomParticipantEntity).insert({
-                ...input.participant,
-                devicePlayersJson: JSON.stringify(input.participant.devicePlayers),
-                createdAt: new Date(),
-                lastSeenAt: new Date(),
-                leftAt: null,
-            });
+        }
+    }
+
+    async findRoomCreateIdempotency(
+        principalScopeDigest: string,
+        routeKey: string,
+        keyDigest: string,
+    ): Promise<RoomCreateIdempotencyRecord | null> {
+        const record = await this.source.getRepository(RoomCreateIdempotencyEntity).findOneBy({
+            principalScopeDigest,
+            routeKey,
+            keyDigest,
         });
+        return record ? this.projectCreateIdempotency(record) : null;
     }
     async joinRoom(
         input: Omit<RoomParticipant, "roomId"> & { roomCode: string; credentialHash: string },
@@ -121,9 +223,16 @@ export class TypeOrmRealtimeRoomRepository implements RealtimeRoomRepository {
                 displayName: input.displayName,
                 credentialHash: input.credentialHash,
                 devicePlayersJson: JSON.stringify(input.devicePlayers),
-                createdAt: new Date(),
-                lastSeenAt: new Date(),
+                connectionStatus: input.connectionStatus,
+                activeHostRoomId: null,
+                createdAt: new Date(input.joinedAt),
+                lastSeenAt: new Date(input.joinedAt),
+                firstConnectedAt: null,
+                lastConnectedAt: null,
+                reconnectDeadline: null,
+                activationExpiresAt: new Date(input.activationExpiresAt),
                 leftAt: null,
+                revokedAt: null,
             });
         });
     }
@@ -137,8 +246,14 @@ export class TypeOrmRealtimeRoomRepository implements RealtimeRoomRepository {
             .andWhere("room.closedAt IS NULL")
             .andWhere("participant.credentialHash = :credentialHash", { credentialHash })
             .andWhere("participant.connectionStatus != :left", { left: "LEFT" })
+            .andWhere("participant.leftAt IS NULL")
+            .andWhere("participant.revokedAt IS NULL")
             .getOne();
         return participant ? this.projectParticipant(participant) : null;
+    }
+    async loadRoomState(roomId: string): Promise<RoomState> {
+        const room = await this.source.getRepository(RoomEntity).findOneByOrFail({ id: roomId });
+        return this.projectRoom(room);
     }
     async getParticipant(roomId: string, participantId: string): Promise<RoomParticipant | null> {
         const participant = await this.source.getRepository(RoomParticipantEntity).findOneBy({
@@ -156,33 +271,31 @@ export class TypeOrmRealtimeRoomRepository implements RealtimeRoomRepository {
             })
         ).map((participant) => this.projectParticipant(participant));
     }
-    async setConnectionStatus(
-        participantId: string,
-        connectionStatus: RoomParticipant["connectionStatus"],
-    ): Promise<void> {
-        const now = new Date();
-        await this.source.getRepository(RoomParticipantEntity).update(
-            { id: participantId },
-            {
-                connectionStatus,
-                lastSeenAt: now,
-                leftAt: connectionStatus === "LEFT" ? now : null,
-            },
-        );
-    }
-    async resetConnectedParticipants(): Promise<readonly RoomParticipant[]> {
-        const repository = this.source.getRepository(RoomParticipantEntity);
-        const connected = await repository.findBy({ connectionStatus: "CONNECTED" });
-        await this.source
-            .getRepository(RoomParticipantEntity)
-            .update(
+    async resetConnectedParticipants(
+        at: number,
+        reconnectDeadline: number,
+    ): Promise<readonly RoomParticipant[]> {
+        return this.source.transaction(async (manager) => {
+            const repository = manager.getRepository(RoomParticipantEntity);
+            const connected = await repository.findBy({ connectionStatus: "CONNECTED" });
+            if (!connected.length) return [];
+            await repository.update(
                 { connectionStatus: "CONNECTED" },
-                { connectionStatus: "TEMPORARILY_DISCONNECTED" },
+                {
+                    connectionStatus: "TEMPORARILY_DISCONNECTED",
+                    lastSeenAt: new Date(at),
+                    reconnectDeadline: new Date(reconnectDeadline),
+                },
             );
-        return connected.map((participant) => ({
-            ...this.projectParticipant(participant),
-            connectionStatus: "TEMPORARILY_DISCONNECTED",
-        }));
+            return connected.map((participant) =>
+                this.projectParticipant({
+                    ...participant,
+                    connectionStatus: "TEMPORARILY_DISCONNECTED",
+                    lastSeenAt: new Date(at),
+                    reconnectDeadline: new Date(reconnectDeadline),
+                }),
+            );
+        });
     }
     async saveDevicePlayers(
         participantId: string,
@@ -193,83 +306,60 @@ export class TypeOrmRealtimeRoomRepository implements RealtimeRoomRepository {
             .update({ id: participantId }, { devicePlayersJson: JSON.stringify(players) });
         if (result.affected !== 1) throw new Error("Room participant not found");
     }
-    async transferHost(roomId: string, currentHostId: string, nextHostId: string): Promise<void> {
-        await this.source.transaction(async (manager) => {
-            const repository = manager.getRepository(RoomParticipantEntity);
-            const [current, next] = await Promise.all([
-                repository.findOneBy({ id: currentHostId, roomId, role: "HOST" }),
-                repository.findOneBy({ id: nextHostId, roomId, role: "PLAYER" }),
-            ]);
-            if (!current || !next) {
-                throw Object.assign(new Error("Host transfer participants are invalid"), {
-                    code: "NOT_AUTHORIZED",
-                });
-            }
-            current.role = "PLAYER";
-            next.role = "HOST";
-            await repository.save([current, next]);
-        });
+    async applyLifecycleTransition(
+        transition: RoomLifecycleTransition,
+    ): Promise<RoomLifecycleTransitionResult> {
+        return this.applyLifecycleTransitionOnce(transition);
     }
-    async closeRoom(roomId: string, hostParticipantId: string): Promise<void> {
-        await this.source.transaction(async (manager) => {
-            const participants = manager.getRepository(RoomParticipantEntity);
-            const host = await participants.findOneBy({
-                id: hostParticipantId,
-                roomId,
-                role: "HOST",
-                connectionStatus: Not("LEFT"),
-            });
-            if (!host)
-                throw Object.assign(new Error("Only the current Host can close the Room"), {
-                    code: "NOT_AUTHORIZED",
-                });
-            const now = new Date();
-            const closed = await manager
-                .getRepository(RoomEntity)
-                .update({ id: roomId, closedAt: IsNull() }, { closedAt: now });
-            if (closed.affected !== 1)
-                throw Object.assign(new Error("Room is already closed"), {
-                    code: "INVALID_GAME_STATE",
-                });
-            await participants.update(
-                { roomId, connectionStatus: Not("LEFT") },
-                { connectionStatus: "LEFT", leftAt: now, lastSeenAt: now },
-            );
-        });
+
+    async findDueRoomIds(at: number, limit: number): Promise<readonly string[]> {
+        const due = new Set<string>();
+        const rooms = await this.source
+            .getRepository(RoomEntity)
+            .createQueryBuilder("room")
+            .select("room.id", "id")
+            .where("room.closedAt IS NULL")
+            .andWhere(
+                "(room.expiresAt <= :at OR (room.activatedAt IS NULL AND room.activationDeadline <= :at))",
+                { at: new Date(at) },
+            )
+            .orderBy("room.activationDeadline", "ASC")
+            .limit(limit)
+            .getRawMany<{ id: string }>();
+        for (const room of rooms) due.add(room.id);
+        if (due.size < limit) {
+            const participants = await this.source
+                .getRepository(RoomParticipantEntity)
+                .createQueryBuilder("participant")
+                .select("participant.roomId", "roomId")
+                .distinct(true)
+                .where("participant.connectionStatus != :left", { left: "LEFT" })
+                .andWhere(
+                    `((participant.firstConnectedAt IS NULL AND participant.activationExpiresAt <= :at)
+                      OR (participant.connectionStatus = :disconnected AND participant.reconnectDeadline <= :at))`,
+                    { at: new Date(at), disconnected: "TEMPORARILY_DISCONNECTED" },
+                )
+                .limit(limit - due.size)
+                .getRawMany<{ roomId: string }>();
+            for (const participant of participants) due.add(participant.roomId);
+        }
+        return [...due].slice(0, limit);
     }
-    async closeRoomIfNoPlayers(roomId: string): Promise<boolean> {
-        return this.source.transaction(async (manager) => {
-            const roomQuery = manager
-                .getRepository(RoomEntity)
-                .createQueryBuilder("room")
-                .where("room.id = :roomId", { roomId })
-                .andWhere("room.closedAt IS NULL");
-            if (this.source.options.type === "mariadb" || this.source.options.type === "mysql") {
-                roomQuery.setLock("pessimistic_write");
-            }
-            const room = await roomQuery.getOne();
-            if (!room) return false;
-            const participants = manager.getRepository(RoomParticipantEntity);
-            const activeParticipant = await participants.findOne({
-                where: [
-                    {
-                        roomId,
-                        role: Not("DISPLAY"),
-                        connectionStatus: Not("LEFT"),
-                    },
-                    { roomId, role: "DISPLAY", connectionStatus: "CONNECTED" },
-                ],
-            });
-            if (activeParticipant) return false;
-            const now = new Date();
-            room.closedAt = now;
-            await manager.getRepository(RoomEntity).save(room);
-            await participants.update(
-                { roomId, connectionStatus: Not("LEFT") },
-                { connectionStatus: "LEFT", leftAt: now, lastSeenAt: now },
-            );
-            return true;
+
+    async deleteExpiredRoomCreateTombstones(at: number, limit: number): Promise<number> {
+        const repository = this.source.getRepository(RoomCreateIdempotencyEntity);
+        const expired = await repository.find({
+            where: {
+                state: "RESOURCE_GONE",
+                tombstoneExpiresAt: LessThanOrEqual(new Date(at)),
+            },
+            order: { tombstoneExpiresAt: "ASC" },
+            take: limit,
+            select: { id: true },
         });
+        if (!expired.length) return 0;
+        const result = await repository.delete(expired.map(({ id }) => id));
+        return result.affected ?? 0;
     }
     async loadSettings(roomId: string): Promise<VersionedRoomGameSettings> {
         const room = await this.source.getRepository(RoomEntity).findOneByOrFail({ id: roomId });
@@ -535,6 +625,309 @@ export class TypeOrmRealtimeRoomRepository implements RealtimeRoomRepository {
         });
     }
 
+    private async applyLifecycleTransitionOnce(
+        transition: RoomLifecycleTransition,
+    ): Promise<RoomLifecycleTransitionResult> {
+        return this.source.transaction(async (manager) => {
+            const roomQuery = manager
+                .getRepository(RoomEntity)
+                .createQueryBuilder("room")
+                .where("room.id = :roomId", { roomId: transition.roomId });
+            if (this.source.options.type === "mariadb" || this.source.options.type === "mysql") {
+                roomQuery.setLock("pessimistic_write");
+            }
+            const room = await roomQuery.getOne();
+            if (!room || room.closedAt) {
+                return {
+                    participant: null,
+                    expiredParticipants: [],
+                    roleChanges: [],
+                    roomClosed: true,
+                    hostStatusBefore: null,
+                    hostStatusAfter: null,
+                    participantFirstActivated: false,
+                    replayResultsErased: 0,
+                    closeReason: null,
+                    invariantRepair: false,
+                };
+            }
+            const repository = manager.getRepository(RoomParticipantEntity);
+            const participants = await repository.find({
+                where: { roomId: room.id },
+                order: { createdAt: "ASC", id: "ASC" },
+            });
+            const at = new Date(transition.at);
+            const hostStatusBefore = derivePersistedRoomHostStatus(
+                this.projectRoom(room),
+                participants.map((participant) => this.projectParticipant(participant)),
+                transition.at,
+            );
+            const transitionParticipantId =
+                "participantId" in transition ? transition.participantId : null;
+            const expired: RoomParticipantEntity[] = [];
+            const terminalParticipantIds = new Set<string>();
+            let participantFirstActivated = false;
+            let hostLossReason: import("../application/realtimeRooms").RoomRoleChangeReason | null =
+                null;
+
+            const markTerminal = (participant: RoomParticipantEntity): void => {
+                participant.connectionStatus = "LEFT";
+                participant.activeHostRoomId = null;
+                participant.reconnectDeadline = null;
+                participant.leftAt = at;
+                participant.lastSeenAt = at;
+                terminalParticipantIds.add(participant.id);
+            };
+
+            for (const participant of participants) {
+                if (participant.connectionStatus === "LEFT" || participant.leftAt) continue;
+                const activationExpired =
+                    participant.firstConnectedAt === null &&
+                    participant.activationExpiresAt !== null &&
+                    participant.activationExpiresAt <= at;
+                const reconnectExpired =
+                    participant.firstConnectedAt !== null &&
+                    participant.connectionStatus === "TEMPORARILY_DISCONNECTED" &&
+                    participant.reconnectDeadline !== null &&
+                    participant.reconnectDeadline <= at;
+                if (!activationExpired && !reconnectExpired) continue;
+                if (participant.role === "HOST") {
+                    hostLossReason = activationExpired
+                        ? "HOST_ACTIVATION_EXPIRED"
+                        : "HOST_DISCONNECT_EXPIRED";
+                }
+                markTerminal(participant);
+                expired.push(participant);
+            }
+
+            let transitioned = transitionParticipantId
+                ? participants.find(({ id }) => id === transitionParticipantId)
+                : undefined;
+            let activationRejected = false;
+            if (transition.type === "ACTIVATE") {
+                if (
+                    !transitioned ||
+                    transitioned.credentialHash !== transition.credentialHash ||
+                    transitioned.connectionStatus === "LEFT" ||
+                    transitioned.leftAt ||
+                    transitioned.revokedAt ||
+                    room.expiresAt <= at
+                ) {
+                    activationRejected = true;
+                    transitioned = undefined;
+                } else {
+                    participantFirstActivated = transitioned.firstConnectedAt === null;
+                    transitioned.firstConnectedAt ??= at;
+                    transitioned.lastConnectedAt = at;
+                    transitioned.lastSeenAt = at;
+                    transitioned.connectionStatus = "CONNECTED";
+                    transitioned.reconnectDeadline = null;
+                    room.activatedAt ??= at;
+                }
+            } else if (transition.type === "DISCONNECT") {
+                if (transitioned?.connectionStatus === "CONNECTED") {
+                    transitioned.connectionStatus = "TEMPORARILY_DISCONNECTED";
+                    transitioned.lastSeenAt = at;
+                    transitioned.reconnectDeadline = new Date(transition.reconnectDeadline);
+                }
+            } else if (transition.type === "LEAVE") {
+                if (transitioned && transitioned.connectionStatus !== "LEFT") {
+                    if (transitioned.role === "HOST") hostLossReason = "HOST_LEFT";
+                    markTerminal(transitioned);
+                }
+            }
+
+            const roomExpired = room.expiresAt <= at;
+
+            let trigger: HostSelectionTrigger = { type: "RECONCILE" };
+            if (transition.type === "ACTIVATE" && !activationRejected) {
+                trigger = { type: "ACTIVATE", participantId: transition.participantId };
+            } else if (transition.type === "TRANSFER_HOST") {
+                trigger = {
+                    type: "TRANSFER",
+                    participantId: transition.participantId,
+                    targetParticipantId: transition.targetParticipantId,
+                };
+            } else if (transition.type === "CLOSE") {
+                trigger = { type: "CLOSE", participantId: transition.participantId };
+            } else if (hostLossReason) {
+                trigger = { type: "HOST_LOST", reason: hostLossReason };
+            }
+
+            const decision = decideRoomHost({
+                room: this.projectRoom(room),
+                participants: participants.map((participant) =>
+                    this.projectParticipant(participant),
+                ),
+                trigger,
+                now: transition.at,
+            });
+            const roleChanges: RoomRoleChange[] = [];
+            for (const demoteParticipantId of decision.demoteParticipantIds) {
+                const demoted = participants.find(({ id }) => id === demoteParticipantId);
+                if (demoted && demoted.role === "HOST") {
+                    demoted.role = "PLAYER";
+                    demoted.activeHostRoomId = null;
+                    await repository.update(
+                        { id: demoted.id, roomId: room.id },
+                        { role: "PLAYER", activeHostRoomId: null },
+                    );
+                    if (decision.reason) {
+                        roleChanges.push({
+                            participantId: demoted.id,
+                            previousRole: "HOST",
+                            role: "PLAYER",
+                            reason: decision.reason,
+                        });
+                    }
+                }
+            }
+            if (decision.promoteParticipantId) {
+                const promoted = participants.find(
+                    ({ id }) => id === decision.promoteParticipantId,
+                );
+                if (!promoted || promoted.role !== "PLAYER") {
+                    throw new Error("Selected Room Host is no longer an eligible Player");
+                }
+                await repository.update(
+                    { roomId: room.id, activeHostRoomId: room.id },
+                    { activeHostRoomId: null },
+                );
+                promoted.role = "HOST";
+                promoted.activeHostRoomId = room.id;
+                await repository.update(
+                    { id: promoted.id, roomId: room.id, role: "PLAYER" },
+                    { role: "HOST", activeHostRoomId: room.id },
+                );
+                room.firstHostAssignedAt ??= at;
+                roleChanges.push({
+                    participantId: promoted.id,
+                    previousRole: "PLAYER",
+                    role: "HOST",
+                    reason: decision.reason ?? "INITIAL_HOST_ASSIGNED",
+                });
+            }
+            if (decision.closeRoom && !room.closedAt) {
+                room.closedAt = at;
+                for (const participant of participants) {
+                    if (participant.connectionStatus !== "LEFT") markTerminal(participant);
+                }
+            }
+
+            await manager.getRepository(RoomEntity).save(room);
+            await repository.save(participants);
+            const replayResultsErased = await this.markCreateResultsGone(
+                manager,
+                [...terminalParticipantIds],
+                transition.at,
+            );
+            transitioned = transitionParticipantId
+                ? participants.find(({ id }) => id === transitionParticipantId)
+                : undefined;
+            let closeReason: import("../application/realtimeRooms").RoomCloseReason | null = null;
+            if (decision.closeRoom) {
+                if (transition.type === "CLOSE") closeReason = "EXPLICIT_CLOSE";
+                else if (roomExpired) closeReason = "ROOM_EXPIRED";
+                else if (
+                    room.activatedAt === null &&
+                    (room.activationDeadline ?? room.expiresAt) <= at
+                ) {
+                    closeReason = "INITIAL_ACTIVATION_EXPIRED";
+                } else closeReason = "ABANDONED";
+            }
+            return {
+                participant:
+                    transitioned && !activationRejected
+                        ? this.projectParticipant(transitioned)
+                        : null,
+                expiredParticipants: expired.map((participant) =>
+                    this.projectParticipant(participant),
+                ),
+                roleChanges,
+                roomClosed: room.closedAt !== null,
+                hostStatusBefore,
+                hostStatusAfter: decision.hostStatus,
+                participantFirstActivated,
+                replayResultsErased,
+                closeReason,
+                invariantRepair: decision.invariantRepair,
+            };
+        });
+    }
+
+    private async markCreateResultsGone(
+        manager: EntityManager,
+        participantIds: readonly string[],
+        at: number,
+    ): Promise<number> {
+        if (!participantIds.length) return 0;
+        const now = new Date(at);
+        const result = await manager.getRepository(RoomCreateIdempotencyEntity).update(
+            { creatorParticipantId: In([...participantIds]), state: "REPLAYABLE" },
+            {
+                state: "RESOURCE_GONE",
+                statusCode: null,
+                responseSchemaVersion: null,
+                responseKeyId: null,
+                responseCiphertext: null,
+                updatedAt: now,
+                tombstoneExpiresAt: new Date(at + this.idempotencyTombstoneSeconds * 1_000),
+            },
+        );
+        return result.affected ?? 0;
+    }
+
+    private resolveCreateIdempotency(
+        existing: RoomCreateIdempotencyEntity | RoomCreateIdempotencyRecord,
+        requested: { requestFingerprint: string },
+    ): { created: false; record: RoomCreateIdempotencyRecord } {
+        if (existing.requestFingerprint !== requested.requestFingerprint) {
+            throw Object.assign(new Error("Idempotency key was reused for another request"), {
+                code: "IDEMPOTENCY_KEY_REUSED",
+            });
+        }
+        if (existing.state === "RESOURCE_GONE") {
+            throw Object.assign(new Error("Idempotent Room-create result is no longer available"), {
+                code: "IDEMPOTENCY_RESULT_GONE",
+            });
+        }
+        return { created: false, record: this.projectCreateIdempotency(existing) };
+    }
+
+    private projectCreateIdempotency(
+        record: RoomCreateIdempotencyEntity | RoomCreateIdempotencyRecord,
+    ): RoomCreateIdempotencyRecord {
+        return {
+            principalScopeDigest: record.principalScopeDigest,
+            routeKey: record.routeKey,
+            keyDigest: record.keyDigest,
+            lookupKeyId: record.lookupKeyId,
+            requestFingerprint: record.requestFingerprint,
+            state: record.state,
+            statusCode: record.statusCode,
+            responseSchemaVersion: record.responseSchemaVersion,
+            responseKeyId: record.responseKeyId,
+            responseCiphertext: record.responseCiphertext,
+            resourceId: record.resourceId,
+            creatorParticipantId: record.creatorParticipantId,
+        };
+    }
+
+    private projectRoom(room: RoomEntity): RoomState {
+        return {
+            id: room.id,
+            code: room.code,
+            bootstrapMode: room.bootstrapMode,
+            firstHostAssignedAt: room.firstHostAssignedAt?.getTime() ?? null,
+            activationDeadline: (room.activationDeadline ?? room.expiresAt).getTime(),
+            activatedAt: room.activatedAt?.getTime() ?? null,
+            createdAt: room.createdAt.getTime(),
+            expiresAt: room.expiresAt.getTime(),
+            closedAt: room.closedAt?.getTime() ?? null,
+            creatorParticipantId: room.creatorParticipantId ?? "",
+        };
+    }
+
     private projectParticipant(participant: RoomParticipantEntity): RoomParticipant {
         return {
             id: participant.id,
@@ -543,6 +936,14 @@ export class TypeOrmRealtimeRoomRepository implements RealtimeRoomRepository {
             displayName: participant.displayName,
             devicePlayers: JSON.parse(participant.devicePlayersJson) as DevicePlayer[],
             connectionStatus: participant.connectionStatus,
+            joinedAt: participant.createdAt.getTime(),
+            firstConnectedAt: participant.firstConnectedAt?.getTime() ?? null,
+            lastConnectedAt: participant.lastConnectedAt?.getTime() ?? null,
+            reconnectDeadline: participant.reconnectDeadline?.getTime() ?? null,
+            activationExpiresAt:
+                participant.activationExpiresAt?.getTime() ?? participant.createdAt.getTime(),
+            leftAt: participant.leftAt?.getTime() ?? null,
+            revokedAt: participant.revokedAt?.getTime() ?? null,
         };
     }
 
@@ -580,4 +981,18 @@ export class TypeOrmRealtimeRoomRepository implements RealtimeRoomRepository {
         ]);
         return new Set([...roomHistory, ...couchHistory].map(({ cardId }) => cardId as CardId));
     }
+}
+
+function isDatabaseContention(error: unknown): boolean {
+    const details = error as { code?: unknown; errno?: unknown; sqlState?: unknown };
+    const code = typeof details.code === "string" ? details.code.toUpperCase() : "";
+    const sqlState = typeof details.sqlState === "string" ? details.sqlState : "";
+    return (
+        ["SQLITE_BUSY", "SQLITE_LOCKED", "ER_LOCK_WAIT_TIMEOUT", "ER_LOCK_DEADLOCK"].includes(
+            code,
+        ) ||
+        details.errno === 1205 ||
+        details.errno === 1213 ||
+        sqlState === "40001"
+    );
 }

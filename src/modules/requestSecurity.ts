@@ -1,3 +1,5 @@
+import net from "node:net";
+
 export function isTrustedOrigin(originOrReferer: string | undefined, publicUrl: string): boolean {
     if (!originOrReferer) return false;
     try {
@@ -21,6 +23,10 @@ function websocketOrigin(httpOrigin: string): string | null {
             return null;
         }
         parsed.protocol = parsed.protocol === "https:" ? "wss:" : "ws:";
+        const hostname = parsed.hostname.replace(/^\[|\]$/gu, "");
+        // CSP host-source syntax cannot represent an IPv6 literal. Restrict the fallback
+        // to the matching WebSocket scheme; the client still connects to location.host.
+        if (net.isIP(hostname) === 6) return parsed.protocol;
         return parsed.origin;
     } catch {
         return null;

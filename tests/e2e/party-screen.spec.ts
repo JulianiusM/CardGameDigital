@@ -1,4 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
+import os from "node:os";
+import { localNetworkInterfaceAllowed } from "../../src/modules/localNetworkInterfaces";
 
 test.beforeEach(async ({ context }) => {
     await context.addInitScript(() => {
@@ -9,12 +11,13 @@ test.beforeEach(async ({ context }) => {
 
 async function hostRoom(
     page: Page,
-    screen: "personal" | "party" = "party",
+    screen: "personal" | "party" = "personal",
     profile: RegExp = /^Gute Freunde /,
     mode?: RegExp,
     reveal: "anonymous" | "named" = "anonymous",
+    startUrl = "/play/",
 ) {
-    await page.goto("/play/");
+    await page.goto(startUrl);
     await page.getByRole("button", { name: /Spiel hosten/ }).click();
     await page.getByRole("button", { name: /Keine Gruppe/ }).click();
     await page.getByRole("button", { name: /^Weiter/ }).click();
@@ -33,19 +36,35 @@ async function hostRoom(
             name: screen === "party" ? /TV \+ Smartphones/ : /Alle mit eigenem Gerät/,
         })
         .click();
-    await page.getByLabel("Name des Hosts").fill("Host Anna");
+    if (screen === "personal") await page.getByLabel("Name des Hosts").fill("Host Anna");
     await page.getByRole("button", { name: /Weiter zur Lobby/ }).click();
     await expect(page.getByRole("heading", { name: "Lobby" })).toBeVisible();
     return (await page.locator("main > header h1").textContent())!.trim();
 }
 
-async function joinRoom(page: Page, code: string, name: string, display = false) {
-    await page.goto("/play/");
+async function joinRoom(
+    page: Page,
+    code: string,
+    name: string,
+    display = false,
+    startUrl = "/play/",
+) {
+    await page.goto(startUrl);
     await page.getByRole("button", { name: display ? /Nur anzeigen/ : /Spiel beitreten/ }).click();
     if (!display) await page.getByLabel("Dein Name").fill(name);
     await page.getByLabel("Raumcode").fill(code);
     await page.getByRole("button", { name: "Raum beitreten" }).click();
     await expect(page.getByRole("heading", { name: "Lobby" })).toBeVisible();
+}
+
+function physicalLanIpv4Address(): string | null {
+    const policy = { mdnsInterfaceAllowlist: [], mdnsInterfaceDenylist: [] };
+    for (const [interfaceName, addresses] of Object.entries(os.networkInterfaces())) {
+        if (!addresses || !localNetworkInterfaceAllowed(interfaceName, policy)) continue;
+        const address = addresses.find((entry) => entry.family === "IPv4" && !entry.internal);
+        if (address) return address.address;
+    }
+    return null;
 }
 
 async function forbidDocumentTransitions(page: Page): Promise<void> {
@@ -146,7 +165,7 @@ test("taxonomy copy follows the Card language in settings and private boundaries
     await page.getByRole("button", { name: /^Next/ }).click();
     await page.getByRole("button", { name: /Truth or Dare/ }).click();
     await page.getByRole("button", { name: /^Next/ }).click();
-    await page.getByRole("button", { name: /^Friends / }).click();
+    await page.getByRole("button", { name: /^Good friends / }).click();
     await page.getByRole("button", { name: /^Next/ }).click();
 
     await page.getByLabel("Card language", { exact: true }).fill("Deutsch");
@@ -186,49 +205,131 @@ test("taxonomy copy follows the Card language in settings and private boundaries
     await context.close();
 });
 
-test("host creates a Party Screen Room and exposes safe QR join information", async ({
+test("an IPv6 page origin completes the Room WebSocket handshake", async ({ browser, baseURL }) => {
+    test.setTimeout(60_000);
+    if (!baseURL) throw new Error("Playwright baseURL is required");
+    const configuredUrl = new URL(baseURL);
+    const port = configuredUrl.port ? `:${configuredUrl.port}` : "";
+    const ipv6PlayUrl = `${configuredUrl.protocol}//[::1]${port}/play/`;
+    const context = await browser.newContext({ locale: "de-DE" });
+    const page = await context.newPage();
+
+    const code = await hostRoom(
+        page,
+        "personal",
+        /^Gute Freunde /,
+        undefined,
+        "anonymous",
+        ipv6PlayUrl,
+    );
+
+    expect(code).toMatch(/^[A-Z2-9]{6}$/);
+    await expect(page.locator(".reconnect-panel")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Spiel starten" })).toBeVisible();
+    await context.close();
+});
+
+test("a plain-HTTP LAN origin sends client.hello and joins the Room", async ({
     browser,
+    baseURL,
 }) => {
     test.setTimeout(60_000);
+    if (!baseURL) throw new Error("Playwright baseURL is required");
+    const address = physicalLanIpv4Address();
+    test.skip(!address, "No physical IPv4 interface is available");
+    const configuredUrl = new URL(baseURL);
+    const port = configuredUrl.port ? `:${configuredUrl.port}` : "";
+    const lanPlayUrl = `${configuredUrl.protocol}//${address}${port}/play/`;
     const hostContext = await browser.newContext({ locale: "de-DE" });
+    const playerContext = await browser.newContext({ locale: "de-DE" });
+    const host = await hostContext.newPage();
+    const player = await playerContext.newPage();
+    const code = await hostRoom(host, "personal");
+
+    await joinRoom(player, code, "LAN Player", false, lanPlayUrl);
+
+    expect(await player.evaluate(() => globalThis.isSecureContext)).toBe(false);
+    await expect(player.locator(".reconnect-panel")).toHaveCount(0);
+    await expect(host.getByText("LAN Player", { exact: true })).toBeVisible();
+    await hostContext.close();
+    await playerContext.close();
+});
+
+test("TV setup opens a display-only Room and the first phone becomes Host", async ({ browser }) => {
+    test.setTimeout(60_000);
+    const phoneContext = await browser.newContext({
+        locale: "de-DE",
+        viewport: { width: 360, height: 740 },
+    });
     const displayContext = await browser.newContext({
         locale: "de-DE",
         viewport: { width: 1920, height: 1080 },
     });
-    const host = await hostContext.newPage();
-    const code = await hostRoom(host, "party", /^Freunde /);
-    expect(code).toMatch(/^[A-Z2-9]{6}$/);
     const display = await displayContext.newPage();
-    await joinRoom(display, code, "", true);
+    const advertisedOrigins = Array.from(
+        { length: 8 },
+        (_, index) => `http://10.23.0.${index + 10}:3001`,
+    );
+    await display.route("**/api/v1/server-info", async (route) => {
+        const response = await route.fetch();
+        const body = (await response.json()) as {
+            roomAccess: { configuredBaseUrl: string | null; availableBaseUrls: string[] };
+        };
+        body.roomAccess = {
+            configuredBaseUrl: null,
+            availableBaseUrls: advertisedOrigins,
+        };
+        await route.fulfill({ response, json: body });
+    });
+    const code = await hostRoom(display, "party", /^Gute Freunde /);
+    expect(code).toMatch(/^[A-Z2-9]{6}$/);
     await expect(display.getByAltText(`QR-Code für Raum ${code}`)).toBeVisible();
-    const expectedJoinUrl = `${new URL(host.url()).origin}/play/?room=${code}`;
-    await expect(host.locator(".room-availability-urls")).toContainText(expectedJoinUrl);
+    await expect(display.locator(".host-status-banner")).toContainText(
+        "Wartet auf den ersten Host",
+    );
+    await expect(display.locator(".public-stage-lobby")).toBeVisible();
+    const expectedJoinUrl = `${new URL(display.url()).origin}/play/?room=${code}`;
     await expect(display.locator(".room-availability-urls.auto-page")).toContainText(
         expectedJoinUrl,
     );
-    await expect(host.getByText("Party Screen", { exact: true })).toBeVisible();
+    const urlPager = display.locator(".room-url-pages .auto-page-region");
+    await expect
+        .poll(async () => Number(await urlPager.getAttribute("data-page-size")))
+        .toBeGreaterThan(1);
+    const tallPageSize = Number(await urlPager.getAttribute("data-page-size"));
+    await display.setViewportSize({ width: 1280, height: 600 });
+    await expect
+        .poll(async () => Number(await urlPager.getAttribute("data-page-size")))
+        .toBeLessThan(tallPageSize);
+    await display.setViewportSize({ width: 1920, height: 1080 });
+
+    const phone = await phoneContext.newPage();
+    await joinRoom(phone, code, "Host Anna");
+    await expect(phone.getByRole("button", { name: "Spiel starten" })).toBeVisible();
+    await expect(display.locator(".host-status-banner")).toContainText(
+        "Host Anna steuert das Spiel",
+    );
+    await expect(phone.getByText("Party Screen", { exact: true })).toBeVisible();
     await expect(display.getByRole("button", { name: "Lobby verlassen" })).toBeVisible();
-    await expect(display.locator(".public-stage-lobby")).toBeVisible();
-    await expect(host.locator(".lobby .eligibility-preview")).toContainText("geeignete Karten");
+    await expect(phone.locator(".lobby .eligibility-preview")).toContainText("geeignete Karten");
     const displayEligibility = display.locator(".room-settings-actions > .eligibility-preview");
     await expect(displayEligibility).toContainText("geeignete Karten");
     expect((await displayEligibility.boundingBox())!.height).toBeLessThanOrEqual(52);
     await expect(display.locator(".stage-player-roster")).toBeVisible();
-    await expect(host.locator(".room-size")).toContainText(/1 \/ \d+ Personen/);
+    await expect(phone.locator(".room-size")).toContainText(/1 \/ \d+ Personen/);
     await expect(display.locator(".room-size")).toContainText(/1 \/ \d+ Personen/);
     expect(
         await display.evaluate(
             () => document.scrollingElement!.scrollHeight <= window.innerHeight + 1,
         ),
     ).toBe(true);
-    await host.setViewportSize({ width: 360, height: 740 });
     await expect
-        .poll(() => host.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
+        .poll(() => phone.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
         .toBe(true);
-    await host.getByRole("button", { name: "Einstellungen", exact: true }).click();
-    await host.getByRole("tab", { name: "Raum" }).click();
-    const leaveRoom = host.getByRole("button", { name: "Spiel verlassen" });
-    const settingsJoinInfo = host.locator(".settings-join-info");
+    await phone.getByRole("button", { name: "Einstellungen", exact: true }).click();
+    await phone.getByRole("tab", { name: "Raum" }).click();
+    const leaveRoom = phone.getByRole("button", { name: "Spiel verlassen" });
+    const settingsJoinInfo = phone.locator(".settings-join-info");
     await expect(settingsJoinInfo.locator(".room-availability-urls")).toContainText(
         expectedJoinUrl,
     );
@@ -236,7 +337,14 @@ test("host creates a Party Screen Room and exposes safe QR join information", as
     expect((await leaveRoom.boundingBox())!.y).toBeLessThan(
         (await settingsJoinInfo.boundingBox())!.y,
     );
-    await hostContext.close();
+
+    const joinOnlyDisplay = await phoneContext.newPage();
+    await joinOnlyDisplay.goto("/play/");
+    await joinOnlyDisplay.getByRole("button", { name: /Nur anzeigen/ }).click();
+    await expect(joinOnlyDisplay.getByLabel("Raumcode")).toBeVisible();
+    await expect(joinOnlyDisplay.getByRole("button", { name: "Raum beitreten" })).toBeVisible();
+
+    await phoneContext.close();
     await displayContext.close();
 });
 
@@ -475,6 +583,9 @@ test("hosted players see both Card intensities and shared game/modal transitions
     const chooser = (await hostChoice.isVisible()) ? host : player;
     await chooser.getByRole("button", { name: "Wahrheit", exact: true }).click();
 
+    const hostCardIntensity = host.locator(".game-card .card-intensity");
+    await expect(hostCardIntensity).toHaveAttribute("aria-label", /^Kartenintensität [1-5]$/);
+    const selectedCardIntensity = await hostCardIntensity.getAttribute("aria-label");
     for (const page of [host, player]) {
         const intensityPair = page.locator(".game-card .intensity-pair");
         await expect(intensityPair).toBeVisible();
@@ -482,7 +593,7 @@ test("hosted players see both Card intensities and shared game/modal transitions
         await expect(page.locator(".game-card")).toHaveCSS("animation-name", "card-enter");
         await expect(intensityPair.locator(".card-intensity")).toHaveAttribute(
             "aria-label",
-            "Kartenintensität 2",
+            selectedCardIntensity!,
         );
         await expect(intensityPair.locator(".global-intensity")).toHaveAttribute(
             "aria-label",
@@ -499,7 +610,7 @@ test("hosted players see both Card intensities and shared game/modal transitions
         );
         await expect(page.locator(".atmosphere-layer")).toHaveAttribute(
             "data-backdrop-intensity",
-            "2",
+            "1",
         );
         await expect(page.locator(".game-phase")).toHaveCSS("animation-name", "phase-enter");
     }
@@ -539,7 +650,7 @@ test("named Never Have I Ever synchronizes private progress then public answer c
     const host = await hostContext.newPage();
     const player = await playerContext.newPage();
     const display = await displayContext.newPage();
-    const code = await hostRoom(host, "party", /^Gute Freunde /, /Ich hab noch nie/, "named");
+    const code = await hostRoom(host, "personal", /^Gute Freunde /, /Ich hab noch nie/, "named");
     await joinRoom(player, code, "Ben");
     await joinRoom(display, code, "", true);
     await expect(player.locator(".room-settings-summary")).toContainText("Deutsch (Deutschland)");
@@ -637,13 +748,22 @@ test("anonymous Never Have I Ever uses a compact aggregate on a short display", 
     const host = await hostContext.newPage();
     const player = await playerContext.newPage();
     const display = await displayContext.newPage();
-    const code = await hostRoom(host, "party", /^Gute Freunde /, /Ich hab noch nie/, "anonymous");
+    const code = await hostRoom(
+        host,
+        "personal",
+        /^Gute Freunde /,
+        /Ich hab noch nie/,
+        "anonymous",
+    );
     await joinRoom(player, code, "Ben");
     await joinRoom(display, code, "", true);
 
     await host.getByRole("button", { name: "Spiel starten" }).click();
     await host.getByRole("button", { name: "Karte aufdecken" }).click();
     await host.getByRole("button", { name: "Trifft zu" }).click();
+    await expect(
+        player.locator(".vote-progress-row").filter({ hasText: "Host Anna" }),
+    ).toContainText("Abgestimmt");
     await player.getByRole("button", { name: "Trifft nicht zu" }).click();
 
     for (const page of [host, player, display]) {
@@ -702,7 +822,7 @@ test("leaving notifies every remaining device and a clean rejoin keeps Settings 
     const host = await hostContext.newPage();
     const player = await playerContext.newPage();
     const display = await displayContext.newPage();
-    const code = await hostRoom(host, "party");
+    const code = await hostRoom(host, "personal");
     await joinRoom(player, code, "Ben");
     await joinRoom(display, code, "", true);
 
@@ -741,7 +861,7 @@ test("small public displays automatically page long voting rosters and named res
     });
     const host = await hostContext.newPage();
     const display = await displayContext.newPage();
-    const code = await hostRoom(host, "party", /^Gute Freunde /, /Ich hab noch nie/, "named");
+    const code = await hostRoom(host, "personal", /^Gute Freunde /, /Ich hab noch nie/, "named");
 
     for (let index = 0; index < 11; index += 1) {
         await host.getByRole("button", { name: /Person auf diesem Gerät/ }).click();
@@ -829,7 +949,7 @@ test("New Game reuses the Room for Host, Player, and Display", async ({ browser 
     const host = await hostContext.newPage();
     const player = await playerContext.newPage();
     const display = await displayContext.newPage();
-    const code = await hostRoom(host, "party");
+    const code = await hostRoom(host, "personal");
     await joinRoom(player, code, "Ben");
     await joinRoom(display, code, "", true);
 
@@ -882,7 +1002,7 @@ test("Host closes an active Room and every device returns cleanly to the main me
     const host = await hostContext.newPage();
     const player = await playerContext.newPage();
     const display = await displayContext.newPage();
-    const code = await hostRoom(host, "party");
+    const code = await hostRoom(host, "personal");
     await joinRoom(player, code, "Ben");
     await joinRoom(display, code, "", true);
     await host.getByRole("button", { name: "Spiel starten" }).click();
@@ -903,11 +1023,11 @@ test("Host closes an active Room and every device returns cleanly to the main me
             "phase-enter",
         );
         await expect(page.locator("html")).toHaveAttribute("data-document-transition-calls", "0");
-        await expect(page.getByRole("status")).toContainText(
+        await expect(page.locator(".notification-toast")).toContainText(
             "Der Host hat den Raum geschlossen. Du bist zurück im Hauptmenü.",
         );
     }
-    await expect(player.getByRole("status")).toHaveCount(0, { timeout: 7_000 });
+    await expect(player.locator(".notification-toast")).toHaveCount(0, { timeout: 7_000 });
     await player.reload();
     await expect(player).toHaveURL(/\/play\/?$/);
     await expect(player.getByRole("heading", { name: "Lobby" })).toHaveCount(0);

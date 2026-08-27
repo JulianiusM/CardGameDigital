@@ -13,8 +13,20 @@ export class RoomParticipantEntity {
     devicePlayersJson!: string;
     @Column("varchar", { name: "connection_status", length: 32, default: "CONNECTED" })
     connectionStatus!: "CONNECTED" | "TEMPORARILY_DISCONNECTED" | "LEFT";
+    @Index("UQ_room_participant_active_host", { unique: true })
+    @Column("varchar", { name: "active_host_room_id", length: 36, nullable: true })
+    activeHostRoomId!: string | null;
     @Column("datetime", { name: "last_seen_at" }) lastSeenAt!: Date;
+    @Column("datetime", { name: "first_connected_at", nullable: true })
+    firstConnectedAt!: Date | null;
+    @Column("datetime", { name: "last_connected_at", nullable: true })
+    lastConnectedAt!: Date | null;
+    @Column("datetime", { name: "reconnect_deadline", nullable: true })
+    reconnectDeadline!: Date | null;
+    @Column("datetime", { name: "activation_expires_at", nullable: true })
+    activationExpiresAt!: Date | null;
     @Column("datetime", { name: "left_at", nullable: true }) leftAt!: Date | null;
+    @Column("datetime", { name: "revoked_at", nullable: true }) revokedAt!: Date | null;
     @Column("datetime", { name: "created_at" }) createdAt!: Date;
     @ManyToOne(() => RoomEntity, (room) => room.participants, { onDelete: "CASCADE" })
     @JoinColumn({ name: "room_id" })

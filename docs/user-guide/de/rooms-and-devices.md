@@ -8,15 +8,30 @@ bleibt auf diesem Gerät. Verschicke keine gespeicherten Zugangslinks oder Brows
 
 Bei jedem QR-Code stehen zusätzlich die Adressen, über die dieser Raum erreichbar sein
 soll. Ein lokaler Server kann bei mehreren Netzwerkschnittstellen mehrere LAN-Adressen
-anzeigen; nutze eine Adresse, die das beitretende Gerät erreicht. IPv6-Adressen stehen
-in eckigen Klammern, wie es bei URLs üblich ist. Auf einem Party Screen wechselt eine
-lange Liste automatisch weiter.
+anzeigen; nutze eine Adresse, die das beitretende Gerät erreicht. Virtuelle Adapter und
+nicht nutzbare Link-Local-IPv6-Routen werden ausgelassen, pro physischer Schnittstelle
+erscheint höchstens eine IPv6-Adresse. IPv6-Adressen stehen in eckigen Klammern, wie es
+bei URLs üblich ist. Ein Party Screen zeigt pro Seite so viele Adressen, wie in die
+verfügbare Höhe passen, bevor er automatisch weiterwechselt.
 
 Mehrere Geschwistergruppen können gleichzeitig im selben Netz spielen: Jeder Raum hat
 einen eigenen Code, Zustand und Befehlskanal. Prüfe vor dem Beitritt den Code, damit du
 nicht versehentlich in der anderen Runde landest.
 Auf jedem verbundenen Gerät bleibt die aktuelle Personenzahl zusammen mit der
 konfigurierten Höchstzahl sichtbar.
+
+## Party Screen zuerst öffnen
+
+Wähle unter **Spiel hosten** im letzten Einrichtungsschritt **TV + Smartphones**. Dieser
+Browser wird sofort zum schreibgeschützten Party Screen und zeigt Code und QR-Code an,
+während er wartet. Es wird kein versteckter Host erzeugt. Tritt mit einem Smartphone als
+Spieler bei: Das erste erfolgreich verbundene Smartphone wird Host und erhält die Start-
+und Einstellungssteuerung. Der Party Screen zeigt, wer das Spiel steuert und ob dieser
+Host gerade neu verbindet.
+
+Der Eintrag **Nur anzeigen** im Hauptmenü hat weiterhin eine andere Aufgabe: Damit wird
+ein zusätzlicher schreibgeschützter Bildschirm per Code an einen bereits bestehenden
+Raum angeschlossen.
 
 ## Mehrere Personen an einem Gerät
 

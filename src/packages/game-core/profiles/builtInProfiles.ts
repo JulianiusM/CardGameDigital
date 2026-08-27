@@ -95,7 +95,7 @@ export const BUILT_IN_GAME_PROFILES: readonly BuiltInGameProfile[] = [
         questions: [...commonQuestions, QUESTION_CATEGORIES.RELATIONSHIP, QUESTION_CATEGORIES.BODY],
         dares: [...playfulDares, DARE_TYPES.TOUCH],
         blockedFlags: friendsBlockedFlags,
-        maximumSocialSensitivity: SOCIAL_SENSITIVITIES.CLOSE_PERSONAL,
+        maximumSocialSensitivity: SOCIAL_SENSITIVITIES.DEEP_PERSONAL,
         maximumIntensity: 3,
     }),
     profile({
@@ -105,7 +105,7 @@ export const BUILT_IN_GAME_PROFILES: readonly BuiltInGameProfile[] = [
         questions: commonQuestions,
         dares: playfulDares,
         blockedFlags: acquaintancesBlockedFlags,
-        maximumSocialSensitivity: SOCIAL_SENSITIVITIES.PERSONAL,
+        maximumSocialSensitivity: SOCIAL_SENSITIVITIES.GENERAL,
         maximumIntensity: 2,
     }),
     profile({
@@ -122,7 +122,7 @@ export const BUILT_IN_GAME_PROFILES: readonly BuiltInGameProfile[] = [
         ],
         dares: [...playfulDares, DARE_TYPES.TOUCH, DARE_TYPES.TOUCH_SPICY],
         blockedFlags: friendsBlockedFlags,
-        maximumSocialSensitivity: SOCIAL_SENSITIVITIES.DEEP_PERSONAL,
+        maximumSocialSensitivity: SOCIAL_SENSITIVITIES.PERSONAL,
         maximumIntensity: 3,
     }),
     profile({

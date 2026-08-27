@@ -24,6 +24,7 @@
     import { animateState, panelTransition, revealTransition } from "./motion";
     import { loadSetup, saveSetup } from "./setup";
     import UiIcon from "./UiIcon.svelte";
+    import { randomUuidV4 } from "./randomUuid";
 
     export let embedded = false;
 
@@ -323,7 +324,7 @@
         void perform(async () => {
             if (sessionMode) {
                 const rule: StoredRule = {
-                    id: crypto.randomUUID(),
+                    id: randomUuidV4(),
                     name: messages.cardManagement.ruleNamePlaceholder,
                     order: Math.max(0, ...rules.map(({ order }) => order)) + 10,
                     enabled: false,

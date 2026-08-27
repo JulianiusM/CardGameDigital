@@ -66,13 +66,54 @@ mode disabled so both IPv6 and IPv4 interfaces accept HTTP and WebSocket connect
 Detected IPv6 origins use the required bracketed URL form. In local mode, omitting
 `PUBLIC_URL` makes each browser use its current origin for the Room QR payload; an
 explicit `PUBLIC_URL` is the administrator override. The discovery response also lists
-HTTP origins for the non-internal network interfaces covered by a wildcard bind. These
-origins contain no Room or participant credentials.
+HTTP origins for eligible physical network interfaces covered by a wildcard bind.
+Virtual adapters and link-local IPv6 addresses are omitted from the browser list, and
+each interface contributes at most one IPv6 origin, preferring global over unique-local.
+These origins contain no Room or participant credentials.
+
+Local deployments additionally publish one DNS-SD service per running installation as
+`_partycard._tcp.local`. Public deployments do not advertise unless the administrator
+explicitly enables `MDNS_DISCOVERY_ENABLED`, which emits a startup warning. The release
+TXT profile is static, ordered, and intentionally small:
+
+```text
+txtvers=1
+api=1
+ws=2
+tls=0|1
+path=/api/v1
+cap=rooms[,display-bootstrap]
+```
+
+The multicast records never include the stable installation ID, Room codes, accounts,
+participants, credentials, endpoint tokens, Card text, or live game state. mDNS is a
+convenience locator, not authentication: peers on the link can observe or impersonate
+it. A discovering client fetches `/api/v1/server-info`, validates the advertised
+capabilities and relative endpoints, and treats `serverId` only as a deduplication key.
+
+The advertiser starts only after the HTTP listener, database/catalog readiness, and
+persisted Room connection recovery are live. It
+withdraws after sustained loss of readiness, reconciles network changes, retries
+responder failure with bounded exponential backoff and jitter, and sends goodbye records
+before HTTP/WebSocket shutdown. Only listener-reachable, approved addresses are
+published. Loopback, multicast, unspecified, and virtual/container interfaces are
+excluded by default; IPv4 is private/link-local unless explicitly allowed. Interface
+allow/deny lists are exact, with deny taking precedence. The DNS responder retains
+normal probing, conflict renaming, known-answer suppression, link-local validation, and
+interface-specific answers.
 
 Local response CSP authorizes the WebSocket origin derived from the validated request
-protocol and Host, so a page opened through any bound IPv4 or bracketed IPv6 address can
-connect back to that same server. Public response CSP continues to authorize only the
-WebSocket form of the configured `PUBLIC_URL` origin.
+protocol and Host, so a page opened through any bound address can connect back to that
+same server. Domain and IPv4 hosts use an exact WebSocket origin. Because CSP host-source
+syntax cannot represent IPv6 literals, an IPv6 page uses only the matching `ws:` or
+`wss:` scheme source; the browser client still connects to its own `location.host`.
+Public response CSP uses the WebSocket form of `PUBLIC_URL`, with the same IPv6-literal
+scheme fallback, while server-side public Origin enforcement remains exact.
+
+A browser page opened over plain HTTP at a LAN IP is not a secure context and may not
+expose `crypto.randomUUID()`. Browser-generated WebSocket request IDs, display-bootstrap
+idempotency keys, and local editor IDs therefore use `crypto.getRandomValues()`, set the
+RFC 4122 UUIDv4 version/variant bits, and never fall back to `Math.random()`.
 
 Every public runtime, including the explicit development policy, requires an explicit
 `PUBLIC_URL`. Public Room QR payloads and displayed availability URLs use only that
@@ -86,6 +127,50 @@ server-side repository/application transactions.
 `ROOM_RECONNECT_GRACE_SECONDS` configures how long a temporarily disconnected device
 can reclaim the same participant. It defaults to 180 seconds and accepts 120 through 3600. The browser retry window spans ordinary one-to-two-minute interruptions; only the
 server's persisted participant status determines whether the credential is still valid.
+
+`ROOM_DISPLAY_BOOTSTRAP_ENABLED` and `MDNS_DISCOVERY_ENABLED` default on in local mode
+and off in public mode. Display-bootstrap creation also requires stable replay
+protection. `ROOM_CREATE_SECRET` may supply at least 32 bytes explicitly; otherwise a
+stable non-generated `SESSION_SECRET` is purpose-separated, or local mode creates
+`ROOM_CREATE_SECRET_FILE` once with restrictive permissions. Retained replay rows make
+silent key replacement unsafe. Each retained row carries non-secret identifiers for
+both the HMAC lookup key and replay-encryption key. Startup compares every replayable
+row and every ordinary tombstone with the active purpose keys, disabling new
+display-bootstrap creation on mismatch instead of silently stranding a known key.
+`ROOM_INITIAL_ACTIVATION_SECONDS` and
+`UNACTIVATED_PARTICIPANT_TTL_SECONDS` default to 300; the replay tombstone default is
+`ROOM_CREATE_IDEMPOTENCY_TOMBSTONE_SECONDS=86400`.
+
+Discovery configuration is `SERVER_DISPLAY_NAME`, `MDNS_INSTANCE_NAME`,
+`MDNS_HOST_LABEL`, `MDNS_INTERFACE_ALLOWLIST`, `MDNS_INTERFACE_DENYLIST`,
+`MDNS_ALLOW_PUBLIC_IPV4`, `MDNS_ADVERTISED_PORT`, and `MDNS_ADVERTISED_TLS`.
+`MDNS_SERVICE_TYPE=_partycard._tcp` is a release constant (overridable only in the E2E
+test runtime). `WEB_SOCKET_PATH` and `ROOM_JOIN_PATH_TEMPLATE` are same-origin relative,
+credential-free endpoints. The TLS flag must match the configured HTTP front door.
+
+The database stores exactly one installation UUID in `installation_metadata`; it is
+stable across normal restarts, upgrades, address changes, and display-name changes.
+Identity reset is an offline operator action:
+
+```bash
+npm run installation:reset
+npm run installation:reset -- --invalidate-runtime
+```
+
+The first form refuses while any Room or replayable create result remains. The explicit
+invalidation form closes live Rooms, revokes participant credentials, erases encrypted
+replay bodies into bounded tombstones, and then rotates the ID. Stop the serving process
+before running either command; never copy an installation identity or replay secret into
+a second simultaneously advertising replica.
+
+The in-process monitoring adapters expose low-cardinality discovery and Room lifecycle
+metrics without opening a new public HTTP endpoint. Discovery supplies advertiser state,
+advertisement/restart counters, and interface/address gauges. Room lifecycle supplies
+`room_create_total`, `room_create_idempotency_total`,
+`room_host_state_transition_total`, `room_initial_host_assignment_total`,
+`room_hostless_duration_seconds`, `unactivated_participant_expiry_total`, and
+`room_reconciliation_total`. Their labels are closed protocol/lifecycle enums; IDs,
+codes, names, addresses, keys, and credentials are never metric labels.
 
 ## SMTP
 

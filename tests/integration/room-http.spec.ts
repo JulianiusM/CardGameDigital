@@ -1,11 +1,15 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { randomUUID } from "node:crypto";
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { AppDataSource, initDataSource } from "../../src/modules/database/dataSource";
 import { RoomParticipantEntity } from "../../src/modules/database/entities/game/RoomParticipantEntity";
+import { RoomEntity } from "../../src/modules/database/entities/game/RoomEntity";
+import { RoomCreateIdempotencyEntity } from "../../src/modules/database/entities/game/RoomCreateIdempotencyEntity";
 import settings from "../../src/modules/settings";
+import { getRoomService } from "../../src/modules/realtime";
 import { defaultRoomGameSettings } from "../../src/packages/application/roomGameSettings";
 import { DARE_TYPE_IDS, QUESTION_CATEGORY_IDS } from "../../src/packages/game-core";
 
@@ -19,7 +23,7 @@ beforeAll(async () => {
         AUTH_MODE: "none",
         DB_TYPE: "sqlite",
         DB_FILE: path.join(directory, "rooms.sqlite"),
-        SESSION_SECRET: "room_http_test_secret_123",
+        SESSION_SECRET: "room_http_test_secret_1234567890123456",
         ROOM_MAX_PARTICIPANTS: "20",
         ROOM_MAX_PLAYERS: "20",
     });
@@ -311,6 +315,26 @@ describe("Room HTTP API", () => {
             configuredBaseUrl: null,
             availableBaseUrls: expect.any(Array),
         });
+        expect(response.body).toMatchObject({
+            serverId: expect.stringMatching(
+                /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+            ),
+            displayName: "Party Game",
+            capabilities: {
+                localNetworkDiscovery: true,
+                displayBootstrapRoomCreation: true,
+            },
+            localNetworkDiscovery: {
+                advertising: false,
+                serviceType: "_partycard._tcp",
+                txtVersion: 1,
+            },
+            endpoints: {
+                apiBasePath: "/api/v1",
+                webSocketPath: "/ws",
+                roomJoinPathTemplate: "/play/?room={roomCode}",
+            },
+        });
         expect(response.headers["x-content-type-options"]).toBe("nosniff");
         expect(response.headers["x-frame-options"]).toBe("DENY");
         expect(response.headers["content-security-policy"]).toContain("script-src 'self'");
@@ -333,9 +357,7 @@ describe("Room HTTP API", () => {
             .get("/api/v1/server-info")
             .set("Host", "[2001:db8::20]:3000")
             .expect(200);
-        expect(ipv6.headers["content-security-policy"]).toContain(
-            "connect-src 'self' ws://[2001:db8::20]:3000",
-        );
+        expect(ipv6.headers["content-security-policy"]).toContain("connect-src 'self' ws:");
     });
 
     it("allows the explicit public development policy to bypass runtime transport gates", async () => {
@@ -423,6 +445,138 @@ describe("Room HTTP API", () => {
         expect(stored.map((participant) => participant.credentialHash)).not.toContain(
             host.body.participantCredential,
         );
+    });
+    it("opens a display-only Room idempotently and assigns the first connected Player as Host", async () => {
+        const idempotencyKey = randomUUID();
+        const createBody = {
+            displayName: "Shared display",
+            persistence: "EPHEMERAL",
+            bootstrapMode: "DISPLAY_WAITING_FOR_HOST",
+        };
+        const created = await request(app)
+            .post("/api/v1/rooms")
+            .set("Idempotency-Key", idempotencyKey)
+            .send(createBody)
+            .expect(201);
+        const replayed = await request(app)
+            .post("/api/v1/rooms")
+            .set("Idempotency-Key", idempotencyKey)
+            .send(createBody)
+            .expect(201);
+
+        expect(replayed.body).toEqual(created.body);
+        expect(replayed.headers["idempotency-replayed"]).toBe("true");
+        expect(created.body).toMatchObject({
+            role: "DISPLAY",
+            bootstrapMode: "DISPLAY_WAITING_FOR_HOST",
+            hostStatus: {
+                state: "AWAITING_FIRST_HOST",
+                participantId: null,
+                displayName: null,
+                deadline: null,
+            },
+        });
+        expect(
+            await AppDataSource.getRepository(RoomEntity).countBy({ id: created.body.roomId }),
+        ).toBe(1);
+        expect(
+            await AppDataSource.getRepository(RoomCreateIdempotencyEntity).countBy({
+                resourceId: created.body.roomId,
+            }),
+        ).toBe(1);
+        expect(
+            await AppDataSource.getRepository(RoomParticipantEntity).countBy({
+                roomId: created.body.roomId,
+            }),
+        ).toBe(1);
+
+        const player = await request(app)
+            .post(`/api/v1/rooms/${created.body.roomCode}/participants`)
+            .send({ displayName: "Alex", role: "PLAYER" })
+            .expect(201);
+        expect(player.body.role).toBe("PLAYER");
+        const service = getRoomService();
+        await service.authenticate(created.body.roomCode, created.body.participantCredential);
+        const activation = await service.authenticate(
+            player.body.roomCode,
+            player.body.participantCredential,
+        );
+        expect(activation).toMatchObject({ role: "HOST", displayName: "Alex" });
+        expect(activation?.roleChanges).toContainEqual({
+            participantId: player.body.participantId,
+            previousRole: "PLAYER",
+            role: "HOST",
+            reason: "INITIAL_HOST_ASSIGNED",
+        });
+        expect((await service.snapshot(created.body.roomId)).hostStatus).toMatchObject({
+            state: "CONNECTED",
+            participantId: player.body.participantId,
+            displayName: "Alex",
+        });
+    });
+    it("enforces display-bootstrap idempotency header errors and terminal replay tombstones", async () => {
+        const body = {
+            displayName: "Temporary display",
+            bootstrapMode: "DISPLAY_WAITING_FOR_HOST",
+        };
+        await request(app)
+            .post("/api/v1/rooms")
+            .send(body)
+            .expect(400)
+            .expect(({ body: responseBody }) => {
+                expect(responseBody.error.code).toBe("IDEMPOTENCY_KEY_REQUIRED");
+            });
+        await request(app)
+            .post("/api/v1/rooms")
+            .set("Idempotency-Key", "not-a-uuid")
+            .send(body)
+            .expect(400)
+            .expect(({ body: responseBody }) => {
+                expect(responseBody.error.code).toBe("IDEMPOTENCY_KEY_INVALID");
+            });
+
+        const key = randomUUID();
+        const created = await request(app)
+            .post("/api/v1/rooms")
+            .set("Idempotency-Key", key)
+            .send(body)
+            .expect(201);
+        await request(app)
+            .post("/api/v1/rooms")
+            .set("Idempotency-Key", key)
+            .send({ ...body, displayName: "Changed display" })
+            .expect(409)
+            .expect(({ body: responseBody }) => {
+                expect(responseBody.error.code).toBe("IDEMPOTENCY_KEY_REUSED");
+            });
+
+        const service = getRoomService();
+        const display = await service.authenticate(
+            created.body.roomCode,
+            created.body.participantCredential,
+        );
+        expect(display).not.toBeNull();
+        await service.execute(created.body.roomId, display!, {
+            type: "command.leaveRoom",
+            revision: null,
+            payload: {},
+        });
+        await request(app)
+            .post("/api/v1/rooms")
+            .set("Idempotency-Key", key)
+            .send(body)
+            .expect(410)
+            .expect(({ body: responseBody }) => {
+                expect(responseBody.error.code).toBe("IDEMPOTENCY_RESULT_GONE");
+            });
+        const record = await AppDataSource.getRepository(
+            RoomCreateIdempotencyEntity,
+        ).findOneByOrFail({ resourceId: created.body.roomId });
+        expect(record).toMatchObject({
+            state: "RESOURCE_GONE",
+            responseCiphertext: null,
+            responseKeyId: null,
+        });
     });
     it("supports independent simultaneous Rooms on one local network server", async () => {
         const [siblings, friends] = await Promise.all([

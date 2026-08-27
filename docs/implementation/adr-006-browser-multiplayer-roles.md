@@ -16,6 +16,14 @@ Accepted for Phase 6.
 - A vote is attributed from the authenticated participant credential rather than a client-supplied player identifier. Private veto messages contain no participant identity in the public snapshot.
 - Room credentials are retained only in `sessionStorage` to allow the same browser tab/session to reclaim its participant identity. They are not placed in join URLs.
 - QR images are produced locally in the bundled browser application. The QR payload contains only the Room code join URL, never a participant credential.
+- The setup wizard's **TV + phones** selection creates
+  `DISPLAY_WAITING_FOR_HOST`, saves the DISPLAY credential in the same session-scoped
+  store, and opens `/play/room` immediately. Its UUIDv4 create key and exact JSON body
+  remain in `sessionStorage` until a response succeeds, so a lost response is retried
+  without opening a second Room. The first joined player phone receives Host authority
+  from `server.hello`.
+- The main-menu **Display only** flow retains its separate meaning: join an existing
+  code as DISPLAY. It never invokes Room creation.
 
 ## Consequences
 

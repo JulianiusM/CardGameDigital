@@ -1416,6 +1416,12 @@ Phones act as:
 
 This is the flagship multiplayer experience.
 
+Selecting **TV + phones** in the Host setup wizard opens the current browser as the
+Party Screen first. The Room initially has no Host. Its code and QR invitation are shown
+immediately, and the first player phone whose authenticated realtime connection succeeds
+becomes Host. This race is deliberately first-connected, not first-created through the
+HTTP join form. A Party Screen can never become Host.
+
 The Party Screen is a passive public stage. It shows the Room identity, connection/player
 state, current Card, active player where applicable, public voting progress, and public
 results. It never shows private controls, private boundaries, participant credentials,
@@ -1433,7 +1439,8 @@ Rooms have:
 
 - short join code;
 - optional QR code;
-- host;
+- zero or one current host while opening/recovering, and exactly one during ordinary
+  connected play;
 - connected clients;
 - current Session where applicable.
 
@@ -1441,6 +1448,9 @@ Every Room device always shows the current represented-player count and configur
 maximum while it has an authoritative Room snapshot.
 
 Accounts are not required for ordinary Room participants.
+The public Room code locates a Room but grants no authority. Host authority comes only
+from the participant credential and the server's committed role. A temporarily lost Host
+keeps the role during reconnect grace; afterward an eligible connected player takes over.
 
 ---
 
@@ -1816,10 +1826,14 @@ fields. The player may still edit it for the current Room. In Couch mode, **Anot
 round** preserves the exact roster, while **New game** returns to player setup and
 restores the account name as the first no-Group player.
 
-After Screen Selection, Couch starts local player setup and the other screen choices
-create a Room. Join Game asks for participant name and Room code; Display Only asks for
-the Room code and joins as a read-only Party Screen. A safe deep join URL may prefill
-the code, but never contains participant credentials.
+After Screen Selection, Couch starts local player setup. **All on their own device**
+creates an ordinary Room whose named creator is Host. **TV + phones** creates a
+display-bootstrap Room and opens this browser as its read-only Party Screen; it does not
+ask for or manufacture a Host. The first connected player phone takes that role. Join
+Game asks for participant name and Room code. The separate main-menu **Display Only**
+action still asks for a Room code and attaches a read-only Party Screen to an existing
+Room; it does not open a new Room. A safe deep join URL may prefill the code, but never
+contains participant credentials.
 
 ---
 

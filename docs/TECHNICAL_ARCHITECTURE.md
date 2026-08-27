@@ -1172,7 +1172,37 @@ display_name
 role
 token_hash
 last_seen_at
+first_connected_at
+last_connected_at
+connection_status
+reconnect_deadline
+activation_expires_at
+left_at
+revoked_at
 ```
+
+Rooms persist `bootstrap_mode`, first-Host provenance, activation lease timestamps, and
+the creator participant. `DISPLAY_WAITING_FOR_HOST` creation commits one DISPLAY and no
+Host. `roomHostSelection.ts` is the sole decision owner for activation, transfer, leave,
+explicit close, expiry, and recovery. It also produces a deterministic demotion plan if
+recovery encounters multiple current Hosts. The Room transaction serializes the repair
+or promotion, and a nullable unique active-Host guard supplies the database backstop.
+
+Room creation idempotency is scoped by HMAC digests of installation/principal/route/key.
+The original credential-bearing response is stored only as installation-scoped
+AES-256-GCM ciphertext bound to its request fingerprint and resource metadata. Creator
+credential invalidation erases ciphertext and leaves a bounded `RESOURCE_GONE`
+tombstone. Persisted identifiers for both derived purpose keys let startup reject silent
+lookup-key or replay-key rotation while ordinary retained rows still depend on them.
+
+`roomObservability.ts` consumes only committed lifecycle results. It emits structured
+Room events and fixed-label process metrics, including both hostless-duration phases;
+Room identity is retained only in the bounded in-process duration tracker and never
+becomes a metric label.
+
+Server bootstrap awaits persisted Room connection recovery after binding HTTP/WebSocket
+and before enabling mDNS. A restart therefore cannot advertise a ready endpoint whose
+authoritative connection lifecycle is still stale.
 
 ---
 
@@ -1519,6 +1549,10 @@ Used for:
 - catalog/admin management;
 - import/export.
 
+`POST /rooms` defaults to `CREATOR_HOST`. Explicit
+`DISPLAY_WAITING_FOR_HOST` requires a canonical UUIDv4 `Idempotency-Key` and returns a
+DISPLAY credential. Retries of the same parsed JSON replay the exact committed response.
+
 ---
 
 # 70. WebSocket Responsibilities
@@ -1531,6 +1565,7 @@ Used for active gameplay:
 - voting, voter-completion progress, and configured result reveal;
 - settings updates;
 - resynchronization.
+- participant activation and the atomic first/replacement Host decision.
 
 WebSocket is the canonical realtime mechanism.
 
@@ -1633,18 +1668,43 @@ Supported mechanisms:
 
 1. QR URL;
 2. displayed IP/URL;
-3. optional mDNS.
+3. DNS-SD/mDNS for compatible local discovery clients.
 
-mDNS is convenience only.
+mDNS is convenience only and is not authenticated.
 
-Local Room discovery advertises the HTTP origins for every external interface covered
-by the configured bind. The browser uses its current origin for the QR payload unless
-an administrator explicitly configured `PUBLIC_URL`; the displayed list includes that
-payload origin, the current browser origin, and the advertised interface origins without
-duplicates. Public deployments require `PUBLIC_URL`, use it for both the QR payload and
-the single displayed address, and never trust the browser origin for either decision.
-IPv6 origins are bracketed. Local response CSP derives its explicit WebSocket source
-from the request-visible protocol and Host; public CSP derives it only from `PUBLIC_URL`.
+One installation advertises `_partycard._tcp.local` only after HTTP listening and
+database readiness. TXT version 1 contains only `txtvers`, API/WS versions, TLS, the
+relative API path, and fixed capability hints. It contains no installation ID, Room,
+participant, account, credential, or mutable game data. `/api/v1/server-info` supplies
+the stable installation UUID for deduplication, the sanitized display name, effective
+capabilities, current advertising state, and credential-free relative endpoints.
+
+The infrastructure advertiser filters against the actual HTTP listener and approved
+interfaces/addresses, reconciles network changes, withdraws on sustained unready state,
+uses bounded failure retry, and sends goodbye records before server shutdown. Local mode
+enables it by default; every public deployment requires explicit opt-in and a warning.
+
+Local Room discovery advertises the HTTP origins for eligible physical interfaces
+covered by the configured bind. Virtual adapters and link-local IPv6 addresses are
+excluded from the browser list; each interface contributes at most one IPv6 origin,
+preferring global over unique-local. The browser uses its current origin for the QR
+payload unless an administrator explicitly configured `PUBLIC_URL`; the displayed list
+includes that payload origin, the current browser origin, and the selected interface
+origins without duplicates. Public deployments require `PUBLIC_URL`, use it for both
+the QR payload and the single displayed address, and never trust the browser origin for
+either decision. IPv6 origins are bracketed. CSP uses the exact request-visible
+WebSocket origin for domain/IPv4 hosts and the matching WebSocket scheme for IPv6
+literals, whose host form CSP cannot encode. Public CSP derives the equivalent decision
+only from `PUBLIC_URL`; server-side public Origin enforcement remains exact.
+Because a plain-HTTP LAN IP is not a secure browser context, the web client cannot rely
+on `crypto.randomUUID()`. Its shared UUIDv4 generator uses `crypto.getRandomValues()` as
+the secure-context-independent primitive for realtime request IDs, Room-create
+idempotency keys, and browser-local editor identities.
+
+The stable `serverId` lives in singleton installation metadata and is not derived from
+network or display values. Identity reset is an offline operator operation that refuses
+while live Rooms/replay credentials remain unless explicit runtime invalidation is
+requested.
 
 ---
 
@@ -1686,7 +1746,9 @@ Connection flow:
 3. receive `client.hello`;
 4. validate credentials;
 5. bind Principal/Room identity;
-6. continue or close.
+6. commit participant activation and centralized Host selection;
+7. return the authoritative role in `server.hello`;
+8. send any role-change event, then a fresh snapshot/presence, or close.
 
 Credentials must not be leaked through reusable query URLs.
 
