@@ -655,6 +655,7 @@ describe("Room WebSocket protocol", () => {
             hostDisconnectGraceMs: 20,
         });
         await new Promise<void>((resolve) => server!.listen(0, "127.0.0.1", resolve));
+        await wss.roomLifecycleReady;
 
         await waitFor(
             () =>

@@ -21,19 +21,19 @@ function helpTopics(locale: Locale): HelpTopic[] {
     const parsed = JSON.parse(fs.readFileSync(manifestPath, "utf8")) as unknown;
     if (!Array.isArray(parsed)) throw new Error("Help topic manifest must be an array.");
     const topics = parsed.map((candidate, index) => validateHelpTopic(candidate, index));
+    const markdownFiles = fs.readdirSync(directory).filter((file) => file.endsWith(".md"));
+    const markdownFileNames = new Set(markdownFiles);
     const slugs = new Set<string>();
     const orders = new Set<number>();
     for (const topic of topics) {
         if (slugs.has(topic.slug)) throw new Error(`Duplicate help topic slug: ${topic.slug}`);
         if (orders.has(topic.order)) throw new Error(`Duplicate help topic order: ${topic.order}`);
-        if (!fs.existsSync(path.join(directory, `${topic.slug}.md`)))
+        if (!markdownFileNames.has(`${topic.slug}.md`))
             throw new Error(`Missing ${locale} help document: ${topic.slug}.md`);
         slugs.add(topic.slug);
         orders.add(topic.order);
     }
-    const unregistered = fs
-        .readdirSync(directory)
-        .filter((file) => file.endsWith(".md"))
+    const unregistered = markdownFiles
         .map((file) => path.basename(file, ".md").toLowerCase())
         .find((slug) => !slugs.has(slug));
     if (unregistered) throw new Error(`Unregistered ${locale} help document: ${unregistered}.md`);

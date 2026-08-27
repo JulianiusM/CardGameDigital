@@ -6,7 +6,7 @@ import { GroupEntity } from "./GroupEntity";
 @Index("IDX_card_policy_default_space", ["dataSpaceId"])
 export class CardPolicyScopeDefaultEntity {
     @PrimaryColumn("varchar", { name: "owner_key", length: 80 }) ownerKey!: string;
-    @Column("varchar", { name: "data_space_id", length: 36 }) dataSpaceId!: string;
+    @Column("uuid", { name: "data_space_id" }) dataSpaceId!: string;
     @Column("varchar", { name: "group_id", length: 36, nullable: true }) groupId!: string | null;
     @Column("text", { name: "directives_json" }) directivesJson!: string;
     @Column("int", { default: 1 }) revision!: number;

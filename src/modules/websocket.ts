@@ -83,11 +83,6 @@ export function attachWebSocketServer(
         maxPayload: maxPayloadBytes,
         perMessageDeflate: false,
     });
-    const roomLifecycleReady = lifecycleReady.then(() => undefined);
-    Object.defineProperty(wss, "roomLifecycleReady", {
-        value: roomLifecycleReady,
-        enumerable: false,
-    });
     const responsiveSockets = new WeakSet<WebSocket>();
     const heartbeat = setInterval(() => {
         for (const socket of wss.clients) {
@@ -123,7 +118,15 @@ export function attachWebSocketServer(
                     });
                 }
                 if (result.roomClosed) closeConnectedRoom(participant.roomId);
-                else await refreshRoom(participant.roomId, null, result.roleChanges);
+                else {
+                    await refreshRoom(participant.roomId, null, result.roleChanges);
+                    if (
+                        result.participant?.connectionStatus === "TEMPORARILY_DISCONNECTED" &&
+                        result.participant.reconnectDeadline !== null
+                    ) {
+                        scheduleDisconnectExpiry(result.participant);
+                    }
+                }
             } catch (error) {
                 logEvent(
                     "error",
@@ -137,7 +140,7 @@ export function attachWebSocketServer(
         disconnectTimers.set(participant.id, timer);
     }
 
-    void lifecycleReady
+    const roomLifecycleReady = lifecycleReady
         .then((participants) => {
             for (const participant of participants) scheduleDisconnectExpiry(participant);
         })
@@ -148,7 +151,12 @@ export function attachWebSocketServer(
                 configuredErrorLogFields(error, settings.value),
                 settings.value.logLevel,
             );
+            throw error;
         });
+    Object.defineProperty(wss, "roomLifecycleReady", {
+        value: roomLifecycleReady,
+        enumerable: false,
+    });
 
     let reconciliationRunning = false;
     const reconciliation = setInterval(() => {

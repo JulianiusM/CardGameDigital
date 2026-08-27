@@ -8,7 +8,7 @@ import { GroupEntity } from "./GroupEntity";
 export class CardPolicyConditionalRuleEntity {
     @PrimaryColumn("varchar", { length: 36 }) id!: string;
     @Column("varchar", { name: "owner_key", length: 80 }) ownerKey!: string;
-    @Column("varchar", { name: "data_space_id", length: 36 }) dataSpaceId!: string;
+    @Column("uuid", { name: "data_space_id" }) dataSpaceId!: string;
     @Column("varchar", { name: "group_id", length: 36, nullable: true }) groupId!: string | null;
     @Column("varchar", { length: 100 }) name!: string;
     @Column("int", { name: "rule_order" }) ruleOrder!: number;
