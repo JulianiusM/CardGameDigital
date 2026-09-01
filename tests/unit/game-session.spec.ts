@@ -287,6 +287,27 @@ describe("shared GameSession state machine", () => {
         expect(session.revision).toBe(2);
     });
 
+    it("abandons an active player's Card when that player leaves", () => {
+        const session = new GameSession(
+            {
+                id: "active-player-left",
+                mode: GAME_MODES.CLASSIC,
+                players,
+                profile: profile(),
+                cardLocale: "en-GB",
+            },
+            new SequenceRandomSource([0]),
+        );
+        session.chooseCardType(0, CARD_TYPES.QUESTION, [repeatQuestion]);
+
+        session.removePlayers(1, new Set(["a"]));
+
+        expect(session.activePlayer?.id).toBe("b");
+        expect(session.currentCard).toBeNull();
+        expect(session.state).toBe(SESSION_STATES.CHOOSING_CARD_TYPE);
+        expect(session.revision).toBe(2);
+    });
+
     it("keeps question and dare profile configuration independent", () => {
         const restrictive = profile({
             enabledQuestionCategoryIds: new Set([QUESTION_CATEGORIES.EVERYDAY]),

@@ -31,6 +31,9 @@ required service/platform is unavailable in this repository environment.
   localized management workspace in local none-auth and authenticated public modes.
 - Browser scale coverage holds DataSpace and policy lists to bounded rendered pages;
   deterministic simulation covers 50,000 Cards with 200 ordered rules.
+- The native Kodi thin client implements remote-only Couch and Room-display flows,
+  display-bootstrap hosting, bounded discovery, recovery, localization, generated
+  protocol/design boundaries, privacy checks, and deterministic independent packaging.
 
 ## External verification gates
 
@@ -41,11 +44,14 @@ required service/platform is unavailable in this repository environment.
 - The server-web release workflow is configured to produce both editions independently
   on Linux, Windows, and macOS x64/arm64. A successful manual release run remains the
   external proof that all native runners and bindings are available.
+- Kodi release QA must install and launch the generated ZIP on the supported
+  version/platform/skin/remote/network matrix, including offline LAN and representative
+  low-powered hardware. CPython/XML/package validation does not replace that gate.
 
-Kodi and Android-family native clients remain part of the longer-term architecture but
-are explicitly deferred from this release. The responsive browser client covers all
-three initial device modes: Couch, Personal, and Party Screen. Their future artifacts
-have independent release-unit and tag namespaces and cannot be added to server-web.
+The Kodi client now has its independent `kodi-client-v{version}` release unit and is
+never added to server-web. Native account linking remains capability-gated and is
+explicitly disabled by the current server. Android-family native clients remain a
+longer-term architecture target with a separate future release unit.
 
 ## Canonical content blocker
 

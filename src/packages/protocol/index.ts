@@ -1,82 +1,18 @@
 import { z } from "zod";
+import { DARE_TYPES, OPERATIONAL_FLAGS, QUESTION_CATEGORIES } from "../game-core";
 import {
-    DARE_TYPES,
-    OPERATIONAL_FLAGS,
-    QUESTION_CATEGORIES,
-    SOCIAL_SENSITIVITIES,
-} from "../game-core";
+    clientCapabilitySchema,
+    clientRoleSchema,
+    envelopeSchema,
+    roomBootstrapModeSchema,
+    roomGameSettingsSchema,
+    roomHostStatusSchema,
+} from "./common";
 export * from "./cardPolicy";
-import { sessionCardPolicySchema } from "./cardPolicy";
+export * from "./common";
+import { PROTOCOL_VERSION } from "./version";
 
-export const PROTOCOL_VERSION = 2 as const;
-export const protocolErrorCodeSchema = z.enum([
-    "VALIDATION_ERROR",
-    "AUTHENTICATION_ERROR",
-    "ROOM_NOT_FOUND",
-    "ROOM_FULL",
-    "ROOM_BOOTSTRAP_MODE_UNSUPPORTED",
-    "IDEMPOTENCY_KEY_REQUIRED",
-    "IDEMPOTENCY_KEY_INVALID",
-    "IDEMPOTENCY_KEY_REUSED",
-    "IDEMPOTENCY_REQUEST_IN_PROGRESS",
-    "IDEMPOTENCY_RESULT_GONE",
-    "CARD_LOCALE_UNAVAILABLE",
-    "INVALID_GAME_STATE",
-    "NOT_ACTIVE_PLAYER",
-    "CARD_POOL_EXHAUSTED",
-    "STALE_SESSION_REVISION",
-    "NOT_AUTHORIZED",
-    "PROTOCOL_VERSION_UNSUPPORTED",
-]);
-export const clientRoleSchema = z.enum(["HOST", "PLAYER", "DISPLAY"]);
-export const roomBootstrapModeSchema = z.enum(["CREATOR_HOST", "DISPLAY_WAITING_FOR_HOST"]);
-export const roomHostStateSchema = z.enum([
-    "AWAITING_FIRST_HOST",
-    "CONNECTING",
-    "CONNECTED",
-    "RECONNECTING",
-    "AWAITING_REPLACEMENT_HOST",
-]);
-export const roomRoleChangeReasonSchema = z.enum([
-    "INITIAL_HOST_ASSIGNED",
-    "HOST_TRANSFERRED",
-    "HOST_LEFT",
-    "HOST_DISCONNECT_EXPIRED",
-    "HOST_REVOKED",
-    "HOST_ACTIVATION_EXPIRED",
-]);
-export const roomHostStatusSchema = z
-    .object({
-        state: roomHostStateSchema,
-        participantId: z.string().uuid().nullable(),
-        displayName: z.string().min(1).max(40).nullable(),
-        deadline: z.number().int().nonnegative().nullable(),
-    })
-    .strict();
-export const clientCapabilitySchema = z.enum([
-    "JOIN_ROOM",
-    "DISPLAY_SESSION",
-    "CHOOSE_CARD_TYPE",
-    "SUBMIT_VOTE",
-    "SKIP_CARD",
-    "ADVANCE_SESSION",
-    "VETO_CARD",
-    "CHANGE_SESSION_SETTINGS",
-    "MANAGE_PLAYERS",
-    "MANAGE_DEVICE_PLAYERS",
-    "TRANSFER_HOST",
-    "END_SESSION",
-    "LEAVE_ROOM",
-]);
-export const envelopeSchema = z
-    .object({
-        protocol: z.literal(PROTOCOL_VERSION),
-        type: z.string().min(1),
-        requestId: z.string().min(1).nullable(),
-        revision: z.number().int().nonnegative().nullable(),
-        payload: z.unknown(),
-    })
-    .strict();
+export { PROTOCOL_VERSION } from "./version";
 export const clientHelloPayloadSchema = z
     .object({
         supportedProtocolVersions: z.array(z.number().int().positive()).min(1),
@@ -92,79 +28,6 @@ export const clientHelloEnvelopeSchema = envelopeSchema.extend({
     revision: z.null(),
     payload: clientHelloPayloadSchema,
 });
-export type Envelope = z.infer<typeof envelopeSchema>;
-export const participantLeftEventPayloadSchema = z
-    .object({
-        participantId: z.string().uuid(),
-        displayName: z.string().min(1).max(80),
-        reason: z.enum(["LEFT", "DISCONNECT_EXPIRED"]),
-    })
-    .strict();
-export const cardReplacedEventPayloadSchema = z
-    .object({ reason: z.enum(["SKIPPED", "VETOED"]) })
-    .strict();
-export type ParticipantLeftEventPayload = z.infer<typeof participantLeftEventPayloadSchema>;
-export type CardReplacedEventPayload = z.infer<typeof cardReplacedEventPayloadSchema>;
-
-export const effectiveGameSettingsSchema = z
-    .object({
-        enabledQuestionCategoryIds: z.array(z.enum(QUESTION_CATEGORIES)),
-        enabledDareTypeIds: z.array(z.enum(DARE_TYPES)),
-        blockedOperationalFlags: z.array(z.enum(OPERATIONAL_FLAGS)),
-        maximumSocialSensitivity: z.enum(SOCIAL_SENSITIVITIES).default("EXPLICIT"),
-        startingIntensity: z
-            .union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5)])
-            .default(1),
-        maximumIntensity: z.union([
-            z.literal(1),
-            z.literal(2),
-            z.literal(3),
-            z.literal(4),
-            z.literal(5),
-        ]),
-        intensityProgressionUnit: z.enum(["ROUNDS", "CARDS"]).default("CARDS"),
-        intensityProgressionInterval: z.number().int().min(1).max(100).default(2),
-        intensityProgressionIncrement: z.number().min(0.5).max(4).multipleOf(0.5).default(1),
-        randomQuestionRatio: z.number().min(0).max(1),
-        maximumTypeStreak: z.number().int().min(1).max(10),
-        letsTalkMetaInterval: z.number().int().min(1).max(100),
-    })
-    .strict()
-    .refine(({ startingIntensity, maximumIntensity }) => startingIntensity <= maximumIntensity, {
-        message: "startingIntensity cannot exceed maximumIntensity",
-        path: ["startingIntensity"],
-    });
-export const roomGameSettingsSchema = z
-    .object({
-        mode: z.enum([
-            "CLASSIC_TRUTH_OR_DARE",
-            "RANDOM_TRUTH_OR_DARE",
-            "NEVER_HAVE_I_EVER",
-            "LETS_TALK",
-        ]),
-        profileId: z.string().min(1).max(80),
-        groupId: z.string().uuid().nullable(),
-        adultContentConfirmed: z.boolean(),
-        cardLocale: z.string().min(2).max(35),
-        cardFallbackEnabled: z.boolean().default(false),
-        cardFallbackLocales: z
-            .array(z.string().min(2).max(35))
-            .max(100)
-            .default([])
-            .refine(
-                (locales) =>
-                    new Set(locales.map((entry) => entry.toLowerCase())).size === locales.length,
-                "Fallback locales must be unique",
-            ),
-        neverHaveIEverRevealMode: z
-            .enum(["ANONYMOUS_AGGREGATE", "NAMED_ANSWERS"])
-            .default("ANONYMOUS_AGGREGATE"),
-        cardPolicy: sessionCardPolicySchema,
-        configuration: effectiveGameSettingsSchema,
-    })
-    .strict();
-export type RoomGameSettingsPayload = z.infer<typeof roomGameSettingsSchema>;
-
 export const roomCreateRequestSchema = z
     .object({
         displayName: z.string().trim().min(1).max(40),
@@ -184,14 +47,6 @@ export const roomCreateResponseSchema = z
         hostStatus: roomHostStatusSchema,
     })
     .strict();
-export const roomRoleChangedPayloadSchema = z
-    .object({
-        role: clientRoleSchema,
-        previousRole: clientRoleSchema,
-        reason: roomRoleChangeReasonSchema,
-    })
-    .strict();
-
 const emptyPayloadSchema = z.object({}).strict();
 const revisionedCommand = <T extends z.ZodType>(type: string, payload: T) =>
     envelopeSchema.extend({
@@ -270,3 +125,6 @@ export const clientPingEnvelopeSchema = envelopeSchema.extend({
 });
 export type ClientHelloEnvelope = z.infer<typeof clientHelloEnvelopeSchema>;
 export type RoomCommandEnvelope = z.infer<typeof roomCommandEnvelopeSchema>;
+
+export * from "./serverInfo";
+export * from "./snapshots";

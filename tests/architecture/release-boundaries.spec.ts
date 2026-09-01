@@ -26,5 +26,19 @@ describe("release boundaries", () => {
         expect(workflow).toContain("windows-2025");
         expect(workflow).toContain("macos-15");
         expect(workflow).not.toMatch(/apps\/(?:kodi|android-tv)/);
+        expect(workflow).not.toContain("clients/kodi");
+    });
+
+    it("releases the Kodi client independently with native checks and provenance", () => {
+        const packageJson = JSON.parse(fs.readFileSync("package.json", "utf8"));
+        const workflow = fs.readFileSync(".github/workflows/kodi-release.yml", "utf8");
+
+        expect(packageJson.scripts["kodi:package"]).toContain("scripts/kodiRelease.ts package");
+        expect(workflow).toContain("npm run kodi:package");
+        expect(workflow).toContain("kodi-client-v");
+        expect(workflow).not.toContain("package:server-web");
+        expect(fs.readFileSync("clients/kodi/addon.xml", "utf8")).toContain(
+            'id="script.partycard.tv"',
+        );
     });
 });

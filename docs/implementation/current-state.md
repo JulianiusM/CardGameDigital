@@ -11,6 +11,7 @@
 | `src/packages/persistence` | TypeORM implementations of application repository ports.                                                                                 |
 | `src/routes/api`           | Thin Express adapters that validate input, call application services and serialize JSON responses.                                       |
 | `src/modules`              | Process composition: settings, database, sessions, OIDC, email and WebSocket transport.                                                  |
+| `clients/kodi`             | Native Kodi TV presentation, discovery, transport, recovery, profile storage, generated contracts, and independent packaging.            |
 
 ## Account model
 
@@ -69,12 +70,16 @@ are not part of this product.
 MariaDB 10.11 migration, public account/persistence integration, catalog-lock, and
 public-mode browser checks pass and are wired into CI. Real SMTP, an actual OIDC
 provider, and deployed HTTPS proxy behavior still require their respective staging
-systems. Portable server archives
-must be built on every supported operating system because their Node dependencies have
-platform-specific native bindings. Kodi and Android-family native clients are deferred
-from the current release scope; the responsive web client covers Couch, Personal, and
-Party Screen device modes. The canonical production Card catalog is still required
-before the complete Core Release can be labelled verified.
+systems. Portable server archives must be built on every supported operating system
+because their Node dependencies have platform-specific native bindings. The Kodi
+client is implemented as an independent thin-client release with generated
+protocol/design artifacts, Couch and Room display flows, display-bootstrap hosting,
+discovery, recovery, localization, automated CPython checks, and reproducible
+packaging. Clean Kodi install/launch and the version/platform/skin/remote/network matrix
+remain external release QA gates. Native account linking is capability-gated and the
+current server explicitly advertises it as disabled. Android-family native clients
+remain deferred. The canonical production Card catalog is still required before the
+complete Core Release can be labelled verified.
 
 ## Card management
 

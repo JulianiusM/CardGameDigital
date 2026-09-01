@@ -30,6 +30,38 @@ the game and whether that Host is reconnecting.
 The main-menu **Display only** action is different: use it to attach another read-only
 screen to a Room code that already exists.
 
+## Using Party Game TV on Kodi
+
+Install the `script.partycard.tv` release ZIP with Kodi's **Install from zip file**
+action, then open **Add-ons → Game add-ons → Party Game TV**. Kodi's Home-screen
+**Games** item manages ROM and game-source libraries; it is not the launcher for this
+native add-on. The game server is a separate device or process and must already be
+running.
+
+Kodi searches the local network for ready Party Game servers and also checks saved
+servers. Select a result only after its details show the expected name and address.
+Discovery is a convenience signal, not authentication. If no server appears, confirm
+that the TV and server are on the same network, wait for server readiness, choose
+**Search again**, or use **Enter address**. Multicast-blocked, guest, isolated, and
+cross-subnet networks normally require manual entry. Public internet servers must use
+HTTPS; do not bypass certificate warnings.
+
+Choose **Couch Play** to keep all players and controls on the TV. Choose
+**Host a Room** to configure the game on Kodi and make the TV a read-only display; Kodi
+shows the code and safe QR link while the first connected player phone becomes Host.
+Choose **Display a Room** to attach the TV to an existing code. The TV never becomes
+Host and never shows private choices, boundaries, or unrevealed answers.
+
+Kodi saves non-secret preferences and server addresses plus the minimum Room/Couch
+recovery information. If it restarts, use the offered resume action. A corrupt
+non-secret profile is quarantined and reset safely. Open **Diagnostics** for version,
+protocol, capability, route, discovery, and connection details; it deliberately omits
+credentials and private game content.
+
+Account linking appears only when a selected server explicitly supports native device
+authorization. The current server does not enable it, so anonymous/local play remains
+available without linking.
+
 ## Multiple people on one device
 
 Any player device—not only the host—can add local players in the lobby. The device later

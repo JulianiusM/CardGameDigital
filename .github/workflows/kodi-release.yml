@@ -1,0 +1,76 @@
+name: Kodi client release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version already declared in clients/kodi/addon.xml
+        required: true
+        type: string
+      publish:
+        description: Publish the kodi-client-v{version} GitHub release
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+
+jobs:
+  package-kodi-client:
+    runs-on: ubuntu-24.04
+    env:
+      KODI_VERSION: ${{ inputs.version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.15.0
+          cache: npm
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install workspace dependencies
+        run: npm ci
+
+      - name: Validate version and package the Kodi add-on
+        run: |
+          set -euo pipefail
+          MANIFEST_VERSION=$(node -e "const fs=require('fs');const x=fs.readFileSync('clients/kodi/addon.xml','utf8');process.stdout.write(x.match(/version=\"([^\"]+)/)[1])")
+          test "${MANIFEST_VERSION}" = "${KODI_VERSION}"
+          npm run kodi:package
+          FIRST=$(sha256sum "artifacts/script.partycard.tv-${KODI_VERSION}.zip" | cut -d' ' -f1)
+          npm run kodi:package
+          SECOND=$(sha256sum "artifacts/script.partycard.tv-${KODI_VERSION}.zip" | cut -d' ' -f1)
+          test "${FIRST}" = "${SECOND}"
+
+      - name: Upload release candidates
+        uses: actions/upload-artifact@v4
+        with:
+          name: kodi-client-${{ inputs.version }}
+          path: |
+            artifacts/script.partycard.tv-${{ inputs.version }}.zip
+            artifacts/script.partycard.tv-${{ inputs.version }}.zip.sha256
+            artifacts/script.partycard.tv-${{ inputs.version }}.cdx.json
+            artifacts/script.partycard.tv-${{ inputs.version }}.provenance.json
+          if-no-files-found: error
+          compression-level: 0
+
+      - name: Publish independent Kodi release
+        if: inputs.publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "kodi-client-v${KODI_VERSION}" \
+            --title "Kodi client ${KODI_VERSION}" \
+            --notes "Native Kodi 21/Omega client. Clean-device Kodi install/launch remains a release QA gate." \
+            artifacts/script.partycard.tv-${KODI_VERSION}.zip \
+            artifacts/script.partycard.tv-${KODI_VERSION}.zip.sha256 \
+            artifacts/script.partycard.tv-${KODI_VERSION}.cdx.json \
+            artifacts/script.partycard.tv-${KODI_VERSION}.provenance.json

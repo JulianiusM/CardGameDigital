@@ -356,9 +356,9 @@ export class TypeOrmCardPolicyRepository implements CardPolicyRepository {
     }
 
     async searchCards(search: ManagedCardSearch) {
-        const base = this.cardSearchQuery(search);
-        const total = await base.clone().getCount();
-        const entities = await base
+        const completeSearch = { ...search, cursor: undefined };
+        const total = await this.cardSearchQuery(completeSearch).getCount();
+        const entities = await this.cardSearchQuery(search)
             .orderBy("card.id", "ASC")
             .take(search.limit + 1)
             .getMany();

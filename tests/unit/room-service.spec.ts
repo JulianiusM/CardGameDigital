@@ -475,11 +475,14 @@ describe("RoomService", () => {
             revision: null,
             payload: {},
         });
-        await service.execute(joined.roomId, host, {
+        const ended = await service.execute(joined.roomId, host, {
             type: "command.endSession",
             revision: first.session!.revision,
             payload: {},
         });
+        expect(ended.session?.state).toBe("ENDED");
+        expect(repository.rooms.get(joined.roomId)?.closedAt).toBeNull();
+        expect(ended.participants).toHaveLength(2);
         const lobby = await service.execute(joined.roomId, host, {
             type: "command.resetSession",
             revision: first.session!.revision + 1,
@@ -487,6 +490,7 @@ describe("RoomService", () => {
         });
         expect(lobby.session).toBeNull();
         expect(lobby.participants).toHaveLength(2);
+        expect(repository.rooms.get(joined.roomId)?.closedAt).toBeNull();
         const second = await service.execute(joined.roomId, host, {
             type: "command.startSession",
             revision: null,
@@ -519,6 +523,7 @@ describe("RoomService", () => {
 
         expect(closed.session?.state).toBe("ENDED");
         expect(closed.participants).toEqual([]);
+        expect(repository.rooms.get(joined.roomId)?.closedAt).toEqual(expect.any(Number));
         expect(repository.runtimes.get(joined.roomId)?.state).toBe("ENDED");
         expect(
             await service.authenticate(joined.roomCode, joined.participantCredential),

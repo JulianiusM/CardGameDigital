@@ -1,0 +1,13 @@
+{
+    "schemaVersion": 1,
+    "protocolVersion": 2,
+    "roomSnapshotFixtures": [
+        "ordinary-room.json",
+        "awaiting-first-host.json",
+        "host-reconnecting.json",
+        "awaiting-replacement-host.json",
+        "promoted-host.json"
+    ],
+    "transportFixtures": ["room-closed.json"],
+    "httpFixtures": ["server-info.json"]
+}

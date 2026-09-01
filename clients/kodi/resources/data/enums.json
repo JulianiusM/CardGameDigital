@@ -1,0 +1,69 @@
+{
+    "schemaVersion": 1,
+    "protocolVersion": 2,
+    "cardTypes": ["QUESTION", "DARE", "CONVERSATION_META"],
+    "gameModes": [
+        "CLASSIC_TRUTH_OR_DARE",
+        "RANDOM_TRUTH_OR_DARE",
+        "NEVER_HAVE_I_EVER",
+        "LETS_TALK"
+    ],
+    "sessionStates": [
+        "WAITING_FOR_PLAYER",
+        "CHOOSING_CARD_TYPE",
+        "SELECTING_CARD",
+        "SHOWING_CARD",
+        "WAITING_FOR_RESOLUTION",
+        "COLLECTING_ANSWERS",
+        "SHOWING_RESULTS",
+        "TRANSITION",
+        "NEXT_PLAYER",
+        "ENDED"
+    ],
+    "questionCategoryIds": [
+        "CAT_EVERYDAY",
+        "CAT_CHILDHOOD",
+        "CAT_PERSONALITY",
+        "CAT_SCENARIO",
+        "CAT_INTOXICATION",
+        "CAT_FRIENDSHIP",
+        "CAT_RELATIONSHIP",
+        "CAT_BODY",
+        "CAT_SEXUALITY",
+        "CAT_SEX_OPENNESS",
+        "CAT_SEX_TENSION",
+        "CAT_SEX_EXPERIENCE"
+    ],
+    "dareTypeIds": [
+        "DARE_SILLY",
+        "DARE_THIRD_PARTY",
+        "DARE_KISS",
+        "DARE_KISS_SPICY",
+        "DARE_TOUCH",
+        "DARE_TOUCH_SPICY",
+        "DARE_TOUCH_SEXY",
+        "DARE_CLOTHING",
+        "DARE_NUDITY",
+        "DARE_SEXUAL_TENSION",
+        "DARE_BORDERLINE_SEX",
+        "DARE_SEX",
+        "DARE_OTHER"
+    ],
+    "operationalFlags": [
+        "REQUIRES_TARGET_PLAYER",
+        "INVOLVES_THIRD_PARTY",
+        "REQUIRES_PHYSICAL_CONTACT",
+        "REMOVES_CLOTHING",
+        "REQUIRES_NUDITY",
+        "INVOLVES_ALCOHOL",
+        "INVOLVES_RECREATIONAL_SUBSTANCES"
+    ],
+    "socialSensitivities": [
+        "GENERAL",
+        "PERSONAL",
+        "CLOSE_PERSONAL",
+        "DEEP_PERSONAL",
+        "INTIMATE",
+        "EXPLICIT"
+    ]
+}

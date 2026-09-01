@@ -64,8 +64,10 @@ the API or browser tab implementation.
 {
     "capabilities": {
         "localNetworkDiscovery": true,
-        "displayBootstrapRoomCreation": true
+        "displayBootstrapRoomCreation": true,
+        "nativeDeviceAuthorization": false
     },
+    "nativeDeviceAuthorization": null,
     "localNetworkDiscovery": {
         "advertising": true,
         "serviceType": "_partycard._tcp",
@@ -92,6 +94,15 @@ most one global/unique-local IPv6 origin, with global preferred. In public mode 
 fields contain only the required configured origin. The runtime-security and discovery
 fields are informational for clients and operations; clients receive no additional
 authority from them.
+
+`nativeDeviceAuthorization` is an additive, capability-gated native-client contract.
+This server currently advertises `capabilities.nativeDeviceAuthorization: false` and a
+null descriptor, so native clients keep anonymous/local flows available and do not show
+account linking. A server that enables the capability must also return a non-null
+descriptor with `clientId` and allowed `scopes`, plus same-origin
+`deviceAuthorizationPath` and `deviceTokenPath` endpoint fields; it may additionally
+return `deviceRevocationPath`. Clients must not infer support from application version
+or `authenticationAvailable`.
 
 `GET /catalog/taxonomies` always returns Question Categories and DareTypes in the
 canonical order declared by `game-core/cards/taxonomy.ts`; database/content ordering

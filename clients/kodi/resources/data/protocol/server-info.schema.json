@@ -1,0 +1,126 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+        "version": { "type": "number", "const": 1 },
+        "serverId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+        },
+        "displayName": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "deploymentMode": { "type": "string", "enum": ["local", "public"] },
+        "publicRuntimeSecurity": { "type": "string", "enum": ["enforced", "development"] },
+        "authenticationAvailable": { "type": "boolean" },
+        "protocolVersions": {
+            "minItems": 1,
+            "type": "array",
+            "items": { "type": "integer", "exclusiveMinimum": 0, "maximum": 9007199254740991 }
+        },
+        "roomCapacity": {
+            "type": "object",
+            "properties": {
+                "maximumParticipants": {
+                    "type": "integer",
+                    "minimum": 2,
+                    "maximum": 9007199254740991
+                },
+                "maximumPlayers": { "type": "integer", "minimum": 2, "maximum": 9007199254740991 }
+            },
+            "required": ["maximumParticipants", "maximumPlayers"],
+            "additionalProperties": false
+        },
+        "roomAccess": {
+            "type": "object",
+            "properties": {
+                "configuredBaseUrl": {
+                    "anyOf": [{ "type": "string", "format": "uri" }, { "type": "null" }]
+                },
+                "availableBaseUrls": {
+                    "maxItems": 100,
+                    "type": "array",
+                    "items": { "type": "string", "format": "uri" }
+                }
+            },
+            "required": ["configuredBaseUrl", "availableBaseUrls"],
+            "additionalProperties": false
+        },
+        "capabilities": {
+            "type": "object",
+            "properties": {
+                "localNetworkDiscovery": { "type": "boolean" },
+                "displayBootstrapRoomCreation": { "type": "boolean" },
+                "nativeDeviceAuthorization": { "default": false, "type": "boolean" }
+            },
+            "required": [
+                "localNetworkDiscovery",
+                "displayBootstrapRoomCreation",
+                "nativeDeviceAuthorization"
+            ],
+            "additionalProperties": false
+        },
+        "nativeDeviceAuthorization": {
+            "default": null,
+            "anyOf": [
+                {
+                    "type": "object",
+                    "properties": {
+                        "clientId": { "type": "string", "minLength": 1, "maxLength": 100 },
+                        "scopes": {
+                            "minItems": 1,
+                            "maxItems": 20,
+                            "type": "array",
+                            "items": { "type": "string", "minLength": 1, "maxLength": 100 }
+                        }
+                    },
+                    "required": ["clientId", "scopes"],
+                    "additionalProperties": false
+                },
+                { "type": "null" }
+            ]
+        },
+        "localNetworkDiscovery": {
+            "type": "object",
+            "properties": {
+                "advertising": { "type": "boolean" },
+                "serviceType": { "type": "string", "minLength": 1, "maxLength": 255 },
+                "txtVersion": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                }
+            },
+            "required": ["advertising", "serviceType", "txtVersion"],
+            "additionalProperties": false
+        },
+        "endpoints": {
+            "type": "object",
+            "properties": {
+                "apiBasePath": { "type": "string", "pattern": "^\\/.*" },
+                "webSocketPath": { "type": "string", "pattern": "^\\/.*" },
+                "roomJoinPathTemplate": { "type": "string", "pattern": "^\\/.*" },
+                "deviceAuthorizationPath": { "type": "string", "pattern": "^\\/.*" },
+                "deviceTokenPath": { "type": "string", "pattern": "^\\/.*" },
+                "deviceRevocationPath": { "type": "string", "pattern": "^\\/.*" }
+            },
+            "required": ["apiBasePath", "webSocketPath", "roomJoinPathTemplate"],
+            "additionalProperties": false
+        }
+    },
+    "required": [
+        "version",
+        "serverId",
+        "displayName",
+        "deploymentMode",
+        "publicRuntimeSecurity",
+        "authenticationAvailable",
+        "protocolVersions",
+        "roomCapacity",
+        "roomAccess",
+        "capabilities",
+        "nativeDeviceAuthorization",
+        "localNetworkDiscovery",
+        "endpoints"
+    ],
+    "additionalProperties": false
+}

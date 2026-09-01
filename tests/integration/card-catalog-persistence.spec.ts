@@ -13,7 +13,7 @@ import { GroupEntity } from "../../src/modules/database/entities/game/GroupEntit
 import { DataSpace } from "../../src/modules/database/entities/user/DataSpace";
 import { dataSourceOptions } from "../../src/modules/database/dataSource";
 import { resolveSettings } from "../../src/modules/settings";
-import { TypeOrmCardRepository } from "../../src/packages/persistence";
+import { TypeOrmCardPolicyRepository, TypeOrmCardRepository } from "../../src/packages/persistence";
 import { applyCardCatalogSnapshot } from "../../src/packages/persistence/applyCardCatalogSnapshot";
 import { cardCatalog, catalogArtifact } from "../support/cardCatalog";
 
@@ -55,6 +55,40 @@ describe("bundled Card catalog FULL reconciliation", () => {
                 "en-GB",
             ]),
         ).toEqual([{ label: "Everyday" }]);
+    });
+
+    it("keeps the complete filtered Card-search total across cursor pages", async () => {
+        const db = await database();
+        const input = cardCatalog();
+        const sourceCard = input.cards[0];
+        input.cards = Array.from({ length: 5 }, (_, index) => ({
+            ...structuredClone(sourceCard),
+            id: `10000000-0000-4000-8000-${(index + 1).toString().padStart(12, "0")}`,
+            localizations: sourceCard.localizations.map((localization) => ({
+                ...localization,
+                text: `${localization.text} search match ${index + 1}`,
+            })),
+        }));
+        await applyCardCatalogSnapshot(db, catalogArtifact(input));
+
+        const repository = new TypeOrmCardPolicyRepository(db);
+        const search = { locale: "en-GB", query: "search match", limit: 2 };
+        const firstPage = await repository.searchCards(search);
+        expect(firstPage.cards).toHaveLength(2);
+        expect(firstPage.total).toBe(5);
+        expect(firstPage.nextCursor).toBeTypeOf("string");
+
+        const nextPage = await repository.searchCards({
+            ...search,
+            cursor: firstPage.nextCursor!,
+        });
+        expect(nextPage.cards).toHaveLength(2);
+        expect(nextPage.total).toBe(firstPage.total);
+        expect(nextPage.cards.map(({ id }) => id)).not.toEqual(firstPage.cards.map(({ id }) => id));
+
+        const previousPage = await repository.searchCards(search);
+        expect(previousPage.total).toBe(firstPage.total);
+        expect(previousPage.cards.map(({ id }) => id)).toEqual(firstPage.cards.map(({ id }) => id));
     });
 
     it("is idempotent and enforces immutable sequence bytes", async () => {

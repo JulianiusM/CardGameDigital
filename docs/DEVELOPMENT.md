@@ -2,7 +2,9 @@
 
 ## Prerequisites and setup
 
-Use Node.js 24.x and npm 10 or newer.
+Use Node.js 24.x and npm 10 or newer. Kodi-client work also requires Python 3.12 for
+the repository test harness; Kodi 21/Omega supplies its own Python 3 runtime for actual
+add-on execution.
 
 ```bash
 npm ci
@@ -33,6 +35,9 @@ npm test
 npm run e2e              # requires Playwright browsers
 npm run test:mariadb:reset
 npm run test:mariadb:public
+npm run kodi:generate    # shared schemas, fixtures, token data, and media
+npm run kodi:check       # drift, static/XML/privacy, and CPython unit checks
+npm run kodi:package     # independent deterministic add-on release artifacts
 ```
 
 The public MariaDB suite clears its exact test schema, runs the full migration chain,
@@ -70,6 +75,22 @@ non-loopback and production public configurations still require HTTPS.
 - Never trust claimed roles/capabilities over the credential-authenticated participant.
 - Update `docs/contracts/websocket-v2.md` and WebSocket integration tests.
 - A breaking change requires a new protocol version; do not silently redefine version 2.
+
+## Changing the Kodi client
+
+- Keep `clients/kodi` a thin consumer; Cards, eligibility, role selection, and game
+  transitions remain on the server.
+- Change canonical DTOs in `src/packages/protocol`, then run `npm run kodi:generate`.
+  Never hand-edit generated schemas, fixtures, token JSON, or media.
+- Route every background result through the reducer/event queue and include operation
+  and selected-server identity where a stale result could race navigation.
+- Put every visible string in both Kodi PO catalogs and keep the ID sets identical.
+- Preserve D-pad/OK/Back/Context operation, explicit focus, bounded lists, credential
+  redaction, local-only plaintext policy, and public HTTPS/WSS enforcement.
+- Add CPython fixture tests for reducer, parser, transport, persistence, focus, or
+  presentation behavior. Real Kodi/skin/remote checks remain release-matrix tests.
+- Use the independent version in `clients/kodi/addon.xml`; do not couple it to the
+  server-web package version. See [`KODI_CLIENT.md`](KODI_CLIENT.md).
 
 ## Changing the bundled Card catalog
 

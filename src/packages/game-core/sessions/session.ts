@@ -428,6 +428,7 @@ export class GameSession {
         if (this.state === SESSION_STATES.ENDED) return;
         const previousPlayers = [...this.players];
         const previousActiveId = this.activePlayer?.id ?? null;
+        const activePlayerWasRemoved = previousActiveId ? playerIds.has(previousActiveId) : false;
         this.players = this.players.filter(({ id }) => !playerIds.has(id));
         if (this.players.length === previousPlayers.length) return;
         for (const playerId of playerIds) this.votes.delete(playerId);
@@ -461,6 +462,22 @@ export class GameSession {
             this.votes.size === this.voterIds.length
         )
             this.state = SESSION_STATES.SHOWING_RESULTS;
+        if (
+            activePlayerWasRemoved &&
+            this.mode !== GAME_MODES.NEVER_HAVE_I_EVER &&
+            this.currentCard
+        ) {
+            // A Card belongs to the turn for which it was drawn. Never pass it
+            // silently to a different active player.
+            this.currentCard = null;
+            this.pendingCardType = null;
+            this.votes.clear();
+            this.voterIds = [];
+            this.state =
+                this.mode === GAME_MODES.CLASSIC
+                    ? SESSION_STATES.CHOOSING_CARD_TYPE
+                    : SESSION_STATES.WAITING_FOR_PLAYER;
+        }
         this.revision++;
     }
 

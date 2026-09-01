@@ -1,0 +1,42 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+        "protocol": { "type": "number", "const": 2 },
+        "type": { "type": "string", "const": "error" },
+        "requestId": { "anyOf": [{ "type": "string", "minLength": 1 }, { "type": "null" }] },
+        "revision": { "type": "null" },
+        "payload": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string",
+                    "enum": [
+                        "VALIDATION_ERROR",
+                        "AUTHENTICATION_ERROR",
+                        "ROOM_NOT_FOUND",
+                        "ROOM_FULL",
+                        "ROOM_BOOTSTRAP_MODE_UNSUPPORTED",
+                        "IDEMPOTENCY_KEY_REQUIRED",
+                        "IDEMPOTENCY_KEY_INVALID",
+                        "IDEMPOTENCY_KEY_REUSED",
+                        "IDEMPOTENCY_REQUEST_IN_PROGRESS",
+                        "IDEMPOTENCY_RESULT_GONE",
+                        "CARD_LOCALE_UNAVAILABLE",
+                        "INVALID_GAME_STATE",
+                        "NOT_ACTIVE_PLAYER",
+                        "CARD_POOL_EXHAUSTED",
+                        "STALE_SESSION_REVISION",
+                        "NOT_AUTHORIZED",
+                        "PROTOCOL_VERSION_UNSUPPORTED"
+                    ]
+                },
+                "message": { "type": "string", "minLength": 1, "maxLength": 500 }
+            },
+            "required": ["code", "message"],
+            "additionalProperties": false
+        }
+    },
+    "required": ["protocol", "type", "requestId", "revision", "payload"],
+    "additionalProperties": false
+}

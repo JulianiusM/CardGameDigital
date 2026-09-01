@@ -287,3 +287,6 @@ src.zip
 test_output.txt
 /.tmp/
 /data/
+__pycache__/
+*.py[cod]
+clients/kodi/.test-profile/

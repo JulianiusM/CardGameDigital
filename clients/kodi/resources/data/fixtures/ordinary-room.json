@@ -1,0 +1,78 @@
+{
+    "protocol": 2,
+    "type": "room.snapshot",
+    "requestId": "fixture-request",
+    "revision": null,
+    "payload": {
+        "roomId": "00000000-0000-4000-8000-000000000010",
+        "capacity": { "maximumParticipants": 100, "maximumPlayers": 100 },
+        "participants": [
+            {
+                "id": "00000000-0000-4000-8000-000000000002",
+                "roomId": "00000000-0000-4000-8000-000000000010",
+                "role": "HOST",
+                "displayName": "Alex",
+                "devicePlayers": [{ "id": "00000000-0000-4000-8000-000000000003", "name": "Sam" }],
+                "connectionStatus": "CONNECTED"
+            }
+        ],
+        "bootstrapMode": "CREATOR_HOST",
+        "hostStatus": {
+            "state": "CONNECTED",
+            "participantId": "00000000-0000-4000-8000-000000000002",
+            "displayName": "Alex",
+            "deadline": null
+        },
+        "boundaryConfigured": false,
+        "settings": {
+            "mode": "CLASSIC_TRUTH_OR_DARE",
+            "profileId": "PROFILE_FRIENDS",
+            "groupId": null,
+            "adultContentConfirmed": false,
+            "cardLocale": "de-DE",
+            "cardFallbackEnabled": false,
+            "cardFallbackLocales": [],
+            "neverHaveIEverRevealMode": "ANONYMOUS_AGGREGATE",
+            "configuration": {
+                "enabledQuestionCategoryIds": [
+                    "CAT_EVERYDAY",
+                    "CAT_CHILDHOOD",
+                    "CAT_PERSONALITY",
+                    "CAT_SCENARIO",
+                    "CAT_FRIENDSHIP",
+                    "CAT_RELATIONSHIP",
+                    "CAT_BODY",
+                    "CAT_SEXUALITY",
+                    "CAT_SEX_OPENNESS",
+                    "CAT_INTOXICATION"
+                ],
+                "enabledDareTypeIds": [
+                    "DARE_SILLY",
+                    "DARE_OTHER",
+                    "DARE_TOUCH",
+                    "DARE_TOUCH_SPICY"
+                ],
+                "blockedOperationalFlags": [
+                    "INVOLVES_THIRD_PARTY",
+                    "INVOLVES_ALCOHOL",
+                    "INVOLVES_RECREATIONAL_SUBSTANCES",
+                    "REMOVES_CLOTHING",
+                    "REQUIRES_NUDITY"
+                ],
+                "maximumSocialSensitivity": "PERSONAL",
+                "startingIntensity": 1,
+                "maximumIntensity": 3,
+                "intensityProgressionUnit": "CARDS",
+                "intensityProgressionInterval": 2,
+                "intensityProgressionIncrement": 1,
+                "randomQuestionRatio": 0.6,
+                "maximumTypeStreak": 3,
+                "letsTalkMetaInterval": 5
+            },
+            "cardPolicy": { "scopeDefault": {}, "conditionalRules": [], "exactCards": [] },
+            "revision": 0,
+            "updatedByParticipantId": null
+        },
+        "session": null
+    }
+}

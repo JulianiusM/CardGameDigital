@@ -10,6 +10,7 @@ import {
     roomCreateResponseSchema,
     roomCommandEnvelopeSchema,
     roomRoleChangedPayloadSchema,
+    serverEnvelopeSchema,
 } from "../../src/packages/protocol";
 import { defaultRoomGameSettings } from "../../src/packages/application/roomGameSettings";
 
@@ -80,6 +81,36 @@ describe("protocol v2 boundary", () => {
         expect(
             clientPingEnvelopeSchema.safeParse({ ...heartbeat, payload: { credential: "no" } })
                 .success,
+        ).toBe(false);
+    });
+
+    it("validates every server heartbeat and Card-transition envelope", () => {
+        expect(
+            serverEnvelopeSchema.safeParse({
+                protocol: PROTOCOL_VERSION,
+                type: "server.pong",
+                requestId: "heartbeat-1",
+                revision: null,
+                payload: { serverTime: 1_788_000_000_000 },
+            }).success,
+        ).toBe(true);
+        expect(
+            serverEnvelopeSchema.safeParse({
+                protocol: PROTOCOL_VERSION,
+                type: "session.cardReplaced",
+                requestId: null,
+                revision: null,
+                payload: { reason: "SKIPPED" },
+            }).success,
+        ).toBe(true);
+        expect(
+            serverEnvelopeSchema.safeParse({
+                protocol: PROTOCOL_VERSION,
+                type: "session.cardReplaced",
+                requestId: null,
+                revision: null,
+                payload: { reason: "PREDICTED" },
+            }).success,
         ).toBe(false);
     });
 

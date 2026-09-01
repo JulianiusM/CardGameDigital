@@ -37,38 +37,43 @@ import gameSettingsRouter from "./api/gameSettings";
 import helpRouter from "./api/help";
 import catalogRouter from "./api/catalog";
 import cardPolicyRouter from "./api/cardPolicy";
+import { PROTOCOL_VERSION, serverInfoSchema } from "../packages/protocol";
 
 const router = express.Router();
 
 router.get("/v1/server-info", (_req, res) =>
-    res.json({
-        version: 1,
-        serverId: installationServerId(),
-        displayName: settings.value.serverDisplayName,
-        deploymentMode: settings.value.deploymentMode,
-        publicRuntimeSecurity: settings.value.publicRuntimeSecurity,
-        authenticationAvailable: settings.value.authMode === "account",
-        protocolVersions: [2],
-        roomCapacity: {
-            maximumParticipants: settings.value.roomMaximumParticipants,
-            maximumPlayers: settings.value.roomMaximumPlayers,
-        },
-        roomAccess: roomAccessConfiguration(settings.value),
-        capabilities: {
-            localNetworkDiscovery: localNetworkDiscoveryCapability(),
-            displayBootstrapRoomCreation: roomDisplayBootstrapCapability(),
-        },
-        localNetworkDiscovery: {
-            advertising: localDiscoveryStatus().advertising,
-            serviceType: settings.value.mdnsServiceType,
-            txtVersion: localDiscoveryStatus().txtVersion,
-        },
-        endpoints: {
-            apiBasePath: API_BASE_PATH,
-            webSocketPath: settings.value.webSocketPath,
-            roomJoinPathTemplate: settings.value.roomJoinPathTemplate,
-        },
-    }),
+    res.json(
+        serverInfoSchema.parse({
+            version: 1,
+            serverId: installationServerId(),
+            displayName: settings.value.serverDisplayName,
+            deploymentMode: settings.value.deploymentMode,
+            publicRuntimeSecurity: settings.value.publicRuntimeSecurity,
+            authenticationAvailable: settings.value.authMode === "account",
+            protocolVersions: [PROTOCOL_VERSION],
+            roomCapacity: {
+                maximumParticipants: settings.value.roomMaximumParticipants,
+                maximumPlayers: settings.value.roomMaximumPlayers,
+            },
+            roomAccess: roomAccessConfiguration(settings.value),
+            capabilities: {
+                localNetworkDiscovery: localNetworkDiscoveryCapability(),
+                displayBootstrapRoomCreation: roomDisplayBootstrapCapability(),
+                nativeDeviceAuthorization: false,
+            },
+            nativeDeviceAuthorization: null,
+            localNetworkDiscovery: {
+                advertising: localDiscoveryStatus().advertising,
+                serviceType: settings.value.mdnsServiceType,
+                txtVersion: localDiscoveryStatus().txtVersion,
+            },
+            endpoints: {
+                apiBasePath: API_BASE_PATH,
+                webSocketPath: settings.value.webSocketPath,
+                roomJoinPathTemplate: settings.value.roomJoinPathTemplate,
+            },
+        }),
+    ),
 );
 router.use("/v1/couch", couchRouter);
 router.use("/v1/rooms", roomsRouter);

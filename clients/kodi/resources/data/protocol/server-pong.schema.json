@@ -1,0 +1,20 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+        "protocol": { "type": "number", "const": 2 },
+        "type": { "type": "string", "const": "server.pong" },
+        "requestId": { "type": "string", "minLength": 1 },
+        "revision": { "type": "null" },
+        "payload": {
+            "type": "object",
+            "properties": {
+                "serverTime": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 }
+            },
+            "required": ["serverTime"],
+            "additionalProperties": false
+        }
+    },
+    "required": ["protocol", "type", "requestId", "revision", "payload"],
+    "additionalProperties": false
+}

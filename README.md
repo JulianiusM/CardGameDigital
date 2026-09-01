@@ -11,6 +11,8 @@ topology, while accounts and persistence remain optional for quick rounds.
   multiple local players.
 - **Party Screen:** the setup screen opens a read-only Room; the first connected player
   phone becomes Host and receives the controls.
+- **Native Kodi client:** a Kodi 21/Omega TV add-on supports Couch Play, complete Room
+  setup, TV-first hosting, read-only display joining, recovery, and remote-only input.
 - **LAN discovery:** local installations advertise a privacy-minimal DNS-SD service for
   compatible native discovery clients.
 - **Realtime Rooms:** one host, explicit host transfer, reconnect grace period, and
@@ -40,6 +42,7 @@ The look and feel is defined by
 - Node.js 24 and TypeScript
 - Express 5 HTTP API and `ws` WebSocket transport
 - Svelte 5 and Vite browser client
+- Python 3 and WindowXML native Kodi client
 - TypeORM with SQLite for local deployments and MariaDB/MySQL for public deployments
 - Vitest for unit, integration, simulation, and architecture tests
 - Playwright for browser workflows
@@ -190,6 +193,8 @@ npm run test:mariadb:public # clean MariaDB public/auth/persistence integration 
 npm run build
 npm run format:check
 npm run e2e              # requires Playwright browsers
+npm run kodi:check       # generated drift, static/XML/privacy checks, Python tests
+npm run kodi:package     # reproducible install ZIP, checksum, SBOM, provenance
 ```
 
 MariaDB test credentials can live in the ignored `tests/.env.test.local` and `.env.e2e`
@@ -214,14 +219,18 @@ OS/architecture; an operator does not install Node or npm. Public operation stil
 the configured database, TLS/proxy, secrets, authentication, and mail services. Manual
 release CI produces Linux, Windows, and macOS archives for x64 and arm64.
 
-Kodi and Android-family clients are separate release units with independent versions,
-tags, and artifacts. They consume the versioned protocol and are never added to the
-server-web archive. See the [release bundle contract](./docs/contracts/release-bundles.md).
+The implemented Kodi client is an independent `kodi-client` release unit with its own
+version, `kodi-client-v{version}` tag, deterministic add-on ZIP, checksum, SBOM, and
+provenance. It is never added to the server-web archive. See the
+[Kodi client guide](./docs/KODI_CLIENT.md) and
+[release bundle contract](./docs/contracts/release-bundles.md). Android-family clients
+remain separate future release units.
 
 ## Repository map
 
 ```text
 apps/web/                    Svelte browser application and browser localization
+clients/kodi/                Native Kodi add-on, generated contracts/assets, and tests
 src/packages/game-core/      Framework-independent game domain
 src/packages/application/    Use cases and repository ports
 src/packages/persistence/    TypeORM adapters
@@ -244,6 +253,7 @@ tests/                       Unit, integration, simulation, E2E, architecture te
 - [Historical immutable Card catalog v1](./docs/contracts/card-catalog-v1.md)
 - [Infrastructure integrations](./docs/contracts/infrastructure.md)
 - [Release bundles](./docs/contracts/release-bundles.md)
+- [Native Kodi client](./docs/KODI_CLIENT.md)
 
 ## Contributing
 

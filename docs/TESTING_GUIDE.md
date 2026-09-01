@@ -1,7 +1,8 @@
 # Testing guide
 
 The repository uses Vitest for unit, integration, simulation, and architecture tests,
-and Playwright for browser workflows.
+Playwright for browser workflows, and Python `unittest` plus generated fixtures for the
+native Kodi client.
 
 ## Test suites
 
@@ -12,6 +13,7 @@ tests/simulation/    Long deterministic game-mode behavior
 tests/architecture/  Enforced dependency, localization, card, and documentation rules
 tests/e2e/           Browser-visible Couch and Party Screen workflows
 tests/support/       Shared deterministic fixtures and environment setup
+clients/kodi/tests/  Pure reducer, parser, discovery, transport, storage, and UI-model tests
 ```
 
 All Vitest files end in `.spec.ts` and are included by `vitest.config.mts`.
@@ -33,7 +35,17 @@ npm run e2e
 npm run test:mariadb:reset
 npm run test:mariadb:public
 npm run test:ci
+npm run kodi:generate:check
+npm run kodi:lint
+npm run kodi:test
+npm run kodi:package
 ```
+
+`npm run kodi:check` combines generated-output drift, XML/add-on/static/privacy checks,
+translation parity, and the CPython suite. The fixtures are generated from the same
+Zod schemas used by server adapters. `npm run kodi:package` repeats those gates and
+creates a verified deterministic ZIP, checksum, CycloneDX SBOM, and provenance file.
+The release workflow packages twice and rejects a changed ZIP digest.
 
 `npm run e2e` runs the authenticated public-account browser scenarios against the
 prepared E2E database. `npm run e2e:couch` starts its own local, no-auth SQLite
@@ -103,6 +115,8 @@ operator-selected unsafe profile and must be confined to a trusted development n
 | Plain-HTTP LAN browser capability differences            | Unit fallback plus Playwright LAN-origin E2E. |
 | Layering or “must never return” rule                     | Architecture test.                            |
 | Navigation, layout, browser audio/control behavior       | Playwright E2E.                               |
+| Kodi reducer, parsing, discovery, storage, and focus     | CPython fixture/unit test.                    |
+| Kodi install, skin, remote, resolution, and idle load    | Clean-device release matrix.                  |
 
 Prefer observable outcomes over private-method assertions. Do not mock the domain rule
 being tested. Use production schemas/adapters in integration tests and deterministic
@@ -124,4 +138,7 @@ existence through reset responses.
 - Do not use live SMTP, OIDC, or production databases.
 - Do not claim an E2E pass when browser installation or external infrastructure blocked
   execution; report the limitation explicitly.
+- Do not treat CPython or XML checks as a Kodi launch pass. Install the release ZIP on
+  the declared Kodi versions/platforms and exercise Estuary plus the supported
+  skin/remote/network matrix before publishing.
 - Keep tests readable enough to serve as executable contract examples.

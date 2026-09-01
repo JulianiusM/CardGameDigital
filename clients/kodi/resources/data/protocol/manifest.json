@@ -1,0 +1,28 @@
+{
+    "schemaVersion": 1,
+    "apiVersion": 1,
+    "protocolVersion": 2,
+    "schemas": [
+        "card-replaced.schema.json",
+        "client-hello.schema.json",
+        "client-ping.schema.json",
+        "participant-left.schema.json",
+        "protocol-error.schema.json",
+        "protocol-error-code.schema.json",
+        "room-command.schema.json",
+        "room-create-request.schema.json",
+        "room-create-response.schema.json",
+        "room-presence.schema.json",
+        "room-role-changed.schema.json",
+        "room-settings.schema.json",
+        "room-snapshot.schema.json",
+        "room-snapshot-envelope.schema.json",
+        "server-envelope.schema.json",
+        "server-hello.schema.json",
+        "server-pong.schema.json",
+        "server-info.schema.json",
+        "session-card-policy.schema.json",
+        "snapshot-request.schema.json"
+    ],
+    "generatedFrom": "src/packages/protocol"
+}

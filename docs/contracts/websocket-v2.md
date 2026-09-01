@@ -170,7 +170,10 @@ Server messages are `server.hello`, `server.pong`, `room.snapshot`, `room.presen
 `HOST_DISCONNECT_EXPIRED`, `HOST_REVOKED`, or `HOST_ACTIVATION_EXPIRED`.
 `room.participantLeft` contains `{participantId,displayName,reason}` where `reason` is
 `LEFT` or `DISCONNECT_EXPIRED`; it is sent to remaining connected Room devices after
-the leave/removal commits. `session.cardReplaced` contains `{reason}` where `reason` is
+the leave/removal commits. In turn-based modes, if the leaving participant controlled
+the active player and a Card was already shown, the following snapshot clears that Card,
+selects the next active player, and returns to the mode's pre-draw state. A shown Card is
+never silently transferred to another player. `session.cardReplaced` contains `{reason}` where `reason` is
 `SKIPPED` or `VETOED`; it precedes the fresh snapshot so clients can explain and animate
 the authoritative Card transition. Neither event grants authority or replaces the
 snapshot. Error `code` is stable; localized `message` is not a programmatic contract.

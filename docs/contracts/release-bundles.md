@@ -37,8 +37,9 @@ The directory and archive basename is:
 party-game-server-web-{version}-{edition}-{node-platform}-{node-architecture}
 ```
 
-Server-web tags use `server-web-v{version}`. Future native clients must use a distinct
-namespace such as `kodi-client-v{version}` or `android-tv-client-v{version}`.
+Server-web tags use `server-web-v{version}`. The Kodi client uses
+`kodi-client-v{version}`; a future Android-family client uses its own
+`android-tv-client-v{version}` namespace.
 
 ## Standalone archive contents
 
@@ -71,9 +72,58 @@ Packaging and smoke validation reject a server/web version mismatch, a missing e
 runtime, missing native dependencies, a platform mismatch, or disagreement with the
 protocol manifest.
 
+## Kodi client artifact
+
+The implemented `kodi-client` release takes its version from
+`clients/kodi/addon.xml` and produces:
+
+```text
+script.partycard.tv-{version}.zip
+script.partycard.tv-{version}.zip.sha256
+script.partycard.tv-{version}.cdx.json
+script.partycard.tv-{version}.provenance.json
+```
+
+The ZIP contains exactly one `script.partycard.tv/` root and only runtime source,
+language files, generated protocol/design data, skin XML/media, notices, and add-on
+metadata. It excludes tests, developer tools, caches, `.pyc` files, profile data,
+saved servers, and credentials. Paths, entry order, timestamps, and Unix mode bits are
+normalized, and the release workflow packages twice and compares SHA-256 digests.
+
+The manifest exposes exactly two production runtime extensions in a fixed order. The
+first is `xbmc.python.pluginsource`, launches `game.py`, and provides `game`; the second
+is `xbmc.python.script`, launches `addon.py`, and provides `executable`. Kodi lists the
+first entry under **Add-ons → Game add-ons**. Native selection invokes `game.py`, which
+finishes the plugin directory transaction before opening the shared native runtime.
+Automation supplies an explicit private parameter through `Addons.ExecuteAddon` rather
+than relying on its parameterless folder navigation. Kodi's Home-screen **Games** item
+is the ROM/source library and is outside this launch contract.
+
+The companion checksum covers the ZIP. The CycloneDX document inventories the Kodi
+Python runtime contract and bundled QR implementation. Provenance records the ZIP
+digest, protocol version, deterministic timestamp, source boundary, and the digest of
+every packaged file. These files are published by the independent
+`kodi-client-v{version}` workflow; they are never copied into a server-web edition.
+
+Repository packaging validates structure and reproducibility. Installation and launch
+of the resulting ZIP on the supported Kodi/platform/skin/remote matrix is a separate
+release gate and cannot be inferred from CPython tests.
+Package verification requires both production entry points and their exact manifest
+order while rejecting any additional runtime extension or development fixture launcher
+below `tools/`.
+
 ## Compatibility impact
 
 This contract replaces the old generic `party-game-{version}-...` archive names,
 `v{version}` tag namespace, and `package:portable` / `package:public` commands. Release
 automation and consumers must use the server-web namespaced equivalents. HTTP and
 WebSocket wire contracts are unchanged.
+
+Adding the concrete Kodi artifact is additive to that release-unit contract. The Kodi
+version is independent and compatibility is negotiated through HTTP API v1,
+WebSocket protocol v2, and advertised server capabilities. The additive native-device
+authorization fields in server information default to disabled/null, so existing
+clients and deployments retain their prior behavior.
+
+Restoring the empirically verified dual Kodi entry changes only native add-on launch and
+packaging behavior. HTTP API v1 and WebSocket protocol v2 are unchanged.

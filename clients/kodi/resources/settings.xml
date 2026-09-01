@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<settings version="1">
+    <section id="script.partycard.tv">
+        <category id="connection" label="32102">
+            <group id="1">
+                <setting id="preferred_server_url" type="string" label="32324" help="32325">
+                    <level>0</level>
+                    <default />
+                    <constraints>
+                        <allowempty>true</allowempty>
+                    </constraints>
+                    <control type="edit" format="string">
+                        <heading>32324</heading>
+                    </control>
+                </setting>
+                <setting id="discovery_enabled" type="boolean" label="32326" help="32327">
+                    <level>0</level>
+                    <default>true</default>
+                    <control type="toggle" />
+                </setting>
+            </group>
+        </category>
+        <category id="display" label="32083">
+            <group id="1">
+                <setting id="display_name" type="string" label="32089" help="32328">
+                    <level>0</level>
+                    <default>Kodi TV</default>
+                    <constraints>
+                        <allowempty>false</allowempty>
+                    </constraints>
+                    <control type="edit" format="string">
+                        <heading>32089</heading>
+                    </control>
+                </setting>
+                <setting id="locale" type="string" label="32084" help="32329">
+                    <level>0</level>
+                    <default>auto</default>
+                    <constraints>
+                        <options>
+                            <option label="32283">auto</option>
+                            <option label="32284">en-GB</option>
+                            <option label="32285">de-DE</option>
+                        </options>
+                    </constraints>
+                    <control type="list" format="string">
+                        <heading>32084</heading>
+                    </control>
+                </setting>
+                <setting id="auto_page_seconds" type="integer" label="32305" help="32334">
+                    <level>0</level>
+                    <default>6</default>
+                    <constraints>
+                        <minimum>5</minimum>
+                        <step>1</step>
+                        <maximum>15</maximum>
+                    </constraints>
+                    <control type="spinner" format="integer" />
+                </setting>
+            </group>
+        </category>
+    </section>
+</settings>

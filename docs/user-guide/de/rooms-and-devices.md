@@ -33,6 +33,41 @@ Der Eintrag **Nur anzeigen** im Hauptmenü hat weiterhin eine andere Aufgabe: Da
 ein zusätzlicher schreibgeschützter Bildschirm per Code an einen bereits bestehenden
 Raum angeschlossen.
 
+## Party Game TV auf Kodi verwenden
+
+Installiere die Release-ZIP `script.partycard.tv` über Kodis Funktion
+**Aus ZIP-Datei installieren** und öffne danach **Add-ons → Spiele-Add-ons → Party Game
+TV**. Der Eintrag **Spiele** auf Kodis Startseite verwaltet ROM- und Spielequellen; er
+ist nicht der Startpunkt für dieses native Add-on. Der Spielserver läuft getrennt
+und muss bereits gestartet sein.
+
+Kodi sucht im lokalen Netz nach bereiten Party-Game-Servern und prüft auch gespeicherte
+Server. Wähle einen Treffer erst, nachdem Name und Adresse in den Details stimmen. Die
+Suche ist nur eine Komfortfunktion und keine Authentifizierung. Falls kein Server
+erscheint, prüfe, ob Fernseher und Server im selben Netz sind, warte auf die
+Serverbereitschaft, wähle **Erneut suchen** oder nutze **Adresse eingeben**. In Netzen
+mit gesperrtem Multicast, Gast-/Client-Isolation oder getrennten Subnetzen ist meist die
+manuelle Eingabe nötig. Öffentliche Internetserver müssen HTTPS verwenden;
+Zertifikatswarnungen dürfen nicht umgangen werden.
+
+Mit **Couch-Spiel** bleiben alle Personen und Steuerungen am Fernseher. Unter
+**Raum hosten** konfiguriert Kodi das Spiel und wird selbst zur schreibgeschützten
+Anzeige. Während Code und sicherer QR-Link erscheinen, wird das erste erfolgreich
+verbundene Smartphone Host. **Raum anzeigen** verbindet den Fernseher per Code mit einem
+bestehenden Raum. Der Fernseher wird nie Host und zeigt keine privaten Entscheidungen,
+Grenzen oder noch nicht veröffentlichten Antworten.
+
+Kodi speichert nicht geheime Einstellungen und Serveradressen sowie nur die minimalen
+Daten zur Raum-/Couch-Wiederherstellung. Nach einem Neustart kann die angebotene
+Fortsetzung verwendet werden. Beschädigte, nicht geheime Profildaten werden sicher
+ausgesondert und zurückgesetzt. Unter **Diagnose** stehen Version, Protokoll,
+Fähigkeiten, Route, Suche und Verbindung; Zugangsdaten und private Spielinhalte werden
+bewusst ausgelassen.
+
+Die Kontoverknüpfung erscheint nur, wenn der ausgewählte Server ausdrücklich eine
+native Geräteautorisierung anbietet. Der aktuelle Server aktiviert sie nicht; lokales
+und anonymes Spielen bleibt ohne Verknüpfung verfügbar.
+
 ## Mehrere Personen an einem Gerät
 
 In der Lobby kann jedes Spielergerät lokale Personen hinzufügen. Das ist auch auf einem

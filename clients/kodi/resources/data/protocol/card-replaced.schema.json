@@ -1,0 +1,18 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+        "protocol": { "type": "number", "const": 2 },
+        "type": { "type": "string", "const": "session.cardReplaced" },
+        "requestId": { "anyOf": [{ "type": "string", "minLength": 1 }, { "type": "null" }] },
+        "revision": { "type": "null" },
+        "payload": {
+            "type": "object",
+            "properties": { "reason": { "type": "string", "enum": ["SKIPPED", "VETOED"] } },
+            "required": ["reason"],
+            "additionalProperties": false
+        }
+    },
+    "required": ["protocol", "type", "requestId", "revision", "payload"],
+    "additionalProperties": false
+}

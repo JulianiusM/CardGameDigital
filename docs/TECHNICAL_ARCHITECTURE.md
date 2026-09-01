@@ -207,7 +207,9 @@ Card identity changes only when the logical gameplay object changes.
 
 ## Kodi
 
-- Python native Kodi add-on
+- Python 3 native Kodi 21/Omega script add-on
+- one `WindowXMLDialog` shell with reducer/effect/event-queue state ownership
+- generated JSON Schemas, fixtures, enums, Golden Mischief token data, and raster media
 
 ## Android-family TV
 
@@ -1638,16 +1640,36 @@ The compiled client is served by and released only with its matching server vers
 
 # 74. Kodi Client
 
-Kodi is a thin client.
+Kodi is an independently released thin client. `clients/kodi` implements one
+`WindowXMLDialog` root shell, immutable application state, a pure reducer, bounded
+effect workers, and a GUI-thread event queue. Network, DNS, schema parsing, QR generation, and
+profile writes never run on the Kodi GUI thread, and late async results are rejected by
+operation/server identity.
 
 It:
 
-- renders localized Cards received from server;
-- handles remote focus;
-- sends commands;
-- displays QR/Room information.
+- renders localized Cards and viewer-safe state received from the server;
+- supports Couch Play for every server-supported mode and full pending-game setup;
+- creates display-bootstrap Rooms and always joins hosted Rooms as `DISPLAY`;
+- handles deterministic remote focus, Back/Context behavior, accessibility preferences,
+  bounded lists, and display-mode screensaver inhibition;
+- performs privacy-minimal DNS-SD discovery, manual server selection, readiness/capability
+  validation, stable-ID deduplication, and local/global transport enforcement;
+- sends revisioned HTTP/WebSocket commands, resynchronizes after ambiguity, and persists
+  minimal recovery state before Room connection;
+- displays credential-free QR/Room information and safe diagnostics;
+- supports capability-gated native device authorization without inventing endpoints,
+  scopes, or account authority.
 
-It contains no independent Card catalog or game rules.
+Shared TypeScript protocol schemas and design tokens generate the Kodi JSON Schemas,
+fixtures, manifests, skin includes, and raster media. The add-on contains no independent
+Card catalog or game rules. Participant/account secrets use a separate exact-origin
+store and are never included in discovery, QR codes, fixtures, or diagnostics.
+
+The deterministic `script.partycard.tv-{version}.zip` is an independent `kodi-client`
+artifact with checksum, SBOM, provenance, workflow, and tag namespace. Repository tests
+cover the pure Python/client boundary; clean Kodi version/platform/skin/remote/network
+installation remains a release QA gate.
 
 ---
 

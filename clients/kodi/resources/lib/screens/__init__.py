@@ -1,0 +1,1 @@
+"""Kodi WindowXMLDialog adapters."""

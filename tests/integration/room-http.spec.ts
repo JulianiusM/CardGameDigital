@@ -15,6 +15,7 @@ import { DARE_TYPE_IDS, QUESTION_CATEGORY_IDS } from "../../src/packages/game-co
 
 let app: import("express").Express;
 let directory: string;
+const HTTP_SUITE_SETUP_TIMEOUT_MS = 120_000;
 beforeAll(async () => {
     directory = fs.mkdtempSync(path.join(os.tmpdir(), "room-http-"));
     Object.assign(process.env, {
@@ -30,7 +31,7 @@ beforeAll(async () => {
     await settings.read("/dev/null");
     await initDataSource();
     app = (await import("../../src/app")).default;
-});
+}, HTTP_SUITE_SETUP_TIMEOUT_MS);
 afterAll(async () => {
     if (AppDataSource.isInitialized) await AppDataSource.destroy();
     fs.rmSync(directory, { recursive: true, force: true });
@@ -70,6 +71,21 @@ describe("Room HTTP API", () => {
         expect(page.body.cards).toHaveLength(2);
         expect(page.body.total).toBe(4);
         expect(page.body.nextCursor).toBeTypeOf("string");
+        const firstPageIds = page.body.cards.map(({ id }: { id: string }) => id);
+        const nextPage = await request(app)
+            .get(
+                `/api/v1/card-policy/cards?locale=en-GB&limit=2&cursor=${encodeURIComponent(page.body.nextCursor)}`,
+            )
+            .expect(200);
+        expect(nextPage.body.cards).toHaveLength(2);
+        expect(nextPage.body.total).toBe(page.body.total);
+        expect(nextPage.body.cards.map(({ id }: { id: string }) => id)).not.toEqual(firstPageIds);
+
+        const previousPage = await request(app)
+            .get("/api/v1/card-policy/cards?locale=en-GB&limit=2")
+            .expect(200);
+        expect(previousPage.body.total).toBe(page.body.total);
+        expect(previousPage.body.cards.map(({ id }: { id: string }) => id)).toEqual(firstPageIds);
         const personalCard = page.body.cards.find(
             ({ producer }: { producer: { socialSensitivity: string } }) =>
                 producer.socialSensitivity === "PERSONAL",
@@ -112,6 +128,33 @@ describe("Room HTTP API", () => {
                 intensity: "Session Exact Card",
             },
         });
+        expect(sessionPage.body.total).toBe(page.body.total);
+        expect(sessionPage.body.nextCursor).toBeTypeOf("string");
+        const sessionNextPage = await request(app)
+            .post("/api/v1/card-policy/session/cards")
+            .send({
+                sessionPolicy: {
+                    scopeDefault: { availability: "INCLUDE" },
+                    conditionalRules: [],
+                    exactCards: [
+                        {
+                            cardId: personalCard.id,
+                            directives: { intensity: { mode: "SET", value: 5 } },
+                        },
+                    ],
+                },
+                search: {
+                    locale: "en-GB",
+                    limit: 2,
+                    cursor: sessionPage.body.nextCursor,
+                },
+            })
+            .expect(200);
+        expect(sessionNextPage.body.cards).toHaveLength(2);
+        expect(sessionNextPage.body.total).toBe(sessionPage.body.total);
+        expect(sessionNextPage.body.cards.map(({ id }: { id: string }) => id)).not.toEqual(
+            sessionPage.body.cards.map(({ id }: { id: string }) => id),
+        );
 
         const portable = await request(app).get("/api/v1/card-policy/export").expect(200);
         expect(portable.headers["content-disposition"]).toContain("card-policy.json");
@@ -323,7 +366,9 @@ describe("Room HTTP API", () => {
             capabilities: {
                 localNetworkDiscovery: true,
                 displayBootstrapRoomCreation: true,
+                nativeDeviceAuthorization: false,
             },
+            nativeDeviceAuthorization: null,
             localNetworkDiscovery: {
                 advertising: false,
                 serviceType: "_partycard._tcp",

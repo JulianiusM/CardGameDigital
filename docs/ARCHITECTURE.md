@@ -7,7 +7,7 @@ roles, or persistence commits.
 ## Runtime shape
 
 ```text
-Svelte clients
+Svelte browser / Kodi native client
   ├─ HTTP /api/v1 ───────────────┐
   └─ WebSocket /ws (protocol 2) ─┤
                                   ▼
@@ -27,15 +27,17 @@ Game core                    Persistence adapters
 
 ## Source boundaries
 
-| Directory                   | Responsibility                                                                | Must not contain                      |
-| --------------------------- | ----------------------------------------------------------------------------- | ------------------------------------- |
-| `src/packages/game-core`    | Pure cards, eligibility, history, profiles, selection, session state machine. | Express, TypeORM, WebSocket, Svelte.  |
-| `src/packages/application`  | Use cases, authorization decisions, application ports.                        | HTTP parsing, database query details. |
-| `src/packages/persistence`  | TypeORM implementations and domain mapping.                                   | Browser behavior, transport policy.   |
-| `src/packages/protocol`     | Strict versioned WebSocket schemas.                                           | Service execution or persistence.     |
-| `src/packages/localization` | Stable keys, server catalogs, fallback.                                       | Domain identity or transport logic.   |
-| `src/modules`, `src/routes` | Infrastructure and HTTP/WebSocket adapters.                                   | Duplicate game rules.                 |
-| `apps/web`                  | Svelte screens, transport clients, adaptive presentation.                     | Authoritative game state.             |
+| Directory                    | Responsibility                                                                   | Must not contain                      |
+| ---------------------------- | -------------------------------------------------------------------------------- | ------------------------------------- |
+| `src/packages/game-core`     | Pure cards, eligibility, history, profiles, selection, session state machine.    | Express, TypeORM, WebSocket, Svelte.  |
+| `src/packages/application`   | Use cases, authorization decisions, application ports.                           | HTTP parsing, database query details. |
+| `src/packages/persistence`   | TypeORM implementations and domain mapping.                                      | Browser behavior, transport policy.   |
+| `src/packages/protocol`      | Strict versioned WebSocket schemas.                                              | Service execution or persistence.     |
+| `src/packages/localization`  | Stable keys, server catalogs, fallback.                                          | Domain identity or transport logic.   |
+| `src/modules`, `src/routes`  | Infrastructure and HTTP/WebSocket adapters.                                      | Duplicate game rules.                 |
+| `apps/web`                   | Svelte screens, transport clients, adaptive presentation.                        | Authoritative game state.             |
+| `clients/kodi`               | Native TV presentation, discovery, transport, recovery, and profile storage.     | Card catalog or authoritative rules.  |
+| `src/packages/design-tokens` | Shared Golden Mischief values used to generate browser/Kodi presentation assets. | Client runtime behavior.              |
 
 Architecture tests in `tests/architecture` enforce important dependency and content
 boundaries.
@@ -50,6 +52,13 @@ clients receive a new viewer-specific snapshot only after commit.
 A Room has one host. Explicit transfer updates persisted roles. Unexpected host loss
 uses a reconnect grace timer and promotes an eligible player device, never a display.
 Multiple Rooms remain isolated by Room ID, credential, command queue, and broadcasts.
+
+The Kodi client follows the same authority boundary. Its pure reducer projects
+validated HTTP/WebSocket state into one `WindowXMLDialog` shell, while bounded workers
+handle networking, discovery, QR generation, and persistence outside Kodi's GUI thread. It
+always joins Rooms as `DISPLAY`; `server.hello` and subsequent viewer snapshots replace
+any locally assumed role or revision. Generated JSON Schemas, fixtures, enums, and
+design assets keep its Python boundary aligned with the TypeScript source contracts.
 
 ## Card content model
 
@@ -92,3 +101,5 @@ available actions come from authenticated server state, not client claims.
 External semantics are versioned and documented under [`docs/contracts`](contracts/):
 HTTP API v1, WebSocket protocol v2, bundled catalog, and infrastructure integrations.
 The TAD and implementation ADRs explain the decisions behind these contracts.
+The native client architecture and independent package boundary are documented in
+[`KODI_CLIENT.md`](KODI_CLIENT.md).

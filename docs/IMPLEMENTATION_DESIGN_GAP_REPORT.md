@@ -58,13 +58,17 @@ tests, assets, and release automation were inspected together.
 - Public adult-content policy/legal review and final profile-to-catalog review remain
   product release gates.
 
-Kodi and Android-family native clients remain future architecture targets but are
-explicitly outside this release scope. The responsive web client implements the initial
-Couch, Personal, and Party Screen device modes.
+The native Kodi client is implemented with Couch, display-bootstrap Room hosting,
+existing-Room display joining, discovery/manual endpoints, recovery, localization,
+generated protocol/design assets, privacy validation, and an independent reproducible
+release artifact. Clean Kodi platform/skin/remote/network verification remains an
+external release gate, and native account linking is capability-gated but disabled by
+the current server. Android-family native clients remain a future architecture target.
 
 ## Deliberately later or optional design items
 
 Named reusable custom GameProfile CRUD, custom Card authoring, statistics, content and
-language administration, mDNS discovery, and additional Card-language releases are not
-part of the current core web release. Their reserved domain/repository boundaries must
-remain compatible when those later features are scheduled.
+language administration, and additional Card-language releases are not part of the
+current core release. Their reserved domain/repository boundaries must remain compatible
+when those later features are scheduled. Privacy-minimal mDNS advertising and bounded
+native-client discovery are implemented.

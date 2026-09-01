@@ -1,0 +1,27 @@
+{
+    "version": 1,
+    "serverId": "00000000-0000-4000-8000-000000000099",
+    "displayName": "Party Game",
+    "deploymentMode": "local",
+    "publicRuntimeSecurity": "enforced",
+    "authenticationAvailable": false,
+    "protocolVersions": [2],
+    "roomCapacity": { "maximumParticipants": 100, "maximumPlayers": 100 },
+    "roomAccess": { "configuredBaseUrl": null, "availableBaseUrls": ["http://192.168.1.20:3000"] },
+    "capabilities": {
+        "localNetworkDiscovery": true,
+        "displayBootstrapRoomCreation": true,
+        "nativeDeviceAuthorization": false
+    },
+    "nativeDeviceAuthorization": null,
+    "localNetworkDiscovery": {
+        "advertising": true,
+        "serviceType": "_partycard._tcp.local.",
+        "txtVersion": 1
+    },
+    "endpoints": {
+        "apiBasePath": "/api/v1",
+        "webSocketPath": "/ws",
+        "roomJoinPathTemplate": "/play/?room={roomCode}"
+    }
+}

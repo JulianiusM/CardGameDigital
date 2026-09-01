@@ -1,0 +1,55 @@
+0.3.4
+- Rebuild Never Have I Ever voting with explicit voter state, D-pad ballot controls, cancel, Skip, and stable named-result paging.
+- Keep the full Card and current voter visible while casting a vote and separate voter paging from Card text paging.
+- Restore compact passive Room rosters with eight lobby players, five in-game players, and overflow-only name marquees.
+- Restore separate End game and destructive Exit to Kodi actions and return confirmed exits to Kodi Home.
+- Fix Help re-entry, diagnostics typography, compact numeric hints, and stable exact-Card-search totals.
+- Cut cold-start time by removing per-import Kodi bridge calls.
+- Add separate Games and Programs entry points so Kodi does not send the Python UI to RetroPlayer.
+- Keep two-column D-pad movement inside the Card grid before pagination.
+- Center command bars and make Never Have I Ever voter controls readable and selectable.
+- Keep private Yes/No mouse controls outside Kodi lists and reserve Page Up/Down for neutral ballot shortcuts.
+- Replace the sparse player-options fact sheet with a dedicated player context Card.
+- Prefer the IPv4 loopback front door during same-machine discovery.
+- Auto-scroll overflowing Help copy and repair the in-game current-player header.
+
+0.3.3
+- Preserve servers found during startup and retry local/mDNS discovery without manual refresh.
+- Fix Help document paging, topic-list re-entry, and topic scroll indication.
+- Make D-pad order follow header, Cards, pagination, then commands across setup and voting.
+- Rebuild player details, compact settings, Room lobby facts, player Cards, room code, and paged join URLs.
+- Add private Never Have I Ever voting shortcuts and named-result counts/page status.
+- Notify displays about player departures, skips, and vetoes and show individual voting progress.
+- Preserve players for New Game while returning to an unselected mode step with a complete Back history.
+- Redraw for the next player when the active player leaves instead of transferring the shown Card.
+
+0.3.1
+- Replace one-way setting cycles with explicit choices and native numeric input.
+- Redesign Card-language fallback management for an unbounded server locale catalog.
+- Advance single-choice setup steps directly and make adult confirmation explicit.
+- Add persistent player validation, rule explanations, and confirmed rule deletion.
+- Fix D-pad pagination, page-state leakage, button geometry, text overflow, and footer clipping.
+- Replace unsupported font glyphs with generated selection and intensity artwork.
+- Match the web client's next-Card reveal staging and hide stale Card metadata.
+
+0.3.0
+- Align setup, Help, preferences, lobby, and gameplay with the approved web flow.
+- Separate persistent selection from remote focus and keep commands outside Card collections.
+- Replace Edit/Remove rows with player and Group-member Card submenus.
+- Add built-in pre-server Help and hide unsupported local device linking.
+- Render the complete web Card information on VID-owned family and intensity scenes.
+- Keep public rosters in fixed auto-paged regions and preserve stage geometry.
+- Restore the active stage correctly when leaving display settings.
+
+0.1.1
+- Fix startup with Kodi builds that embed Python 3.8.
+- Add native Kodi connection, language, automatic paging, and display settings.
+- Exit on root Back and bound worker shutdown below Kodi's script deadline.
+- Show a localized loading shell during cold imports and abort imports when Kodi exits.
+- Fix Kodi PO record boundaries so every screen and settings label is loaded.
+
+0.1.0
+- Initial Kodi 21/Omega script add-on.
+- Couch Play for every server-supported mode.
+- Room configuration, display-bootstrap creation, and display-only joining.
+- DNS-SD discovery, manual endpoints, reconnect recovery, and diagnostics.

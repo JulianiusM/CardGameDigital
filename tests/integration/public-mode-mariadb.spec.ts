@@ -25,6 +25,7 @@ const profile = loadMariaTestProfile(
     "TEST",
 );
 const PUBLIC_ORIGIN = "https://cards.public.test";
+const MARIADB_SUITE_SETUP_TIMEOUT_MS = 600_000;
 const username = "maria.user";
 const firstPassword = "first-public-password";
 const secondPassword = "second-public-password";
@@ -112,7 +113,7 @@ suite("public mode on MariaDB", () => {
         );
         vi.spyOn(mailer, "sendDeletionEmail").mockResolvedValue(undefined);
         app = (await import("../../src/app")).default;
-    }, 120_000);
+    }, MARIADB_SUITE_SETUP_TIMEOUT_MS);
 
     afterAll(async () => {
         vi.restoreAllMocks();
