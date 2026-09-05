@@ -132,7 +132,7 @@ Common settings:
 | `IMPRINT_URL` / `PRIVACY_POLICY_URL`                                      | empty                     | Public HTTP(S) legal links shown in the SPA menu and settings.                    |
 
 All settings and validation rules are defined in
-[`src/modules/settings.ts`](./src/modules/settings.ts).
+[`apps/server/src/modules/settings.ts`](./apps/server/src/modules/settings.ts).
 
 When `PUBLIC_URL` is omitted in local mode, each browser puts its own current origin in
 the Room QR code. Setting it explicitly overrides that payload. Public mode always
@@ -193,6 +193,7 @@ npm run test:mariadb:public # clean MariaDB public/auth/persistence integration 
 npm run build
 npm run format:check
 npm run e2e              # requires Playwright browsers
+npm run e2e:visual       # strict multi-viewport visual and geometry audit
 npm run kodi:check       # generated drift, static/XML/privacy checks, Python tests
 npm run kodi:package     # reproducible install ZIP, checksum, SBOM, provenance
 ```
@@ -229,18 +230,20 @@ remain separate future release units.
 ## Repository map
 
 ```text
-apps/web/                    Svelte browser application and browser localization
-clients/kodi/                Native Kodi add-on, generated contracts/assets, and tests
-src/packages/game-core/      Framework-independent game domain
-src/packages/application/    Use cases and repository ports
-src/packages/persistence/    TypeORM adapters
-src/packages/protocol/       Versioned realtime wire schemas
-src/packages/localization/   Server message keys and locale catalogs
-src/modules/                 Express, database, email, OIDC, WebSocket adapters
-src/routes/api/              HTTP API adapters
-docs/contracts/              External interface contracts
-docs/user-guide/             In-app player help by locale
-tests/                       Unit, integration, simulation, E2E, architecture tests
+apps/server/                    Express/WebSocket application and migrations
+apps/web/                       Svelte browser application and browser localization
+apps/kodi/                      Native Kodi add-on, generated artifacts, and tests
+packages/game-core/             Framework-independent game domain
+packages/application/           Use cases and repository ports
+packages/persistence/           TypeORM entities, adapters, and domain mapping
+packages/card-catalog-contract/  Card catalog schemas and semantic validation
+packages/protocol/              Versioned wire schemas, DTOs, and client decoders
+packages/localization/          Server catalogs, shared client terms, and Kodi source manifest
+packages/design-tokens/         Shared Golden Mischief and Card presentation decisions
+tooling/                        Database, design, Kodi, release, and test generators
+docs/contracts/                 External interface contracts
+docs/user-guide/                In-app player help by locale
+tests/                          Unit, integration, simulation, E2E, architecture tests
 ```
 
 ## Interface documentation

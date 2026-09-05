@@ -8,7 +8,7 @@ import {
     safeErrorName,
     structuredLogEntry,
     structuredRequestLogger,
-} from "../../src/modules/structuredLogger";
+} from "../../apps/server/src/modules/structuredLogger";
 
 describe("structured logging", () => {
     it("honors the configured severity threshold", () => {

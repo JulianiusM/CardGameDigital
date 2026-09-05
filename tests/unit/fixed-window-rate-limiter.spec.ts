@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { FixedWindowRateLimiter } from "../../src/modules/fixedWindowRateLimiter";
+import { FixedWindowRateLimiter } from "../../apps/server/src/modules/fixedWindowRateLimiter";
 
 describe("FixedWindowRateLimiter", () => {
     it("shares a limit by stable key and resets only after the window", () => {

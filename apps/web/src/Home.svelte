@@ -15,13 +15,15 @@
         saveGameSettings,
         saveJoin,
         updateGroup,
-        type GameProfileSummary,
-        type GroupSummary,
-        type RoomGameSettings,
-        type CardLocaleSummary,
-        type CardLanguageSettings,
-        type GameSettings,
     } from "./multiplayer";
+    import type {
+        CardLanguageSettings,
+        CardLocaleSummary,
+        GameProfileSummary,
+        GameSettings,
+        GroupSummary,
+        RoomGameSettings,
+    } from "../../../packages/protocol";
     import { authentication, refreshAuthentication } from "./authentication";
     import { presentation } from "./presentation";
     import { dismissNotification, showNotification } from "./notifications";
@@ -341,7 +343,7 @@
               )
             : state;
         const defaultGroup = groups.find(({ id }) => id === savedGameSettings?.defaultGroupId);
-        const selectedGroup = {
+        const selectedGroup: GameSetupState = {
             ...fromProfile,
             groupChoice: defaultGroup ? "SELECT" : "NONE",
             groupId: defaultGroup?.id ?? null,

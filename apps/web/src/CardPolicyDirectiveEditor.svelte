@@ -1,7 +1,14 @@
 <script lang="ts">
     import { messages } from "./i18n";
     import { revealTransition } from "./motion";
-    import type { CardPolicyDirectives, ScalarDirective } from "./multiplayer";
+    import {
+        AVAILABILITY_DIRECTIVES,
+        BOOLEAN_DIRECTIVES,
+        INTENSITY_LEVELS,
+        SCALAR_DIRECTIVE_MODES,
+        SOCIAL_SENSITIVITY_ORDER,
+    } from "../../../packages/game-core";
+    import type { CardPolicyDirectives, ScalarDirective } from "../../../packages/protocol";
     import PolicyScaleControl from "./PolicyScaleControl.svelte";
     import PolicySegmentedControl from "./PolicySegmentedControl.svelte";
     import UiIcon from "./UiIcon.svelte";
@@ -12,34 +19,27 @@
     export let editorKey = "policy";
     export let showSocialSensitivity = true;
 
-    const sensitivityIds = [
-        "GENERAL",
-        "PERSONAL",
-        "CLOSE_PERSONAL",
-        "DEEP_PERSONAL",
-        "INTIMATE",
-        "EXPLICIT",
-    ];
+    const sensitivityIds = SOCIAL_SENSITIVITY_ORDER;
     let activeEditorKey = "";
     let savedSetValues: Partial<Record<keyof CardPolicyDirectives, unknown>> = {};
 
-    $: availabilityOptions = ["INHERIT", "INCLUDE", "EXCLUDE"].map((value) => ({
+    $: availabilityOptions = AVAILABILITY_DIRECTIVES.map((value) => ({
         value,
         label: messages.cardManagement.availabilityDirectives[value],
     }));
-    $: booleanOptions = ["INHERIT", "ENABLE", "DISABLE"].map((value) => ({
+    $: booleanOptions = BOOLEAN_DIRECTIVES.map((value) => ({
         value,
         label: messages.cardManagement.booleanDirectives[value],
     }));
-    $: groupHistoryOptions = ["INHERIT", "ENABLE", "DISABLE"].map((value) => ({
+    $: groupHistoryOptions = BOOLEAN_DIRECTIVES.map((value) => ({
         value,
         label: messages.cardManagement.groupHistoryDirectives[value],
     }));
-    $: scalarOptions = ["INHERIT", "CATALOG", "SET"].map((value) => ({
+    $: scalarOptions = SCALAR_DIRECTIVE_MODES.map((value) => ({
         value,
         label: messages.cardManagement.scalarModes[value],
     }));
-    $: intensityOptions = [1, 2, 3, 4, 5].map((value) => ({
+    $: intensityOptions = INTENSITY_LEVELS.map((value) => ({
         value: String(value),
         label: String(value),
     }));
@@ -106,6 +106,12 @@
     function setScalar<T>(property: keyof CardPolicyDirectives, value: T): void {
         savedSetValues = { ...savedSetValues, [property]: value };
         replace({ ...directives, [property]: { mode: "SET", value } });
+    }
+
+    function updatePlayerCount(value: Partial<{ minimum: number; maximum: number | null }>): void {
+        const playerCount = directives.playerCount;
+        if (playerCount?.mode !== "SET") return;
+        setScalar("playerCount", { ...playerCount.value, ...value });
     }
 </script>
 
@@ -347,8 +353,7 @@
                                 value={directives.playerCount.value.minimum}
                                 {disabled}
                                 on:input={(event) =>
-                                    setScalar("playerCount", {
-                                        ...directives.playerCount!.value,
+                                    updatePlayerCount({
                                         minimum: Number(event.currentTarget.value),
                                     })}
                             />
@@ -363,8 +368,7 @@
                                 value={directives.playerCount.value.maximum ?? ""}
                                 {disabled}
                                 on:input={(event) =>
-                                    setScalar("playerCount", {
-                                        ...directives.playerCount!.value,
+                                    updatePlayerCount({
                                         maximum: event.currentTarget.value
                                             ? Number(event.currentTarget.value)
                                             : null,

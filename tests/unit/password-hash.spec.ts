@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { hashPassword, verifyPasswordHash } from "../../src/modules/passwordHash";
+import { hashPassword, verifyPasswordHash } from "../../apps/server/src/modules/passwordHash";
 
 describe("Argon2id password hashing", () => {
     it("creates an Argon2id hash and verifies only the correct password", async () => {

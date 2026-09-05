@@ -1,0 +1,44 @@
+/* AUTO-GENERATED from packages/design-tokens. Do not edit. */
+@property --atmosphere-a {
+    syntax: "<color>";
+    inherits: true;
+    initial-value: #ffd166;
+}
+@property --atmosphere-b {
+    syntax: "<color>";
+    inherits: true;
+    initial-value: #ffa85c;
+}
+@property --atmosphere-highlight {
+    syntax: "<color>";
+    inherits: true;
+    initial-value: #fff1c7;
+}
+:root {
+    --color-warm-paper: #fff8e8;
+    --color-soft-cream: #fff1c7;
+    --color-espresso: #3b2416;
+    --color-muted-cocoa: #76533d;
+    --color-sunflower: #ffd166;
+    --color-golden-orange: #ffb238;
+    --color-tangerine: #ff8a1f;
+    --color-apricot: #ffa85c;
+    --color-coral: #ff6f61;
+    --color-raspberry: #e84769;
+    --color-berry: #9d315b;
+    --color-result-honey: #d5a03b;
+    --color-result-clay: #a96b5a;
+    --rgb-warm-paper: 255 248 232;
+    --rgb-soft-cream: 255 241 199;
+    --rgb-espresso: 59 36 22;
+    --rgb-muted-cocoa: 118 83 61;
+    --rgb-sunflower: 255 209 102;
+    --rgb-golden-orange: 255 178 56;
+    --rgb-tangerine: 255 138 31;
+    --rgb-apricot: 255 168 92;
+    --rgb-coral: 255 111 97;
+    --rgb-raspberry: 232 71 105;
+    --rgb-berry: 157 49 91;
+    --rgb-result-honey: 213 160 59;
+    --rgb-result-clay: 169 107 90;
+}

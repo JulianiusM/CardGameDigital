@@ -18,10 +18,10 @@ unless a current contract explicitly requires them.
 
 ## Architectural boundaries
 
-- `src/packages/game-core` is framework-independent domain code.
-- `src/packages/application` owns use cases and ports, not Express or TypeORM details.
-- `src/packages/persistence` implements ports and owns persistence mapping.
-- `src/modules` and `src/routes` are infrastructure/transport adapters.
+- `packages/game-core` is framework-independent domain code.
+- `packages/application` owns use cases and ports, not Express or TypeORM details.
+- `packages/persistence` implements ports and owns persistence mapping.
+- `apps/server/src/modules` and `apps/server/src/routes` are infrastructure/transport adapters.
 - `apps/web` consumes contracts; it must not become authoritative for game state.
 - A logical Card has a stable UUID and no player-facing text. Text belongs to localized
   renderings. Never derive a card UUID from text and never hard-delete historical cards.
@@ -40,7 +40,7 @@ unless a current contract explicitly requires them.
 - Never put `try`/`catch` around imports.
 - Do not log credentials, tokens, passwords, boundary values, or session secrets.
 - Preserve optimistic revisions and transactional commits for authoritative Rooms.
-- Add migrations/entities together and regenerate `src/modules/database/__index__.ts`
+- Add migrations/entities together and regenerate `apps/server/src/modules/database/__index__.ts`
   with `npm run generate`.
 
 ## UI and UX rules

@@ -1,7 +1,7 @@
 import type { NetworkInterfaceInfo } from "node:os";
 import { describe, expect, it } from "vitest";
 import { roomJoinUrls } from "../../apps/web/src/roomAccessUrls";
-import { roomAccessConfiguration } from "../../src/modules/roomAccessUrls";
+import { roomAccessConfiguration } from "../../apps/server/src/modules/roomAccessUrls";
 
 function networkAddress(
     address: string,

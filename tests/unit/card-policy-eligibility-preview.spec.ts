@@ -2,15 +2,15 @@ import { describe, expect, it } from "vitest";
 import type {
     CardPolicyOwner,
     CardPolicyRepository,
-} from "../../src/packages/application/cardPolicyRepository";
-import { CardPolicyService } from "../../src/packages/application/cardPolicyService";
+} from "../../packages/application/cardPolicyRepository";
+import { CardPolicyService } from "../../packages/application/cardPolicyService";
 import {
     CARD_TYPES,
     DARE_TYPES,
     GAME_MODES,
     SOCIAL_SENSITIVITIES,
     type CardPolicyDirectives,
-} from "../../src/packages/game-core";
+} from "../../packages/game-core";
 import { card, profile } from "../support/game";
 
 const repository = {

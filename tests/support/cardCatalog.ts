@@ -2,7 +2,7 @@ import {
     CARD_CATALOG_CONTRACT,
     type CardCatalog,
     validateCardCatalogArtifact,
-} from "../../src/packages/card-catalog-contract";
+} from "../../packages/card-catalog-contract";
 
 export function cardCatalog(overrides: Partial<CardCatalog> = {}): CardCatalog {
     return {

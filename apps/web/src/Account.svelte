@@ -1,12 +1,12 @@
 <script lang="ts">
     import { onMount } from "svelte";
     import { messages } from "./i18n";
-    import {
-        accountApi,
-        type AccountSessionSummary,
-        type AccountSnapshot,
-        type AccountStatus,
-    } from "./accountApi";
+    import { accountApi } from "./accountApi";
+    import type {
+        AccountSessionSummary,
+        AccountSnapshot,
+        AccountStatus,
+    } from "../../../packages/protocol";
     import {
         clearAuthenticatedAccount,
         refreshAuthentication,

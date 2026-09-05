@@ -125,6 +125,9 @@ named mode additionally exposes ordered `{playerId,displayName,vote}` entries.
 An active Session projection includes `startedAt`, expressed as Unix epoch milliseconds.
 It is the authoritative start instant persisted with the Session; clients derive elapsed
 play time from it instead of starting a local timer when they first observe the Session.
+Its `availableActions` projection includes `START_SESSION` for the Host alongside the
+currently applicable turn, vote, skip, veto, advance, and end capabilities; this is
+display guidance only and never replaces server authorization.
 
 ## Synchronization and lifecycle
 

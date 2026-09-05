@@ -5,7 +5,7 @@ import {
     repairUnavailableGameProfile,
     type GameSetupState,
 } from "../../apps/web/src/setup";
-import type { GameProfileSummary } from "../../apps/web/src/multiplayer";
+import type { GameProfileSummary } from "../../packages/protocol";
 
 describe("game setup profile selection", () => {
     it("repairs a removed profile in stale browser setup state", () => {

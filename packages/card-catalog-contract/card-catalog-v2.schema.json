@@ -1,0 +1,489 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "urn:game:card-catalog:v2",
+    "title": "Game Card Catalog v2",
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+        "contract",
+        "catalogId",
+        "catalogVersion",
+        "sequence",
+        "generatedAt",
+        "snapshotKind",
+        "cardDefaults",
+        "defaultLocale",
+        "locales",
+        "taxonomy",
+        "cards"
+    ],
+    "properties": {
+        "contract": {
+            "const": "game-card-catalog/v2"
+        },
+        "catalogId": {
+            "const": "core"
+        },
+        "catalogVersion": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+        },
+        "sequence": {
+            "type": "integer",
+            "minimum": 1
+        },
+        "generatedAt": {
+            "type": "string",
+            "format": "date-time"
+        },
+        "snapshotKind": {
+            "const": "FULL"
+        },
+        "defaultLocale": {
+            "$ref": "#/$defs/localeId"
+        },
+        "locales": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+                "$ref": "#/$defs/locale"
+            }
+        },
+        "taxonomy": {
+            "$ref": "#/$defs/taxonomy"
+        },
+        "cards": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+                "$ref": "#/$defs/card"
+            }
+        },
+        "cardDefaults": {
+            "$ref": "#/$defs/cardDefaults"
+        }
+    },
+    "$defs": {
+        "uuid": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        },
+        "localeId": {
+            "type": "string",
+            "minLength": 2,
+            "maxLength": 35,
+            "pattern": "^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$"
+        },
+        "questionCategoryId": {
+            "type": "string",
+            "enum": [
+                "CAT_EVERYDAY",
+                "CAT_CHILDHOOD",
+                "CAT_PERSONALITY",
+                "CAT_SCENARIO",
+                "CAT_INTOXICATION",
+                "CAT_FRIENDSHIP",
+                "CAT_RELATIONSHIP",
+                "CAT_BODY",
+                "CAT_SEXUALITY",
+                "CAT_SEX_OPENNESS",
+                "CAT_SEX_TENSION",
+                "CAT_SEX_EXPERIENCE"
+            ]
+        },
+        "dareTypeId": {
+            "type": "string",
+            "enum": [
+                "DARE_SILLY",
+                "DARE_THIRD_PARTY",
+                "DARE_KISS",
+                "DARE_KISS_SPICY",
+                "DARE_TOUCH",
+                "DARE_TOUCH_SPICY",
+                "DARE_TOUCH_SEXY",
+                "DARE_CLOTHING",
+                "DARE_NUDITY",
+                "DARE_SEXUAL_TENSION",
+                "DARE_BORDERLINE_SEX",
+                "DARE_SEX",
+                "DARE_OTHER"
+            ]
+        },
+        "operationalFlag": {
+            "type": "string",
+            "enum": [
+                "REQUIRES_TARGET_PLAYER",
+                "INVOLVES_THIRD_PARTY",
+                "REQUIRES_PHYSICAL_CONTACT",
+                "REMOVES_CLOTHING",
+                "REQUIRES_NUDITY",
+                "INVOLVES_ALCOHOL",
+                "INVOLVES_RECREATIONAL_SUBSTANCES"
+            ]
+        },
+        "locale": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "nativeName", "active"],
+            "properties": {
+                "id": {
+                    "$ref": "#/$defs/localeId"
+                },
+                "nativeName": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 80,
+                    "pattern": "^\\S(?:[\\s\\S]*\\S)?$"
+                },
+                "active": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "contentLocalization": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["locale", "text"],
+            "properties": {
+                "locale": {
+                    "$ref": "#/$defs/localeId"
+                },
+                "text": {
+                    "type": "string",
+                    "minLength": 1,
+                    "pattern": "^\\S(?:[\\s\\S]*\\S)?$"
+                }
+            }
+        },
+        "taxonomyLocalization": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["locale", "label", "description"],
+            "properties": {
+                "locale": {
+                    "$ref": "#/$defs/localeId"
+                },
+                "label": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 80,
+                    "pattern": "^\\S(?:[\\s\\S]*\\S)?$"
+                },
+                "description": {
+                    "oneOf": [
+                        {
+                            "type": "string",
+                            "minLength": 1,
+                            "pattern": "^\\S(?:[\\s\\S]*\\S)?$"
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ]
+                }
+            }
+        },
+        "questionCategory": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "defaultSocialSensitivity", "localizations"],
+            "properties": {
+                "id": {
+                    "$ref": "#/$defs/questionCategoryId"
+                },
+                "defaultSocialSensitivity": {
+                    "$ref": "#/$defs/socialSensitivity"
+                },
+                "defaultMinimumPlayerCount": {
+                    "$ref": "#/$defs/minimumPlayerCount"
+                },
+                "defaultMaximumPlayerCount": {
+                    "$ref": "#/$defs/maximumPlayerCount"
+                },
+                "localizations": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                        "$ref": "#/$defs/taxonomyLocalization"
+                    }
+                }
+            }
+        },
+        "dareType": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "defaultSocialSensitivity", "localizations"],
+            "properties": {
+                "id": {
+                    "$ref": "#/$defs/dareTypeId"
+                },
+                "defaultSocialSensitivity": {
+                    "$ref": "#/$defs/socialSensitivity"
+                },
+                "defaultMinimumPlayerCount": {
+                    "$ref": "#/$defs/minimumPlayerCount"
+                },
+                "defaultMaximumPlayerCount": {
+                    "$ref": "#/$defs/maximumPlayerCount"
+                },
+                "localizations": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                        "$ref": "#/$defs/taxonomyLocalization"
+                    }
+                }
+            }
+        },
+        "taxonomy": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["questionCategories", "dareTypes"],
+            "properties": {
+                "questionCategories": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/$defs/questionCategory"
+                    }
+                },
+                "dareTypes": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/$defs/dareType"
+                    }
+                }
+            }
+        },
+        "card": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "id",
+                "lifecycle",
+                "cardType",
+                "questionCategoryId",
+                "dareTypeId",
+                "dareAffinityCategoryId",
+                "yesNoAnswerPossible",
+                "intensity",
+                "alwaysEligible",
+                "repeatableInSession",
+                "repeatCooldown",
+                "weight",
+                "operationalFlags",
+                "localizations"
+            ],
+            "properties": {
+                "id": {
+                    "$ref": "#/$defs/uuid"
+                },
+                "lifecycle": {
+                    "enum": ["ACTIVE", "RETIRED"]
+                },
+                "cardType": {
+                    "enum": ["QUESTION", "DARE", "CONVERSATION_META"]
+                },
+                "questionCategoryId": {
+                    "oneOf": [
+                        {
+                            "$ref": "#/$defs/questionCategoryId"
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ]
+                },
+                "dareTypeId": {
+                    "oneOf": [
+                        {
+                            "$ref": "#/$defs/dareTypeId"
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ]
+                },
+                "dareAffinityCategoryId": {
+                    "oneOf": [
+                        {
+                            "$ref": "#/$defs/questionCategoryId"
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ]
+                },
+                "yesNoAnswerPossible": {
+                    "type": "boolean"
+                },
+                "intensity": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 5
+                },
+                "alwaysEligible": {
+                    "type": "boolean"
+                },
+                "repeatableInSession": {
+                    "type": "boolean"
+                },
+                "repeatCooldown": {
+                    "type": "integer",
+                    "minimum": 0
+                },
+                "weight": {
+                    "type": "number",
+                    "exclusiveMinimum": 0
+                },
+                "socialSensitivity": {
+                    "$ref": "#/$defs/socialSensitivity"
+                },
+                "minimumPlayerCount": {
+                    "$ref": "#/$defs/minimumPlayerCount"
+                },
+                "maximumPlayerCount": {
+                    "$ref": "#/$defs/maximumPlayerCount"
+                },
+                "operationalFlags": {
+                    "type": "array",
+                    "uniqueItems": true,
+                    "items": {
+                        "$ref": "#/$defs/operationalFlag"
+                    }
+                },
+                "localizations": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/$defs/contentLocalization"
+                    }
+                }
+            },
+            "allOf": [
+                {
+                    "if": {
+                        "properties": {
+                            "cardType": {
+                                "const": "QUESTION"
+                            }
+                        },
+                        "required": ["cardType"]
+                    },
+                    "then": {
+                        "properties": {
+                            "questionCategoryId": {
+                                "$ref": "#/$defs/questionCategoryId"
+                            },
+                            "dareTypeId": {
+                                "type": "null"
+                            },
+                            "dareAffinityCategoryId": {
+                                "type": "null"
+                            }
+                        }
+                    }
+                },
+                {
+                    "if": {
+                        "properties": {
+                            "cardType": {
+                                "const": "DARE"
+                            }
+                        },
+                        "required": ["cardType"]
+                    },
+                    "then": {
+                        "properties": {
+                            "questionCategoryId": {
+                                "type": "null"
+                            },
+                            "dareTypeId": {
+                                "$ref": "#/$defs/dareTypeId"
+                            }
+                        }
+                    }
+                },
+                {
+                    "if": {
+                        "properties": {
+                            "cardType": {
+                                "const": "CONVERSATION_META"
+                            }
+                        },
+                        "required": ["cardType"]
+                    },
+                    "then": {
+                        "properties": {
+                            "dareTypeId": {
+                                "type": "null"
+                            },
+                            "dareAffinityCategoryId": {
+                                "type": "null"
+                            }
+                        }
+                    }
+                },
+                {
+                    "if": {
+                        "properties": {
+                            "repeatableInSession": {
+                                "const": false
+                            }
+                        },
+                        "required": ["repeatableInSession"]
+                    },
+                    "then": {
+                        "properties": {
+                            "repeatCooldown": {
+                                "const": 0
+                            }
+                        }
+                    }
+                }
+            ]
+        },
+        "socialSensitivity": {
+            "type": "string",
+            "enum": [
+                "GENERAL",
+                "PERSONAL",
+                "CLOSE_PERSONAL",
+                "DEEP_PERSONAL",
+                "INTIMATE",
+                "EXPLICIT"
+            ]
+        },
+        "minimumPlayerCount": {
+            "type": "integer",
+            "minimum": 2
+        },
+        "maximumPlayerCount": {
+            "oneOf": [
+                {
+                    "type": "integer",
+                    "minimum": 2
+                },
+                {
+                    "type": "null"
+                }
+            ]
+        },
+        "cardDefaults": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["socialSensitivity", "minimumPlayerCount", "maximumPlayerCount"],
+            "properties": {
+                "socialSensitivity": {
+                    "const": "GENERAL"
+                },
+                "minimumPlayerCount": {
+                    "const": 2
+                },
+                "maximumPlayerCount": {
+                    "type": "null"
+                }
+            }
+        }
+    }
+}

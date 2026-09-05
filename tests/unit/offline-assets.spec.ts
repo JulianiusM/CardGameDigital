@@ -1,6 +1,12 @@
 import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { GOLDEN_MISCHIEF_COLORS } from "../../packages/design-tokens";
+import {
+    injectWebThemeColor,
+    WEB_THEME_COLOR,
+    WEB_THEME_COLOR_MARKER,
+} from "../../apps/web/src/theme";
 
 describe("offline gameplay assets", () => {
     it("bundles audio locally and has no remote browser runtime dependency", () => {
@@ -105,7 +111,11 @@ describe("offline gameplay assets", () => {
         expect(presentationStyles).not.toContain("var(--color-result-honey)");
 
         const index = fs.readFileSync("apps/web/index.html", "utf8");
-        expect(index).toContain('name="theme-color" content="#ffd166"');
+        expect(index).toContain(`name="theme-color" content="${WEB_THEME_COLOR_MARKER}"`);
+        expect(WEB_THEME_COLOR).toBe(GOLDEN_MISCHIEF_COLORS.sunflower.toLowerCase());
+        expect(injectWebThemeColor(index)).toContain(
+            `name="theme-color" content="${GOLDEN_MISCHIEF_COLORS.sunflower.toLowerCase()}"`,
+        );
         expect(index).not.toContain("#17132d");
     });
 });

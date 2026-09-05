@@ -1,17 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { CouchSessionService } from "../../src/packages/application/couchSessionService";
+import { CouchSessionService } from "../../packages/application/couchSessionService";
 import type {
     CardRepository,
     CouchSessionRepository,
-} from "../../src/packages/application/repositories";
+} from "../../packages/application/repositories";
 import {
     CARD_TYPES,
     GAME_MODES,
     SequenceRandomSource,
     type GameSessionRuntimeState,
-} from "../../src/packages/game-core";
+} from "../../packages/game-core";
 import { card } from "../support/game";
-import { effectiveSettingsFromProfile } from "../../src/packages/application/roomGameSettings";
+import { effectiveSettingsFromProfile } from "../../packages/application/roomGameSettings";
 
 const cards = [
     card({ id: "q" as never, intensity: 3, repeatableInSession: true }),

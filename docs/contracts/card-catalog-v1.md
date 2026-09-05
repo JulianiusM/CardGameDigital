@@ -3,7 +3,7 @@
 The only external Card-content boundary is the immutable FULL snapshot at
 `catalog/card-catalog.json`. Its wire identifier is `game-card-catalog/v1`; the
 producer-facing JSON Schema is
-`src/packages/card-catalog-contract/card-catalog-v1.schema.json` and the runtime
+`packages/card-catalog-contract/card-catalog-v1.schema.json` and the runtime
 schema and semantic validator live beside it.
 
 The producer owns stable Card UUIDs, lifecycle, gameplay metadata, the Card-content

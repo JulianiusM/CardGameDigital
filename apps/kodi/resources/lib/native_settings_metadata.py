@@ -1,0 +1,67 @@
+"""Generated Kodi native locale and settings metadata. Do not edit."""
+
+PREFERRED_SERVER_URL = "preferred_server_url"
+DISCOVERY_ENABLED = "discovery_enabled"
+DISPLAY_NAME = "display_name"
+LOCALE = "locale"
+AUTO_PAGE_SECONDS = "auto_page_seconds"
+
+SETTING_IDS = (
+    PREFERRED_SERVER_URL,
+    DISCOVERY_ENABLED,
+    DISPLAY_NAME,
+    LOCALE,
+    AUTO_PAGE_SECONDS,
+)
+SETTING_TYPES = {
+    PREFERRED_SERVER_URL: "string",
+    DISCOVERY_ENABLED: "boolean",
+    DISPLAY_NAME: "string",
+    LOCALE: "string",
+    AUTO_PAGE_SECONDS: "integer",
+}
+SETTING_LABEL_IDS = {
+    PREFERRED_SERVER_URL: 32324,
+    DISCOVERY_ENABLED: 32326,
+    DISPLAY_NAME: 32089,
+    LOCALE: 32084,
+    AUTO_PAGE_SECONDS: 32305,
+}
+SETTING_HELP_IDS = {
+    PREFERRED_SERVER_URL: 32325,
+    DISCOVERY_ENABLED: 32327,
+    DISPLAY_NAME: 32328,
+    LOCALE: 32329,
+    AUTO_PAGE_SECONDS: 32334,
+}
+SETTING_DEFAULTS = {
+    PREFERRED_SERVER_URL: "",
+    DISCOVERY_ENABLED: True,
+    DISPLAY_NAME: "Kodi TV",
+    LOCALE: "auto",
+    AUTO_PAGE_SECONDS: 6,
+}
+SETTING_MAXIMUM_LENGTHS = {
+    PREFERRED_SERVER_URL: 2048,
+    DISPLAY_NAME: 40,
+}
+SETTING_INTEGER_RANGES = {
+    AUTO_PAGE_SECONDS: (5, 1, 15),
+}
+
+SOURCE_LOCALE = "en-GB"
+AUTOMATIC_LOCALE = "auto"
+LOCALE_VALUES = (
+    AUTOMATIC_LOCALE,
+    "en-GB",
+    "de-DE",
+)
+LOCALE_DIRECTORIES = {
+    "en-GB": "resource.language.en_gb",
+    "de-DE": "resource.language.de_de",
+}
+LOCALE_LABEL_IDS = {
+    AUTOMATIC_LOCALE: 32283,
+    "en-GB": 32284,
+    "de-DE": 32285,
+}

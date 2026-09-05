@@ -13,7 +13,7 @@ tests/simulation/    Long deterministic game-mode behavior
 tests/architecture/  Enforced dependency, localization, card, and documentation rules
 tests/e2e/           Browser-visible Couch and Party Screen workflows
 tests/support/       Shared deterministic fixtures and environment setup
-clients/kodi/tests/  Pure reducer, parser, discovery, transport, storage, and UI-model tests
+apps/kodi/tests/  Pure reducer, parser, discovery, transport, storage, and UI-model tests
 ```
 
 All Vitest files end in `.spec.ts` and are included by `vitest.config.mts`.
@@ -31,6 +31,7 @@ npx vitest run tests/integration/room-http.spec.ts tests/integration/sqlite-migr
 npx vitest run tests/unit/room-host-selection.spec.ts tests/unit/room-create-idempotency.spec.ts tests/unit/room-observability.spec.ts tests/unit/local-discovery.spec.ts
 npx vitest run tests/integration/websocket-rooms.spec.ts tests/integration/room-http.spec.ts tests/integration/sqlite-migrations.spec.ts
 npm run e2e:couch
+npm run e2e:visual
 npm run e2e
 npm run test:mariadb:reset
 npm run test:mariadb:public
@@ -52,6 +53,14 @@ prepared E2E database. `npm run e2e:couch` starts its own local, no-auth SQLite
 deployment and runs the Couch and Party Screen scenarios, including LAN and IPv6
 origin coverage. CI runs both commands and publishes a separate report for each
 deployment profile.
+
+`npm run e2e:visual` starts the same isolated local deployment with one browser worker
+and captures the core setup, Couch, Personal, Party Screen, Help, and Card-management
+paths at desktop, television, narrow-phone, and short-landscape sizes. Its geometry
+audit rejects horizontal escape, clipped text, unintended overlap, and interactive
+targets below 44 CSS pixels. Hostile fixtures exercise contract-length names, Cards,
+URLs, notifications, and bounded collections; paged content is checked at its first,
+middle, and final pages.
 
 The Card-policy scale simulation compiles 10,000 and 50,000 Cards against 200 ordered
 rules, then measures O(1) compiled snapshot lookup. The Room HTTP/SQLite suites cover

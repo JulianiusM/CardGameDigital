@@ -242,7 +242,7 @@ validated at startup, and open separately so active setup or gameplay remains in
   and a `party-game-release/v1` manifest that gives server and web the same version.
 - Kodi and Android-family applications are separate native-client release units. They
   are never added to a server-web archive and have independent versions and tags.
-- `scripts/smokeRelease.ts` validates required layout only; it does not prove external
+- `tooling/release/smoke.ts` validates required layout only; it does not prove external
   database, SMTP, OIDC, DNS, certificates, or firewall correctness.
 
 Artifact names, supported platforms, manifest fields, tag namespaces, and compatibility

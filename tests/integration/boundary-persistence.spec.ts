@@ -3,12 +3,12 @@ import os from "node:os";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { AppDataSource, initDataSource } from "../../src/modules/database/dataSource";
-import settings from "../../src/modules/settings";
-import { TypeOrmRealtimeRoomRepository } from "../../src/packages/persistence";
-import { DARE_TYPES, OPERATIONAL_FLAGS, QUESTION_CATEGORIES } from "../../src/packages/game-core";
-import { defaultRoomGameSettings } from "../../src/packages/application/roomGameSettings";
-import { DEFAULT_ROOM_CAPACITY } from "../../src/packages/application/roomService";
+import { AppDataSource, initDataSource } from "../../apps/server/src/modules/database/dataSource";
+import settings from "../../apps/server/src/modules/settings";
+import { TypeOrmRealtimeRoomRepository } from "../../packages/persistence";
+import { DARE_TYPES, OPERATIONAL_FLAGS, QUESTION_CATEGORIES } from "../../packages/game-core";
+import { defaultRoomGameSettings } from "../../packages/application/roomGameSettings";
+import { DEFAULT_ROOM_CAPACITY } from "../../packages/application/roomService";
 
 let directory: string;
 let repository: TypeOrmRealtimeRoomRepository;

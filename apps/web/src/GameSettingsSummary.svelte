@@ -1,15 +1,16 @@
 <script lang="ts">
     import { gameModes, messages } from "./i18n";
+    import { GAME_MODES } from "../../../packages/game-core";
     import { operationalFlagIds } from "./gameSettingsOptions";
     import { cardTaxonomies, requestCardTaxonomy } from "./cardTaxonomy";
     import type {
         CardLocaleSummary,
         GameProfileSummary,
         PublicGameSettings,
+        RoomEligibilityAccess,
         RoomGameSettings,
-    } from "./multiplayer";
+    } from "../../../packages/protocol";
     import EligibleCardPreview from "./EligibleCardPreview.svelte";
-    import type { RoomEligibilityAccess } from "./cardPolicyApi";
 
     export let settings: PublicGameSettings | RoomGameSettings;
     export let profiles: readonly GameProfileSummary[] = [];
@@ -18,33 +19,29 @@
     export let showEligibility = false;
     export let roomAccess: RoomEligibilityAccess | undefined = undefined;
 
+    const operationalFlagLabels: Record<string, string> = messages.boundaries.flags;
     $: mode = gameModes.find(([id]) => id === settings.mode);
     $: profile = profiles.find(({ id }) => id === settings.profileId);
     $: cardLocale = cardLocales.find(({ id }) => id === settings.cardLocale);
     $: eligibilitySettings = "groupId" in settings ? settings : null;
-    $: includesDares = ["CLASSIC_TRUTH_OR_DARE", "RANDOM_TRUTH_OR_DARE"].includes(settings.mode);
+    $: includesDares = settings.mode === GAME_MODES.CLASSIC || settings.mode === GAME_MODES.RANDOM;
     $: requestCardTaxonomy(settings.cardLocale);
     $: taxonomy = $cardTaxonomies[settings.cardLocale];
     $: questionCategories = taxonomy?.questionCategories ?? [];
     $: dareTypes = taxonomy?.dareTypes ?? [];
-    $: enabledQuestions = questionCategories.filter(({ id }) =>
-        settings.configuration.enabledQuestionCategoryIds.includes(id),
+    $: enabledQuestionCategoryIds = new Set<string>(
+        settings.configuration.enabledQuestionCategoryIds,
     );
+    $: enabledDareTypeIds = new Set<string>(settings.configuration.enabledDareTypeIds);
+    $: blockedOperationalFlags = new Set<string>(settings.configuration.blockedOperationalFlags);
+    $: enabledQuestions = questionCategories.filter(({ id }) => enabledQuestionCategoryIds.has(id));
     $: disabledQuestions = questionCategories.filter(
-        ({ id }) => !settings.configuration.enabledQuestionCategoryIds.includes(id),
+        ({ id }) => !enabledQuestionCategoryIds.has(id),
     );
-    $: enabledDares = dareTypes.filter(({ id }) =>
-        settings.configuration.enabledDareTypeIds.includes(id),
-    );
-    $: disabledDares = dareTypes.filter(
-        ({ id }) => !settings.configuration.enabledDareTypeIds.includes(id),
-    );
-    $: enabledRules = operationalFlagIds.filter(
-        (id) => !settings.configuration.blockedOperationalFlags.includes(id),
-    );
-    $: disabledRules = operationalFlagIds.filter((id) =>
-        settings.configuration.blockedOperationalFlags.includes(id),
-    );
+    $: enabledDares = dareTypes.filter(({ id }) => enabledDareTypeIds.has(id));
+    $: disabledDares = dareTypes.filter(({ id }) => !enabledDareTypeIds.has(id));
+    $: enabledRules = operationalFlagIds.filter((id) => !blockedOperationalFlags.has(id));
+    $: disabledRules = operationalFlagIds.filter((id) => blockedOperationalFlags.has(id));
 </script>
 
 <div class="game-settings-summary-full">
@@ -154,11 +151,11 @@
         <h3>{messages.setup.operationsHeading}</h3>
         <p>
             <strong>{messages.room.enabled}</strong>
-            {enabledRules.map((id) => messages.boundaries.flags[id]).join(", ") || "–"}
+            {enabledRules.map((id) => operationalFlagLabels[id]).join(", ") || "–"}
         </p>
         <p>
             <strong>{messages.room.disabled}</strong>
-            {disabledRules.map((id) => messages.boundaries.flags[id]).join(", ") || "–"}
+            {disabledRules.map((id) => operationalFlagLabels[id]).join(", ") || "–"}
         </p>
     </section>
 </div>

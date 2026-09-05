@@ -1,14 +1,14 @@
 import { performance } from "node:perf_hooks";
 import { describe, expect, it } from "vitest";
-import type { CardPolicyRepository } from "../../src/packages/application/cardPolicyRepository";
-import { CardPolicyService } from "../../src/packages/application/cardPolicyService";
-import type { CardPolicyRule, PlayableCard } from "../../src/packages/game-core";
+import type { CardPolicyRepository } from "../../packages/application/cardPolicyRepository";
+import { CardPolicyService } from "../../packages/application/cardPolicyService";
+import type { CardPolicyRule, PlayableCard } from "../../packages/game-core";
 import { card, profile } from "../support/game";
 import {
     encodeCompiledCardPolicySnapshot,
     encodeGroupHistorySnapshot,
     SESSION_PAYLOAD_CHUNK_BYTES,
-} from "../../src/packages/persistence/sessionImmutablePayloadStore";
+} from "../../packages/persistence/sessionImmutablePayloadStore";
 
 const repository = {
     catalogProvenance: async () => ({

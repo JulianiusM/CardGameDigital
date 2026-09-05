@@ -1,9 +1,6 @@
-export type LanguagePreferences = {
-    useSystemLanguage: boolean;
-    interfaceLocale: string | null;
-    cardLocale: string | null;
-    fallbackLocales: string[];
-};
+import type { AccountBootstrapStatus, LanguagePreferences } from "../../../packages/protocol";
+
+export type { LanguagePreferences };
 
 const STORAGE_KEY = "party-game.language-preferences.v1";
 const LEGACY_INTERFACE_LOCALE_KEY = "party-game.locale";
@@ -91,10 +88,7 @@ export async function bootstrapAccountLanguagePreferences(): Promise<void> {
             signal: controller.signal,
         });
         if (!response.ok) return;
-        const body = (await response.json()) as {
-            authenticated?: boolean;
-            account?: { languagePreferences?: LanguagePreferences | null } | null;
-        };
+        const body = (await response.json()) as AccountBootstrapStatus;
         const preferences = body.authenticated ? body.account?.languagePreferences : null;
         if (preferences && validStoredPreferences(preferences))
             saveLanguagePreferences(preferences);

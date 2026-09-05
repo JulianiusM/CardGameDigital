@@ -1,0 +1,3342 @@
+{
+    "schemaVersion": 1,
+    "sourceLocale": "en-GB",
+    "locales": [
+        {
+            "tag": "en-GB",
+            "directory": "resource.language.en_gb",
+            "poLanguage": "en_GB",
+            "englishName": "English",
+            "nativeLabelConstant": "LANGUAGE_ENGLISH"
+        },
+        {
+            "tag": "de-DE",
+            "directory": "resource.language.de_de",
+            "poLanguage": "de_DE",
+            "englishName": "German",
+            "nativeLabelConstant": "LANGUAGE_GERMAN"
+        }
+    ],
+    "nativeSettings": {
+        "sectionId": "script.partycard.tv",
+        "automaticLocale": {
+            "value": "auto",
+            "labelConstant": "LANGUAGE_AUTO"
+        },
+        "categories": [
+            {
+                "id": "connection",
+                "labelConstant": "CONNECTION",
+                "settings": [
+                    {
+                        "constant": "PREFERRED_SERVER_URL",
+                        "id": "preferred_server_url",
+                        "type": "string",
+                        "labelConstant": "PREFERRED_SERVER_URL",
+                        "helpConstant": "PREFERRED_SERVER_URL_HELP",
+                        "default": "",
+                        "allowEmpty": true,
+                        "maximumLength": 2048,
+                        "control": {
+                            "type": "edit",
+                            "format": "string",
+                            "headingConstant": "PREFERRED_SERVER_URL"
+                        }
+                    },
+                    {
+                        "constant": "DISCOVERY_ENABLED",
+                        "id": "discovery_enabled",
+                        "type": "boolean",
+                        "labelConstant": "AUTOMATIC_DISCOVERY",
+                        "helpConstant": "AUTOMATIC_DISCOVERY_HELP",
+                        "default": true,
+                        "control": {
+                            "type": "toggle"
+                        }
+                    }
+                ]
+            },
+            {
+                "id": "display",
+                "labelConstant": "PREFERENCES",
+                "settings": [
+                    {
+                        "constant": "DISPLAY_NAME",
+                        "id": "display_name",
+                        "type": "string",
+                        "labelConstant": "DISPLAY_NAME",
+                        "helpConstant": "DISPLAY_NAME_HELP",
+                        "default": "Kodi TV",
+                        "allowEmpty": false,
+                        "maximumLength": 40,
+                        "control": {
+                            "type": "edit",
+                            "format": "string",
+                            "headingConstant": "DISPLAY_NAME"
+                        }
+                    },
+                    {
+                        "constant": "LOCALE",
+                        "id": "locale",
+                        "type": "string",
+                        "labelConstant": "UI_LANGUAGE",
+                        "helpConstant": "UI_LANGUAGE_HELP",
+                        "default": "auto",
+                        "localeOptions": true,
+                        "control": {
+                            "type": "list",
+                            "format": "string",
+                            "headingConstant": "UI_LANGUAGE"
+                        }
+                    },
+                    {
+                        "constant": "AUTO_PAGE_SECONDS",
+                        "id": "auto_page_seconds",
+                        "type": "integer",
+                        "labelConstant": "AUTO_PAGE_SECONDS",
+                        "helpConstant": "AUTO_PAGE_HELP",
+                        "default": 6,
+                        "minimum": 5,
+                        "step": 1,
+                        "maximum": 15,
+                        "control": {
+                            "type": "spinner",
+                            "format": "integer"
+                        }
+                    }
+                ]
+            }
+        ]
+    },
+    "messages": [
+        {
+            "constant": "APP_NAME",
+            "id": 32000,
+            "source": "Party Game TV",
+            "translations": {
+                "de-DE": "Party Game TV"
+            }
+        },
+        {
+            "constant": "LOADING",
+            "id": 32001,
+            "source": "Loading…",
+            "translations": {
+                "de-DE": "Wird geladen…"
+            }
+        },
+        {
+            "constant": "CONNECTING",
+            "id": 32002,
+            "source": "Connecting…",
+            "translations": {
+                "de-DE": "Verbindung wird hergestellt…"
+            }
+        },
+        {
+            "constant": "CHOOSE_SERVER",
+            "id": 32003,
+            "source": "Choose a server",
+            "translations": {
+                "de-DE": "Server auswählen"
+            }
+        },
+        {
+            "constant": "NO_SERVERS",
+            "id": 32004,
+            "source": "No server found yet. Refresh or enter an address.",
+            "translations": {
+                "de-DE": "Noch kein Server gefunden. Aktualisiere oder gib eine Adresse ein."
+            }
+        },
+        {
+            "constant": "MANUAL_SERVER",
+            "id": 32005,
+            "source": "Enter server address",
+            "translations": {
+                "de-DE": "Serveradresse eingeben"
+            }
+        },
+        {
+            "constant": "REFRESH",
+            "id": 32006,
+            "source": "Refresh discovery",
+            "translations": {
+                "de-DE": "Suche aktualisieren"
+            }
+        },
+        {
+            "constant": "HOME",
+            "id": 32007,
+            "source": "Home",
+            "translations": {
+                "de-DE": "Start"
+            }
+        },
+        {
+            "constant": "COUCH_PLAY",
+            "id": 32008,
+            "source": "Couch Play",
+            "translations": {
+                "de-DE": "Couch-Spiel"
+            }
+        },
+        {
+            "constant": "HOST_ROOM",
+            "id": 32009,
+            "source": "Host a Room",
+            "translations": {
+                "de-DE": "Raum erstellen"
+            }
+        },
+        {
+            "constant": "DISPLAY_ROOM",
+            "id": 32010,
+            "source": "Display a Room",
+            "translations": {
+                "de-DE": "Raum anzeigen"
+            }
+        },
+        {
+            "constant": "SERVERS",
+            "id": 32012,
+            "source": "Servers",
+            "translations": {
+                "de-DE": "Server"
+            }
+        },
+        {
+            "constant": "PREFERENCES_HELP",
+            "id": 32013,
+            "source": "Preferences & Help",
+            "translations": {
+                "de-DE": "Einstellungen & Hilfe"
+            }
+        },
+        {
+            "constant": "CURRENT_SERVER",
+            "id": 32014,
+            "source": "Current server",
+            "translations": {
+                "de-DE": "Aktueller Server"
+            }
+        },
+        {
+            "constant": "LOCAL",
+            "id": 32015,
+            "source": "LOCAL",
+            "translations": {
+                "de-DE": "LOKAL"
+            }
+        },
+        {
+            "constant": "GLOBAL",
+            "id": 32016,
+            "source": "GLOBAL",
+            "translations": {
+                "de-DE": "GLOBAL"
+            }
+        },
+        {
+            "constant": "SERVER_DETAILS",
+            "id": 32017,
+            "source": "Server details",
+            "translations": {
+                "de-DE": "Serverdetails"
+            }
+        },
+        {
+            "constant": "USE_SERVER",
+            "id": 32018,
+            "source": "Use this server",
+            "translations": {
+                "de-DE": "Diesen Server verwenden"
+            }
+        },
+        {
+            "constant": "FORGET_SERVER",
+            "id": 32019,
+            "source": "Forget server",
+            "translations": {
+                "de-DE": "Server vergessen"
+            }
+        },
+        {
+            "constant": "SERVER_ADDRESS",
+            "id": 32020,
+            "source": "Server address",
+            "translations": {
+                "de-DE": "Serveradresse"
+            }
+        },
+        {
+            "constant": "GROUP",
+            "id": 32021,
+            "source": "Choose a Group",
+            "translations": {
+                "de-DE": "Gruppe auswählen"
+            }
+        },
+        {
+            "constant": "NO_GROUP",
+            "id": 32022,
+            "source": "No Group",
+            "translations": {
+                "de-DE": "Keine Gruppe"
+            }
+        },
+        {
+            "constant": "CONTINUE",
+            "id": 32023,
+            "source": "Continue",
+            "translations": {
+                "de-DE": "Weiter"
+            }
+        },
+        {
+            "constant": "MODE",
+            "id": 32024,
+            "source": "Choose a mode",
+            "translations": {
+                "de-DE": "Modus auswählen"
+            }
+        },
+        {
+            "constant": "MODE_CLASSIC",
+            "id": 32025,
+            "source": "Classic Truth or Dare",
+            "translations": {
+                "de-DE": "Klassisches Wahrheit oder Pflicht"
+            }
+        },
+        {
+            "constant": "MODE_RANDOM",
+            "id": 32026,
+            "source": "Random Truth or Dare",
+            "translations": {
+                "de-DE": "Zufälliges Wahrheit oder Pflicht"
+            }
+        },
+        {
+            "constant": "MODE_NEVER",
+            "id": 32027,
+            "sharedKey": "MODE_NEVER"
+        },
+        {
+            "constant": "MODE_TALK",
+            "id": 32028,
+            "source": "Let's Talk",
+            "translations": {
+                "de-DE": "Lass uns reden"
+            }
+        },
+        {
+            "constant": "PROFILE",
+            "id": 32029,
+            "source": "Choose a profile",
+            "translations": {
+                "de-DE": "Profil auswählen"
+            }
+        },
+        {
+            "constant": "PLAYERS",
+            "id": 32030,
+            "source": "Players",
+            "translations": {
+                "de-DE": "Spielende"
+            }
+        },
+        {
+            "constant": "ADD_PLAYER",
+            "id": 32031,
+            "source": "Add player",
+            "translations": {
+                "de-DE": "Person hinzufügen"
+            }
+        },
+        {
+            "constant": "REMOVE_PLAYER",
+            "id": 32032,
+            "source": "Remove player",
+            "translations": {
+                "de-DE": "Person entfernen"
+            }
+        },
+        {
+            "constant": "CUSTOMIZE",
+            "id": 32034,
+            "source": "Customize game",
+            "translations": {
+                "de-DE": "Spiel anpassen"
+            }
+        },
+        {
+            "constant": "START_GAME",
+            "id": 32036,
+            "sharedKey": "START_GAME"
+        },
+        {
+            "constant": "CREATE_ROOM",
+            "id": 32037,
+            "source": "Create Room",
+            "translations": {
+                "de-DE": "Raum erstellen"
+            }
+        },
+        {
+            "constant": "CATEGORIES",
+            "id": 32038,
+            "source": "Question categories",
+            "translations": {
+                "de-DE": "Fragekategorien"
+            }
+        },
+        {
+            "constant": "DARE_TYPES",
+            "id": 32039,
+            "source": "Dare types",
+            "translations": {
+                "de-DE": "Pflichtarten"
+            }
+        },
+        {
+            "constant": "CONTENT_FLAGS",
+            "id": 32040,
+            "source": "Content safeguards",
+            "translations": {
+                "de-DE": "Inhaltsschutz"
+            }
+        },
+        {
+            "constant": "SENSITIVITY",
+            "id": 32041,
+            "sharedKey": "SENSITIVITY"
+        },
+        {
+            "constant": "INTENSITY",
+            "id": 32042,
+            "source": "Intensity & pacing",
+            "translations": {
+                "de-DE": "Intensität & Verlauf"
+            }
+        },
+        {
+            "constant": "PACING",
+            "id": 32043,
+            "source": "Pacing",
+            "translations": {
+                "de-DE": "Verlauf"
+            }
+        },
+        {
+            "constant": "MODE_OPTIONS",
+            "id": 32044,
+            "source": "Mode options",
+            "translations": {
+                "de-DE": "Modusoptionen"
+            }
+        },
+        {
+            "constant": "CARD_LANGUAGE",
+            "id": 32045,
+            "sharedKey": "CARD_LANGUAGE"
+        },
+        {
+            "constant": "FALLBACK_LANGUAGES",
+            "id": 32046,
+            "source": "Fallback languages",
+            "translations": {
+                "de-DE": "Ersatzsprachen"
+            }
+        },
+        {
+            "constant": "CARD_POLICY",
+            "id": 32047,
+            "source": "Session Card policy",
+            "translations": {
+                "de-DE": "Kartenauswahl dieser Runde"
+            }
+        },
+        {
+            "constant": "DEFAULT_POLICY",
+            "id": 32048,
+            "source": "Default policy",
+            "translations": {
+                "de-DE": "Standardregel"
+            }
+        },
+        {
+            "constant": "CONDITIONAL_RULES",
+            "id": 32049,
+            "source": "Conditional rules",
+            "translations": {
+                "de-DE": "Bedingte Regeln"
+            }
+        },
+        {
+            "constant": "EXACT_CARDS",
+            "id": 32050,
+            "source": "Exact Cards",
+            "translations": {
+                "de-DE": "Einzelne Karten"
+            }
+        },
+        {
+            "constant": "ELIGIBLE_CARDS",
+            "id": 32051,
+            "source": "%s eligible Cards",
+            "translations": {
+                "de-DE": "%s geeignete Karten"
+            }
+        },
+        {
+            "constant": "LOADING_PREVIEW",
+            "id": 32052,
+            "source": "Checking eligible Cards…",
+            "translations": {
+                "de-DE": "Geeignete Karten werden geprüft…"
+            }
+        },
+        {
+            "constant": "ADULT_CONFIRMATION",
+            "id": 32053,
+            "source": "I confirm everyone is an adult",
+            "translations": {
+                "de-DE": "Ich bestätige, dass alle volljährig sind"
+            }
+        },
+        {
+            "constant": "SETUP_INCOMPLETE",
+            "id": 32054,
+            "source": "Finish the required setup before starting.",
+            "translations": {
+                "de-DE": "Schließe vor dem Start alle nötigen Einstellungen ab."
+            }
+        },
+        {
+            "constant": "GAME",
+            "id": 32055,
+            "sharedKey": "GAME"
+        },
+        {
+            "constant": "NEXT_TURN",
+            "id": 32056,
+            "source": "Next turn",
+            "translations": {
+                "de-DE": "Nächster Zug"
+            }
+        },
+        {
+            "constant": "TRUTH",
+            "id": 32057,
+            "sharedKey": "TRUTH"
+        },
+        {
+            "constant": "DARE",
+            "id": 32058,
+            "sharedKey": "DARE"
+        },
+        {
+            "constant": "SKIP",
+            "id": 32059,
+            "source": "Skip Card",
+            "translations": {
+                "de-DE": "Karte überspringen"
+            }
+        },
+        {
+            "constant": "ADVANCE",
+            "id": 32060,
+            "source": "Continue",
+            "translations": {
+                "de-DE": "Weiter"
+            }
+        },
+        {
+            "constant": "YES",
+            "id": 32061,
+            "source": "Yes",
+            "translations": {
+                "de-DE": "Ja"
+            }
+        },
+        {
+            "constant": "NO",
+            "id": 32062,
+            "source": "No",
+            "translations": {
+                "de-DE": "Nein"
+            }
+        },
+        {
+            "constant": "END_GAME",
+            "id": 32063,
+            "sharedKey": "END_GAME"
+        },
+        {
+            "constant": "SUMMARY",
+            "id": 32064,
+            "source": "Game summary",
+            "translations": {
+                "de-DE": "Spielzusammenfassung"
+            }
+        },
+        {
+            "constant": "PLAY_AGAIN",
+            "id": 32065,
+            "source": "Play again",
+            "translations": {
+                "de-DE": "Noch einmal spielen"
+            }
+        },
+        {
+            "constant": "RETURN_HOME",
+            "id": 32066,
+            "source": "Return home",
+            "translations": {
+                "de-DE": "Zurück zum Start"
+            }
+        },
+        {
+            "constant": "ROOM_CODE",
+            "id": 32067,
+            "sharedKey": "ROOM_CODE"
+        },
+        {
+            "constant": "ENTER_ROOM_CODE",
+            "id": 32068,
+            "source": "Enter Room code",
+            "translations": {
+                "de-DE": "Raumcode eingeben"
+            }
+        },
+        {
+            "constant": "JOIN_DISPLAY",
+            "id": 32069,
+            "source": "Join as display",
+            "translations": {
+                "de-DE": "Als Anzeige beitreten"
+            }
+        },
+        {
+            "constant": "CREATING_ROOM",
+            "id": 32070,
+            "source": "Creating Room…",
+            "translations": {
+                "de-DE": "Raum wird erstellt…"
+            }
+        },
+        {
+            "constant": "AWAITING_FIRST_HOST",
+            "id": 32071,
+            "source": "Waiting for the first phone Host",
+            "translations": {
+                "de-DE": "Warten auf das erste Host-Handy"
+            }
+        },
+        {
+            "constant": "HOST_CONNECTED",
+            "id": 32072,
+            "source": "Host connected: %s",
+            "translations": {
+                "de-DE": "Host verbunden: %s"
+            }
+        },
+        {
+            "constant": "HOST_RECONNECTING",
+            "id": 32073,
+            "source": "Host reconnecting: %s",
+            "translations": {
+                "de-DE": "Host verbindet sich erneut: %s"
+            }
+        },
+        {
+            "constant": "AWAITING_REPLACEMENT",
+            "id": 32074,
+            "source": "Waiting for a replacement Host",
+            "translations": {
+                "de-DE": "Warten auf einen neuen Host"
+            }
+        },
+        {
+            "constant": "JOINED_COUNT",
+            "id": 32075,
+            "source": "%s people joined",
+            "translations": {
+                "de-DE": "%s Personen beigetreten"
+            }
+        },
+        {
+            "constant": "LEAVE_DISPLAY",
+            "id": 32076,
+            "source": "Leave display",
+            "translations": {
+                "de-DE": "Anzeige verlassen"
+            }
+        },
+        {
+            "constant": "LEAVE_TITLE",
+            "id": 32077,
+            "source": "Leave this game?",
+            "translations": {
+                "de-DE": "Dieses Spiel verlassen?"
+            }
+        },
+        {
+            "constant": "CANCEL",
+            "id": 32078,
+            "sharedKey": "CANCEL"
+        },
+        {
+            "constant": "LEAVE",
+            "id": 32079,
+            "source": "Leave",
+            "translations": {
+                "de-DE": "Verlassen"
+            }
+        },
+        {
+            "constant": "NETWORK_ERROR",
+            "id": 32080,
+            "source": "Network problem",
+            "translations": {
+                "de-DE": "Netzwerkproblem"
+            }
+        },
+        {
+            "constant": "RETRY",
+            "id": 32081,
+            "source": "Retry",
+            "translations": {
+                "de-DE": "Erneut versuchen"
+            }
+        },
+        {
+            "constant": "BACK",
+            "id": 32082,
+            "sharedKey": "BACK"
+        },
+        {
+            "constant": "PREFERENCES",
+            "id": 32083,
+            "source": "Preferences",
+            "translations": {
+                "de-DE": "Einstellungen"
+            }
+        },
+        {
+            "constant": "UI_LANGUAGE",
+            "id": 32084,
+            "source": "Interface language",
+            "translations": {
+                "de-DE": "Oberflächensprache"
+            }
+        },
+        {
+            "constant": "DISPLAY_NAME",
+            "id": 32089,
+            "source": "TV display name",
+            "translations": {
+                "de-DE": "Name des Fernsehers"
+            }
+        },
+        {
+            "constant": "DIAGNOSTICS",
+            "id": 32090,
+            "source": "Diagnostics",
+            "translations": {
+                "de-DE": "Diagnose"
+            }
+        },
+        {
+            "constant": "HELP",
+            "id": 32091,
+            "sharedKey": "HELP"
+        },
+        {
+            "constant": "CREATE_GROUP",
+            "id": 32092,
+            "source": "Create Group",
+            "translations": {
+                "de-DE": "Gruppe erstellen"
+            }
+        },
+        {
+            "constant": "GROUP_NAME",
+            "id": 32093,
+            "sharedKey": "GROUP_NAME"
+        },
+        {
+            "constant": "MEMBERS",
+            "id": 32094,
+            "source": "Members",
+            "translations": {
+                "de-DE": "Mitglieder"
+            }
+        },
+        {
+            "constant": "SAVE",
+            "id": 32095,
+            "sharedKey": "SAVE"
+        },
+        {
+            "constant": "ACCOUNT_UNAVAILABLE",
+            "id": 32096,
+            "source": "Account features are not available on this server.",
+            "translations": {
+                "de-DE": "Kontofunktionen sind auf diesem Server nicht verfügbar."
+            }
+        },
+        {
+            "constant": "LINK_DEVICE",
+            "id": 32097,
+            "source": "Link this device",
+            "translations": {
+                "de-DE": "Dieses Gerät verbinden"
+            }
+        },
+        {
+            "constant": "UNLINK_DEVICE",
+            "id": 32098,
+            "source": "Unlink this device",
+            "translations": {
+                "de-DE": "Geräteverknüpfung lösen"
+            }
+        },
+        {
+            "constant": "DEVICE_INSTRUCTIONS",
+            "id": 32099,
+            "source": "Open the address on another device and enter this code.",
+            "translations": {
+                "de-DE": "Öffne die Adresse auf einem anderen Gerät und gib diesen Code ein."
+            }
+        },
+        {
+            "constant": "DEVICE_CODE",
+            "id": 32100,
+            "source": "Code: %s",
+            "translations": {
+                "de-DE": "Code: %s"
+            }
+        },
+        {
+            "constant": "EXPIRES_IN",
+            "id": 32101,
+            "source": "Expires in %s minutes",
+            "translations": {
+                "de-DE": "Läuft in %s Minuten ab"
+            }
+        },
+        {
+            "constant": "CONNECTION",
+            "id": 32102,
+            "source": "Connection",
+            "translations": {
+                "de-DE": "Verbindung"
+            }
+        },
+        {
+            "constant": "ACTIVE_PLAYER",
+            "id": 32103,
+            "source": "Active player: %s",
+            "translations": {
+                "de-DE": "Aktive Person: %s"
+            }
+        },
+        {
+            "constant": "ROUND",
+            "id": 32104,
+            "source": "Round %s",
+            "translations": {
+                "de-DE": "Runde %s"
+            }
+        },
+        {
+            "constant": "REMAINING",
+            "id": 32105,
+            "source": "Remaining",
+            "translations": {
+                "de-DE": "Übrig"
+            }
+        },
+        {
+            "constant": "VOTED",
+            "id": 32106,
+            "source": "%s of %s voted",
+            "translations": {
+                "de-DE": "%s von %s haben abgestimmt"
+            }
+        },
+        {
+            "constant": "RESULT",
+            "id": 32107,
+            "source": "Result: %s yes · %s no",
+            "translations": {
+                "de-DE": "Ergebnis: %s Ja · %s Nein"
+            }
+        },
+        {
+            "constant": "NAMED_ANSWERS",
+            "id": 32108,
+            "source": "Named answers",
+            "translations": {
+                "de-DE": "Namentliche Antworten"
+            }
+        },
+        {
+            "constant": "NO_CURRENT_CARD",
+            "id": 32109,
+            "source": "The next Card is not ready yet.",
+            "translations": {
+                "de-DE": "Die nächste Karte ist noch nicht bereit."
+            }
+        },
+        {
+            "constant": "READY",
+            "id": 32110,
+            "source": "Ready",
+            "translations": {
+                "de-DE": "Bereit"
+            }
+        },
+        {
+            "constant": "INVALID_CONFIGURATION",
+            "id": 32111,
+            "source": "The game configuration is invalid.",
+            "translations": {
+                "de-DE": "Die Spieleinstellungen sind ungültig."
+            }
+        },
+        {
+            "constant": "AT_LEAST_TWO",
+            "id": 32112,
+            "source": "Add at least two players.",
+            "translations": {
+                "de-DE": "Füge mindestens zwei Personen hinzu."
+            }
+        },
+        {
+            "constant": "UNSUPPORTED_SERVER",
+            "id": 32113,
+            "source": "This server does not support the required protocol.",
+            "translations": {
+                "de-DE": "Dieser Server unterstützt das benötigte Protokoll nicht."
+            }
+        },
+        {
+            "constant": "LOCAL_HTTP_NOTE",
+            "id": 32114,
+            "source": "Plain HTTP is limited to a validated local server.",
+            "translations": {
+                "de-DE": "Unverschlüsseltes HTTP ist nur für geprüfte lokale Server erlaubt."
+            }
+        },
+        {
+            "constant": "GLOBAL_HTTPS_REQUIRED",
+            "id": 32115,
+            "source": "Global servers require HTTPS.",
+            "translations": {
+                "de-DE": "Globale Server erfordern HTTPS."
+            }
+        },
+        {
+            "constant": "RECONNECTING",
+            "id": 32116,
+            "source": "Reconnecting…",
+            "translations": {
+                "de-DE": "Verbindung wird wiederhergestellt…"
+            }
+        },
+        {
+            "constant": "OFFLINE",
+            "id": 32117,
+            "source": "Offline",
+            "translations": {
+                "de-DE": "Offline"
+            }
+        },
+        {
+            "constant": "MANUAL_SERVER_TITLE",
+            "id": 32118,
+            "source": "Manual server",
+            "translations": {
+                "de-DE": "Manueller Server"
+            }
+        },
+        {
+            "constant": "SAVED_DISCOVERED",
+            "id": 32119,
+            "source": "Saved and discovered servers",
+            "translations": {
+                "de-DE": "Gespeicherte und gefundene Server"
+            }
+        },
+        {
+            "constant": "QUESTIONS",
+            "id": 32120,
+            "source": "Questions",
+            "translations": {
+                "de-DE": "Fragen"
+            }
+        },
+        {
+            "constant": "DARES",
+            "id": 32121,
+            "source": "Dares",
+            "translations": {
+                "de-DE": "Pflichten"
+            }
+        },
+        {
+            "constant": "ALLOW_CONTENT",
+            "id": 32122,
+            "source": "Allow content",
+            "translations": {
+                "de-DE": "Inhalte erlauben"
+            }
+        },
+        {
+            "constant": "START_INTENSITY",
+            "id": 32123,
+            "sharedKey": "START_INTENSITY"
+        },
+        {
+            "constant": "MAX_INTENSITY",
+            "id": 32124,
+            "sharedKey": "MAX_INTENSITY"
+        },
+        {
+            "constant": "PROGRESSION_UNIT",
+            "id": 32125,
+            "source": "Progress by",
+            "translations": {
+                "de-DE": "Fortschritt nach"
+            }
+        },
+        {
+            "constant": "PROGRESSION_INTERVAL",
+            "id": 32126,
+            "source": "Progress every",
+            "translations": {
+                "de-DE": "Fortschritt alle"
+            }
+        },
+        {
+            "constant": "PROGRESSION_INCREMENT",
+            "id": 32127,
+            "source": "Progress increment",
+            "translations": {
+                "de-DE": "Fortschrittsschritt"
+            }
+        },
+        {
+            "constant": "QUESTION_RATIO",
+            "id": 32128,
+            "source": "Random question ratio",
+            "translations": {
+                "de-DE": "Anteil zufälliger Fragen"
+            }
+        },
+        {
+            "constant": "TYPE_STREAK",
+            "id": 32129,
+            "source": "Maximum same-type streak",
+            "translations": {
+                "de-DE": "Maximale Folge derselben Kartenart"
+            }
+        },
+        {
+            "constant": "META_INTERVAL",
+            "id": 32130,
+            "source": "Let's Talk meta interval",
+            "translations": {
+                "de-DE": "Meta-Intervall für Lass uns reden"
+            }
+        },
+        {
+            "constant": "REVEAL_MODE",
+            "id": 32131,
+            "source": "Answer reveal",
+            "translations": {
+                "de-DE": "Antwortanzeige"
+            }
+        },
+        {
+            "constant": "ANONYMOUS",
+            "id": 32132,
+            "source": "Anonymous totals",
+            "translations": {
+                "de-DE": "Anonyme Summen"
+            }
+        },
+        {
+            "constant": "NAMED",
+            "id": 32133,
+            "source": "Named answers",
+            "translations": {
+                "de-DE": "Namentliche Antworten"
+            }
+        },
+        {
+            "constant": "ENABLED",
+            "id": 32134,
+            "sharedKey": "ENABLED"
+        },
+        {
+            "constant": "DISABLED",
+            "id": 32135,
+            "source": "Disabled",
+            "translations": {
+                "de-DE": "Inaktiv"
+            }
+        },
+        {
+            "constant": "ALL",
+            "id": 32136,
+            "source": "All",
+            "translations": {
+                "de-DE": "Alle"
+            }
+        },
+        {
+            "constant": "NONE",
+            "id": 32137,
+            "source": "None",
+            "translations": {
+                "de-DE": "Keine"
+            }
+        },
+        {
+            "constant": "INCLUDE",
+            "id": 32138,
+            "sharedKey": "INCLUDE"
+        },
+        {
+            "constant": "EXCLUDE",
+            "id": 32139,
+            "sharedKey": "EXCLUDE"
+        },
+        {
+            "constant": "INHERIT",
+            "id": 32140,
+            "source": "Inherit",
+            "translations": {
+                "de-DE": "Übernehmen"
+            }
+        },
+        {
+            "constant": "ADD_RULE",
+            "id": 32141,
+            "sharedKey": "ADD_RULE"
+        },
+        {
+            "constant": "EDIT_RULE",
+            "id": 32142,
+            "source": "Edit rule",
+            "translations": {
+                "de-DE": "Regel bearbeiten"
+            }
+        },
+        {
+            "constant": "MOVE_UP",
+            "id": 32143,
+            "sharedKey": "MOVE_UP"
+        },
+        {
+            "constant": "MOVE_DOWN",
+            "id": 32144,
+            "sharedKey": "MOVE_DOWN"
+        },
+        {
+            "constant": "DELETE",
+            "id": 32145,
+            "sharedKey": "DELETE"
+        },
+        {
+            "constant": "SEARCH_CARDS",
+            "id": 32146,
+            "source": "Search Cards",
+            "translations": {
+                "de-DE": "Karten suchen"
+            }
+        },
+        {
+            "constant": "INCLUDE_CARD",
+            "id": 32147,
+            "source": "Include this Card",
+            "translations": {
+                "de-DE": "Diese Karte einschließen"
+            }
+        },
+        {
+            "constant": "EXCLUDE_CARD",
+            "id": 32148,
+            "source": "Exclude this Card",
+            "translations": {
+                "de-DE": "Diese Karte ausschließen"
+            }
+        },
+        {
+            "constant": "RESET_CARD",
+            "id": 32149,
+            "source": "Use inherited Card policy",
+            "translations": {
+                "de-DE": "Kartenregel zurücksetzen"
+            }
+        },
+        {
+            "constant": "RULE_NAME",
+            "id": 32150,
+            "sharedKey": "RULE_NAME"
+        },
+        {
+            "constant": "RULE_PREDICATE",
+            "id": 32151,
+            "source": "Rule filter",
+            "translations": {
+                "de-DE": "Regelfilter"
+            }
+        },
+        {
+            "constant": "RULE_DIRECTIVE",
+            "id": 32152,
+            "source": "Rule result",
+            "translations": {
+                "de-DE": "Regelwirkung"
+            }
+        },
+        {
+            "constant": "PERSISTENCE",
+            "id": 32153,
+            "source": "History",
+            "translations": {
+                "de-DE": "Verlauf"
+            }
+        },
+        {
+            "constant": "PERSISTENT",
+            "id": 32154,
+            "source": "Save Group history",
+            "translations": {
+                "de-DE": "Gruppenverlauf speichern"
+            }
+        },
+        {
+            "constant": "EPHEMERAL",
+            "id": 32155,
+            "source": "This game only",
+            "translations": {
+                "de-DE": "Nur dieses Spiel"
+            }
+        },
+        {
+            "constant": "ADD",
+            "id": 32156,
+            "source": "Add",
+            "translations": {
+                "de-DE": "Hinzufügen"
+            }
+        },
+        {
+            "constant": "DECREASE",
+            "id": 32157,
+            "sharedKey": "DECREASE"
+        },
+        {
+            "constant": "INCREASE",
+            "id": 32158,
+            "sharedKey": "INCREASE"
+        },
+        {
+            "constant": "EDIT",
+            "id": 32159,
+            "source": "Edit",
+            "translations": {
+                "de-DE": "Bearbeiten"
+            }
+        },
+        {
+            "constant": "ROOM_LOBBY",
+            "id": 32160,
+            "source": "Room lobby",
+            "translations": {
+                "de-DE": "Raumlobby"
+            }
+        },
+        {
+            "constant": "ROOM_GAME",
+            "id": 32161,
+            "source": "Room game",
+            "translations": {
+                "de-DE": "Raumspiel"
+            }
+        },
+        {
+            "constant": "CONNECTED",
+            "id": 32162,
+            "source": "Connected",
+            "translations": {
+                "de-DE": "Verbunden"
+            }
+        },
+        {
+            "constant": "DISCOVERING",
+            "id": 32163,
+            "source": "Discovering local servers…",
+            "translations": {
+                "de-DE": "Lokale Server werden gesucht…"
+            }
+        },
+        {
+            "constant": "LAST_SEEN",
+            "id": 32164,
+            "source": "Last seen %s",
+            "translations": {
+                "de-DE": "Zuletzt gesehen: %s"
+            }
+        },
+        {
+            "constant": "SERVER_UNAVAILABLE",
+            "id": 32165,
+            "source": "Server unavailable",
+            "translations": {
+                "de-DE": "Server nicht verfügbar"
+            }
+        },
+        {
+            "constant": "TRY_AGAIN",
+            "id": 32166,
+            "source": "Try again",
+            "translations": {
+                "de-DE": "Erneut versuchen"
+            }
+        },
+        {
+            "constant": "RECOVER_SESSION",
+            "id": 32167,
+            "source": "Recover active game",
+            "translations": {
+                "de-DE": "Spiel wiederherstellen"
+            }
+        },
+        {
+            "constant": "DISCARD_RECOVERY",
+            "id": 32168,
+            "source": "Discard recovery",
+            "translations": {
+                "de-DE": "Fortsetzung verwerfen"
+            }
+        },
+        {
+            "constant": "LEAVE_BODY",
+            "id": 32169,
+            "source": "The current game stays recoverable unless you explicitly leave.",
+            "translations": {
+                "de-DE": "Das aktuelle Spiel bleibt wiederherstellbar, solange du es nicht ausdrücklich verlässt."
+            }
+        },
+        {
+            "constant": "HELP_BODY",
+            "id": 32170,
+            "source": "Use the D-pad, OK and Back. Choose a server first; manual entry works when discovery is blocked.",
+            "translations": {
+                "de-DE": "Nutze Steuerkreuz, OK und Zurück. Wähle zuerst einen Server; bei blockierter Suche funktioniert die manuelle Eingabe."
+            }
+        },
+        {
+            "constant": "DIAGNOSTICS_BODY",
+            "id": 32171,
+            "source": "Diagnostics omit credentials, tokens, Room secrets and Card text.",
+            "translations": {
+                "de-DE": "Die Diagnose enthält keine Zugangsdaten, Token, Raumgeheimnisse oder Kartentexte."
+            }
+        },
+        {
+            "constant": "CLEAR_DATA",
+            "id": 32172,
+            "source": "Clear local client data",
+            "translations": {
+                "de-DE": "Lokale Clientdaten löschen"
+            }
+        },
+        {
+            "constant": "VERSION",
+            "id": 32173,
+            "source": "Version",
+            "translations": {
+                "de-DE": "Version"
+            }
+        },
+        {
+            "constant": "PROTOCOL",
+            "id": 32174,
+            "source": "Protocol",
+            "translations": {
+                "de-DE": "Protokoll"
+            }
+        },
+        {
+            "constant": "CAPABILITIES",
+            "id": 32175,
+            "source": "Capabilities",
+            "translations": {
+                "de-DE": "Funktionen"
+            }
+        },
+        {
+            "constant": "ROOM_CLOSED",
+            "id": 32176,
+            "source": "The Room was closed.",
+            "translations": {
+                "de-DE": "Der Raum wurde geschlossen."
+            }
+        },
+        {
+            "constant": "COMMAND_REJECTED",
+            "id": 32177,
+            "source": "The server rejected that action.",
+            "translations": {
+                "de-DE": "Der Server hat diese Aktion abgelehnt."
+            }
+        },
+        {
+            "constant": "STALE_REFRESH",
+            "id": 32178,
+            "source": "State changed; refreshing from the server.",
+            "translations": {
+                "de-DE": "Der Stand hat sich geändert; er wird vom Server aktualisiert."
+            }
+        },
+        {
+            "constant": "FOCUS_HELP",
+            "id": 32179,
+            "source": "D-pad moves · OK selects · Back returns",
+            "translations": {
+                "de-DE": "Steuerkreuz bewegt · OK wählt · Zurück kehrt um"
+            }
+        },
+        {
+            "constant": "PENDING",
+            "id": 32180,
+            "source": "Pending",
+            "translations": {
+                "de-DE": "Ausstehend"
+            }
+        },
+        {
+            "constant": "ON",
+            "id": 32181,
+            "source": "On",
+            "translations": {
+                "de-DE": "An"
+            }
+        },
+        {
+            "constant": "OFF",
+            "id": 32182,
+            "source": "Off",
+            "translations": {
+                "de-DE": "Aus"
+            }
+        },
+        {
+            "constant": "CARDS",
+            "id": 32183,
+            "source": "Cards",
+            "translations": {
+                "de-DE": "Karten"
+            }
+        },
+        {
+            "constant": "PLAYER_COUNT",
+            "id": 32184,
+            "source": "Player count",
+            "translations": {
+                "de-DE": "Anzahl Spielende"
+            }
+        },
+        {
+            "constant": "ROOM_CODE_HINT",
+            "id": 32185,
+            "source": "The QR and URL contain only this public Room code.",
+            "translations": {
+                "de-DE": "QR-Code und URL enthalten nur diesen öffentlichen Raumcode."
+            }
+        },
+        {
+            "constant": "SERVER_SECURITY",
+            "id": 32186,
+            "source": "%s transport · API 1 · WebSocket 2",
+            "translations": {
+                "de-DE": "%s-Transport · API 1 · WebSocket 2"
+            }
+        },
+        {
+            "constant": "MANUAL_ADDRESS_HINT",
+            "id": 32187,
+            "source": "Example: 192.168.1.20:3000 or https://play.example.com",
+            "translations": {
+                "de-DE": "Beispiel: 192.168.1.20:3000 oder https://play.example.com"
+            }
+        },
+        {
+            "constant": "DISCOVERY_HELP",
+            "id": 32188,
+            "source": "Discovery uses DNS-SD on this network. It carries no account, Room, or credential data.",
+            "translations": {
+                "de-DE": "Die Suche verwendet DNS-SD in diesem Netzwerk. Sie überträgt keine Konto-, Raum- oder Zugangsdaten."
+            }
+        },
+        {
+            "constant": "LINK_NOT_SUPPORTED",
+            "id": 32189,
+            "source": "This server does not advertise native device linking.",
+            "translations": {
+                "de-DE": "Dieser Server bietet keine native Geräteverknüpfung an."
+            }
+        },
+        {
+            "constant": "AUTHORIZATION_PENDING",
+            "id": 32190,
+            "source": "Waiting for authorization…",
+            "translations": {
+                "de-DE": "Warten auf Freigabe…"
+            }
+        },
+        {
+            "constant": "AUTHORIZATION_COMPLETE",
+            "id": 32191,
+            "source": "Device linked",
+            "translations": {
+                "de-DE": "Gerät verbunden"
+            }
+        },
+        {
+            "constant": "AUTHORIZATION_FAILED",
+            "id": 32192,
+            "source": "Device authorization failed",
+            "translations": {
+                "de-DE": "Gerätefreigabe fehlgeschlagen"
+            }
+        },
+        {
+            "constant": "FLAG_TARGET_PLAYER",
+            "id": 32200,
+            "source": "Requires another player",
+            "translations": {
+                "de-DE": "Benötigt eine andere Person"
+            }
+        },
+        {
+            "constant": "FLAG_THIRD_PARTY",
+            "id": 32201,
+            "source": "Involves someone outside the game",
+            "translations": {
+                "de-DE": "Bezieht Außenstehende ein"
+            }
+        },
+        {
+            "constant": "FLAG_PHYSICAL_CONTACT",
+            "id": 32202,
+            "sharedKey": "FLAG_PHYSICAL_CONTACT"
+        },
+        {
+            "constant": "FLAG_CLOTHING",
+            "id": 32203,
+            "source": "Removing clothing",
+            "translations": {
+                "de-DE": "Kleidung ablegen"
+            }
+        },
+        {
+            "constant": "FLAG_NUDITY",
+            "id": 32204,
+            "sharedKey": "FLAG_NUDITY"
+        },
+        {
+            "constant": "FLAG_ALCOHOL",
+            "id": 32205,
+            "sharedKey": "FLAG_ALCOHOL"
+        },
+        {
+            "constant": "FLAG_SUBSTANCES",
+            "id": 32206,
+            "source": "Recreational substances",
+            "translations": {
+                "de-DE": "Freizeitdrogen"
+            }
+        },
+        {
+            "constant": "SENSITIVITY_GENERAL",
+            "id": 32210,
+            "sharedKey": "SENSITIVITY_GENERAL"
+        },
+        {
+            "constant": "SENSITIVITY_PERSONAL",
+            "id": 32211,
+            "sharedKey": "SENSITIVITY_PERSONAL"
+        },
+        {
+            "constant": "SENSITIVITY_CLOSE",
+            "id": 32212,
+            "source": "Close and personal",
+            "translations": {
+                "de-DE": "Nah und persönlich"
+            }
+        },
+        {
+            "constant": "SENSITIVITY_DEEP",
+            "id": 32213,
+            "source": "Deeply personal",
+            "translations": {
+                "de-DE": "Tief persönlich"
+            }
+        },
+        {
+            "constant": "SENSITIVITY_INTIMATE",
+            "id": 32214,
+            "sharedKey": "SENSITIVITY_INTIMATE"
+        },
+        {
+            "constant": "SENSITIVITY_EXPLICIT",
+            "id": 32215,
+            "sharedKey": "SENSITIVITY_EXPLICIT"
+        },
+        {
+            "constant": "PROGRESSION_ROUNDS",
+            "id": 32220,
+            "source": "Rounds",
+            "translations": {
+                "de-DE": "Runden"
+            }
+        },
+        {
+            "constant": "PROGRESSION_CARDS",
+            "id": 32221,
+            "source": "Cards",
+            "translations": {
+                "de-DE": "Karten"
+            }
+        },
+        {
+            "constant": "HOST_ROOM_UNAVAILABLE",
+            "id": 32230,
+            "source": "This server cannot create a display-hosted Room.",
+            "translations": {
+                "de-DE": "Dieser Server kann keinen vom Anzeigegerät eingerichteten Raum erstellen."
+            }
+        },
+        {
+            "constant": "ROOM_CODE_INVALID",
+            "id": 32231,
+            "source": "Enter a valid six-character Room code.",
+            "translations": {
+                "de-DE": "Gib einen gültigen sechsstelligen Raumcode ein."
+            }
+        },
+        {
+            "constant": "ROLE_SECURITY_ERROR",
+            "id": 32232,
+            "source": "The server tried to grant this TV an unsafe role. The connection was closed.",
+            "translations": {
+                "de-DE": "Der Server wollte diesem Fernseher eine unsichere Rolle geben. Die Verbindung wurde beendet."
+            }
+        },
+        {
+            "constant": "STORAGE_ERROR",
+            "id": 32233,
+            "source": "The add-on could not read its saved data. Clear local data or reinstall the add-on.",
+            "translations": {
+                "de-DE": "Das Add-on konnte seine gespeicherten Daten nicht lesen. Lösche die lokalen Daten oder installiere das Add-on neu."
+            }
+        },
+        {
+            "constant": "SERVER_NOT_READY",
+            "id": 32234,
+            "source": "The server is still starting. Try again shortly.",
+            "translations": {
+                "de-DE": "Der Server startet noch. Versuche es gleich noch einmal."
+            }
+        },
+        {
+            "constant": "INVALID_SERVER_ADDRESS",
+            "id": 32235,
+            "source": "That server address or response is not valid.",
+            "translations": {
+                "de-DE": "Diese Serveradresse oder Antwort ist ungültig."
+            }
+        },
+        {
+            "constant": "DUPLICATE_PLAYERS",
+            "id": 32236,
+            "source": "Player names must be unique.",
+            "translations": {
+                "de-DE": "Die Namen der Spielenden müssen eindeutig sein."
+            }
+        },
+        {
+            "constant": "SERVER_PILL_LOCAL",
+            "id": 32237,
+            "source": "%s · LOCAL",
+            "translations": {
+                "de-DE": "%s · LOKAL"
+            }
+        },
+        {
+            "constant": "SERVER_PILL_GLOBAL",
+            "id": 32238,
+            "source": "%s · GLOBAL",
+            "translations": {
+                "de-DE": "%s · GLOBAL"
+            }
+        },
+        {
+            "constant": "COUCH_GAME_STATUS",
+            "id": 32239,
+            "source": "%s · %s Cards remaining · Round %s",
+            "translations": {
+                "de-DE": "%s · %s Karten übrig · Runde %s"
+            }
+        },
+        {
+            "constant": "SUMMARY_COUNTS",
+            "id": 32240,
+            "source": "%s Cards · %s rounds",
+            "translations": {
+                "de-DE": "%s Karten · %s Runden"
+            }
+        },
+        {
+            "constant": "ROOM_GAME_STATUS",
+            "id": 32241,
+            "source": "%s · %s Cards remaining · Room %s",
+            "translations": {
+                "de-DE": "%s · %s Karten übrig · Raum %s"
+            }
+        },
+        {
+            "constant": "DISPLAY_OPTIONS",
+            "id": 32242,
+            "source": "Display options",
+            "translations": {
+                "de-DE": "Anzeigeoptionen"
+            }
+        },
+        {
+            "constant": "UNLINK_CONFIRMATION",
+            "id": 32243,
+            "source": "This removes the TV's saved access to this server's account and Groups.",
+            "translations": {
+                "de-DE": "Dadurch wird der gespeicherte Zugriff des Fernsehers auf Konto und Gruppen dieses Servers entfernt."
+            }
+        },
+        {
+            "constant": "LINKED_DEVICE",
+            "id": 32244,
+            "source": "Linked device%s",
+            "translations": {
+                "de-DE": "Verknüpftes Gerät%s"
+            }
+        },
+        {
+            "constant": "CARD_TYPES",
+            "id": 32245,
+            "source": "Card types",
+            "translations": {
+                "de-DE": "Kartentypen"
+            }
+        },
+        {
+            "constant": "DARE_AFFINITY",
+            "id": 32246,
+            "source": "Dare affinity categories",
+            "translations": {
+                "de-DE": "Affinitätskategorien der Aufgaben"
+            }
+        },
+        {
+            "constant": "FLAGS_ALL",
+            "id": 32247,
+            "source": "Must have all flags",
+            "translations": {
+                "de-DE": "Muss alle Merkmale haben"
+            }
+        },
+        {
+            "constant": "FLAGS_ANY",
+            "id": 32248,
+            "source": "Must have any flag",
+            "translations": {
+                "de-DE": "Muss eines der Merkmale haben"
+            }
+        },
+        {
+            "constant": "FLAGS_NONE",
+            "id": 32249,
+            "source": "Must have none of these flags",
+            "translations": {
+                "de-DE": "Darf keines dieser Merkmale haben"
+            }
+        },
+        {
+            "constant": "YES_NO_POSSIBLE",
+            "id": 32250,
+            "sharedKey": "YES_NO_POSSIBLE"
+        },
+        {
+            "constant": "ALWAYS_ELIGIBLE",
+            "id": 32251,
+            "sharedKey": "ALWAYS_ELIGIBLE"
+        },
+        {
+            "constant": "REPEATABLE",
+            "id": 32252,
+            "source": "Repeatable in this game",
+            "translations": {
+                "de-DE": "In diesem Spiel wiederholbar"
+            }
+        },
+        {
+            "constant": "MIN_REPEAT_COOLDOWN",
+            "id": 32253,
+            "source": "Minimum repeat cooldown",
+            "translations": {
+                "de-DE": "Minimaler Wiederholungsabstand"
+            }
+        },
+        {
+            "constant": "MAX_REPEAT_COOLDOWN",
+            "id": 32254,
+            "source": "Maximum repeat cooldown",
+            "translations": {
+                "de-DE": "Maximaler Wiederholungsabstand"
+            }
+        },
+        {
+            "constant": "MIN_WEIGHT",
+            "id": 32255,
+            "source": "Minimum weight",
+            "translations": {
+                "de-DE": "Minimales Gewicht"
+            }
+        },
+        {
+            "constant": "MAX_WEIGHT",
+            "id": 32256,
+            "source": "Maximum weight",
+            "translations": {
+                "de-DE": "Maximales Gewicht"
+            }
+        },
+        {
+            "constant": "MIN_PLAYER_COUNT",
+            "id": 32257,
+            "source": "Minimum players",
+            "translations": {
+                "de-DE": "Minimale Personenzahl"
+            }
+        },
+        {
+            "constant": "MAX_PLAYER_COUNT",
+            "id": 32258,
+            "source": "Maximum players",
+            "translations": {
+                "de-DE": "Maximale Personenzahl"
+            }
+        },
+        {
+            "constant": "LIFECYCLE",
+            "id": 32259,
+            "source": "Card lifecycle",
+            "translations": {
+                "de-DE": "Kartenstatus"
+            }
+        },
+        {
+            "constant": "ACTIVE",
+            "id": 32260,
+            "sharedKey": "ACTIVE"
+        },
+        {
+            "constant": "RETIRED",
+            "id": 32261,
+            "source": "Retired",
+            "translations": {
+                "de-DE": "Ausgemustert"
+            }
+        },
+        {
+            "constant": "CONVERSATION_META",
+            "id": 32262,
+            "source": "Conversation meta Card",
+            "translations": {
+                "de-DE": "Gesprächs-Metakarte"
+            }
+        },
+        {
+            "constant": "FILTER_COUNT",
+            "id": 32263,
+            "source": "%s filters",
+            "translations": {
+                "de-DE": "%s Filter"
+            }
+        },
+        {
+            "constant": "SELECTED_COUNT",
+            "id": 32264,
+            "source": "%s selected",
+            "translations": {
+                "de-DE": "%s ausgewählt"
+            }
+        },
+        {
+            "constant": "CATALOG_VALUE",
+            "id": 32265,
+            "source": "Use catalog value",
+            "translations": {
+                "de-DE": "Katalogwert verwenden"
+            }
+        },
+        {
+            "constant": "SET_VALUE",
+            "id": 32266,
+            "source": "Set a value",
+            "translations": {
+                "de-DE": "Wert festlegen"
+            }
+        },
+        {
+            "constant": "AVAILABILITY",
+            "id": 32267,
+            "sharedKey": "AVAILABILITY"
+        },
+        {
+            "constant": "REPEAT_COOLDOWN",
+            "id": 32268,
+            "sharedKey": "REPEAT_COOLDOWN"
+        },
+        {
+            "constant": "WEIGHT",
+            "id": 32269,
+            "sharedKey": "WEIGHT"
+        },
+        {
+            "constant": "EDIT_VALUE",
+            "id": 32270,
+            "source": "Edit value",
+            "translations": {
+                "de-DE": "Wert bearbeiten"
+            }
+        },
+        {
+            "constant": "EXACT_CARD_OVERRIDE",
+            "id": 32271,
+            "source": "Exact Card override",
+            "translations": {
+                "de-DE": "Ausnahme für diese Karte"
+            }
+        },
+        {
+            "constant": "MIN_INTENSITY",
+            "id": 32272,
+            "source": "Minimum intensity",
+            "translations": {
+                "de-DE": "Minimale Intensität"
+            }
+        },
+        {
+            "constant": "NUMBER_INVALID",
+            "id": 32273,
+            "source": "Enter a valid number.",
+            "translations": {
+                "de-DE": "Gib eine gültige Zahl ein."
+            }
+        },
+        {
+            "constant": "ADD_FALLBACK",
+            "id": 32274,
+            "source": "Add as fallback",
+            "translations": {
+                "de-DE": "Ausweichsprache hinzufügen"
+            }
+        },
+        {
+            "constant": "REMOVE_FALLBACK",
+            "id": 32275,
+            "source": "Remove fallback",
+            "translations": {
+                "de-DE": "Ausweichsprache entfernen"
+            }
+        },
+        {
+            "constant": "CLASSIC_MODE_NOTE",
+            "id": 32276,
+            "source": "Players choose Truth or Dare openly on the shared screen each turn.",
+            "translations": {
+                "de-DE": "Die Spielenden wählen in jeder Runde offen Wahrheit oder Pflicht auf dem gemeinsamen Bildschirm."
+            }
+        },
+        {
+            "constant": "SHARED_ANONYMITY_NOTE",
+            "id": 32277,
+            "source": "Everyone can see and control this TV. Anonymous totals hide names in the result, but cannot hide nearby remote actions.",
+            "translations": {
+                "de-DE": "Alle können diesen Fernseher sehen und bedienen. Anonyme Summen verbergen Namen im Ergebnis, aber keine Fernbedienungsaktionen in der Nähe."
+            }
+        },
+        {
+            "constant": "REVIEW_SUMMARY",
+            "id": 32278,
+            "source": "%s · %s players · %s · %s eligible Cards",
+            "translations": {
+                "de-DE": "%s · %s Spielende · %s · %s geeignete Karten"
+            }
+        },
+        {
+            "constant": "VOTE_NOW",
+            "id": 32280,
+            "source": "Choose your answer now. The screen will hide it after the server confirms.",
+            "translations": {
+                "de-DE": "Wähle jetzt deine Antwort. Nach der Serverbestätigung blendet der Bildschirm sie aus."
+            }
+        },
+        {
+            "constant": "PRIVATE_VOTE",
+            "id": 32281,
+            "source": "Shared-device vote",
+            "translations": {
+                "de-DE": "Abstimmung am gemeinsamen Gerät"
+            }
+        },
+        {
+            "constant": "LANGUAGE_AUTO",
+            "id": 32283,
+            "source": "Kodi language",
+            "translations": {
+                "de-DE": "Kodi-Sprache"
+            }
+        },
+        {
+            "constant": "LANGUAGE_ENGLISH",
+            "id": 32284,
+            "source": "English",
+            "translations": {
+                "de-DE": "Englisch"
+            }
+        },
+        {
+            "constant": "LANGUAGE_GERMAN",
+            "id": 32285,
+            "source": "German",
+            "translations": {
+                "de-DE": "Deutsch"
+            }
+        },
+        {
+            "constant": "CURRENT_ROUTE",
+            "id": 32286,
+            "source": "Current route",
+            "translations": {
+                "de-DE": "Aktuelle Ansicht"
+            }
+        },
+        {
+            "constant": "SERVER_ID",
+            "id": 32287,
+            "source": "Server ID",
+            "translations": {
+                "de-DE": "Server-ID"
+            }
+        },
+        {
+            "constant": "NEW_GAME",
+            "id": 32288,
+            "sharedKey": "NEW_GAME"
+        },
+        {
+            "constant": "ENTER_ANOTHER_CODE",
+            "id": 32289,
+            "source": "Enter another Room code",
+            "translations": {
+                "de-DE": "Anderen Raumcode eingeben"
+            }
+        },
+        {
+            "constant": "ON_THIS_NETWORK",
+            "id": 32290,
+            "source": "On this network",
+            "translations": {
+                "de-DE": "In diesem Netzwerk"
+            }
+        },
+        {
+            "constant": "SAVED_GLOBAL_SERVERS",
+            "id": 32291,
+            "source": "Saved global servers",
+            "translations": {
+                "de-DE": "Gespeicherte globale Server"
+            }
+        },
+        {
+            "constant": "OTHER_SERVERS",
+            "id": 32292,
+            "source": "Other servers",
+            "translations": {
+                "de-DE": "Andere Server"
+            }
+        },
+        {
+            "constant": "LOCAL_READY",
+            "id": 32293,
+            "source": "LOCAL · Ready",
+            "translations": {
+                "de-DE": "LOKAL · Bereit"
+            }
+        },
+        {
+            "constant": "LOCAL_UNAVAILABLE",
+            "id": 32294,
+            "source": "LOCAL · Unreachable — select to retry",
+            "translations": {
+                "de-DE": "LOKAL · Nicht erreichbar — zum Wiederholen auswählen"
+            }
+        },
+        {
+            "constant": "GLOBAL_READY",
+            "id": 32295,
+            "source": "GLOBAL · Ready",
+            "translations": {
+                "de-DE": "GLOBAL · Bereit"
+            }
+        },
+        {
+            "constant": "GLOBAL_UNAVAILABLE",
+            "id": 32296,
+            "source": "GLOBAL · Unreachable — select to retry",
+            "translations": {
+                "de-DE": "GLOBAL · Nicht erreichbar — zum Wiederholen auswählen"
+            }
+        },
+        {
+            "constant": "CONNECTION_REPLACED",
+            "id": 32297,
+            "source": "This TV connection was replaced by another instance",
+            "translations": {
+                "de-DE": "Diese TV-Verbindung wurde durch eine andere Instanz ersetzt"
+            }
+        },
+        {
+            "constant": "DISCARD_RECOVERY_BODY",
+            "id": 32298,
+            "source": "Remove the saved resume data? This does not send a leave command to the server.",
+            "translations": {
+                "de-DE": "Gespeicherte Fortsetzungsdaten entfernen? Dadurch wird kein Verlassen-Befehl an den Server gesendet."
+            }
+        },
+        {
+            "constant": "PREVIOUS_PAGE",
+            "id": 32299,
+            "source": "Previous page",
+            "translations": {
+                "de-DE": "Vorherige Seite"
+            }
+        },
+        {
+            "constant": "NEXT_PAGE",
+            "id": 32300,
+            "source": "Next page",
+            "translations": {
+                "de-DE": "Nächste Seite"
+            }
+        },
+        {
+            "constant": "PAGE_STATUS",
+            "id": 32301,
+            "source": "Page %s of %s",
+            "translations": {
+                "de-DE": "Seite %s von %s"
+            }
+        },
+        {
+            "constant": "COUCH_OPTIONS",
+            "id": 32302,
+            "source": "Game options",
+            "translations": {
+                "de-DE": "Spieloptionen"
+            }
+        },
+        {
+            "constant": "RESUME_GAME",
+            "id": 32303,
+            "source": "Resume game",
+            "translations": {
+                "de-DE": "Spiel fortsetzen"
+            }
+        },
+        {
+            "constant": "CONTENT_LOCKED",
+            "id": 32304,
+            "source": "Content and players are fixed for this active game. Start a new game to change them.",
+            "translations": {
+                "de-DE": "Inhalte und Spielende sind für dieses aktive Spiel festgelegt. Starte ein neues Spiel, um sie zu ändern."
+            }
+        },
+        {
+            "constant": "AUTO_PAGE_SECONDS",
+            "id": 32305,
+            "source": "Auto-page interval",
+            "translations": {
+                "de-DE": "Intervall für Seitenwechsel"
+            }
+        },
+        {
+            "constant": "SECONDS",
+            "id": 32306,
+            "source": "%s seconds",
+            "translations": {
+                "de-DE": "%s Sekunden"
+            }
+        },
+        {
+            "constant": "CLEAR_RECENT_SERVERS",
+            "id": 32307,
+            "source": "Clear recent servers",
+            "translations": {
+                "de-DE": "Gespeicherte Server löschen"
+            }
+        },
+        {
+            "constant": "CLEAR_RECENT_SERVERS_BODY",
+            "id": 32308,
+            "source": "Remove all saved server addresses and return to server discovery? Account and game recovery credentials are not removed.",
+            "translations": {
+                "de-DE": "Alle gespeicherten Serveradressen entfernen und zur Serversuche zurückkehren? Zugangsdaten für Konto und Spielwiederherstellung werden nicht gelöscht."
+            }
+        },
+        {
+            "constant": "NAMED_RESULT_PAGE",
+            "id": 32309,
+            "source": "Yes: %s[CR]No: %s[CR]Page %s of %s",
+            "translations": {
+                "de-DE": "Ja: %s[CR]Nein: %s[CR]Seite %s von %s"
+            }
+        },
+        {
+            "constant": "ROOM_STAGE_STATUS",
+            "id": 32310,
+            "source": "Active player: %s · Round %s · %s Cards shown",
+            "translations": {
+                "de-DE": "Aktiv: %s · Runde %s · %s Karten gezeigt"
+            }
+        },
+        {
+            "constant": "RECONNECTING_BODY",
+            "id": 32311,
+            "source": "Reconnecting to the server. The last confirmed state remains on screen.",
+            "translations": {
+                "de-DE": "Die Verbindung zum Server wird wiederhergestellt. Der zuletzt bestätigte Stand bleibt sichtbar."
+            }
+        },
+        {
+            "constant": "SEARCH_RESULT_COUNT",
+            "id": 32312,
+            "source": "%s matching Cards",
+            "translations": {
+                "de-DE": "%s passende Karten"
+            }
+        },
+        {
+            "constant": "END_GAME_BODY",
+            "id": 32313,
+            "source": "End this game? The current Session will be closed and cannot be resumed.",
+            "translations": {
+                "de-DE": "Dieses Spiel beenden? Die aktuelle Sitzung wird geschlossen und kann nicht fortgesetzt werden."
+            }
+        },
+        {
+            "constant": "RESULT_YES",
+            "id": 32314,
+            "source": "Yes · %s",
+            "translations": {
+                "de-DE": "Ja · %s"
+            }
+        },
+        {
+            "constant": "RESULT_NO",
+            "id": 32315,
+            "source": "No · %s",
+            "translations": {
+                "de-DE": "Nein · %s"
+            }
+        },
+        {
+            "constant": "POOL_EXHAUSTED",
+            "id": 32316,
+            "source": "No eligible Cards remain",
+            "translations": {
+                "de-DE": "Keine geeigneten Karten mehr übrig"
+            }
+        },
+        {
+            "constant": "POOL_EXHAUSTED_BODY",
+            "id": 32317,
+            "source": "This game has used every eligible Card. End it to adjust categories, intensity, language, or Card rules before starting again.",
+            "translations": {
+                "de-DE": "Dieses Spiel hat alle geeigneten Karten verwendet. Beendet es, um Kategorien, Intensität, Sprache oder Kartenregeln vor dem Neustart anzupassen."
+            }
+        },
+        {
+            "constant": "ADJUST_SETUP",
+            "id": 32318,
+            "source": "End and adjust setup",
+            "translations": {
+                "de-DE": "Beenden & Setup anpassen"
+            }
+        },
+        {
+            "constant": "COUCH_SYNC_REQUIRED",
+            "id": 32319,
+            "source": "Refresh required",
+            "translations": {
+                "de-DE": "Aktualisierung erforderlich"
+            }
+        },
+        {
+            "constant": "COUCH_SYNC_BODY",
+            "id": 32320,
+            "source": "The command outcome could not be confirmed. The last confirmed Card remains visible; refresh from the server before continuing.",
+            "translations": {
+                "de-DE": "Das Ergebnis des Befehls konnte nicht bestätigt werden. Die zuletzt bestätigte Karte bleibt sichtbar; aktualisiert den Spielstand vom Server, bevor ihr fortfahrt."
+            }
+        },
+        {
+            "constant": "REFRESH_STATE",
+            "id": 32321,
+            "source": "Refresh game state",
+            "translations": {
+                "de-DE": "Spielstand aktualisieren"
+            }
+        },
+        {
+            "constant": "EDIT_GROUP",
+            "id": 32322,
+            "source": "Edit Group",
+            "translations": {
+                "de-DE": "Gruppe bearbeiten"
+            }
+        },
+        {
+            "constant": "UPDATE_GROUP",
+            "id": 32323,
+            "source": "Update Group",
+            "translations": {
+                "de-DE": "Gruppe aktualisieren"
+            }
+        },
+        {
+            "constant": "PREFERRED_SERVER_URL",
+            "id": 32324,
+            "source": "Preferred server URL",
+            "translations": {
+                "de-DE": "Bevorzugte Server-URL"
+            }
+        },
+        {
+            "constant": "PREFERRED_SERVER_URL_HELP",
+            "id": 32325,
+            "source": "Optional HTTP or HTTPS address to validate and open automatically when the add-on starts. Leave empty to use saved servers and discovery.",
+            "translations": {
+                "de-DE": "Optionale HTTP- oder HTTPS-Adresse, die beim Start geprüft und automatisch geöffnet wird. Leer lassen, um gespeicherte Server und die Suche zu verwenden."
+            }
+        },
+        {
+            "constant": "AUTOMATIC_DISCOVERY",
+            "id": 32326,
+            "source": "Find servers on this network",
+            "translations": {
+                "de-DE": "Server in diesem Netzwerk finden"
+            }
+        },
+        {
+            "constant": "AUTOMATIC_DISCOVERY_HELP",
+            "id": 32327,
+            "source": "Use bounded DNS-SD/mDNS discovery. Disable this when multicast is unavailable or unwanted; manual and saved addresses still work.",
+            "translations": {
+                "de-DE": "Begrenzte DNS-SD-/mDNS-Suche verwenden. Deaktivieren, wenn Multicast nicht verfügbar oder unerwünscht ist; manuelle und gespeicherte Adressen funktionieren weiterhin."
+            }
+        },
+        {
+            "constant": "DISPLAY_NAME_HELP",
+            "id": 32328,
+            "source": "Name shown for this Kodi display when creating or joining a Room.",
+            "translations": {
+                "de-DE": "Name dieser Kodi-Anzeige beim Erstellen oder Beitreten eines Raums."
+            }
+        },
+        {
+            "constant": "UI_LANGUAGE_HELP",
+            "id": 32329,
+            "source": "Choose the add-on interface language or follow Kodi's current language.",
+            "translations": {
+                "de-DE": "Sprache der Add-on-Oberfläche wählen oder der aktuellen Kodi-Sprache folgen."
+            }
+        },
+        {
+            "constant": "AUTO_PAGE_HELP",
+            "id": 32334,
+            "source": "Seconds before automatically advancing long public lists and named results.",
+            "translations": {
+                "de-DE": "Sekunden bis zum automatischen Weiterblättern langer öffentlicher Listen und namentlicher Ergebnisse."
+            }
+        },
+        {
+            "constant": "ADDON_START_FAILED",
+            "id": 32335,
+            "source": "The add-on could not start. See the Kodi log for details.",
+            "translations": {
+                "de-DE": "Das Add-on konnte nicht gestartet werden. Details stehen im Kodi-Protokoll."
+            }
+        },
+        {
+            "constant": "COUCH_PLAY_HINT",
+            "id": 32336,
+            "source": "Everyone plays and controls the game on this TV.",
+            "translations": {
+                "de-DE": "Alle spielen und steuern das Spiel gemeinsam an diesem Fernseher."
+            }
+        },
+        {
+            "constant": "HOST_ROOM_HINT",
+            "id": 32337,
+            "source": "Set up a Room; a phone becomes Host.",
+            "translations": {
+                "de-DE": "Raum einrichten; ein Smartphone wird Host."
+            }
+        },
+        {
+            "constant": "DISPLAY_ROOM_HINT",
+            "id": 32338,
+            "source": "Attach this TV to an existing Room as a read-only display.",
+            "translations": {
+                "de-DE": "Mit einem Raum verbinden und nur anzeigen."
+            }
+        },
+        {
+            "constant": "SERVERS_HINT",
+            "id": 32340,
+            "source": "Find, connect, and forget local or global servers.",
+            "translations": {
+                "de-DE": "Lokale und globale Server finden und verwalten."
+            }
+        },
+        {
+            "constant": "PREFERENCES_HINT",
+            "id": 32341,
+            "source": "Language and accessibility settings.",
+            "translations": {
+                "de-DE": "Sprache und Barrierefreiheit."
+            }
+        },
+        {
+            "constant": "QUICK_GROUP_HINT",
+            "id": 32342,
+            "source": "Quick round without durable shared Card history",
+            "translations": {
+                "de-DE": "Schnelle Runde ohne dauerhaften gemeinsamen Kartenverlauf"
+            }
+        },
+        {
+            "constant": "SETUP_PROGRESS",
+            "id": 32343,
+            "source": "STEP %s OF %s",
+            "translations": {
+                "de-DE": "SCHRITT %s VON %s"
+            }
+        },
+        {
+            "constant": "REVIEW_READY_BODY",
+            "id": 32344,
+            "source": "Check the public setup below, then start when everyone is ready.",
+            "translations": {
+                "de-DE": "Prüft unten den öffentlichen Spielaufbau und startet, sobald alle bereit sind."
+            }
+        },
+        {
+            "constant": "HOST_HANDOFF_BODY",
+            "id": 32345,
+            "source": "This TV will be the display. The first phone to join becomes the Host.",
+            "translations": {
+                "de-DE": "Dieser Fernseher wird zur Anzeige. Das erste beitretende Smartphone wird Host."
+            }
+        },
+        {
+            "constant": "SUMMARY_TITLE",
+            "id": 32346,
+            "source": "Good night",
+            "translations": {
+                "de-DE": "Gute Nacht"
+            }
+        },
+        {
+            "constant": "SUMMARY_BODY",
+            "id": 32347,
+            "source": "Thanks for taking this time together.",
+            "translations": {
+                "de-DE": "Danke für diese gemeinsame Zeit."
+            }
+        },
+        {
+            "constant": "GROUP_LIST_HINT",
+            "id": 32348,
+            "source": "Select a Group to start with it. Use Context Menu to edit it.",
+            "translations": {
+                "de-DE": "Wähle eine Gruppe zum Starten. Über das Kontextmenü kannst du sie bearbeiten."
+            }
+        },
+        {
+            "constant": "HOST_ROLE",
+            "id": 32349,
+            "source": "Host",
+            "translations": {
+                "de-DE": "Host"
+            }
+        },
+        {
+            "constant": "PLAYER_ROLE",
+            "id": 32350,
+            "source": "Player",
+            "translations": {
+                "de-DE": "Spieler:in"
+            }
+        },
+        {
+            "constant": "ON_DEVICE",
+            "id": 32351,
+            "source": "On %s's device",
+            "translations": {
+                "de-DE": "Auf dem Gerät von %s"
+            }
+        },
+        {
+            "constant": "PLAYER_CAPACITY",
+            "id": 32352,
+            "source": "%s of %s players",
+            "translations": {
+                "de-DE": "%s von %s Personen"
+            }
+        },
+        {
+            "constant": "CONTENT_COUNT",
+            "id": 32353,
+            "source": "%s question topics · %s Dare types",
+            "translations": {
+                "de-DE": "%s Fragethemen · %s Pflichtarten"
+            }
+        },
+        {
+            "constant": "ROOM_JOIN_PROMPT",
+            "id": 32354,
+            "source": "Scan to join the Room",
+            "translations": {
+                "de-DE": "Scannen, um dem Raum beizutreten"
+            }
+        },
+        {
+            "constant": "PLAYER_CAPACITY_PAGE",
+            "id": 32355,
+            "source": "%s of %s players · page %s/%s",
+            "translations": {
+                "de-DE": "%s von %s Personen · Seite %s/%s"
+            }
+        },
+        {
+            "constant": "ROUND_LABEL",
+            "id": 32356,
+            "sharedKey": "ROUND_LABEL"
+        },
+        {
+            "constant": "MODE_LABEL",
+            "id": 32357,
+            "sharedKey": "MODE_LABEL"
+        },
+        {
+            "constant": "PROFILE_LABEL",
+            "id": 32358,
+            "sharedKey": "PROFILE_LABEL"
+        },
+        {
+            "constant": "GROUP_LABEL",
+            "id": 32359,
+            "sharedKey": "GROUP_LABEL"
+        },
+        {
+            "constant": "READY_TO_PLAY",
+            "id": 32360,
+            "source": "Ready to play",
+            "translations": {
+                "de-DE": "Bereit zum Spielen"
+            }
+        },
+        {
+            "constant": "QUICK_GROUP",
+            "id": 32361,
+            "source": "Quick group",
+            "translations": {
+                "de-DE": "Schnelle Gruppe"
+            }
+        },
+        {
+            "constant": "CHOOSE_SAVED_GROUP",
+            "id": 32362,
+            "source": "Choose saved group",
+            "translations": {
+                "de-DE": "Gespeicherte Gruppe wählen"
+            }
+        },
+        {
+            "constant": "QUICK_GROUP_BODY",
+            "id": 32363,
+            "source": "Enter the players for this game. Nothing is saved to a Group.",
+            "translations": {
+                "de-DE": "Gib die Personen für dieses Spiel ein. Es wird nichts in einer Gruppe gespeichert."
+            }
+        },
+        {
+            "constant": "SAVED_GROUP_BODY",
+            "id": 32364,
+            "source": "Use the members and preferences from one of your saved Groups.",
+            "translations": {
+                "de-DE": "Verwende Mitglieder und Einstellungen aus einer gespeicherten Gruppe."
+            }
+        },
+        {
+            "constant": "CREATE_GROUP_BODY",
+            "id": 32365,
+            "source": "Create a reusable Group before setting up the game.",
+            "translations": {
+                "de-DE": "Erstelle vor dem Spiel eine wiederverwendbare Gruppe."
+            }
+        },
+        {
+            "constant": "PLAYER_OPTIONS",
+            "id": 32366,
+            "source": "Player options",
+            "translations": {
+                "de-DE": "Person verwalten"
+            }
+        },
+        {
+            "constant": "DONE",
+            "id": 32367,
+            "source": "Done",
+            "translations": {
+                "de-DE": "Fertig"
+            }
+        },
+        {
+            "constant": "EDIT_PLAYER",
+            "id": 32368,
+            "source": "Edit player",
+            "translations": {
+                "de-DE": "Person bearbeiten"
+            }
+        },
+        {
+            "constant": "NOW_PLAYING",
+            "id": 32369,
+            "source": "Now playing",
+            "translations": {
+                "de-DE": "Jetzt dran"
+            }
+        },
+        {
+            "constant": "LIVE",
+            "id": 32370,
+            "source": "Live",
+            "translations": {
+                "de-DE": "Live"
+            }
+        },
+        {
+            "constant": "CARD_INTENSITY",
+            "id": 32371,
+            "sharedKey": "CARD_INTENSITY"
+        },
+        {
+            "constant": "GLOBAL_INTENSITY",
+            "id": 32372,
+            "source": "Game intensity",
+            "translations": {
+                "de-DE": "Spielintensität"
+            }
+        },
+        {
+            "constant": "LOCAL_DATASPACE",
+            "id": 32373,
+            "source": "This local server already uses its single shared DataSpace. Device linking is not needed.",
+            "translations": {
+                "de-DE": "Dieser lokale Server verwendet bereits seinen gemeinsamen DataSpace. Eine Geräteverknüpfung ist nicht nötig."
+            }
+        },
+        {
+            "constant": "PREFERENCES_BODY",
+            "id": 32374,
+            "source": "Adjust how the TV client looks and behaves. Service actions are kept separate below.",
+            "translations": {
+                "de-DE": "Passe Darstellung und Verhalten des TV-Clients an. Service-Aktionen stehen getrennt darunter."
+            }
+        },
+        {
+            "constant": "HELP_GETTING_STARTED",
+            "id": 32375,
+            "source": "Getting started",
+            "translations": {
+                "de-DE": "Erste Schritte"
+            }
+        },
+        {
+            "constant": "HELP_GETTING_STARTED_BODY",
+            "id": 32376,
+            "source": "Choose Couch Play to play together on this TV, or connect a server and display a Room created on another device. Couch setup follows Group, mode, profile, players, customization, and a final ready screen.",
+            "translations": {
+                "de-DE": "Wähle Couch Play, um gemeinsam an diesem Fernseher zu spielen, oder verbinde einen Server und zeige einen auf einem anderen Gerät erstellten Raum an. Die Couch-Einrichtung führt durch Gruppe, Modus, Profil, Personen, Anpassung und eine abschließende Bereit-Ansicht."
+            }
+        },
+        {
+            "constant": "HELP_SERVERS",
+            "id": 32377,
+            "source": "Servers and discovery",
+            "translations": {
+                "de-DE": "Server und Suche"
+            }
+        },
+        {
+            "constant": "HELP_SERVERS_BODY",
+            "id": 32378,
+            "source": "Kodi searches the local network automatically. If a server is not listed, choose Enter server address and use its full http:// or https:// address. Open a server card to use it or forget the saved entry.",
+            "translations": {
+                "de-DE": "Kodi durchsucht das lokale Netzwerk automatisch. Fehlt ein Server, wähle Serveradresse eingeben und verwende die vollständige http://- oder https://-Adresse. Öffne eine Serverkarte, um sie zu verwenden oder den gespeicherten Eintrag zu vergessen."
+            }
+        },
+        {
+            "constant": "HELP_NAVIGATION",
+            "id": 32379,
+            "source": "Remote navigation",
+            "translations": {
+                "de-DE": "Fernbedienung"
+            }
+        },
+        {
+            "constant": "HELP_NAVIGATION_BODY",
+            "id": 32380,
+            "source": "Use the arrow keys to move the bright focus outline and Select to activate it. A check mark means an option is selected; it is separate from focus. Back returns one screen. Info opens Help. During a game, Context Menu opens display settings.",
+            "translations": {
+                "de-DE": "Mit den Pfeiltasten bewegst du den hellen Fokusrahmen und mit Auswahl aktivierst du ihn. Ein Häkchen zeigt eine gewählte Option und ist unabhängig vom Fokus. Zurück wechselt eine Ansicht zurück. Info öffnet die Hilfe. Im Spiel öffnet das Kontextmenü die Anzeigeeinstellungen."
+            }
+        },
+        {
+            "constant": "HELP_GAMEPLAY",
+            "id": 32381,
+            "source": "During a game",
+            "translations": {
+                "de-DE": "Während des Spiels"
+            }
+        },
+        {
+            "constant": "HELP_GAMEPLAY_BODY",
+            "id": 32382,
+            "source": "The TV shows the current player explicitly above the Card. The Card includes its type, classification, text, Card intensity, and current game intensity. Room rosters page automatically without moving the Card or stealing focus.",
+            "translations": {
+                "de-DE": "Der Fernseher zeigt die aktuell spielende Person deutlich über der Karte. Die Karte enthält Typ, Einordnung, Text, Kartenintensität und aktuelle Spielintensität. Raumlisten wechseln automatisch die Seite, ohne die Karte zu bewegen oder den Fokus zu übernehmen."
+            }
+        },
+        {
+            "constant": "MODE_CLASSIC_HINT",
+            "id": 32383,
+            "source": "Players choose Truth or Dare on their turn.",
+            "translations": {
+                "de-DE": "Die spielende Person wählt Wahrheit oder Pflicht."
+            }
+        },
+        {
+            "constant": "MODE_RANDOM_HINT",
+            "id": 32384,
+            "source": "Truth and Dare are selected using the configured mix.",
+            "translations": {
+                "de-DE": "Wahrheit und Pflicht werden nach der eingestellten Mischung gewählt."
+            }
+        },
+        {
+            "constant": "MODE_NEVER_HINT",
+            "id": 32385,
+            "source": "Everyone answers the same statement privately.",
+            "translations": {
+                "de-DE": "Alle beantworten dieselbe Aussage privat."
+            }
+        },
+        {
+            "constant": "MODE_TALK_HINT",
+            "id": 32386,
+            "source": "A conversation-focused sequence with periodic prompts.",
+            "translations": {
+                "de-DE": "Eine gesprächsorientierte Folge mit regelmäßigen Impulsen."
+            }
+        },
+        {
+            "constant": "SELECT_GROUP_FIRST",
+            "id": 32387,
+            "source": "Choose a saved Group before continuing.",
+            "translations": {
+                "de-DE": "Wähle vor dem Fortfahren eine gespeicherte Gruppe."
+            }
+        },
+        {
+            "constant": "GROUP_SAVED",
+            "id": 32388,
+            "source": "Saved Group",
+            "translations": {
+                "de-DE": "Gespeicherte Gruppe"
+            }
+        },
+        {
+            "constant": "SETTINGS",
+            "id": 32389,
+            "sharedKey": "SETTINGS"
+        },
+        {
+            "constant": "ROSTER_PAGE",
+            "id": 32390,
+            "source": "Players · page %s/%s",
+            "translations": {
+                "de-DE": "Personen · Seite %s/%s"
+            }
+        },
+        {
+            "constant": "CHOOSE_VALUE",
+            "id": 32391,
+            "source": "Choose a value",
+            "translations": {
+                "de-DE": "Wert wählen"
+            }
+        },
+        {
+            "constant": "START_NOT_ABOVE_MAXIMUM",
+            "id": 32392,
+            "source": "Starting intensity cannot be higher than maximum intensity.",
+            "translations": {
+                "de-DE": "Die Startintensität darf nicht höher als die maximale Intensität sein."
+            }
+        },
+        {
+            "constant": "MAXIMUM_NOT_BELOW_START",
+            "id": 32393,
+            "source": "Maximum intensity cannot be lower than starting intensity.",
+            "translations": {
+                "de-DE": "Die maximale Intensität darf nicht niedriger als die Startintensität sein."
+            }
+        },
+        {
+            "constant": "PRIMARY_CARD_LANGUAGE",
+            "id": 32394,
+            "source": "Primary Card language",
+            "translations": {
+                "de-DE": "Primäre Kartensprache"
+            }
+        },
+        {
+            "constant": "NO_LANGUAGE_FALLBACK",
+            "id": 32395,
+            "source": "Do not use fallback languages",
+            "translations": {
+                "de-DE": "Keine Ausweichsprachen verwenden"
+            }
+        },
+        {
+            "constant": "USE_LANGUAGE_FALLBACK",
+            "id": 32396,
+            "source": "Use fallback languages",
+            "translations": {
+                "de-DE": "Ausweichsprachen verwenden"
+            }
+        },
+        {
+            "constant": "FALLBACK_ORDER",
+            "id": 32397,
+            "source": "Fallback order",
+            "translations": {
+                "de-DE": "Reihenfolge der Ausweichsprachen"
+            }
+        },
+        {
+            "constant": "NO_FALLBACK_SELECTED",
+            "id": 32398,
+            "source": "No fallback language selected. Choose one before enabling fallback.",
+            "translations": {
+                "de-DE": "Keine Ausweichsprache gewählt. Wähle eine aus, bevor du die Ausweichfunktion aktivierst."
+            }
+        },
+        {
+            "constant": "ADD_LANGUAGE",
+            "id": 32399,
+            "source": "Add language",
+            "translations": {
+                "de-DE": "Sprache hinzufügen"
+            }
+        },
+        {
+            "constant": "LANGUAGE_POSITION",
+            "id": 32400,
+            "source": "Fallback %s of %s",
+            "translations": {
+                "de-DE": "Ausweichsprache %s von %s"
+            }
+        },
+        {
+            "constant": "PLAYER_NAMES_UNIQUE_ALERT",
+            "id": 32401,
+            "source": "Every player needs a different name. Edit the duplicate name before continuing.",
+            "translations": {
+                "de-DE": "Jede Person braucht einen eindeutigen Namen. Bearbeite den doppelten Namen, bevor du fortfährst."
+            }
+        },
+        {
+            "constant": "PLAYER_MINIMUM_ALERT",
+            "id": 32402,
+            "source": "At least two players with names are required before continuing.",
+            "translations": {
+                "de-DE": "Zum Fortfahren sind mindestens zwei Personen mit Namen erforderlich."
+            }
+        },
+        {
+            "constant": "DELETE_RULE_TITLE",
+            "id": 32403,
+            "source": "Delete conditional rule?",
+            "translations": {
+                "de-DE": "Bedingte Regel löschen?"
+            }
+        },
+        {
+            "constant": "DELETE_RULE_BODY",
+            "id": 32404,
+            "source": "This rule and all of its conditions and changes will be removed.",
+            "translations": {
+                "de-DE": "Diese Regel mit allen Bedingungen und Änderungen wird entfernt."
+            }
+        },
+        {
+            "constant": "NUMBER_RANGE",
+            "id": 32405,
+            "source": "Allowed range: %s–%s.",
+            "translations": {
+                "de-DE": "Zulässiger Bereich: %s–%s."
+            }
+        },
+        {
+            "constant": "MIN_MAX_ORDER",
+            "id": 32406,
+            "source": "The minimum cannot be greater than the maximum. Change the other boundary first.",
+            "translations": {
+                "de-DE": "Das Minimum darf nicht größer als das Maximum sein. Ändere zuerst die andere Grenze."
+            }
+        },
+        {
+            "constant": "CARD_RULES_HELP",
+            "id": 32407,
+            "source": "Card rules filter the eligible Card pool. Defaults apply broadly, conditional rules match Card metadata, and exact overrides affect one Card.",
+            "translations": {
+                "de-DE": "Kartenregeln filtern den verfügbaren Kartenpool. Standardwerte gelten allgemein, bedingte Regeln prüfen Kartenmetadaten und exakte Ausnahmen betreffen eine Karte."
+            }
+        },
+        {
+            "constant": "DEFAULT_POLICY_HELP",
+            "id": 32408,
+            "source": "Set the baseline used when no more specific rule changes a Card.",
+            "translations": {
+                "de-DE": "Lege den Standard fest, solange keine spezifischere Regel eine Karte ändert."
+            }
+        },
+        {
+            "constant": "CONDITIONAL_RULES_HELP",
+            "id": 32409,
+            "source": "Match Card metadata, then apply the rule's changes in the displayed order.",
+            "translations": {
+                "de-DE": "Prüfe Kartenmetadaten und wende die Änderungen der Regel in der angezeigten Reihenfolge an."
+            }
+        },
+        {
+            "constant": "EXACT_CARDS_HELP",
+            "id": 32410,
+            "source": "Override one specific Card after defaults and conditional rules have been applied.",
+            "translations": {
+                "de-DE": "Überschreibe eine Karte nach Standardwerten und bedingten Regeln."
+            }
+        },
+        {
+            "constant": "RULE_PREDICATE_HELP",
+            "id": 32411,
+            "source": "Conditions decide which Cards this rule matches. Empty conditions do not restrict that metadata field.",
+            "translations": {
+                "de-DE": "Bedingungen bestimmen, auf welche Karten diese Regel passt. Leere Bedingungen schränken das jeweilige Metadatenfeld nicht ein."
+            }
+        },
+        {
+            "constant": "RULE_DIRECTIVE_HELP",
+            "id": 32412,
+            "source": "Changes are applied to every Card matched by this rule. Inherit leaves the earlier value unchanged.",
+            "translations": {
+                "de-DE": "Änderungen gelten für jede passende Karte. Vererben lässt den vorherigen Wert unverändert."
+            }
+        },
+        {
+            "constant": "READY_NEXT_CARD",
+            "id": 32413,
+            "sharedKey": "READY_NEXT_CARD"
+        },
+        {
+            "constant": "REVEAL_CARD",
+            "id": 32414,
+            "source": "Unveil next card",
+            "translations": {
+                "de-DE": "Nächste Karte aufdecken"
+            }
+        },
+        {
+            "constant": "CONFIRM_ADULT",
+            "id": 32415,
+            "source": "I am 18 or older",
+            "translations": {
+                "de-DE": "Volljährigkeit bestätigen"
+            }
+        },
+        {
+            "constant": "CONFIRM_ADULT_BODY",
+            "id": 32416,
+            "source": "This profile contains explicit adult content. Confirm that everyone playing is an adult.",
+            "translations": {
+                "de-DE": "Dieses Profil enthält explizite Inhalte für Erwachsene. Bestätige, dass alle Spielenden volljährig sind."
+            }
+        },
+        {
+            "constant": "CURRENT_VALUE",
+            "id": 32418,
+            "source": "Current value: %s",
+            "translations": {
+                "de-DE": "Aktueller Wert: %s"
+            }
+        },
+        {
+            "constant": "DUPLICATE_NAME",
+            "id": 32419,
+            "source": "Duplicate name",
+            "translations": {
+                "de-DE": "Doppelter Name"
+            }
+        },
+        {
+            "constant": "REMOVE_PLAYER_TITLE",
+            "id": 32420,
+            "source": "Remove player?",
+            "translations": {
+                "de-DE": "Person entfernen?"
+            }
+        },
+        {
+            "constant": "REMOVE_PLAYER_BODY",
+            "id": 32421,
+            "source": "This player will be removed from the current setup.",
+            "translations": {
+                "de-DE": "Diese Person wird aus der aktuellen Einrichtung entfernt."
+            }
+        },
+        {
+            "constant": "REMOVE_FALLBACK_TITLE",
+            "id": 32422,
+            "source": "Remove fallback language?",
+            "translations": {
+                "de-DE": "Ausweichsprache entfernen?"
+            }
+        },
+        {
+            "constant": "REMOVE_FALLBACK_BODY",
+            "id": 32423,
+            "source": "This language will be removed from the fallback order.",
+            "translations": {
+                "de-DE": "Diese Sprache wird aus der Reihenfolge der Ausweichsprachen entfernt."
+            }
+        },
+        {
+            "constant": "RESET_CARD_TITLE",
+            "id": 32424,
+            "source": "Reset this Card?",
+            "translations": {
+                "de-DE": "Diese Karte zurücksetzen?"
+            }
+        },
+        {
+            "constant": "RESET_CARD_BODY",
+            "id": 32425,
+            "source": "All session-specific changes for this Card will be removed.",
+            "translations": {
+                "de-DE": "Alle sitzungsspezifischen Änderungen für diese Karte werden entfernt."
+            }
+        },
+        {
+            "constant": "CHOOSE_TRUTH_OR_DARE",
+            "id": 32426,
+            "source": "Choose Truth or Dare to unveil the next card.",
+            "translations": {
+                "de-DE": "Wähle Wahrheit oder Pflicht, um die nächste Karte aufzudecken."
+            }
+        },
+        {
+            "constant": "PARTICIPANT_LEFT",
+            "id": 32427,
+            "source": "%s left the Room.",
+            "translations": {
+                "de-DE": "%s hat den Raum verlassen."
+            }
+        },
+        {
+            "constant": "PARTICIPANT_REMOVED",
+            "id": 32428,
+            "source": "%s was removed after disconnecting.",
+            "translations": {
+                "de-DE": "%s wurde nach dem Verbindungsabbruch entfernt."
+            }
+        },
+        {
+            "constant": "CARD_SKIPPED",
+            "id": 32429,
+            "source": "The Card was skipped.",
+            "translations": {
+                "de-DE": "Die Karte wurde übersprungen."
+            }
+        },
+        {
+            "constant": "CARD_VETOED",
+            "id": 32430,
+            "source": "The Card was vetoed.",
+            "translations": {
+                "de-DE": "Gegen die Karte wurde ein Veto eingelegt."
+            }
+        },
+        {
+            "constant": "TRUTH_DARE_DEVICE_CHOICE",
+            "id": 32431,
+            "source": "Truth or dare? The active person chooses on their device.",
+            "translations": {
+                "de-DE": "Wahrheit oder Pflicht? Die aktive Person wählt auf ihrem Gerät."
+            }
+        },
+        {
+            "constant": "PRIVATE_VOTE_HINT",
+            "id": 32432,
+            "source": "D-pad + OK · Page Up: Yes · Page Down: No",
+            "translations": {
+                "de-DE": "Steuerkreuz + OK · Bild hoch: Ja · Bild runter: Nein"
+            }
+        },
+        {
+            "constant": "PLAYER_PROFILE_POSITION",
+            "id": 32433,
+            "source": "Player %s of %s",
+            "translations": {
+                "de-DE": "Person %s von %s"
+            }
+        },
+        {
+            "constant": "NAME",
+            "id": 32434,
+            "source": "Name",
+            "translations": {
+                "de-DE": "Name"
+            }
+        },
+        {
+            "constant": "DIAGNOSTIC_DISCOVERY_REJECTED",
+            "id": 32435,
+            "source": "Discovery candidate rejected",
+            "translations": {
+                "de-DE": "Suchkandidat abgelehnt"
+            }
+        },
+        {
+            "constant": "DIAGNOSTIC_SERVER_VALIDATED",
+            "id": 32436,
+            "source": "Server validated",
+            "translations": {
+                "de-DE": "Server geprüft"
+            }
+        },
+        {
+            "constant": "DIAGNOSTIC_SOURCE_ERROR",
+            "id": 32437,
+            "source": "%s · %s",
+            "translations": {
+                "de-DE": "%s · %s"
+            }
+        },
+        {
+            "constant": "AUTO_PAGE_STATUS",
+            "id": 32438,
+            "source": "Auto-scrolling · page %s/%s",
+            "translations": {
+                "de-DE": "Automatischer Wechsel · Seite %s/%s"
+            }
+        },
+        {
+            "constant": "JOIN_ADDRESS_STATUS",
+            "id": 32439,
+            "source": "Join address %s/%s",
+            "translations": {
+                "de-DE": "Beitrittsadresse %s/%s"
+            }
+        },
+        {
+            "constant": "VOTED_STATUS",
+            "id": 32440,
+            "sharedKey": "VOTED_STATUS"
+        },
+        {
+            "constant": "ROOM_SETTINGS_CHANGED",
+            "id": 32441,
+            "sharedKey": "ROOM_SETTINGS_CHANGED"
+        },
+        {
+            "constant": "EXIT_ADDON_TITLE",
+            "id": 32442,
+            "source": "Exit Party Game TV?",
+            "translations": {
+                "de-DE": "Party Game TV verlassen?"
+            }
+        },
+        {
+            "constant": "EXIT_ADDON_BODY",
+            "id": 32443,
+            "source": "Return to Kodi? Any recoverable game remains available.",
+            "translations": {
+                "de-DE": "Zu Kodi zurückkehren? Ein wiederherstellbares Spiel bleibt verfügbar."
+            }
+        },
+        {
+            "constant": "EXIT_ADDON",
+            "id": 32444,
+            "source": "Exit to Kodi",
+            "translations": {
+                "de-DE": "Zurück zu Kodi"
+            }
+        },
+        {
+            "constant": "RECOVER_SESSION_HINT",
+            "id": 32445,
+            "source": "Continue the recoverable game from where this display last connected.",
+            "translations": {
+                "de-DE": "Setzt das wiederherstellbare Spiel an der letzten Verbindung dieses Bildschirms fort."
+            }
+        },
+        {
+            "constant": "DISCARD_RECOVERY_HINT",
+            "id": 32446,
+            "source": "Permanently remove the saved recovery for this game.",
+            "translations": {
+                "de-DE": "Entfernt die gespeicherte Wiederherstellung für dieses Spiel dauerhaft."
+            }
+        },
+        {
+            "constant": "SUBMITTING_VOTE",
+            "id": 32447,
+            "source": "Submitting vote",
+            "translations": {
+                "de-DE": "Stimmabgabe"
+            }
+        },
+        {
+            "constant": "CARD_PAGE_STATUS",
+            "id": 32448,
+            "source": "Text page %s of %s · Page Up/Down",
+            "translations": {
+                "de-DE": "Textseite %s von %s · Bild hoch/runter"
+            }
+        },
+        {
+            "constant": "VOTER_PAGE_STATUS",
+            "id": 32449,
+            "source": "Choose voter · voter page %s of %s",
+            "translations": {
+                "de-DE": "Abstimmungsseite %s von %s"
+            }
+        },
+        {
+            "constant": "PREVIOUS_VOTERS",
+            "id": 32450,
+            "source": "Previous voters",
+            "translations": {
+                "de-DE": "Vorherige Personen"
+            }
+        },
+        {
+            "constant": "NEXT_VOTERS",
+            "id": 32451,
+            "source": "Next voters",
+            "translations": {
+                "de-DE": "Nächste Personen"
+            }
+        },
+        {
+            "constant": "CASTING_VOTE",
+            "id": 32452,
+            "source": "Casting vote",
+            "translations": {
+                "de-DE": "Stimme von"
+            }
+        },
+        {
+            "constant": "CANCEL_VOTE",
+            "id": 32453,
+            "source": "Cancel vote",
+            "translations": {
+                "de-DE": "Abstimmung abbrechen"
+            }
+        },
+        {
+            "constant": "CHOOSE_VOTER",
+            "id": 32454,
+            "source": "Choose who is voting",
+            "translations": {
+                "de-DE": "Wähle, wer abstimmt"
+            }
+        },
+        {
+            "constant": "RESULT_AUTO_PAGE_STATUS",
+            "id": 32455,
+            "source": "Names advance automatically · page %s of %s",
+            "translations": {
+                "de-DE": "Namen wechseln automatisch · Seite %s von %s"
+            }
+        },
+        {
+            "constant": "ROOM_ENDED_OPEN_BODY",
+            "id": 32457,
+            "source": "The Room remains open. The Host can prepare another game while this display stays connected.",
+            "translations": {
+                "de-DE": "Der Raum bleibt offen. Der Host kann ein weiteres Spiel vorbereiten, während diese Anzeige verbunden bleibt."
+            }
+        },
+        {
+            "constant": "ROOM_DISPLAY_LEAVE_TITLE",
+            "id": 32458,
+            "source": "Disconnect this display from the Room?",
+            "translations": {
+                "de-DE": "Diese Anzeige vom Raum trennen?"
+            }
+        },
+        {
+            "constant": "ROOM_DISPLAY_LEAVE_BODY",
+            "id": 32459,
+            "source": "The Room stays open. This display will leave it; its saved Room connection will be removed.",
+            "translations": {
+                "de-DE": "Der Raum bleibt offen. Diese Anzeige verlässt ihn; ihre gespeicherte Raumverbindung wird entfernt."
+            }
+        }
+    ]
+}

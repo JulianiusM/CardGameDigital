@@ -9,16 +9,13 @@ import {
     resolveProducerCardMetadata,
     validateCardCatalog,
     validateCardCatalogArtifact,
-} from "../../src/packages/card-catalog-contract";
+} from "../../packages/card-catalog-contract";
 import { cardCatalog } from "../support/cardCatalog";
 
 describe("game-card-catalog/v2 contract", () => {
     it("keeps the producer JSON Schema enums aligned with the runtime contract", () => {
         const schema = JSON.parse(
-            fs.readFileSync(
-                "src/packages/card-catalog-contract/card-catalog-v2.schema.json",
-                "utf8",
-            ),
+            fs.readFileSync("packages/card-catalog-contract/card-catalog-v2.schema.json", "utf8"),
         );
         const cardProperties = schema.$defs.card.properties;
         expect(cardProperties.cardType.enum).toEqual(CARD_CATALOG_CARD_TYPES);

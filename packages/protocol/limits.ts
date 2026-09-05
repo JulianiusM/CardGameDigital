@@ -1,0 +1,2 @@
+export const MAX_WEBSOCKET_MESSAGE_BYTES = 64 * 1024;
+export const ROOM_CODE_PATTERN_SOURCE = "^[A-Z2-9]{6}$";

@@ -1,6 +1,7 @@
 <script lang="ts">
     import { messages } from "./i18n";
     import type { Participant } from "./multiplayer";
+    import WrappingSelect, { type WrappingSelectOption } from "./WrappingSelect.svelte";
 
     export let participants: readonly Participant[];
     export let selected = "";
@@ -8,6 +9,10 @@
     export let onTransfer: () => void;
 
     $: candidates = participants.filter(({ role }) => role === "PLAYER");
+    $: candidateOptions = [
+        { value: "", label: messages.room.selectDevice },
+        ...candidates.map(({ id, displayName }) => ({ value: id, label: displayName })),
+    ] satisfies WrappingSelectOption[];
 </script>
 
 <section class="settings-section-card host-transfer-control">
@@ -16,18 +21,15 @@
         <p>{messages.room.transferHint}</p>
     </div>
     <div class="host-transfer-action">
-        <label
-            ><span>{messages.room.selectDevice}</span><select
-                aria-label={messages.room.transfer}
+        <div class="host-transfer-field">
+            <span>{messages.room.selectDevice}</span>
+            <WrappingSelect
                 value={selected}
-                on:change={(event) => onSelect(event.currentTarget.value)}
-            >
-                <option value="">{messages.room.selectDevice}</option>
-                {#each candidates as candidate}<option value={candidate.id}
-                        >{candidate.displayName}</option
-                    >{/each}
-            </select></label
-        >
+                options={candidateOptions}
+                label={messages.room.transfer}
+                onChange={onSelect}
+            />
+        </div>
         <button class="secondary" disabled={!selected} on:click={onTransfer}>
             {messages.room.transferAction}
         </button>

@@ -5,7 +5,6 @@ export default defineConfig({
         include: [
             "tests/unit/**/*.spec.ts",
             "tests/integration/**/*.spec.ts",
-            "tests/frontend/**/*.spec.ts",
             "tests/simulation/**/*.spec.ts",
             "tests/architecture/**/*.spec.ts",
         ],
@@ -21,8 +20,8 @@ export default defineConfig({
             provider: "v8",
             reportsDirectory: "coverage",
             reporter: ["text", "lcov", "json"],
-            include: ["src/**/*.ts"],
-            exclude: ["src/migrations/**", "src/modules/database/__index__.ts", "src/types/**"],
+            include: ["apps/server/src/**/*.ts", "apps/web/src/**/*.ts", "packages/**/*.ts"],
+            exclude: ["apps/server/src/modules/database/__index__.ts", "apps/server/src/types/**"],
         },
     },
 });

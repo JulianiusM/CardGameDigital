@@ -4,14 +4,14 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { AppDataSource, initDataSource } from "../../src/modules/database/dataSource";
-import { RoomParticipantEntity } from "../../src/modules/database/entities/game/RoomParticipantEntity";
-import { RoomEntity } from "../../src/modules/database/entities/game/RoomEntity";
-import { RoomCreateIdempotencyEntity } from "../../src/modules/database/entities/game/RoomCreateIdempotencyEntity";
-import settings from "../../src/modules/settings";
-import { getRoomService } from "../../src/modules/realtime";
-import { defaultRoomGameSettings } from "../../src/packages/application/roomGameSettings";
-import { DARE_TYPE_IDS, QUESTION_CATEGORY_IDS } from "../../src/packages/game-core";
+import { AppDataSource, initDataSource } from "../../apps/server/src/modules/database/dataSource";
+import { RoomParticipantEntity } from "../../packages/persistence/entities/game/RoomParticipantEntity";
+import { RoomEntity } from "../../packages/persistence/entities/game/RoomEntity";
+import { RoomCreateIdempotencyEntity } from "../../packages/persistence/entities/game/RoomCreateIdempotencyEntity";
+import settings from "../../apps/server/src/modules/settings";
+import { getRoomService } from "../../apps/server/src/modules/realtime";
+import { defaultRoomGameSettings } from "../../packages/application/roomGameSettings";
+import { DARE_TYPE_IDS, QUESTION_CATEGORY_IDS } from "../../packages/game-core";
 
 let app: import("express").Express;
 let directory: string;
@@ -30,7 +30,7 @@ beforeAll(async () => {
     });
     await settings.read("/dev/null");
     await initDataSource();
-    app = (await import("../../src/app")).default;
+    app = (await import("../../apps/server/src/app")).default;
 }, HTTP_SUITE_SETUP_TIMEOUT_MS);
 afterAll(async () => {
     if (AppDataSource.isInitialized) await AppDataSource.destroy();

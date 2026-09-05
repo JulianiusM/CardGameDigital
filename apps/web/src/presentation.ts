@@ -1,4 +1,9 @@
 import { writable } from "svelte/store";
+import {
+    GOLDEN_MISCHIEF_ATMOSPHERES,
+    GOLDEN_MISCHIEF_COLORS,
+    type GoldenMischiefCardVisualFamily,
+} from "../../../packages/design-tokens";
 import { MOTIF_SYMBOLS_BY_FAMILY } from "./motifFamilies";
 
 export type PresentationPreferences = {
@@ -11,23 +16,7 @@ export type PresentationPreferences = {
 export type PresentationScene = "MENU" | "LOBBY" | "QUESTION" | "DARE" | "CONVERSATION" | "END";
 export type PresentationEffect = "action" | "confirm" | "join" | "reveal" | "turn" | "vote" | "end";
 export type VisualFamily =
-    | "GENERAL"
-    | "LOBBY"
-    | "CURIOSITY"
-    | "INNER_SELF"
-    | "CONNECTION"
-    | "UNFILTERED"
-    | "INTIMATE_TALK"
-    | "DESIRE_STORIES"
-    | "MISCHIEF"
-    | "SOCIAL_CHAOS"
-    | "AFFECTION"
-    | "FLIRT"
-    | "REVEAL"
-    | "HEAT"
-    | "GENERIC_DARE"
-    | "CONVERSATION"
-    | "END";
+    GoldenMischiefCardVisualFamily | "GENERAL" | "LOBBY" | "CONVERSATION" | "END";
 export type AtmospherePresentation = {
     family: VisualFamily;
     intensity: 1 | 2 | 3 | 4 | 5;
@@ -76,127 +65,113 @@ type FamilyStyle = {
     symbols: readonly string[];
 };
 
+function sharedFamilyStyle(
+    family: GoldenMischiefCardVisualFamily,
+): Pick<FamilyStyle, "colorA" | "colorB" | "patternTone"> {
+    const atmosphere = GOLDEN_MISCHIEF_ATMOSPHERES[family];
+    return {
+        colorA: atmosphere.start,
+        colorB: atmosphere.end,
+        patternTone: atmosphere.motif,
+    };
+}
+
 const familyStyles: Record<VisualFamily, FamilyStyle> = {
     GENERAL: {
-        colorA: "#FFD166",
-        colorB: "#FFA85C",
+        colorA: GOLDEN_MISCHIEF_COLORS.sunflower,
+        colorB: GOLDEN_MISCHIEF_COLORS.apricot,
         deepA: "#E6A12E",
         deepB: "#F07830",
         patternTone: "#94501B",
         symbols: MOTIF_SYMBOLS_BY_FAMILY.GENERAL,
     },
     LOBBY: {
-        colorA: "#FFE49A",
-        colorB: "#FFB238",
+        colorA: GOLDEN_MISCHIEF_ATMOSPHERES.CURIOSITY.start,
+        colorB: GOLDEN_MISCHIEF_COLORS.goldenOrange,
         deepA: "#D99A29",
         deepB: "#E87522",
         patternTone: "#8A4A16",
         symbols: MOTIF_SYMBOLS_BY_FAMILY.LOBBY,
     },
     CURIOSITY: {
-        colorA: "#FFE49A",
-        colorB: "#FFB347",
+        ...sharedFamilyStyle("CURIOSITY"),
         deepA: "#E6B34D",
         deepB: "#E68A1F",
-        patternTone: "#B86516",
         symbols: MOTIF_SYMBOLS_BY_FAMILY.CURIOSITY,
     },
     INNER_SELF: {
-        colorA: "#FFC18A",
-        colorB: "#E97D5D",
+        ...sharedFamilyStyle("INNER_SELF"),
         deepA: "#E79A64",
         deepB: "#BC594C",
-        patternTone: "#884434",
         symbols: MOTIF_SYMBOLS_BY_FAMILY.INNER_SELF,
     },
     CONNECTION: {
-        colorA: "#FFAD75",
-        colorB: "#FF7485",
+        ...sharedFamilyStyle("CONNECTION"),
         deepA: "#E98A5D",
         deepB: "#D74E68",
-        patternTone: "#9C4050",
         symbols: MOTIF_SYMBOLS_BY_FAMILY.CONNECTION,
     },
     UNFILTERED: {
-        colorA: "#FFC44D",
-        colorB: "#FF7A1A",
+        ...sharedFamilyStyle("UNFILTERED"),
         deepA: "#E39C20",
         deepB: "#D95A12",
-        patternTone: "#9B470F",
         symbols: MOTIF_SYMBOLS_BY_FAMILY.UNFILTERED,
     },
     INTIMATE_TALK: {
-        colorA: "#FF9A78",
-        colorB: "#E85D82",
+        ...sharedFamilyStyle("INTIMATE_TALK"),
         deepA: "#DD7059",
         deepB: "#BD3D68",
-        patternTone: "#8B3550",
         symbols: MOTIF_SYMBOLS_BY_FAMILY.INTIMATE_TALK,
     },
     DESIRE_STORIES: {
-        colorA: "#FF775F",
-        colorB: "#D84670",
+        ...sharedFamilyStyle("DESIRE_STORIES"),
         deepA: "#D74B45",
         deepB: "#A92F5C",
-        patternTone: "#792A48",
         symbols: MOTIF_SYMBOLS_BY_FAMILY.DESIRE_STORIES,
     },
     MISCHIEF: {
-        colorA: "#FFD45F",
-        colorB: "#FF8A1F",
+        ...sharedFamilyStyle("MISCHIEF"),
         deepA: "#E6AA2F",
         deepB: "#DD6513",
-        patternTone: "#9E4B0D",
         symbols: MOTIF_SYMBOLS_BY_FAMILY.MISCHIEF,
     },
     SOCIAL_CHAOS: {
-        colorA: "#FFB13D",
-        colorB: "#F0602A",
+        ...sharedFamilyStyle("SOCIAL_CHAOS"),
         deepA: "#DD871F",
         deepB: "#C64321",
-        patternTone: "#853718",
         symbols: MOTIF_SYMBOLS_BY_FAMILY.SOCIAL_CHAOS,
     },
     AFFECTION: {
-        colorA: "#FFB58E",
-        colorB: "#F67C74",
+        ...sharedFamilyStyle("AFFECTION"),
         deepA: "#E68B69",
         deepB: "#D5585B",
-        patternTone: "#91483F",
         symbols: MOTIF_SYMBOLS_BY_FAMILY.AFFECTION,
     },
     FLIRT: {
-        colorA: "#FF906D",
-        colorB: "#E94775",
+        ...sharedFamilyStyle("FLIRT"),
         deepA: "#DC654F",
         deepB: "#B82F60",
-        patternTone: "#812B49",
         symbols: MOTIF_SYMBOLS_BY_FAMILY.FLIRT,
     },
     REVEAL: {
-        colorA: "#EE8A4F",
-        colorB: "#9F4A64",
+        ...sharedFamilyStyle("REVEAL"),
         deepA: "#C9683C",
         deepB: "#74354E",
-        patternTone: "#613245",
         symbols: MOTIF_SYMBOLS_BY_FAMILY.REVEAL,
     },
     HEAT: {
-        colorA: "#E85065",
-        colorB: "#942C59",
+        ...sharedFamilyStyle("HEAT"),
         deepA: "#B93855",
         deepB: "#6D2049",
         patternTone: "#6D2049",
-        lightPatternTone: "#FFD0B5",
+        lightPatternTone: GOLDEN_MISCHIEF_ATMOSPHERES.HEAT.motif,
         highlight: "#FFB486",
         symbols: MOTIF_SYMBOLS_BY_FAMILY.HEAT,
     },
     GENERIC_DARE: {
-        colorA: "#FFC05A",
-        colorB: "#FF8A1F",
+        ...sharedFamilyStyle("GENERIC_DARE"),
         deepA: "#DE932A",
         deepB: "#D96314",
-        patternTone: "#91400E",
         symbols: MOTIF_SYMBOLS_BY_FAMILY.GENERIC_DARE,
     },
     CONVERSATION: {
@@ -209,8 +184,8 @@ const familyStyles: Record<VisualFamily, FamilyStyle> = {
         symbols: MOTIF_SYMBOLS_BY_FAMILY.CONVERSATION,
     },
     END: {
-        colorA: "#FFD166",
-        colorB: "#E84769",
+        colorA: GOLDEN_MISCHIEF_COLORS.sunflower,
+        colorB: GOLDEN_MISCHIEF_COLORS.raspberry,
         deepA: "#DAA12F",
         deepB: "#A92F5C",
         patternTone: "#793544",
@@ -219,7 +194,7 @@ const familyStyles: Record<VisualFamily, FamilyStyle> = {
 };
 
 const MOTIF_REFERENCE_TRAVEL_PX = 2_112;
-const SOFT_CREAM = "#FFF1C7";
+const SOFT_CREAM = GOLDEN_MISCHIEF_COLORS.softCream;
 const intensityStyles = {
     1: {
         base: 70,
@@ -304,7 +279,7 @@ function resolveAtmosphere(value: AtmospherePresentation): ResolvedAtmosphere {
         ...value,
         colorA: tint(family.colorA, family.deepA, intensity),
         colorB: tint(family.colorB, family.deepB, intensity),
-        highlight: family.highlight ?? "#FFF1C7",
+        highlight: family.highlight ?? GOLDEN_MISCHIEF_COLORS.softCream,
         patternTone: usesLightMotifs ? family.lightPatternTone! : family.patternTone,
         motifSymbols: family.symbols,
         motifIconGap: intensity.iconGap,

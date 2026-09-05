@@ -2,16 +2,19 @@
 
 ## Runtime boundaries
 
-| Boundary                   | Responsibility                                                                                                                           |
-| -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| `apps/web`                 | The single Svelte presentation for home, Couch, Room, account, DataSpace and help flows. It talks only to versioned HTTP/WebSocket APIs. |
-| `src/packages/game-core`   | Framework-independent rules, eligibility, selection, history and Session state transitions.                                              |
-| `src/packages/application` | Use cases for Couch sessions, Rooms, accounts, and help. Express and TypeORM details do not cross into the game domain.                  |
-| `src/packages/protocol`    | Versioned, validated realtime messages shared by transport and clients.                                                                  |
-| `src/packages/persistence` | TypeORM implementations of application repository ports.                                                                                 |
-| `src/routes/api`           | Thin Express adapters that validate input, call application services and serialize JSON responses.                                       |
-| `src/modules`              | Process composition: settings, database, sessions, OIDC, email and WebSocket transport.                                                  |
-| `clients/kodi`             | Native Kodi TV presentation, discovery, transport, recovery, profile storage, generated contracts, and independent packaging.            |
+| Boundary                      | Responsibility                                                                                                                             |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `apps/web`                    | The single Svelte presentation for home, Couch, Room, account, DataSpace and help flows. It talks only to versioned HTTP/WebSocket APIs.   |
+| `packages/game-core`          | Framework-independent rules, eligibility, selection, history and Session state transitions.                                                |
+| `packages/application`        | Framework-independent use cases and repository ports for Couch sessions and Rooms.                                                         |
+| `packages/protocol`           | Versioned, validated wire messages, inferred DTOs, and forward-compatible client decoders.                                                 |
+| `packages/persistence`        | TypeORM entities, application-port implementations, and domain mapping.                                                                    |
+| `packages/design-tokens`      | Golden Mischief colors, base atmospheres, and exhaustive Card-family classification shared by visual clients.                              |
+| `packages/localization`       | Server message catalogs, stable shared browser/native terms, and the generated Kodi locale/settings source.                                |
+| `apps/server/src/application` | Server-specific account and Help orchestration that depends on HTTP, mail, OIDC, filesystem, or database adapters.                         |
+| `apps/server/src/routes/api`  | Thin Express adapters that validate input, call application services and serialize JSON responses.                                         |
+| `apps/server/src/modules`     | Process composition: settings, database, sessions, OIDC, email and WebSocket transport.                                                    |
+| `apps/kodi`                   | Native Kodi TV presentation, discovery, transport, recovery, profile storage, generated contracts/localization, and independent packaging. |
 
 ## Account model
 

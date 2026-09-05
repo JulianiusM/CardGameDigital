@@ -1,6 +1,6 @@
 import { DataSource, type DataSourceOptions } from "typeorm";
 import { describe, expect, it } from "vitest";
-import { entities } from "../../src/modules/database/__index__";
+import { entities } from "../../apps/server/src/modules/database/__index__";
 
 class MetadataDataSource extends DataSource {
     async validateEntityMetadata(): Promise<void> {

@@ -7,11 +7,11 @@ import {
     QUESTION_CATEGORIES,
     SOCIAL_SENSITIVITIES,
     validateGameProfile,
-} from "../../src/packages/game-core";
+} from "../../packages/game-core";
 import {
     CUSTOM_GAME_PROFILE_ID,
     effectiveSettingsFromProfile,
-} from "../../src/packages/application/roomGameSettings";
+} from "../../packages/application/roomGameSettings";
 
 describe("built-in GameProfiles", () => {
     it("exposes five symmetric presets before Custom", () => {

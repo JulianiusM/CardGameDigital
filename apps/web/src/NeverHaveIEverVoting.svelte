@@ -1,7 +1,7 @@
 <script lang="ts">
     import AutoPageRegion from "./AutoPageRegion.svelte";
     import { messages } from "./i18n";
-    import type { NeverHaveIEverVotingView } from "./multiplayer";
+    import type { NeverHaveIEverVotingView } from "../../../packages/protocol";
 
     export let voting: NeverHaveIEverVotingView;
     export let controllablePlayerIds: readonly string[] = [];

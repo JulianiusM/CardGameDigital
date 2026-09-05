@@ -1,5 +1,6 @@
 import { writable } from "svelte/store";
-import { accountApi, type AccountSnapshot, type AccountStatus } from "./accountApi";
+import { accountApi } from "./accountApi";
+import type { AccountSnapshot, AccountStatus } from "../../../packages/protocol";
 
 const initial: AccountStatus = {
     authenticationAvailable: false,

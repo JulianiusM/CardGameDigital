@@ -1,247 +1,42 @@
 import { locale, messages } from "./i18n";
-import { fetchJsonResponse } from "./http";
+import { fetchJsonResponse, httpErrorDetails } from "./http";
 import { randomUuidV4 } from "./randomUuid";
-
-export type Role = "HOST" | "PLAYER" | "DISPLAY";
-export type RoomBootstrapMode = "CREATOR_HOST" | "DISPLAY_WAITING_FOR_HOST";
-export type RoomHostStatus = {
-    state:
-        | "AWAITING_FIRST_HOST"
-        | "CONNECTING"
-        | "CONNECTED"
-        | "RECONNECTING"
-        | "AWAITING_REPLACEMENT_HOST";
-    participantId: string | null;
-    displayName: string | null;
-    deadline: number | null;
-};
-export type Participant = {
-    id: string;
-    roomId: string;
-    role: Role;
-    displayName: string;
-    devicePlayers: { id: string; name: string }[];
-    connectionStatus: "CONNECTED" | "TEMPORARILY_DISCONNECTED";
-};
-export type Presence = Pick<Participant, "displayName" | "role"> & { participantId: string };
-export type SessionView = {
-    id: string;
-    startedAt: number;
-    mode: string;
-    revision: number;
-    state: string;
-    roundNumber: number;
-    activePlayer: { id: string; name: string } | null;
-    players: { id: string; name: string }[];
-    currentCard: {
-        id: string;
-        cardText: string;
-        cardType: string;
-        cardIntensity: number;
-        intensity: number;
-        questionCategoryId: string | null;
-        dareTypeId: string | null;
-    } | null;
-    cardsShown: number;
-    remainingCardCount: number;
-    voteResult: { yes: number; no: number; total: number };
-    neverHaveIEverVoting: NeverHaveIEverVotingView | null;
-    hasVoted: boolean;
-    viewer: { participantId: string; role: Role; displayName: string };
-    availableActions: string[];
-    controllablePlayers: { id: string; name: string; hasVoted: boolean }[];
-};
-export type NeverHaveIEverRevealMode = "ANONYMOUS_AGGREGATE" | "NAMED_ANSWERS";
-export type NeverHaveIEverVotingView = {
-    revealMode: NeverHaveIEverRevealMode;
-    progress: {
-        playerId: string;
-        displayName: string;
-        status: "PENDING" | "VOTED";
-    }[];
-    result: {
-        yes: number;
-        no: number;
-        total: number;
-        namedAnswers?: {
-            playerId: string;
-            displayName: string;
-            vote: "YES" | "NO";
-        }[];
-    } | null;
-};
-export type RoomSnapshot = {
-    roomId: string;
-    capacity: { maximumParticipants: number; maximumPlayers: number };
-    participants: Participant[];
-    bootstrapMode: RoomBootstrapMode;
-    hostStatus: RoomHostStatus;
-    boundaryConfigured: boolean;
-    settings: VersionedRoomGameSettings;
-    session: SessionView | null;
-};
-export type SocialSensitivity =
-    "GENERAL" | "PERSONAL" | "CLOSE_PERSONAL" | "DEEP_PERSONAL" | "INTIMATE" | "EXPLICIT";
-export type EffectiveGameSettings = {
-    enabledQuestionCategoryIds: string[];
-    enabledDareTypeIds: string[];
-    blockedOperationalFlags: string[];
-    maximumSocialSensitivity: SocialSensitivity;
-    startingIntensity: 1 | 2 | 3 | 4 | 5;
-    maximumIntensity: 1 | 2 | 3 | 4 | 5;
-    intensityProgressionUnit: "ROUNDS" | "CARDS";
-    intensityProgressionInterval: number;
-    intensityProgressionIncrement: number;
-    randomQuestionRatio: number;
-    maximumTypeStreak: number;
-    letsTalkMetaInterval: number;
-};
-export type AvailabilityDirective = "INHERIT" | "INCLUDE" | "EXCLUDE";
-export type BooleanDirective = "INHERIT" | "ENABLE" | "DISABLE";
-export type ScalarDirective<T> =
-    { mode: "INHERIT" } | { mode: "CATALOG" } | { mode: "SET"; value: T };
-export type CardPolicyDirectives = {
-    availability?: AvailabilityDirective;
-    alwaysEligible?: BooleanDirective;
-    repeatableInSession?: BooleanDirective;
-    repeatCooldown?: ScalarDirective<number>;
-    intensity?: ScalarDirective<1 | 2 | 3 | 4 | 5>;
-    weight?: ScalarDirective<number>;
-    socialSensitivity?: ScalarDirective<string>;
-    playerCount?: ScalarDirective<{ minimum: number; maximum: number | null }>;
-};
-export type CardPolicyPredicate = {
-    cardTypes?: string[];
-    questionCategoryIds?: string[];
-    dareTypeIds?: string[];
-    dareAffinityCategoryIds?: string[];
-    yesNoAnswerPossible?: boolean;
-    socialSensitivities?: string[];
-    operationalFlagsAll?: string[];
-    operationalFlagsAny?: string[];
-    operationalFlagsNone?: string[];
-    minimumIntensity?: number;
-    maximumIntensity?: number;
-    lifecycle?: "ACTIVE" | "RETIRED";
-};
-export type CardPolicyRule = {
-    id: string;
-    name: string;
-    order: number;
-    enabled: boolean;
-    predicate: CardPolicyPredicate;
-    directives: CardPolicyDirectives;
-};
-export type SessionCardPolicy = {
-    scopeDefault: CardPolicyDirectives;
-    conditionalRules: CardPolicyRule[];
-    exactCards: { cardId: string; directives: CardPolicyDirectives }[];
-};
-export type RoomGameSettings = {
-    mode: string;
-    profileId: string;
-    groupId: string | null;
-    adultContentConfirmed: boolean;
-    cardLocale: string;
-    cardFallbackEnabled: boolean;
-    cardFallbackLocales: string[];
-    neverHaveIEverRevealMode: NeverHaveIEverRevealMode;
-    configuration: EffectiveGameSettings;
-    cardPolicy: SessionCardPolicy;
-};
-export type PublicGameSettings = Pick<
+import packageMetadata from "../../../package.json";
+import {
+    decodeRoomCreateResponse,
+    decodeRoomJoinResponse,
+    decodeServerEnvelope,
+    decodeServerInfo,
+} from "../../../packages/protocol/browser";
+import { PROTOCOL_VERSION } from "../../../packages/protocol/version";
+import type {
+    CardLocaleSummary,
+    CardTaxonomyCatalog,
+    ClientRole,
+    GameProfileSummary,
+    GameSettings,
+    GroupSummary,
+    PublicRoomParticipant,
+    RoomBootstrapMode,
+    RoomCreateResponse,
     RoomGameSettings,
-    | "mode"
-    | "profileId"
-    | "cardLocale"
-    | "cardFallbackEnabled"
-    | "cardFallbackLocales"
-    | "neverHaveIEverRevealMode"
-    | "cardPolicy"
-    | "configuration"
->;
-export type VersionedRoomGameSettings = RoomGameSettings & {
-    revision: number;
-    updatedByParticipantId: string | null;
-};
-export type GameProfileSummary = {
-    id: string;
-    name: string;
-    description: string;
-    editorialStatus: "PUBLISHED";
-    requiresAdultConfirmation: boolean;
-    startingIntensity: number;
-    maximumIntensity: number;
-    maximumSocialSensitivity: SocialSensitivity;
-    intensityProgressionUnit: "ROUNDS" | "CARDS";
-    intensityProgressionInterval: number;
-    intensityProgressionIncrement: number;
-    enabledQuestionCategoryIds: string[];
-    enabledDareTypeIds: string[];
-    blockedOperationalFlags: string[];
-    randomQuestionRatio: number;
-    maximumTypeStreak: number;
-    letsTalkMetaInterval: number;
-    immutable: boolean;
-};
-export type GroupSummary = {
-    id: string;
-    name: string;
-    members: string[];
-    updatedAt: string;
-    preferredProfileId: string | null;
-    customConfiguration: EffectiveGameSettings | null;
-    cardLanguageSettings: CardLanguageSettings | null;
-    historyResetAt?: string | null;
-};
-export type CardLanguageSettings = {
-    cardLocale: string;
-    cardFallbackEnabled: boolean;
-    cardFallbackLocales: string[];
-};
-export type GameSettings = {
-    preferredProfileId: string;
-    startingIntensity: number;
-    maximumIntensity: number;
-    maximumSocialSensitivity: SocialSensitivity;
-    intensityProgressionUnit: "ROUNDS" | "CARDS";
-    intensityProgressionInterval: number;
-    intensityProgressionIncrement: number;
-    randomQuestionRatio: number;
-    letsTalkMetaInterval: number;
-    defaultGroupId: string | null;
-    customConfiguration: EffectiveGameSettings;
-    cardLanguageSettings: CardLanguageSettings | null;
-};
-export type CardLocaleSummary = { id: string; nativeName: string; coverage: number };
-export type CardTaxonomyEntry = {
-    id: string;
-    label: string;
-    description: string | null;
-};
-export type CardTaxonomyCatalog = {
-    locale: string;
-    questionCategories: CardTaxonomyEntry[];
-    dareTypes: CardTaxonomyEntry[];
-};
-export type Join = {
-    roomId: string;
-    roomCode: string;
-    participantId: string;
-    participantCredential: string;
-    role: Role;
-    bootstrapMode?: RoomBootstrapMode;
-    hostStatus?: RoomHostStatus;
-};
-type ErrorResponse = { error?: { message?: string } };
+    RoomJoinResponse,
+    RoomPresence,
+    RoomSnapshot,
+    ServerInfoPayload,
+} from "../../../packages/protocol";
 
-async function json<T>(path: string, init: RequestInit): Promise<T> {
+export type Role = ClientRole;
+export type Participant = PublicRoomParticipant;
+export type Presence = RoomPresence[number];
+export type Join = RoomCreateResponse | RoomJoinResponse;
+export type ServerInfo = ServerInfoPayload;
+async function json<T>(path: string, init: RequestInit, decode?: (body: unknown) => T): Promise<T> {
     const { response, body } = await fetchJsonResponse(path, init);
     if (!response.ok) {
-        const error = body as ErrorResponse;
-        throw new Error(error.error?.message ?? messages.common.requestFailed);
+        throw new Error(httpErrorDetails(body).message ?? messages.common.requestFailed);
     }
-    return body as T;
+    return decode ? decode(body) : (body as T);
 }
 export const rooms = {
     create: async (
@@ -255,19 +50,27 @@ export const rooms = {
             bootstrapMode === "DISPLAY_WAITING_FOR_HOST"
                 ? displayBootstrapIdempotencyKey(body)
                 : null;
-        const result = await json<Join>("/api/v1/rooms", {
-            method: "POST",
-            headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined,
-            body,
-        });
+        const result = await json<RoomCreateResponse>(
+            "/api/v1/rooms",
+            {
+                method: "POST",
+                headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined,
+                body,
+            },
+            decodeRoomCreateResponse,
+        );
         if (idempotencyKey) clearDisplayBootstrapIdempotencyKey(idempotencyKey);
         return result;
     },
     join: (roomCode: string, displayName: string, role: Exclude<Role, "HOST">) =>
-        json<Join>(`/api/v1/rooms/${roomCode}/participants`, {
-            method: "POST",
-            body: JSON.stringify({ displayName, role }),
-        }),
+        json<RoomJoinResponse>(
+            `/api/v1/rooms/${roomCode}/participants`,
+            {
+                method: "POST",
+                body: JSON.stringify({ displayName, role }),
+            },
+            decodeRoomJoinResponse,
+        ),
 };
 export async function loadGameProfiles(): Promise<GameProfileSummary[]> {
     const result = await json<{ profiles: GameProfileSummary[] }>("/api/v1/game-profiles", {
@@ -346,40 +149,9 @@ export async function resetGroupHistory(groupId: string): Promise<GroupSummary> 
 export async function deleteGroup(groupId: string): Promise<void> {
     await json<void>(`/api/v1/groups/${groupId}`, { method: "DELETE" });
 }
-export type ServerInfo = {
-    serverId: string;
-    displayName: string;
-    deploymentMode: "local" | "public";
-    publicRuntimeSecurity: "enforced" | "development";
-    authenticationAvailable: boolean;
-    roomCapacity: { maximumParticipants: number; maximumPlayers: number };
-    roomAccess: {
-        configuredBaseUrl: string | null;
-        availableBaseUrls: string[];
-    };
-    capabilities: {
-        localNetworkDiscovery: boolean;
-        displayBootstrapRoomCreation: boolean;
-    };
-    localNetworkDiscovery: {
-        advertising: boolean;
-        serviceType: string;
-        txtVersion: number;
-    };
-    endpoints: {
-        apiBasePath: string;
-        webSocketPath: string;
-        roomJoinPathTemplate: string;
-    };
-};
 export async function loadServerInfo(): Promise<ServerInfo> {
-    return json("/api/v1/server-info", { method: "GET" });
+    return json("/api/v1/server-info", { method: "GET" }, decodeServerInfo);
 }
-
-type ServerEnvelope = {
-    type: "room.snapshot" | "room.presence" | "error" | string;
-    payload: unknown;
-};
 
 export type ReconnectPhase =
     "CONNECTED" | "CONNECTING" | "WAITING" | "OFFLINE" | "STOPPED" | "EXHAUSTED";
@@ -454,8 +226,8 @@ export class RoomSocket {
             this.error = "";
             this.errorCode = "";
             this.send("client.hello", null, {
-                supportedProtocolVersions: [2],
-                applicationVersion: "0.2.3",
+                supportedProtocolVersions: [PROTOCOL_VERSION],
+                applicationVersion: packageMetadata.version,
                 role: this.joined.role,
                 capabilities: [],
                 roomCode: this.joined.roomCode,
@@ -465,10 +237,19 @@ export class RoomSocket {
         socket.onmessage = (event) => {
             if (this.socket !== socket || this.disposed) return;
             this.lastServerActivity = Date.now();
-            const message = JSON.parse(event.data) as ServerEnvelope;
+            let message;
+            try {
+                message = decodeServerEnvelope(JSON.parse(event.data));
+            } catch {
+                this.errorCode = "VALIDATION_ERROR";
+                this.error = messages.common.requestFailed;
+                this.changed();
+                return;
+            }
+            if (!message) return;
             if (message.type === "server.pong") return;
             if (message.type === "room.snapshot") {
-                const next = message.payload as RoomSnapshot;
+                const next = message.payload;
                 const previousParticipantIds = new Set(
                     this.snapshot?.participants.map(({ id }) => id) ?? [],
                 );
@@ -506,16 +287,13 @@ export class RoomSocket {
                 this.errorCode = "";
             }
             if (message.type === "room.presence") {
-                this.presence = (message.payload as { connected: Presence[] }).connected;
+                this.presence = message.payload.connected;
             }
             if (message.type === "room.roleChanged") {
-                this.role = (message.payload as { role: Role }).role;
+                this.role = message.payload.role;
             }
             if (message.type === "room.participantLeft") {
-                const payload = message.payload as {
-                    displayName: string;
-                    reason: "LEFT" | "DISCONNECT_EXPIRED";
-                };
+                const payload = message.payload;
                 this.roomNotice =
                     payload.reason === "DISCONNECT_EXPIRED"
                         ? messages.room.participantRemoved(payload.displayName)
@@ -523,7 +301,7 @@ export class RoomSocket {
                 this.roomNoticeId++;
             }
             if (message.type === "session.cardReplaced") {
-                const payload = message.payload as { reason: "SKIPPED" | "VETOED" };
+                const payload = message.payload;
                 this.pendingCardReplacement = payload.reason;
                 this.roomNotice =
                     payload.reason === "SKIPPED"
@@ -532,13 +310,13 @@ export class RoomSocket {
                 this.roomNoticeId++;
             }
             if (message.type === "server.hello") {
-                const payload = message.payload as { participantId: string; role: Role };
+                const payload = message.payload;
                 this.authenticated = payload.participantId === this.joined.participantId;
                 this.role = payload.role;
                 if (this.authenticated) this.markConnected();
             }
             if (message.type === "error") {
-                const payload = message.payload as { code: string; message: string };
+                const payload = message.payload;
                 this.errorCode = payload.code;
                 this.error = payload.message;
                 if (
@@ -665,7 +443,7 @@ export class RoomSocket {
             try {
                 this.socket.send(
                     JSON.stringify({
-                        protocol: 2,
+                        protocol: PROTOCOL_VERSION,
                         type,
                         requestId: randomUuidV4(),
                         revision,

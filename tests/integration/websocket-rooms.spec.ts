@@ -1,26 +1,26 @@
 import http from "node:http";
 import { afterEach, describe, expect, it } from "vitest";
 import { WebSocket } from "ws";
-import { attachWebSocketServer } from "../../src/modules/websocket";
-import { RoomService } from "../../src/packages/application/roomService";
+import { attachWebSocketServer } from "../../apps/server/src/modules/websocket";
+import { RoomService } from "../../packages/application/roomService";
 import {
     SequenceRandomSource,
     type GameSessionRuntimeState,
     type PlayerBoundaries,
-} from "../../src/packages/game-core";
+} from "../../packages/game-core";
 import type {
     RealtimeRoomRepository,
     RoomParticipant,
     RoomState,
-} from "../../src/packages/application/realtimeRooms";
-import type { CardRepository } from "../../src/packages/application/repositories";
+} from "../../packages/application/realtimeRooms";
+import type { CardRepository } from "../../packages/application/repositories";
 import { card } from "../support/game";
 import {
     defaultRoomGameSettings,
     type RoomGameSettings,
     type VersionedRoomGameSettings,
-} from "../../src/packages/application/roomGameSettings";
-import { PROTOCOL_VERSION } from "../../src/packages/protocol";
+} from "../../packages/application/roomGameSettings";
+import { PROTOCOL_VERSION } from "../../packages/protocol";
 import { applyMemoryLifecycleTransition } from "../support/realtimeLifecycle";
 
 class Repo implements RealtimeRoomRepository {

@@ -1,6 +1,6 @@
 <script lang="ts">
     import { locale, messages } from "./i18n";
-    import type { GroupSummary } from "./multiplayer";
+    import type { GroupSummary } from "../../../packages/protocol";
     import UiIcon from "./UiIcon.svelte";
 
     export let groups: readonly GroupSummary[];

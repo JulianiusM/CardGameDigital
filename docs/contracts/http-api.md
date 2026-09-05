@@ -104,6 +104,16 @@ descriptor with `clientId` and allowed `scopes`, plus same-origin
 return `deviceRevocationPath`. Clients must not infer support from application version
 or `authenticationAvailable`.
 
+The advertised native-device endpoints use the RFC 8628 response shape. At this client
+boundary, `device_code` is a non-empty string of at most 4,096 characters, `user_code`
+is a non-empty string of at most 200 characters, and `verification_uri` is an absolute
+credential-free HTTP(S) URI of at most 500 characters. Optional
+`verification_uri_complete` has the same URI requirements and a 2,000-character limit
+so it remains a bounded QR payload. A response outside those limits fails closed before
+any value is displayed, persisted, or submitted to the token endpoint. The in-tree
+server does not currently enable this additive capability, so these limits define the
+acceptance contract for future providers rather than narrowing an active server flow.
+
 `GET /catalog/taxonomies` always returns Question Categories and DareTypes in the
 canonical order declared by `game-core/cards/taxonomy.ts`; database/content ordering
 never controls choice-group presentation.

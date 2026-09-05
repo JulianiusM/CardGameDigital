@@ -1,0 +1,65 @@
+{
+    "schemaVersion": 1,
+    "colors": {
+        "warmPaper": "#FFF8E8",
+        "softCream": "#FFF1C7",
+        "espresso": "#3B2416",
+        "cocoa": "#76533D",
+        "sunflower": "#FFD166",
+        "goldenOrange": "#FFB238",
+        "tangerine": "#FF8A1F",
+        "apricot": "#FFA85C",
+        "coral": "#FF6F61",
+        "raspberry": "#E84769",
+        "berry": "#9D315B",
+        "resultHoney": "#D5A03B",
+        "resultClay": "#A96B5A"
+    },
+    "atmospheres": {
+        "CURIOSITY": { "start": "#FFE49A", "end": "#FFB347", "motif": "#B86516" },
+        "INNER_SELF": { "start": "#FFC18A", "end": "#E97D5D", "motif": "#884434" },
+        "CONNECTION": { "start": "#FFAD75", "end": "#FF7485", "motif": "#9C4050" },
+        "UNFILTERED": { "start": "#FFC44D", "end": "#FF7A1A", "motif": "#9B470F" },
+        "INTIMATE_TALK": { "start": "#FF9A78", "end": "#E85D82", "motif": "#8B3550" },
+        "DESIRE_STORIES": { "start": "#FF775F", "end": "#D84670", "motif": "#792A48" },
+        "MISCHIEF": { "start": "#FFD45F", "end": "#FF8A1F", "motif": "#9E4B0D" },
+        "SOCIAL_CHAOS": { "start": "#FFB13D", "end": "#F0602A", "motif": "#853718" },
+        "AFFECTION": { "start": "#FFB58E", "end": "#F67C74", "motif": "#91483F" },
+        "FLIRT": { "start": "#FF906D", "end": "#E94775", "motif": "#812B49" },
+        "REVEAL": { "start": "#EE8A4F", "end": "#9F4A64", "motif": "#613245" },
+        "HEAT": { "start": "#E85065", "end": "#942C59", "motif": "#FFD0B5" },
+        "GENERIC_DARE": { "start": "#FFC05A", "end": "#FF8A1F", "motif": "#91400E" },
+        "CONVERSATION_META": { "start": "#FFF1C7", "end": "#FFD166", "motif": "#9B6B4E" }
+    },
+    "presentation": {
+        "questionFamilyByCategoryId": {
+            "CAT_EVERYDAY": "CURIOSITY",
+            "CAT_CHILDHOOD": "CURIOSITY",
+            "CAT_SCENARIO": "CURIOSITY",
+            "CAT_PERSONALITY": "INNER_SELF",
+            "CAT_BODY": "INNER_SELF",
+            "CAT_FRIENDSHIP": "CONNECTION",
+            "CAT_RELATIONSHIP": "CONNECTION",
+            "CAT_INTOXICATION": "UNFILTERED",
+            "CAT_SEXUALITY": "INTIMATE_TALK",
+            "CAT_SEX_OPENNESS": "INTIMATE_TALK",
+            "CAT_SEX_TENSION": "DESIRE_STORIES",
+            "CAT_SEX_EXPERIENCE": "DESIRE_STORIES"
+        },
+        "dareFamilyByTypeId": {
+            "DARE_SILLY": "MISCHIEF",
+            "DARE_THIRD_PARTY": "SOCIAL_CHAOS",
+            "DARE_KISS": "AFFECTION",
+            "DARE_TOUCH": "AFFECTION",
+            "DARE_KISS_SPICY": "FLIRT",
+            "DARE_TOUCH_SPICY": "FLIRT",
+            "DARE_SEXUAL_TENSION": "FLIRT",
+            "DARE_CLOTHING": "REVEAL",
+            "DARE_NUDITY": "REVEAL",
+            "DARE_TOUCH_SEXY": "HEAT",
+            "DARE_BORDERLINE_SEX": "HEAT",
+            "DARE_SEX": "HEAT",
+            "DARE_OTHER": "GENERIC_DARE"
+        }
+    }
+}

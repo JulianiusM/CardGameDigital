@@ -1,6 +1,6 @@
 # Native Kodi client
 
-`clients/kodi` is the native **Party Game TV** script add-on for Kodi 21/Omega and
+`apps/kodi` is the native **Party Game TV** script add-on for Kodi 21/Omega and
 newer. It is an independently versioned thin client for HTTP API v1 and WebSocket
 protocol v2. The server remains authoritative for Card eligibility, localized Card
 text, turns, votes, roles, revisions, persistence, and host selection.
@@ -72,11 +72,19 @@ still embed that interpreter. Confirmed Exit to Kodi transitions the application
 Shutdown bounds worker joins below Kodi's five-second script deadline; blocked network
 work can only remain on daemon workers and cannot hold Kodi open.
 
-Shared TypeScript schemas, enums, fixtures, Golden Mischief token data, and uniquely
-named raster media are generated into `clients/kodi/resources/data` and the fallback
-skin resources. Architecture/static checks keep the self-contained WindowXML values
-aligned with those tokens without relying on the active skin's includes or textures.
-Kodi does not contain a Card catalog or a second game engine.
+Shared TypeScript schemas, enums, fixtures, Golden Mischief token data, Card-family
+mappings, uniquely named raster media, and the fallback WindowXML are generated into
+`apps/kodi/resources`. The WindowXML comes from the tokenized source in
+`tooling/kodi/templates`, so it stays self-contained without copying palette ownership or
+depending on the active skin's includes and textures. Kodi does not contain a Card
+catalog or a second game engine.
+
+Stable browser/native product terms are authored in
+`packages/localization/clientVocabulary.ts`. Kodi-only string names, numeric IDs, copy,
+and native locale/settings definitions are authored in
+`packages/localization/kodiCatalog.json`. Generation produces `strings.py`, both PO
+files, `settings.xml`, and `native_settings_metadata.py`, and derives PO version headers
+from `addon.xml`.
 
 Non-secret preferences, saved origins, and a minimal recovery envelope use versioned,
 atomic profile files. Corrupt files are quarantined. Participant and account tokens use
@@ -114,7 +122,7 @@ menu; the two lifecycle outcomes never share terminal actions.
 From the repository root:
 
 ```bash
-npm run kodi:generate       # regenerate schemas, fixtures, token data, and media
+npm run kodi:generate       # regenerate schemas, fixtures, tokens, strings, and media
 npm run kodi:check          # drift, XML/static/privacy checks, and CPython unit tests
 npm run kodi:package        # deterministic install ZIP plus release metadata
 npm run kodi:package:verify -- artifacts/script.partycard.tv-0.3.4.zip
@@ -133,7 +141,7 @@ The ZIP has one `script.partycard.tv/` root, normalized file order/timestamps/mo
 runtime files only, and no tests, caches, settings, registry, or credentials. The
 `kodi-client-v{version}` workflow verifies reproducibility before it can publish.
 
-For development, copy or link `clients/kodi` into Kodi's add-ons directory under the
+For development, copy or link `apps/kodi` into Kodi's add-ons directory under the
 exact name `script.partycard.tv`, then open **Add-ons → Game add-ons → Party Game TV**.
 For a release install, use Kodi's **Install from zip file** action and select the
 generated ZIP. The server must already be running and reachable; the add-on never

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { resolveSettings } from "../../src/modules/settings";
+import { resolveSettings } from "../../apps/server/src/modules/settings";
 
 const safePublicEnvironment = {
     DEPLOYMENT_MODE: "public",

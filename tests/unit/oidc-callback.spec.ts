@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canonicalOidcCallbackUrl } from "../../src/modules/oidc";
+import { canonicalOidcCallbackUrl } from "../../apps/server/src/modules/oidc";
 
 describe("OIDC callback URL", () => {
     it("uses the configured callback authority and only copies provider query values", () => {

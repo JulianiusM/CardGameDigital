@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CryptoRandomSource } from "../../src/packages/application/cryptoRandomSource";
+import { CryptoRandomSource } from "../../packages/application/cryptoRandomSource";
 
 describe("production randomness adapter", () => {
     it("returns values within the domain contract", () => {

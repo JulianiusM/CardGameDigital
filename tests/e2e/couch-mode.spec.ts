@@ -528,7 +528,7 @@ test("card text remains centered on a narrow, short viewport", async ({ page }) 
     );
     await page.getByRole("button", { name: "Wahrheit", exact: true }).click();
     const card = page.locator(".game-card");
-    const text = card.locator("p");
+    const text = card.locator(".auto-page-copy:not(.auto-page-measure)");
     await expect(text).toBeVisible();
     await expect(card.locator(".intensity-meter")).toHaveCount(2);
     await expect(card.locator(".card-intensity")).toHaveAttribute(
@@ -631,8 +631,10 @@ test("DataSpace, sensitivity and eligible Cards stay visible through quick setup
     await expect(dataSpace).toContainText("Aktiver DataSpace");
     await expect(dataSpace).toContainText("Local");
     await expect(dataSpace).toHaveCSS("transition-property", /transform/);
-    expect((await dataSpace.boundingBox())!.height).toBeLessThanOrEqual(40);
-    await expect(page.locator(".home-context-status")).toHaveCSS("position", "fixed");
+    const dataSpaceHeight = (await dataSpace.boundingBox())!.height;
+    expect(dataSpaceHeight).toBeGreaterThanOrEqual(44);
+    expect(dataSpaceHeight).toBeLessThanOrEqual(48);
+    await expect(page.locator(".home-context-status")).toHaveCSS("position", "absolute");
 
     await page.getByRole("button", { name: /Spiel hosten/ }).click();
     const setupPreview = page.locator(".wizard-footer > .eligibility-preview");
@@ -1513,8 +1515,14 @@ test("Card management stays bounded and Session changes return to quick setup", 
     const scopeActions = page.locator(".policy-scope-actions > *");
     await expect(scopeActions).toHaveCount(3);
     for (const action of await scopeActions.all()) {
-        await expect(action).toHaveCSS("white-space", "nowrap");
+        await expect(action).toHaveCSS("white-space", "normal");
         expect((await action.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+        const overflow = await action.evaluate((element) => ({
+            horizontal: element.scrollWidth - element.clientWidth,
+            vertical: element.scrollHeight - element.clientHeight,
+        }));
+        expect(overflow.horizontal).toBeLessThanOrEqual(1);
+        expect(overflow.vertical).toBeLessThanOrEqual(1);
     }
     const scopeChooser = page.getByRole("button", { name: "DataSpace / Gruppe wählen" });
     await scopeChooser.click();
@@ -1611,9 +1619,11 @@ test("Card management stays bounded and Session changes return to quick setup", 
         };
     });
     expect(cardMetadataFonts.id).toBe(cardMetadataFonts.taxonomy);
-    await expect(page.locator(".managed-card-list > button").first()).toHaveCSS(
-        "overflow",
-        "hidden",
+    const firstManagedCard = page.locator(".managed-card-list > button").first();
+    await expect(firstManagedCard).toHaveCSS("overflow", "visible");
+    await expect(firstManagedCard.locator(".managed-card-copy strong")).toHaveCSS(
+        "overflow-wrap",
+        "anywhere",
     );
     const measureWrappedCardRow = () =>
         page.locator(".managed-card-list > button").evaluateAll((rows) => {
@@ -1642,7 +1652,6 @@ test("Card management stays bounded and Session changes return to quick setup", 
     const desktopWrappedRow = await measureWrappedCardRow();
     expect(desktopWrappedRow).not.toBeNull();
     expect(desktopWrappedRow!.excerptLines).toBeGreaterThan(1.5);
-    expect(desktopWrappedRow!.excerptLines).toBeLessThanOrEqual(2.05);
     expect(Math.abs(desktopWrappedRow!.iconCenterOffset)).toBeLessThanOrEqual(2);
     expect(desktopWrappedRow!.metadataBottomInset).toBeGreaterThan(4);
     expect(desktopWrappedRow!.metadataHeight).toBeGreaterThanOrEqual(

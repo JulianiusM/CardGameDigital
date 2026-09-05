@@ -1,5 +1,6 @@
 <script lang="ts">
     import { onMount } from "svelte";
+    import { GOLDEN_MISCHIEF_RGB } from "../../../packages/design-tokens";
     import type { BackdropPresentation, ResolvedAtmosphere, VisualFamily } from "./presentation";
 
     export let presentation: BackdropPresentation;
@@ -44,8 +45,8 @@
     const REDUCED_PALETTE_TRANSITION_MS = 200;
     const TAU = Math.PI * 2;
     const DIAGONAL_COMPONENT = Math.SQRT1_2;
-    const ESPRESSO: Rgb = { red: 59, green: 36, blue: 22 };
-    const SOFT_CREAM: Rgb = { red: 255, green: 241, blue: 199 };
+    const ESPRESSO: Rgb = GOLDEN_MISCHIEF_RGB.espresso;
+    const SOFT_CREAM: Rgb = GOLDEN_MISCHIEF_RGB.softCream;
 
     let viewportWidth = 1280;
     let viewportHeight = 720;
@@ -285,7 +286,9 @@
                         0,
                         Math.min(1, 1 + currentOffset / next.segmentWidth),
                     );
-                    animation.effect?.setKeyframes(trackFrames(next.segmentWidth));
+                    (animation.effect as KeyframeEffect | null)?.setKeyframes(
+                        trackFrames(next.segmentWidth),
+                    );
                     animation.currentTime =
                         Math.floor(currentTime / 1_000) * 1_000 + nextProgress * 1_000;
                 }
@@ -582,11 +585,15 @@
             node.style.setProperty("--adaptive-muted", colorCss(muted));
             node.style.setProperty(
                 "--adaptive-surface",
-                useLightText ? "rgb(59 36 22 / 72%)" : "rgb(255 241 199 / 78%)",
+                useLightText
+                    ? "rgb(var(--rgb-espresso) / 72%)"
+                    : "rgb(var(--rgb-soft-cream) / 78%)",
             );
             node.style.setProperty(
                 "--adaptive-border",
-                useLightText ? "rgb(255 241 199 / 34%)" : "rgb(59 36 22 / 24%)",
+                useLightText
+                    ? "rgb(var(--rgb-soft-cream) / 34%)"
+                    : "rgb(var(--rgb-espresso) / 24%)",
             );
             node.dataset.adaptiveTone = useLightText ? "light" : "dark";
             node.dataset.gradientColor = colorData(background);
@@ -744,7 +751,7 @@
     }
     .gradient-field {
         z-index: 0;
-        background: #ffd166;
+        background: var(--color-sunflower);
     }
     .atmosphere-gradient {
         display: block;

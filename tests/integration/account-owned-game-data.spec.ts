@@ -3,21 +3,21 @@ import os from "node:os";
 import path from "node:path";
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { AppDataSource, initDataSource } from "../../src/modules/database/dataSource";
-import { RoomEntity } from "../../src/modules/database/entities/game/RoomEntity";
-import { GroupEntity } from "../../src/modules/database/entities/game/GroupEntity";
-import { DataSpaceGameSettingsEntity } from "../../src/modules/database/entities/game/DataSpaceGameSettingsEntity";
-import settings from "../../src/modules/settings";
+import { AppDataSource, initDataSource } from "../../apps/server/src/modules/database/dataSource";
+import { RoomEntity } from "../../packages/persistence/entities/game/RoomEntity";
+import { GroupEntity } from "../../packages/persistence/entities/game/GroupEntity";
+import { DataSpaceGameSettingsEntity } from "../../packages/persistence/entities/game/DataSpaceGameSettingsEntity";
+import settings from "../../apps/server/src/modules/settings";
 import {
     registerUser,
     getDataSpacesForUser,
-} from "../../src/modules/database/services/UserService";
-import { requireCurrentDataSpace } from "../../src/routes/api/dataSpaceAccess";
+} from "../../apps/server/src/modules/database/services/UserService";
+import { requireCurrentDataSpace } from "../../apps/server/src/routes/api/dataSpaceAccess";
 import type { Request } from "express";
 import {
     defaultRoomGameSettings,
     effectiveSettingsFromProfile,
-} from "../../src/packages/application/roomGameSettings";
+} from "../../packages/application/roomGameSettings";
 
 let app: import("express").Express;
 let directory: string;
@@ -34,7 +34,7 @@ beforeAll(async () => {
     });
     await settings.read("/dev/null");
     await initDataSource();
-    app = (await import("../../src/app")).default;
+    app = (await import("../../apps/server/src/app")).default;
 });
 
 afterAll(async () => {

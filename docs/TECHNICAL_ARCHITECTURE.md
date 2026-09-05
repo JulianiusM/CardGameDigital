@@ -209,7 +209,7 @@ Card identity changes only when the logical gameplay object changes.
 
 - Python 3 native Kodi 21/Omega script add-on
 - one `WindowXMLDialog` shell with reducer/effect/event-queue state ownership
-- generated JSON Schemas, fixtures, enums, Golden Mischief token data, and raster media
+- generated JSON Schemas, fixtures, enums, Golden Mischief token data, WindowXML, and raster media
 
 ## Android-family TV
 
@@ -248,44 +248,48 @@ Localization/content catalog services sit between application logic and persiste
 
 ---
 
-# 7. Recommended Repository Structure
+# 7. Repository Structure
 
 ```text id="qz59y2"
 party-game/
 │
 ├── apps/
-│   ├── server/
-│   └── web/
+│   ├── server/                 # Express/WebSocket composition and migrations
+│   ├── web/                    # Svelte browser client
+│   └── kodi/                   # independently packaged native client
 │
 ├── packages/
 │   ├── game-core/
 │   ├── application/
 │   ├── protocol/
 │   ├── persistence/
-│   ├── catalog/
+│   ├── card-catalog-contract/
 │   ├── localization/
-│   ├── configuration/
 │   └── design-tokens/
 │
-├── clients/
-│   ├── kodi/
-│   └── android-tv/
-│
 ├── tooling/
-│   ├── source-import/
-│   ├── catalog-build/
-│   ├── translation-import/
-│   └── migrations/
+│   ├── catalog/
+│   ├── database/
+│   ├── design/
+│   ├── kodi/
+│   ├── release/
+│   └── testing/
 │
 ├── tests/
+│   ├── architecture/
+│   ├── integration/
+│   ├── unit/
 │   ├── simulation/
-│   ├── catalog/
-│   ├── localization/
-│   ├── protocol/
 │   └── e2e/
 │
 └── docs/
 ```
+
+`apps/` is the single source taxonomy for deployable applications. Source placement
+does not define release coupling: server and web remain one `server-web` release unit,
+while Kodi keeps its independent manifest, version, workflow, and archive. Reusable
+framework-independent decisions live under `packages/`; generators and maintenance
+commands live under `tooling/`. See ADR-013.
 
 ---
 
@@ -748,7 +752,9 @@ These are separate systems.
 
 ## UI localization
 
-Handled by each client.
+Contextual prose and client-specific flows are handled by each client. Stable product
+terms with identical browser/native meaning may come from the shared client vocabulary;
+each client still maps those terms into its own catalog structure.
 
 Examples:
 
@@ -1640,7 +1646,7 @@ The compiled client is served by and released only with its matching server vers
 
 # 74. Kodi Client
 
-Kodi is an independently released thin client. `clients/kodi` implements one
+Kodi is an independently released thin client. `apps/kodi` implements one
 `WindowXMLDialog` root shell, immutable application state, a pure reducer, bounded
 effect workers, and a GUI-thread event queue. Network, DNS, schema parsing, QR generation, and
 profile writes never run on the Kodi GUI thread, and late async results are rejected by
@@ -1662,9 +1668,11 @@ It:
   scopes, or account authority.
 
 Shared TypeScript protocol schemas and design tokens generate the Kodi JSON Schemas,
-fixtures, manifests, skin includes, and raster media. The add-on contains no independent
-Card catalog or game rules. Participant/account secrets use a separate exact-origin
-store and are never included in discovery, QR codes, fixtures, or diagnostics.
+fixtures, manifests, self-contained WindowXML, and raster media. Shared client terms and
+the Kodi locale/settings manifest generate Python string/settings metadata, PO catalogs,
+and `settings.xml`. The add-on contains no independent Card catalog or game rules.
+Participant/account secrets use a separate exact-origin store and are never included in
+discovery, QR codes, fixtures, or diagnostics.
 
 The deterministic `script.partycard.tv-{version}.zip` is an independent `kodi-client`
 artifact with checksum, SBOM, provenance, workflow, and tag namespace. Repository tests
@@ -1687,7 +1695,9 @@ It should share the Android-family application core across:
 
 # 76. Native Client Localization
 
-Native clients maintain their own UI string resources.
+Native clients maintain their own UI resource shape and platform-specific prose. Stable
+terms with the same product meaning as the browser use the shared bilingual client
+vocabulary; native-only copy remains in the native catalog.
 
 They request content/taxonomy localization from the server using locale identifiers.
 

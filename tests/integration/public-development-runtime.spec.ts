@@ -3,9 +3,9 @@ import os from "node:os";
 import path from "node:path";
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { AppDataSource, initDataSource } from "../../src/modules/database/dataSource";
-import { DataSpace } from "../../src/modules/database/entities/user/DataSpace";
-import settings from "../../src/modules/settings";
+import { AppDataSource, initDataSource } from "../../apps/server/src/modules/database/dataSource";
+import { DataSpace } from "../../packages/persistence/entities/user/DataSpace";
+import settings from "../../apps/server/src/modules/settings";
 
 const environmentKeys = [
     "SETTINGS_FILE",
@@ -36,7 +36,7 @@ beforeAll(async () => {
     });
     await settings.read("/dev/null");
     await initDataSource();
-    app = (await import("../../src/app")).default;
+    app = (await import("../../apps/server/src/app")).default;
 });
 
 afterAll(async () => {

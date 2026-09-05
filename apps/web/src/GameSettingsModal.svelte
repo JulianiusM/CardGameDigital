@@ -2,12 +2,12 @@
     import GameSettingsSummary from "./GameSettingsSummary.svelte";
     import ModalShell from "./ModalShell.svelte";
     import { messages } from "./i18n";
-    import type { RoomEligibilityAccess } from "./cardPolicyApi";
     import type {
         CardLocaleSummary,
         GameProfileSummary,
+        RoomEligibilityAccess,
         VersionedRoomGameSettings,
-    } from "./multiplayer";
+    } from "../../../packages/protocol";
     export let open = false;
     export let settings: VersionedRoomGameSettings;
     export let profiles: readonly GameProfileSummary[] = [];

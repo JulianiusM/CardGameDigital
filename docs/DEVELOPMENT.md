@@ -28,14 +28,15 @@ npm run server:dev       # TypeScript server with reload
 npm run build:web        # rebuild Svelte client
 npm run build            # server, web, and bundled help
 npm run typeorm:migrate  # explicit migration run
-npm run generate         # regenerate TypeORM entity/migration index
+npm run generate         # regenerate database, web-token, and Kodi outputs
+npm run generate:check   # verify generated outputs without modifying files
 npm run format           # format supported sources and documentation
 npm run format:check
 npm test
 npm run e2e              # requires Playwright browsers
 npm run test:mariadb:reset
 npm run test:mariadb:public
-npm run kodi:generate    # shared schemas, fixtures, token data, and media
+npm run kodi:generate    # schemas, fixtures, tokens, localization, and media
 npm run kodi:check       # drift, static/XML/privacy, and CPython unit checks
 npm run kodi:package     # independent deterministic add-on release artifacts
 ```
@@ -59,7 +60,7 @@ non-loopback and production public configurations still require HTTPS.
 
 ## Adding an HTTP endpoint
 
-- Put parsing and response projection in `src/routes/api`.
+- Put parsing and response projection in `apps/server/src/routes/api`.
 - Validate untrusted input with Zod.
 - Put reusable behavior in an application service, not the route.
 - Authenticate/authorize against account, DataSpace, Room, and participant state as
@@ -69,7 +70,7 @@ non-loopback and production public configurations still require HTTPS.
 
 ## Changing WebSocket behavior
 
-- Update strict schemas in `src/packages/protocol` first.
+- Update strict schemas in `packages/protocol` first.
 - Preserve the envelope, request correlation, optimistic revision, and viewer-specific
   snapshot behavior.
 - Never trust claimed roles/capabilities over the credential-authenticated participant.
@@ -78,18 +79,22 @@ non-loopback and production public configurations still require HTTPS.
 
 ## Changing the Kodi client
 
-- Keep `clients/kodi` a thin consumer; Cards, eligibility, role selection, and game
+- Keep `apps/kodi` a thin consumer; Cards, eligibility, role selection, and game
   transitions remain on the server.
-- Change canonical DTOs in `src/packages/protocol`, then run `npm run kodi:generate`.
-  Never hand-edit generated schemas, fixtures, token JSON, or media.
+- Change canonical DTOs in `packages/protocol`, then run `npm run kodi:generate`.
+  Never hand-edit generated schemas, fixtures, token JSON, WindowXML, or media; edit the
+  source definitions or `tooling/kodi/templates` instead.
 - Route every background result through the reducer/event queue and include operation
   and selected-server identity where a stale result could race navigation.
-- Put every visible string in both Kodi PO catalogs and keep the ID sets identical.
+- Add shared browser/native terms to `packages/localization/clientVocabulary.ts` and
+  Kodi-only strings or native settings to `packages/localization/kodiCatalog.json`.
+  Generate `strings.py`, both PO catalogs, `settings.xml`, and native settings metadata;
+  never hand-edit those outputs.
 - Preserve D-pad/OK/Back/Context operation, explicit focus, bounded lists, credential
   redaction, local-only plaintext policy, and public HTTPS/WSS enforcement.
 - Add CPython fixture tests for reducer, parser, transport, persistence, focus, or
   presentation behavior. Real Kodi/skin/remote checks remain release-matrix tests.
-- Use the independent version in `clients/kodi/addon.xml`; do not couple it to the
+- Use the independent version in `apps/kodi/addon.xml`; do not couple it to the
   server-web package version. See [`KODI_CLIENT.md`](KODI_CLIENT.md).
 
 ## Changing the bundled Card catalog
@@ -101,10 +106,12 @@ and soft retirement. Update the catalog contract and persistence tests together.
 
 ## Localization
 
-Browser components use `apps/web/src/i18n.ts`. Server code uses exported
-`MESSAGE_KEYS`; locale-specific text lives in separate catalog files. German and English
-player-help directories must contain matching topic slugs. UI fallback and card-content
-fallback are deliberately different policies.
+Browser components use `apps/web/src/i18n.ts`. Stable terms with identical browser and
+Kodi semantics use `packages/localization/clientVocabulary.ts`; context-specific and
+platform prose stay in their client catalogs. Server code uses exported `MESSAGE_KEYS`;
+locale-specific text lives in separate catalog files. German and English player-help
+directories must contain matching topic slugs. UI fallback and card-content fallback are
+deliberately different policies.
 
 ## Code style
 

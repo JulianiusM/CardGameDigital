@@ -1,18 +1,18 @@
 import path from "node:path";
 import request, { type Response } from "supertest";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { AppDataSource, initDataSource } from "../../src/modules/database/dataSource";
-import { CouchGameSessionEntity } from "../../src/modules/database/entities/game/CouchGameSessionEntity";
-import { CardPolicyScopeDefaultEntity } from "../../src/modules/database/entities/game/CardPolicyScopeDefaultEntity";
-import { RoomEntity } from "../../src/modules/database/entities/game/RoomEntity";
-import { AccountSession } from "../../src/modules/database/entities/session/AccountSession";
-import { DataSpace } from "../../src/modules/database/entities/user/DataSpace";
-import { User } from "../../src/modules/database/entities/user/User";
-import mailer from "../../src/modules/email";
-import settings from "../../src/modules/settings";
-import { getRoomService } from "../../src/modules/realtime";
-import { effectiveSettingsFromProfile } from "../../src/packages/application/roomGameSettings";
-import { GAME_MODES } from "../../src/packages/game-core";
+import { AppDataSource, initDataSource } from "../../apps/server/src/modules/database/dataSource";
+import { CouchGameSessionEntity } from "../../packages/persistence/entities/game/CouchGameSessionEntity";
+import { CardPolicyScopeDefaultEntity } from "../../packages/persistence/entities/game/CardPolicyScopeDefaultEntity";
+import { RoomEntity } from "../../packages/persistence/entities/game/RoomEntity";
+import { AccountSession } from "../../packages/persistence/entities/session/AccountSession";
+import { DataSpace } from "../../packages/persistence/entities/user/DataSpace";
+import { User } from "../../packages/persistence/entities/user/User";
+import mailer from "../../apps/server/src/modules/email";
+import settings from "../../apps/server/src/modules/settings";
+import { getRoomService } from "../../apps/server/src/modules/realtime";
+import { effectiveSettingsFromProfile } from "../../packages/application/roomGameSettings";
+import { GAME_MODES } from "../../packages/game-core";
 import {
     loadMariaTestProfile,
     dropMariaTestDatabase,
@@ -112,7 +112,7 @@ suite("public mode on MariaDB", () => {
             },
         );
         vi.spyOn(mailer, "sendDeletionEmail").mockResolvedValue(undefined);
-        app = (await import("../../src/app")).default;
+        app = (await import("../../apps/server/src/app")).default;
     }, MARIADB_SUITE_SETUP_TIMEOUT_MS);
 
     afterAll(async () => {

@@ -273,20 +273,13 @@ $RECYCLE.BIN/
 
 settings.csv
 
-src/public/js/**/*.gen.js
-src/public/js/**/*.gen.js.map
-
-src/public/style/**/*.css
-src/public/style/**/*.css.map
-
 src.zip
 /playwright.config.js
-/scripts/e2e.db.init.js
-/src/modules/database/__index__.ts
+/tooling/testing/e2eDatabaseInit.js
 /uploads/
 test_output.txt
 /.tmp/
 /data/
 __pycache__/
 *.py[cod]
-clients/kodi/.test-profile/
+apps/kodi/.test-profile/

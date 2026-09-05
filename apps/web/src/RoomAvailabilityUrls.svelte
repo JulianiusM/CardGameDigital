@@ -1,5 +1,5 @@
 <script lang="ts">
-    import AutoPageRegion from "./AutoPageRegion.svelte";
+    import AutoPageText from "./AutoPageText.svelte";
     import { messages } from "./i18n";
 
     export let urls: readonly string[] = [];
@@ -11,21 +11,7 @@
         <small>{messages.room.availableUrls}</small>
         {#if autoPage}
             <div class="room-url-pages">
-                <AutoPageRegion
-                    itemCount={urls.length}
-                    rowHeight={34}
-                    grid={false}
-                    intervalMs={4800}
-                    label={messages.room.availableUrls}
-                    let:start
-                    let:end
-                >
-                    <ul>
-                        {#each urls.slice(start, end) as url (url)}<li>
-                                <code title={url}>{url}</code>
-                            </li>{/each}
-                    </ul>
-                </AutoPageRegion>
+                <AutoPageText text={urls.join("\n")} element="code" variant="url" />
             </div>
         {:else}
             <ul>
@@ -38,23 +24,24 @@
 <style>
     .room-availability-urls {
         display: grid;
-        gap: 0.35rem;
+        gap: 0.2rem;
         width: min(100%, 34rem);
         max-height: 8.5rem;
         margin: 0.75rem auto 0;
-        padding: 0.55rem 0.65rem;
+        padding: 0.4rem 0.55rem;
         overflow-y: auto;
         border: 1px solid rgb(107 68 42 / 14%);
         border-radius: 12px;
         color: var(--color-muted-cocoa);
-        background: rgb(255 248 232 / 52%);
+        background: rgb(var(--rgb-warm-paper) / 52%);
         text-align: start;
         scrollbar-color: rgb(166 104 18 / 50%) transparent;
     }
     .room-availability-urls > small {
-        font-size: 0.68rem;
+        font-size: clamp(9px, 0.62rem, 10px);
         font-weight: 750;
-        letter-spacing: 0.08em;
+        letter-spacing: 0.04em;
+        line-height: 1.1;
         text-transform: uppercase;
     }
     ul {

@@ -37,7 +37,7 @@
     function duration(normal: number): number {
         return reducedMotion() ? 200 : normal;
     }
-    function modalIn(): TransitionConfig {
+    function modalIn(_node: Element): TransitionConfig {
         if (reducedMotion()) return { duration: 200, css: (t) => `opacity: ${t}` };
         return {
             duration: 260,
@@ -46,7 +46,7 @@
                 `opacity: ${t}; transform: translateY(${(1 - t) * 20}px) scale(${0.97 + t * 0.03})`,
         };
     }
-    function modalOut(): TransitionConfig {
+    function modalOut(_node: Element): TransitionConfig {
         if (reducedMotion()) return { duration: 200, css: (t) => `opacity: ${t}` };
         return {
             duration: 180,

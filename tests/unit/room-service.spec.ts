@@ -1,19 +1,19 @@
 import { describe, expect, it } from "vitest";
-import { RoomService } from "../../src/packages/application/roomService";
+import { RoomService } from "../../packages/application/roomService";
 import type {
     RealtimeRoomRepository,
     RoomCreateIdempotencyRecord,
     RoomParticipant,
     RoomState,
-} from "../../src/packages/application/realtimeRooms";
-import type { GameSessionRuntimeState, PlayerBoundaries } from "../../src/packages/game-core";
-import type { CardRepository } from "../../src/packages/application/repositories";
-import { SequenceRandomSource } from "../../src/packages/game-core";
+} from "../../packages/application/realtimeRooms";
+import type { GameSessionRuntimeState, PlayerBoundaries } from "../../packages/game-core";
+import type { CardRepository } from "../../packages/application/repositories";
+import { SequenceRandomSource } from "../../packages/game-core";
 import { card } from "../support/game";
 import {
     defaultRoomGameSettings,
     type VersionedRoomGameSettings,
-} from "../../src/packages/application/roomGameSettings";
+} from "../../packages/application/roomGameSettings";
 import { applyMemoryLifecycleTransition } from "../support/realtimeLifecycle";
 
 class MemoryRooms implements RealtimeRoomRepository {

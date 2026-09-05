@@ -3,7 +3,7 @@ import {
     isTrustedOrigin,
     requestPathForLog,
     websocketConnectSource,
-} from "../../src/modules/requestSecurity";
+} from "../../apps/server/src/modules/requestSecurity";
 
 describe("public request origin validation", () => {
     it("accepts only the configured public origin", () => {

@@ -17,8 +17,13 @@
     import LegalLinks from "./LegalLinks.svelte";
     import GameSettingsSummary from "./GameSettingsSummary.svelte";
     import ModalShell from "./ModalShell.svelte";
-    import type { CardLocaleSummary, GameProfileSummary, PublicGameSettings } from "./multiplayer";
     import { loadCardLocales } from "./multiplayer";
+    import type {
+        CardLocaleSummary,
+        GameProfileSummary,
+        PublicGameSettings,
+        RoomEligibilityAccess,
+    } from "../../../packages/protocol";
     import LanguageSelector, { type LanguageOption } from "./LanguageSelector.svelte";
     import LanguageOrderEditor from "./LanguageOrderEditor.svelte";
     import {
@@ -29,7 +34,6 @@
     import { accountApi } from "./accountApi";
     import { setAuthenticatedAccount } from "./authentication";
     import { showNotification } from "./notifications";
-    import type { RoomEligibilityAccess } from "./cardPolicyApi";
     import RoomAvailabilityUrls from "./RoomAvailabilityUrls.svelte";
 
     export let open = false;
@@ -37,12 +41,12 @@
     export let showPlayers = false;
     export let showGame = false;
     export let showAdvanced = false;
-    export let onBoundaries: ((value: BoundarySelection) => void) | undefined;
-    export let onShowPlayers: (() => void) | undefined;
-    export let onEnd: (() => void) | undefined;
-    export let onLeave: (() => void) | undefined;
-    export let onCloseRoom: (() => void) | undefined;
-    export let currentGameSettings: PublicGameSettings | undefined;
+    export let onBoundaries: ((value: BoundarySelection) => void) | undefined = undefined;
+    export let onShowPlayers: (() => void) | undefined = undefined;
+    export let onEnd: (() => void) | undefined = undefined;
+    export let onLeave: (() => void) | undefined = undefined;
+    export let onCloseRoom: (() => void) | undefined = undefined;
+    export let currentGameSettings: PublicGameSettings | undefined = undefined;
     export let cardLocale: string | undefined = undefined;
     export let gameProfiles: readonly GameProfileSummary[] = [];
     export let cardLocales: readonly CardLocaleSummary[] = [];

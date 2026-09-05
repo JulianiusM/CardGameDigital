@@ -1,32 +1,8 @@
 import { messages } from "./i18n";
-import { fetchJsonResponse } from "./http";
+import { fetchJsonResponse, httpErrorDetails } from "./http";
+import type { CouchSessionSnapshot } from "../../../packages/protocol";
 
-export type Snapshot = {
-    id: string;
-    startedAt: number;
-    mode: string;
-    revision: number;
-    state: string;
-    roundNumber: number;
-    activePlayer: { id: string; name: string } | null;
-    players: { id: string; name: string }[];
-    currentCard: {
-        id: string;
-        cardText: string;
-        cardType: string;
-        cardIntensity: number;
-        intensity: number;
-        questionCategoryId: string | null;
-        dareTypeId: string | null;
-    } | null;
-    cardsShown: number;
-    remainingCardCount: number;
-    voteResult: { yes: number; no: number; total: number };
-    votedPlayerIds: string[];
-    neverHaveIEverVoting: import("./multiplayer").NeverHaveIEverVotingView | null;
-    persistence: "EPHEMERAL" | "DATASPACE";
-    settings: import("./multiplayer").PublicGameSettings;
-};
+export type Snapshot = CouchSessionSnapshot;
 
 export class ApiError extends Error {
     constructor(
@@ -39,13 +15,14 @@ export class ApiError extends Error {
 
 async function request(path: string, init?: RequestInit): Promise<Snapshot> {
     const { response, body: unknownBody } = await fetchJsonResponse(`/api/v1/couch${path}`, init);
-    const body = unknownBody as { error?: { code?: string; message?: string } } & Snapshot;
-    if (!response.ok)
+    if (!response.ok) {
+        const error = httpErrorDetails(unknownBody);
         throw new ApiError(
-            body?.error?.code ?? "UNKNOWN_ERROR",
-            body?.error?.message ?? messages.common.requestFailed,
+            error.code ?? "UNKNOWN_ERROR",
+            error.message ?? messages.common.requestFailed,
         );
-    return body;
+    }
+    return unknownBody as Snapshot;
 }
 export const couchApi = {
     get: (id: string) => request(`/sessions/${encodeURIComponent(id)}`),

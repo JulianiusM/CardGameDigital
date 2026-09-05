@@ -5,8 +5,8 @@ import {
     detectLocale,
     emailMessage,
     translate,
-} from "../../src/packages/localization/messages";
-import { getHelpDocument, listHelpDocuments } from "../../src/packages/application/helpService";
+} from "../../packages/localization/messages";
+import { getHelpDocument, listHelpDocuments } from "../../apps/server/src/application/helpService";
 
 describe("account email localization", () => {
     it("provides German and English account messages without legacy product copy", () => {

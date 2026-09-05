@@ -50,10 +50,10 @@
         display: grid;
         grid-template-columns: 2.75rem minmax(4rem, 5.25rem) 2.75rem;
         align-items: stretch;
-        overflow: hidden;
+        overflow: visible;
         border: 1px solid var(--color-edge-strong);
         border-radius: 14px;
-        background: rgb(255 248 232 / 98%);
+        background: rgb(var(--rgb-warm-paper) / 98%);
     }
     button,
     input {
@@ -71,9 +71,11 @@
         transform: none !important;
     }
     button:first-child {
+        border-radius: 13px 0 0 13px;
         border-right: 1px solid var(--color-edge);
     }
     button:last-child {
+        border-radius: 0 13px 13px 0;
         border-left: 1px solid var(--color-edge);
     }
     button:not(:disabled):hover,

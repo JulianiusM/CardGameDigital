@@ -1,11 +1,11 @@
-import type { GameProfile, PlayableCard, PlayerBoundaries } from "../../src/packages/game-core";
+import type { GameProfile, PlayableCard, PlayerBoundaries } from "../../packages/game-core";
 import {
     CARD_TYPES,
     DARE_TYPES,
     INTENSITY_PROGRESSION_UNITS,
     QUESTION_CATEGORIES,
     SOCIAL_SENSITIVITIES,
-} from "../../src/packages/game-core";
+} from "../../packages/game-core";
 
 export function card(overrides: Partial<PlayableCard> & Pick<PlayableCard, "id">): PlayableCard {
     const { id, ...properties } = overrides;

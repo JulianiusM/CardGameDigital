@@ -1,5 +1,6 @@
 import { get, writable } from "svelte/store";
-import { loadCardTaxonomies, type CardTaxonomyCatalog } from "./multiplayer";
+import { loadCardTaxonomies } from "./multiplayer";
+import type { CardTaxonomyCatalog } from "../../../packages/protocol";
 
 export const cardTaxonomies = writable<Readonly<Record<string, CardTaxonomyCatalog>>>({});
 

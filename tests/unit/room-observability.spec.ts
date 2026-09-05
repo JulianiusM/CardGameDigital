@@ -1,11 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { RoomLifecycleTransitionResult } from "../../src/packages/application/realtimeRooms";
+import type { RoomLifecycleTransitionResult } from "../../packages/application/realtimeRooms";
 import {
     recordRoomCreateBoundaryIdempotency,
     resetRoomLifecycleMetricsForTests,
     roomLifecycleMetrics,
     roomLifecycleObservability,
-} from "../../src/modules/roomObservability";
+} from "../../apps/server/src/modules/roomObservability";
 
 function transitionResult(
     overrides: Partial<RoomLifecycleTransitionResult> = {},

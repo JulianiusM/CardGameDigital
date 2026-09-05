@@ -3,6 +3,8 @@ import {
     cardReplacedEventPayloadSchema,
     clientPingEnvelopeSchema,
     clientHelloEnvelopeSchema,
+    decodeRoomCreateResponse,
+    decodeServerEnvelope,
     participantLeftEventPayloadSchema,
     PROTOCOL_VERSION,
     protocolErrorCodeSchema,
@@ -11,8 +13,8 @@ import {
     roomCommandEnvelopeSchema,
     roomRoleChangedPayloadSchema,
     serverEnvelopeSchema,
-} from "../../src/packages/protocol";
-import { defaultRoomGameSettings } from "../../src/packages/application/roomGameSettings";
+} from "../../packages/protocol";
+import { defaultRoomGameSettings } from "../../packages/application/roomGameSettings";
 
 describe("protocol v2 boundary", () => {
     it("declares every stable application error emitted over WebSocket", () => {
@@ -49,6 +51,27 @@ describe("protocol v2 boundary", () => {
                 reason: "INITIAL_HOST_ASSIGNED",
             }).success,
         ).toBe(true);
+    });
+
+    it("decodes room joins with additive-field compatibility and known-field validation", () => {
+        const join = {
+            roomId: "00000000-0000-4000-8000-000000000001",
+            roomCode: "ABC234",
+            participantId: "00000000-0000-4000-8000-000000000002",
+            participantCredential: "x".repeat(43),
+            role: "DISPLAY",
+            bootstrapMode: "DISPLAY_WAITING_FOR_HOST",
+            hostStatus: {
+                state: "AWAITING_FIRST_HOST",
+                participantId: null,
+                displayName: null,
+                deadline: null,
+                futureDeadlineKind: "server-defined",
+            },
+            futureJoinField: true,
+        };
+        expect(decodeRoomCreateResponse(join)).toMatchObject({ roomCode: "ABC234" });
+        expect(() => decodeRoomCreateResponse({ ...join, role: "ADMIN" })).toThrow();
     });
 
     it("validates the unauthenticated client hello envelope", () => {
@@ -112,6 +135,34 @@ describe("protocol v2 boundary", () => {
                 payload: { reason: "PREDICTED" },
             }).success,
         ).toBe(false);
+    });
+
+    it("validates known browser fields while ignoring additive protocol fields", () => {
+        const additiveEvent = {
+            protocol: PROTOCOL_VERSION,
+            type: "session.cardReplaced",
+            requestId: null,
+            revision: null,
+            futureEnvelopeField: true,
+            payload: { reason: "SKIPPED", futurePayloadField: "ignored" },
+        };
+        expect(serverEnvelopeSchema.safeParse(additiveEvent).success).toBe(false);
+        expect(decodeServerEnvelope(additiveEvent)?.payload).toMatchObject({ reason: "SKIPPED" });
+        expect(() =>
+            decodeServerEnvelope({
+                ...additiveEvent,
+                payload: { reason: "PREDICTED", futurePayloadField: "ignored" },
+            }),
+        ).toThrow();
+        expect(
+            decodeServerEnvelope({
+                protocol: PROTOCOL_VERSION,
+                type: "future.serverEvent",
+                requestId: null,
+                revision: null,
+                payload: {},
+            }),
+        ).toBeNull();
     });
 
     it("rejects unknown payload fields and invalid roles", () => {

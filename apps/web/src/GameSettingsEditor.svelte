@@ -1,7 +1,16 @@
 <script lang="ts">
     import { gameModes, messages } from "./i18n";
     import NumberInput from "./NumberInput.svelte";
-    import type { CardLocaleSummary, GameProfileSummary, RoomGameSettings } from "./multiplayer";
+    import type {
+        CardLocaleSummary,
+        GameProfileSummary,
+        RoomGameSettings,
+    } from "../../../packages/protocol";
+    import {
+        GAME_MODES,
+        INTENSITY_PROGRESSION_UNITS,
+        SOCIAL_SENSITIVITY_ORDER,
+    } from "../../../packages/game-core";
     import { operationalFlagIds } from "./gameSettingsOptions";
     import { cardTaxonomies, requestCardTaxonomy } from "./cardTaxonomy";
     import { updateLinkedRange } from "./linkedRange";
@@ -11,7 +20,6 @@
     import { navigate } from "./router";
     import PolicyScaleControl from "./PolicyScaleControl.svelte";
     import EligibleCardPreview from "./EligibleCardPreview.svelte";
-    import type { SocialSensitivity } from "./multiplayer";
 
     export let settings: RoomGameSettings;
     export let profiles: readonly GameProfileSummary[] = [];
@@ -19,25 +27,19 @@
     export let showMode = true;
     export let showProfile = true;
     export let onChange: (settings: RoomGameSettings) => void;
-    export let onCardLocaleSelect: ((locale: string) => void) | undefined;
-    export let sessionManagementHref: string | undefined;
+    export let onCardLocaleSelect: ((locale: string) => void) | undefined = undefined;
+    export let sessionManagementHref: string | undefined = undefined;
     export let playerCount = 2;
     export let showEligibility = true;
 
+    type Configuration = RoomGameSettings["configuration"];
     const operationalFlagLabels: Record<string, string> = messages.boundaries.flags;
-    const sensitivityIds: readonly SocialSensitivity[] = [
-        "GENERAL",
-        "PERSONAL",
-        "CLOSE_PERSONAL",
-        "DEEP_PERSONAL",
-        "INTIMATE",
-        "EXPLICIT",
-    ];
+    const sensitivityIds = SOCIAL_SENSITIVITY_ORDER;
     const sensitivityOptions = sensitivityIds.map((value) => ({
         value,
         label: messages.cardManagement.sensitivityNames[value],
     }));
-    $: includesDares = ["CLASSIC_TRUTH_OR_DARE", "RANDOM_TRUTH_OR_DARE"].includes(settings.mode);
+    $: includesDares = settings.mode === GAME_MODES.CLASSIC || settings.mode === GAME_MODES.RANDOM;
     $: localeOptions = cardLocales.length
         ? cardLocales
         : [{ id: settings.cardLocale, nativeName: settings.cardLocale, coverage: 1 }];
@@ -45,6 +47,11 @@
     $: taxonomy = $cardTaxonomies[settings.cardLocale];
     $: questionCategories = taxonomy?.questionCategories ?? [];
     $: dareTypes = taxonomy?.dareTypes ?? [];
+    $: enabledQuestionCategoryIds = new Set<string>(
+        settings.configuration.enabledQuestionCategoryIds,
+    );
+    $: enabledDareTypeIds = new Set<string>(settings.configuration.enabledDareTypeIds);
+    $: blockedOperationalFlags = new Set<string>(settings.configuration.blockedOperationalFlags);
 
     function update(next: Partial<RoomGameSettings>): void {
         onChange({ ...settings, ...next });
@@ -52,17 +59,26 @@
     function updateConfiguration(next: Partial<RoomGameSettings["configuration"]>): void {
         update({ configuration: { ...settings.configuration, ...next } });
     }
-    function toggle(values: string[], id: string): string[] {
+    function toggle(values: readonly string[], id: string): string[] {
         return values.includes(id) ? values.filter((value) => value !== id) : [...values, id];
+    }
+    function questionIds(values: readonly string[]): Configuration["enabledQuestionCategoryIds"] {
+        return [...values] as Configuration["enabledQuestionCategoryIds"];
+    }
+    function dareIds(values: readonly string[]): Configuration["enabledDareTypeIds"] {
+        return [...values] as Configuration["enabledDareTypeIds"];
+    }
+    function operationalFlags(values: readonly string[]): Configuration["blockedOperationalFlags"] {
+        return [...values] as Configuration["blockedOperationalFlags"];
     }
     function chooseProfile(profile: GameProfileSummary): void {
         update({
             profileId: profile.id,
             adultContentConfirmed: false,
             configuration: {
-                enabledQuestionCategoryIds: [...profile.enabledQuestionCategoryIds],
-                enabledDareTypeIds: [...profile.enabledDareTypeIds],
-                blockedOperationalFlags: [...profile.blockedOperationalFlags],
+                enabledQuestionCategoryIds: questionIds(profile.enabledQuestionCategoryIds),
+                enabledDareTypeIds: dareIds(profile.enabledDareTypeIds),
+                blockedOperationalFlags: operationalFlags(profile.blockedOperationalFlags),
                 maximumSocialSensitivity: profile.maximumSocialSensitivity,
                 startingIntensity: profile.startingIntensity as 1 | 2 | 3 | 4 | 5,
                 maximumIntensity: profile.maximumIntensity as 1 | 2 | 3 | 4 | 5,
@@ -217,7 +233,9 @@
             options={sensitivityOptions}
             value={settings.configuration.maximumSocialSensitivity}
             onChange={(value) =>
-                updateConfiguration({ maximumSocialSensitivity: value as SocialSensitivity })}
+                updateConfiguration({
+                    maximumSocialSensitivity: value as Configuration["maximumSocialSensitivity"],
+                })}
         />
     </section>
 
@@ -269,17 +287,25 @@
             <div class="choice-chip-grid compact progression-unit-options">
                 <button
                     type="button"
-                    class:selected={settings.configuration.intensityProgressionUnit === "ROUNDS"}
-                    aria-pressed={settings.configuration.intensityProgressionUnit === "ROUNDS"}
-                    on:click={() => updateConfiguration({ intensityProgressionUnit: "ROUNDS" })}
-                    >{messages.room.progressionRounds}</button
+                    class:selected={settings.configuration.intensityProgressionUnit ===
+                        INTENSITY_PROGRESSION_UNITS.ROUNDS}
+                    aria-pressed={settings.configuration.intensityProgressionUnit ===
+                        INTENSITY_PROGRESSION_UNITS.ROUNDS}
+                    on:click={() =>
+                        updateConfiguration({
+                            intensityProgressionUnit: INTENSITY_PROGRESSION_UNITS.ROUNDS,
+                        })}>{messages.room.progressionRounds}</button
                 >
                 <button
                     type="button"
-                    class:selected={settings.configuration.intensityProgressionUnit === "CARDS"}
-                    aria-pressed={settings.configuration.intensityProgressionUnit === "CARDS"}
-                    on:click={() => updateConfiguration({ intensityProgressionUnit: "CARDS" })}
-                    >{messages.room.progressionCards}</button
+                    class:selected={settings.configuration.intensityProgressionUnit ===
+                        INTENSITY_PROGRESSION_UNITS.CARDS}
+                    aria-pressed={settings.configuration.intensityProgressionUnit ===
+                        INTENSITY_PROGRESSION_UNITS.CARDS}
+                    on:click={() =>
+                        updateConfiguration({
+                            intensityProgressionUnit: INTENSITY_PROGRESSION_UNITS.CARDS,
+                        })}>{messages.room.progressionCards}</button
                 >
             </div>
         </div>
@@ -287,7 +313,8 @@
             <span id="progression-interval-label"
                 ><strong>{messages.room.progressionInterval}</strong><small
                     >{settings.configuration.intensityProgressionInterval}
-                    {settings.configuration.intensityProgressionUnit === "ROUNDS"
+                    {settings.configuration.intensityProgressionUnit ===
+                    INTENSITY_PROGRESSION_UNITS.ROUNDS
                         ? messages.common.rounds
                         : messages.common.cards}</small
                 ></span
@@ -387,7 +414,9 @@
             <BulkSelectionActions
                 onAll={() =>
                     updateConfiguration({
-                        enabledQuestionCategoryIds: questionCategories.map(({ id }) => id),
+                        enabledQuestionCategoryIds: questionIds(
+                            questionCategories.map(({ id }) => id),
+                        ),
                     })}
                 onNone={() => updateConfiguration({ enabledQuestionCategoryIds: [] })}
             />
@@ -396,17 +425,15 @@
             {#each questionCategories as category (category.id)}
                 <button
                     type="button"
-                    class:selected={settings.configuration.enabledQuestionCategoryIds.includes(
-                        category.id,
-                    )}
-                    aria-pressed={settings.configuration.enabledQuestionCategoryIds.includes(
-                        category.id,
-                    )}
+                    class:selected={enabledQuestionCategoryIds.has(category.id)}
+                    aria-pressed={enabledQuestionCategoryIds.has(category.id)}
                     on:click={() =>
                         updateConfiguration({
-                            enabledQuestionCategoryIds: toggle(
-                                settings.configuration.enabledQuestionCategoryIds,
-                                category.id,
+                            enabledQuestionCategoryIds: questionIds(
+                                toggle(
+                                    settings.configuration.enabledQuestionCategoryIds,
+                                    category.id,
+                                ),
                             ),
                         })}>{category.label}</button
                 >
@@ -421,7 +448,7 @@
                 <BulkSelectionActions
                     onAll={() =>
                         updateConfiguration({
-                            enabledDareTypeIds: dareTypes.map(({ id }) => id),
+                            enabledDareTypeIds: dareIds(dareTypes.map(({ id }) => id)),
                         })}
                     onNone={() => updateConfiguration({ enabledDareTypeIds: [] })}
                 />
@@ -430,17 +457,12 @@
                 {#each dareTypes as dareType (dareType.id)}
                     <button
                         type="button"
-                        class:selected={settings.configuration.enabledDareTypeIds.includes(
-                            dareType.id,
-                        )}
-                        aria-pressed={settings.configuration.enabledDareTypeIds.includes(
-                            dareType.id,
-                        )}
+                        class:selected={enabledDareTypeIds.has(dareType.id)}
+                        aria-pressed={enabledDareTypeIds.has(dareType.id)}
                         on:click={() =>
                             updateConfiguration({
-                                enabledDareTypeIds: toggle(
-                                    settings.configuration.enabledDareTypeIds,
-                                    dareType.id,
+                                enabledDareTypeIds: dareIds(
+                                    toggle(settings.configuration.enabledDareTypeIds, dareType.id),
                                 ),
                             })}>{dareType.label}</button
                     >
@@ -455,20 +477,21 @@
             <BulkSelectionActions
                 onAll={() => updateConfiguration({ blockedOperationalFlags: [] })}
                 onNone={() =>
-                    updateConfiguration({ blockedOperationalFlags: [...operationalFlagIds] })}
+                    updateConfiguration({
+                        blockedOperationalFlags: operationalFlags(operationalFlagIds),
+                    })}
             />
         </div>
         <div class="toggle-chip-grid">
             {#each operationalFlagIds as id}
                 <button
                     type="button"
-                    class:selected={!settings.configuration.blockedOperationalFlags.includes(id)}
-                    aria-pressed={!settings.configuration.blockedOperationalFlags.includes(id)}
+                    class:selected={!blockedOperationalFlags.has(id)}
+                    aria-pressed={!blockedOperationalFlags.has(id)}
                     on:click={() =>
                         updateConfiguration({
-                            blockedOperationalFlags: toggle(
-                                settings.configuration.blockedOperationalFlags,
-                                id,
+                            blockedOperationalFlags: operationalFlags(
+                                toggle(settings.configuration.blockedOperationalFlags, id),
                             ),
                         })}>{operationalFlagLabels[id]}</button
                 >

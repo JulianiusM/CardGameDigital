@@ -3,15 +3,15 @@ import os from "node:os";
 import path from "node:path";
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { GAME_MODES } from "../../src/packages/game-core";
-import { AppDataSource, initDataSource } from "../../src/modules/database/dataSource";
-import settings from "../../src/modules/settings";
-import { CouchGameSessionEntity } from "../../src/modules/database/entities/game/CouchGameSessionEntity";
-import { CouchCardAppearanceEntity } from "../../src/modules/database/entities/game/CouchCardAppearanceEntity";
-import { SessionImmutablePayloadChunkEntity } from "../../src/modules/database/entities/game/SessionImmutablePayloadChunkEntity";
-import { SessionImmutablePayloadEntity } from "../../src/modules/database/entities/game/SessionImmutablePayloadEntity";
-import { effectiveSettingsFromProfile } from "../../src/packages/application/roomGameSettings";
-import { TypeOrmCouchSessionRepository } from "../../src/packages/persistence/TypeOrmCouchSessionRepository";
+import { GAME_MODES } from "../../packages/game-core";
+import { AppDataSource, initDataSource } from "../../apps/server/src/modules/database/dataSource";
+import settings from "../../apps/server/src/modules/settings";
+import { CouchGameSessionEntity } from "../../packages/persistence/entities/game/CouchGameSessionEntity";
+import { CouchCardAppearanceEntity } from "../../packages/persistence/entities/game/CouchCardAppearanceEntity";
+import { SessionImmutablePayloadChunkEntity } from "../../packages/persistence/entities/game/SessionImmutablePayloadChunkEntity";
+import { SessionImmutablePayloadEntity } from "../../packages/persistence/entities/game/SessionImmutablePayloadEntity";
+import { effectiveSettingsFromProfile } from "../../packages/application/roomGameSettings";
+import { TypeOrmCouchSessionRepository } from "../../packages/persistence/TypeOrmCouchSessionRepository";
 
 const canonicalSettings = {
     profileId: "PROFILE_FRIENDS",
@@ -33,7 +33,7 @@ beforeAll(async () => {
     });
     await settings.read("/dev/null");
     await initDataSource();
-    app = (await import("../../src/app")).default;
+    app = (await import("../../apps/server/src/app")).default;
 }, 120_000);
 afterAll(async () => {
     if (AppDataSource.isInitialized) await AppDataSource.destroy();

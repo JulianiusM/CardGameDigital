@@ -3,7 +3,16 @@ import type {
     EffectiveGameSettings,
     GameProfileSummary,
     RoomGameSettings,
-} from "./multiplayer";
+} from "../../../packages/protocol";
+import {
+    BUILT_IN_PROFILE_IDS,
+    DARE_TYPES,
+    GAME_MODES,
+    INTENSITY_PROGRESSION_UNITS,
+    NEVER_HAVE_I_EVER_REVEAL_MODES,
+    QUESTION_CATEGORIES,
+    SOCIAL_SENSITIVITIES,
+} from "../../../packages/game-core";
 import { loadLanguagePreferences } from "./languagePreferences";
 
 export type SetupIntent = "HOST" | "JOIN" | "DISPLAY";
@@ -18,12 +27,12 @@ export type GameSetupState = {
     groupChoice: GroupChoice;
     groupId: string | null;
     groupMembers: string[];
-    mode: string;
+    mode: RoomGameSettings["mode"];
     profileId: string;
     adultContentConfirmed: boolean;
     startingIntensity: 1 | 2 | 3 | 4 | 5;
     maximumIntensity: 1 | 2 | 3 | 4 | 5;
-    intensityProgressionUnit: "ROUNDS" | "CARDS";
+    intensityProgressionUnit: EffectiveGameSettings["intensityProgressionUnit"];
     intensityProgressionInterval: number;
     intensityProgressionIncrement: number;
     randomQuestionRatio: number;
@@ -36,7 +45,7 @@ export type GameSetupState = {
     cardLocale: string;
     cardFallbackEnabled: boolean;
     cardFallbackLocales: string[];
-    neverHaveIEverRevealMode: "ANONYMOUS_AGGREGATE" | "NAMED_ANSWERS";
+    neverHaveIEverRevealMode: RoomGameSettings["neverHaveIEverRevealMode"];
     cardPolicy?: RoomGameSettings["cardPolicy"];
     deviceMode: DeviceMode;
 };
@@ -49,33 +58,39 @@ const defaults: GameSetupState = {
     groupChoice: "NONE",
     groupId: null,
     groupMembers: [],
-    mode: "CLASSIC_TRUTH_OR_DARE",
-    profileId: "PROFILE_FRIENDS",
+    mode: GAME_MODES.CLASSIC,
+    profileId: BUILT_IN_PROFILE_IDS.FRIENDS,
     adultContentConfirmed: false,
     startingIntensity: 1,
     maximumIntensity: 3,
-    intensityProgressionUnit: "CARDS",
+    intensityProgressionUnit: INTENSITY_PROGRESSION_UNITS.CARDS,
     intensityProgressionInterval: 2,
     intensityProgressionIncrement: 1,
     randomQuestionRatio: 0.6,
     letsTalkMetaInterval: 5,
     maximumTypeStreak: 3,
     enabledQuestionCategoryIds: [
-        "CAT_EVERYDAY",
-        "CAT_CHILDHOOD",
-        "CAT_PERSONALITY",
-        "CAT_SCENARIO",
-        "CAT_FRIENDSHIP",
-        "CAT_RELATIONSHIP",
-        "CAT_BODY",
+        QUESTION_CATEGORIES.EVERYDAY,
+        QUESTION_CATEGORIES.CHILDHOOD,
+        QUESTION_CATEGORIES.PERSONALITY,
+        QUESTION_CATEGORIES.SCENARIO,
+        QUESTION_CATEGORIES.FRIENDSHIP,
+        QUESTION_CATEGORIES.RELATIONSHIP,
+        QUESTION_CATEGORIES.BODY,
     ],
-    enabledDareTypeIds: ["DARE_SILLY", "DARE_OTHER", "DARE_TOUCH", "DARE_KISS", "DARE_CLOTHING"],
+    enabledDareTypeIds: [
+        DARE_TYPES.SILLY,
+        DARE_TYPES.OTHER,
+        DARE_TYPES.TOUCH,
+        DARE_TYPES.KISS,
+        DARE_TYPES.CLOTHING,
+    ],
     blockedOperationalFlags: [],
-    maximumSocialSensitivity: "PERSONAL",
+    maximumSocialSensitivity: SOCIAL_SENSITIVITIES.PERSONAL,
     cardLocale: "",
     cardFallbackEnabled: false,
     cardFallbackLocales: [...loadLanguagePreferences().fallbackLocales],
-    neverHaveIEverRevealMode: "ANONYMOUS_AGGREGATE",
+    neverHaveIEverRevealMode: NEVER_HAVE_I_EVER_REVEAL_MODES.ANONYMOUS_AGGREGATE,
     cardPolicy: { scopeDefault: {}, conditionalRules: [], exactCards: [] },
     deviceMode: "couch",
 };
@@ -179,9 +194,15 @@ export function applyCardLanguageSettings(
 
 export function setupConfiguration(state: GameSetupState): EffectiveGameSettings {
     return {
-        enabledQuestionCategoryIds: [...state.enabledQuestionCategoryIds],
-        enabledDareTypeIds: [...state.enabledDareTypeIds],
-        blockedOperationalFlags: [...state.blockedOperationalFlags],
+        enabledQuestionCategoryIds: [
+            ...state.enabledQuestionCategoryIds,
+        ] as EffectiveGameSettings["enabledQuestionCategoryIds"],
+        enabledDareTypeIds: [
+            ...state.enabledDareTypeIds,
+        ] as EffectiveGameSettings["enabledDareTypeIds"],
+        blockedOperationalFlags: [
+            ...state.blockedOperationalFlags,
+        ] as EffectiveGameSettings["blockedOperationalFlags"],
         maximumSocialSensitivity: state.maximumSocialSensitivity,
         startingIntensity: state.startingIntensity,
         maximumIntensity: state.maximumIntensity,

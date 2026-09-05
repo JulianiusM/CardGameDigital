@@ -1,8 +1,8 @@
 import { DataSource } from "typeorm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { entities } from "../../src/modules/database/__index__";
-import { CardCatalogVersionEntity } from "../../src/modules/database/entities/card/CardCatalogVersionEntity";
-import { applyCardCatalogSnapshot } from "../../src/packages/persistence/applyCardCatalogSnapshot";
+import { entities } from "../../apps/server/src/modules/database/__index__";
+import { CardCatalogVersionEntity } from "../../packages/persistence/entities/card/CardCatalogVersionEntity";
+import { applyCardCatalogSnapshot } from "../../packages/persistence/applyCardCatalogSnapshot";
 import { cardCatalog, catalogArtifact } from "../support/cardCatalog";
 
 const enabled = process.env.CARD_CATALOG_MARIADB_TEST === "1";

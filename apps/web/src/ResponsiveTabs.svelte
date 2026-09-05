@@ -1,9 +1,12 @@
+<script context="module" lang="ts">
+    export type ResponsiveTab = { id: string; label: string; icon?: string };
+</script>
+
 <script lang="ts">
     import { onMount, tick } from "svelte";
     import { messages } from "./i18n";
     import UiIcon from "./UiIcon.svelte";
 
-    export type ResponsiveTab = { id: string; label: string; icon?: string };
     export let tabs: readonly ResponsiveTab[];
     export let selected: string;
     export let label: string;
@@ -22,6 +25,7 @@
     }
     function measure(): void {
         if (!viewport) return;
+        viewport.style.setProperty("--responsive-tabs-viewport-width", `${viewport.clientWidth}px`);
         atStart = viewport.scrollLeft <= 1;
         atEnd = viewport.scrollLeft + viewport.clientWidth >= viewport.scrollWidth - 1;
     }
@@ -31,13 +35,19 @@
             behavior: reducedMotion() ? "auto" : "smooth",
         });
     }
-    async function revealSelected(): Promise<void> {
+    async function revealSelected(behavior?: ScrollBehavior): Promise<void> {
         await tick();
         const active = viewport?.querySelector<HTMLElement>("[data-tab-selected='true']");
-        active?.scrollIntoView({
-            block: "nearest",
-            inline: "nearest",
-            behavior: reducedMotion() ? "auto" : "smooth",
+        if (!active) return;
+
+        const viewportBounds = viewport.getBoundingClientRect();
+        const activeBounds = active.getBoundingClientRect();
+        const viewportCenter = viewportBounds.left + viewport.clientLeft + viewport.clientWidth / 2;
+        const activeCenter = activeBounds.left + activeBounds.width / 2;
+        const targetLeft = viewport.scrollLeft + activeCenter - viewportCenter;
+        viewport.scrollTo({
+            left: targetLeft,
+            behavior: behavior ?? (reducedMotion() ? "auto" : "smooth"),
         });
         requestAnimationFrame(measure);
     }
@@ -55,7 +65,7 @@
         event.preventDefault();
         select(tabs[next].id);
         requestAnimationFrame(() => {
-            viewport.querySelectorAll("button[role='tab']")[next]?.focus();
+            viewport.querySelectorAll<HTMLButtonElement>("button[role='tab']")[next]?.focus();
         });
     }
 
@@ -65,7 +75,10 @@
     }
 
     onMount(() => {
-        const observer = new ResizeObserver(measure);
+        const observer = new ResizeObserver(() => {
+            measure();
+            void revealSelected("auto");
+        });
         observer.observe(viewport);
         measure();
         void revealSelected();

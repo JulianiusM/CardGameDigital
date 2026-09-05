@@ -1,4 +1,9 @@
 import { locale, messages } from "./i18n";
+import { decodeHttpErrorResponse, type HttpErrorResponse } from "../../../packages/protocol";
+
+export function httpErrorDetails(body: unknown): HttpErrorResponse["error"] {
+    return decodeHttpErrorResponse(body)?.error ?? {};
+}
 
 export async function fetchJsonResponse(
     path: string,

@@ -4,7 +4,7 @@ import {
     removeExistingReleaseTarget,
     serverWebReleaseDirectoryName,
     serverWebReleaseManifestSchema,
-} from "../../scripts/releaseBundle";
+} from "../../tooling/release/bundle";
 
 describe("server-web release bundle", () => {
     it("gives the server and web client one versioned platform artifact", () => {

@@ -26,13 +26,15 @@
         loadLastJoin,
         loadServerInfo,
         RoomSocket,
-        type GameProfileSummary,
-        type CardLocaleSummary,
         type Join,
         type ReconnectPhase,
         type Role,
-        type RoomGameSettings,
     } from "./multiplayer";
+    import type {
+        CardLocaleSummary,
+        GameProfileSummary,
+        RoomGameSettings,
+    } from "../../../packages/protocol";
     import { presentation, type AtmospherePresentation } from "./presentation";
     import { atmosphereFor, effectForCommand, sceneFor } from "./presentationMapping";
     import {
@@ -47,6 +49,7 @@
     import { accountApi } from "./accountApi";
     import { authentication, setAuthenticatedAccount } from "./authentication";
     import { roomJoinUrls } from "./roomAccessUrls";
+    import { GOLDEN_MISCHIEF_COLORS } from "../../../packages/design-tokens";
 
     let route: AppRoute = routeFromLocation();
     let joined: Join | null = null;
@@ -75,7 +78,11 @@
     let lastSettingsNoticeId = 0;
     let lastRoomNoticeId = 0;
 
-    $: snapshot = (updateCounter, connection?.snapshot);
+    function refreshed<T>(_counter: number, value: T): T {
+        return value;
+    }
+
+    $: snapshot = refreshed(updateCounter, connection?.snapshot);
     $: session = snapshot?.session;
     $: participants = snapshot?.participants ?? [];
     $: representedPlayerCount = participants.reduce(
@@ -100,13 +107,13 @@
         openSettingsAfterReset = false;
         openSettings();
     }
-    $: effectiveRole = (updateCounter, connection?.role);
-    $: roomPresence = (updateCounter, connection?.presence ?? []);
-    $: connectionError = (updateCounter, connection?.error ?? "");
-    $: connectionErrorCode = (updateCounter, connection?.errorCode ?? "");
-    $: reconnectPhase = (updateCounter, connection?.reconnectPhase ?? "CONNECTING");
-    $: reconnectAttempt = (updateCounter, connection?.reconnectAttempt ?? 0);
-    $: reconnectSeconds = (updateCounter, connection?.reconnectSeconds ?? 0);
+    $: effectiveRole = refreshed(updateCounter, connection?.role);
+    $: roomPresence = refreshed(updateCounter, connection?.presence ?? []);
+    $: connectionError = refreshed(updateCounter, connection?.error ?? "");
+    $: connectionErrorCode = refreshed(updateCounter, connection?.errorCode ?? "");
+    $: reconnectPhase = refreshed(updateCounter, connection?.reconnectPhase ?? "CONNECTING");
+    $: reconnectAttempt = refreshed(updateCounter, connection?.reconnectAttempt ?? 0);
+    $: reconnectSeconds = refreshed(updateCounter, connection?.reconnectSeconds ?? 0);
     $: reconnectMaximum = connection?.reconnectMaximum ?? 5;
     $: reconnectStatus = reconnectStatusText(
         reconnectPhase,
@@ -114,12 +121,12 @@
         reconnectSeconds,
         reconnectMaximum,
     );
-    $: settingsNotice = (updateCounter, connection?.settingsNotice ?? "");
-    $: settingsNoticeId = (updateCounter, connection?.settingsNoticeId ?? 0);
-    $: roomNotice = (updateCounter, connection?.roomNotice ?? "");
-    $: roomNoticeId = (updateCounter, connection?.roomNoticeId ?? 0);
-    $: cardReplacementSequence = (updateCounter, connection?.cardReplacementSequence ?? 0);
-    $: cardReplacementReason = (updateCounter, connection?.cardReplacementReason ?? "");
+    $: settingsNotice = refreshed(updateCounter, connection?.settingsNotice ?? "");
+    $: settingsNoticeId = refreshed(updateCounter, connection?.settingsNoticeId ?? 0);
+    $: roomNotice = refreshed(updateCounter, connection?.roomNotice ?? "");
+    $: roomNoticeId = refreshed(updateCounter, connection?.roomNoticeId ?? 0);
+    $: cardReplacementSequence = refreshed(updateCounter, connection?.cardReplacementSequence ?? 0);
+    $: cardReplacementReason = refreshed(updateCounter, connection?.cardReplacementReason ?? "");
     $: roomSettings = snapshot?.settings;
     $: roomCode = joined?.roomCode ?? "";
     $: cardAtmosphere = atmosphereFor(session?.currentCard);
@@ -225,7 +232,10 @@
             qr = await QRCode.toDataURL(access.qrUrl, {
                 margin: 1,
                 width: 260,
-                color: { dark: "#3b2416", light: "#fff8e8" },
+                color: {
+                    dark: GOLDEN_MISCHIEF_COLORS.espresso,
+                    light: GOLDEN_MISCHIEF_COLORS.warmPaper,
+                },
             });
         } catch (cause) {
             qr = "";
@@ -369,6 +379,7 @@
         command("command.closeRoom");
     }
     function openSettings(): void {
+        dismissNotification();
         if (roomSettings) {
             const {
                 revision: _revision,
@@ -412,13 +423,15 @@
 <AdaptiveBackdrop />
 {#if route === "home" || route === "account" || route === "cards" || route === "help"}<PresentationControls
     />{/if}
-{#if $notification}<NotificationToast
-        message={$notification.message}
-        notificationId={$notification.id}
-        duration={$notification.duration}
-        kind={$notification.kind}
-        onDismiss={() => dismissNotification($notification?.id)}
-    />{/if}
+{#if $notification}<div class="notification-lane">
+        <NotificationToast
+            message={$notification.message}
+            notificationId={$notification.id}
+            duration={$notification.duration}
+            kind={$notification.kind}
+            onDismiss={() => dismissNotification($notification?.id)}
+        />
+    </div>{/if}
 
 {#key route}
     <div class="app-location">
@@ -489,7 +502,7 @@
                             code={roomCode}
                             roomAccess={{
                                 roomCode,
-                                participantCredential: joined.participantCredential,
+                                participantCredential: joined!.participantCredential,
                             }}
                             settings={snapshot.settings}
                             {profiles}
@@ -551,7 +564,7 @@
                         currentGamePlayerCount={Math.max(2, representedPlayerCount)}
                         roomAccess={{
                             roomCode,
-                            participantCredential: joined.participantCredential,
+                            participantCredential: joined!.participantCredential,
                         }}
                         defaultTab={settingsDefaultTab}
                     >
@@ -590,7 +603,7 @@
                         playerCount={Math.max(2, representedPlayerCount)}
                         roomAccess={{
                             roomCode,
-                            participantCredential: joined.participantCredential,
+                            participantCredential: joined!.participantCredential,
                         }}
                     />
                 {/if}

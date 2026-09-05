@@ -27,17 +27,19 @@ Game core                    Persistence adapters
 
 ## Source boundaries
 
-| Directory                    | Responsibility                                                                   | Must not contain                      |
-| ---------------------------- | -------------------------------------------------------------------------------- | ------------------------------------- |
-| `src/packages/game-core`     | Pure cards, eligibility, history, profiles, selection, session state machine.    | Express, TypeORM, WebSocket, Svelte.  |
-| `src/packages/application`   | Use cases, authorization decisions, application ports.                           | HTTP parsing, database query details. |
-| `src/packages/persistence`   | TypeORM implementations and domain mapping.                                      | Browser behavior, transport policy.   |
-| `src/packages/protocol`      | Strict versioned WebSocket schemas.                                              | Service execution or persistence.     |
-| `src/packages/localization`  | Stable keys, server catalogs, fallback.                                          | Domain identity or transport logic.   |
-| `src/modules`, `src/routes`  | Infrastructure and HTTP/WebSocket adapters.                                      | Duplicate game rules.                 |
-| `apps/web`                   | Svelte screens, transport clients, adaptive presentation.                        | Authoritative game state.             |
-| `clients/kodi`               | Native TV presentation, discovery, transport, recovery, and profile storage.     | Card catalog or authoritative rules.  |
-| `src/packages/design-tokens` | Shared Golden Mischief values used to generate browser/Kodi presentation assets. | Client runtime behavior.              |
+| Directory                                           | Responsibility                                                                   | Must not contain                      |
+| --------------------------------------------------- | -------------------------------------------------------------------------------- | ------------------------------------- |
+| `packages/game-core`                                | Pure cards, eligibility, history, profiles, selection, session state machine.    | Express, TypeORM, WebSocket, Svelte.  |
+| `packages/application`                              | Use cases, authorization decisions, application ports.                           | HTTP parsing, database query details. |
+| `packages/persistence`                              | TypeORM implementations and domain mapping.                                      | Browser behavior, transport policy.   |
+| `packages/card-catalog-contract`                    | Card catalog schemas and semantic validation.                                    | Persistence or presentation behavior. |
+| `packages/protocol`                                 | Versioned HTTP/WebSocket schemas, DTOs, and client decoders.                     | Service execution or persistence.     |
+| `packages/localization`                             | Stable server keys/catalogs and shared cross-client product vocabulary.          | Domain identity or transport logic.   |
+| `apps/server/src/application`                       | Account and Help orchestration over server infrastructure.                       | Framework-independent gameplay rules. |
+| `apps/server/src/modules`, `apps/server/src/routes` | Infrastructure and HTTP/WebSocket adapters.                                      | Duplicate game rules.                 |
+| `apps/web`                                          | Svelte screens, transport clients, adaptive presentation.                        | Authoritative game state.             |
+| `apps/kodi`                                         | Native TV presentation, discovery, transport, recovery, and profile storage.     | Card catalog or authoritative rules.  |
+| `packages/design-tokens`                            | Shared Golden Mischief values used to generate browser/Kodi presentation assets. | Client runtime behavior.              |
 
 Architecture tests in `tests/architecture` enforce important dependency and content
 boundaries.

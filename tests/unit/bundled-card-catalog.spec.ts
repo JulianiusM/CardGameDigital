@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import {
     bundledCardCatalogArtifact,
     setBundledCardCatalogPathForTests,
-} from "../../src/modules/database/bundledCardCatalog";
+} from "../../apps/server/src/modules/database/bundledCardCatalog";
 
 describe("bundled Card catalog deployment policy", () => {
     it("accepts the producer-shaped test release in local and public modes", () => {

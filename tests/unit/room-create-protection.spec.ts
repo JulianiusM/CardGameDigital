@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DataSource } from "typeorm";
 
-vi.mock("../../src/modules/settings", () => ({
+vi.mock("../../apps/server/src/modules/settings", () => ({
     default: {
         value: {
             roomDisplayBootstrapEnabled: true,
@@ -14,17 +14,17 @@ vi.mock("../../src/modules/settings", () => ({
         },
     },
 }));
-vi.mock("../../src/modules/installationIdentity", () => ({
+vi.mock("../../apps/server/src/modules/installationIdentity", () => ({
     installationServerId: () => "0b95a99b-321c-4dc7-af52-51cae21d2f31",
 }));
 
-import { RoomCreateIdempotencyEntity } from "../../src/modules/database/entities/game/RoomCreateIdempotencyEntity";
+import { RoomCreateIdempotencyEntity } from "../../packages/persistence/entities/game/RoomCreateIdempotencyEntity";
 import {
     initializeRoomCreateProtection,
     resetRoomCreateProtectionForTests,
     roomDisplayBootstrapCapability,
     validateRetainedRoomCreateProtection,
-} from "../../src/modules/roomCreateProtection";
+} from "../../apps/server/src/modules/roomCreateProtection";
 
 let source: DataSource;
 

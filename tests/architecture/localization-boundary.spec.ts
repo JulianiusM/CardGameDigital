@@ -30,7 +30,7 @@ describe("localization boundary", () => {
 
     it("uses stable localization keys for application errors", () => {
         const services = ["accountService.ts", "helpService.ts"]
-            .map((file) => fs.readFileSync(path.join("src/packages/application", file), "utf8"))
+            .map((file) => fs.readFileSync(path.join("apps/server/src/application", file), "utf8"))
             .join("\n");
         expect(services).not.toMatch(/new ExpectedError\("/);
         expect(services).toMatch(/new ExpectedError\(MESSAGE_KEYS\./);
@@ -39,7 +39,15 @@ describe("localization boundary", () => {
     it("keeps locale composition explicit and readable", () => {
         const composition = fs.readFileSync("apps/web/src/locales/index.ts", "utf8");
         expect(composition).not.toMatch(/type\s+\w+<[^>]+>\s*=\s*[^;]+extends/);
-        expect(fs.existsSync("src/packages/localization/locales/de.ts")).toBe(true);
-        expect(fs.existsSync("src/packages/localization/locales/en.ts")).toBe(true);
+        expect(fs.existsSync("packages/localization/locales/de.ts")).toBe(true);
+        expect(fs.existsSync("packages/localization/locales/en.ts")).toBe(true);
+    });
+
+    it("does not duplicate server-owned profile or group-option catalogs in the browser", () => {
+        const browserCatalogs = read("apps/web/src/locales", /\.ts$/);
+        expect(browserCatalogs).not.toMatch(
+            /PROFILE_(?:CHILD|ACQUAINTANCES|FRIENDS|CLOSE|SPICY|CUSTOM)/,
+        );
+        expect(browserCatalogs).not.toMatch(/\bgroupOptions\s*:/);
     });
 });

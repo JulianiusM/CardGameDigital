@@ -559,7 +559,8 @@ at a time; setup and account Group browsers use bounded pages sized for their co
 Previous and Next actions occupy equal columns. A selected Card exposes its complete
 canonical UUID with safe wrapping; IDs are never shortened into ambiguous prefixes.
 The taxonomy label and UUID share one aligned metadata row with a visible divider.
-Long names truncate in master rows without hiding their selected detail. Empty, loading,
+Long names wrap inside their master rows so the complete value remains visible without
+widening the page; selected detail preserves the same complete value. Empty, loading,
 disabled, destructive-confirmation, and no-preview states use complete styled surfaces;
 the interface never invokes a native confirmation dialog.
 

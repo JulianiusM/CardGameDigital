@@ -3,7 +3,7 @@ import {
     cardPolicyScopeFromJson,
     eligibilityReasons,
     resolveCardPolicy,
-} from "../../src/packages/game-core";
+} from "../../packages/game-core";
 import { boundaries, card, profile } from "../support/game";
 
 const exact = (

@@ -3,11 +3,11 @@ import os from "node:os";
 import path from "node:path";
 import Database from "better-sqlite3";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { AppDataSource, initDataSource } from "../../src/modules/database/dataSource";
-import { CardCatalogVersionEntity } from "../../src/modules/database/entities/card/CardCatalogVersionEntity";
-import { CardEntity } from "../../src/modules/database/entities/card/CardEntity";
-import settings from "../../src/modules/settings";
-import { setBundledCardCatalogPathForTests } from "../../src/modules/database/bundledCardCatalog";
+import { AppDataSource, initDataSource } from "../../apps/server/src/modules/database/dataSource";
+import { CardCatalogVersionEntity } from "../../packages/persistence/entities/card/CardCatalogVersionEntity";
+import { CardEntity } from "../../packages/persistence/entities/card/CardEntity";
+import settings from "../../apps/server/src/modules/settings";
+import { setBundledCardCatalogPathForTests } from "../../apps/server/src/modules/database/bundledCardCatalog";
 
 let directory: string;
 let databaseFile: string;

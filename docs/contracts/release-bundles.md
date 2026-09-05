@@ -75,7 +75,7 @@ protocol manifest.
 ## Kodi client artifact
 
 The implemented `kodi-client` release takes its version from
-`clients/kodi/addon.xml` and produces:
+`apps/kodi/addon.xml` and produces:
 
 ```text
 script.partycard.tv-{version}.zip

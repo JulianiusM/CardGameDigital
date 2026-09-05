@@ -2,7 +2,7 @@ import {
     decideRoomHost,
     derivePersistedRoomHostStatus,
     type HostSelectionTrigger,
-} from "../../src/packages/application/roomHostSelection";
+} from "../../packages/application/roomHostSelection";
 import type {
     RoomLifecycleTransition,
     RoomLifecycleTransitionResult,
@@ -10,7 +10,7 @@ import type {
     RoomRoleChange,
     RoomRoleChangeReason,
     RoomState,
-} from "../../src/packages/application/realtimeRooms";
+} from "../../packages/application/realtimeRooms";
 
 type StoredParticipant = RoomParticipant & { credentialHash: string };
 

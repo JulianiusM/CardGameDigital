@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { projectNeverHaveIEverVoting } from "../../src/packages/application/neverHaveIEverVoting";
+import { projectNeverHaveIEverVoting } from "../../packages/application/neverHaveIEverVoting";
 import {
     GAME_MODES,
     GameSession,
     NEVER_HAVE_I_EVER_REVEAL_MODES,
     SequenceRandomSource,
-} from "../../src/packages/game-core";
+} from "../../packages/game-core";
 import { card, profile } from "../support/game";
 
 function votingSession(revealMode: "ANONYMOUS_AGGREGATE" | "NAMED_ANSWERS") {

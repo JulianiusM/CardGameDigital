@@ -2,22 +2,21 @@
     import { onMount } from "svelte";
     import CardPolicyDirectiveEditor from "./CardPolicyDirectiveEditor.svelte";
     import ResponsiveTabs, { type ResponsiveTab } from "./ResponsiveTabs.svelte";
-    import {
-        cardPolicyApi,
-        type ManagedCard,
-        type PortableCardPolicy,
-        type StoredDefault,
-        type StoredRule,
-    } from "./cardPolicyApi";
+    import { cardPolicyApi } from "./cardPolicyApi";
     import { locale, messages } from "./i18n";
-    import {
-        loadCardLocales,
-        loadGroups,
-        type CardPolicyDirectives,
-        type CardPolicyPredicate,
-        type GroupSummary,
-        type SessionCardPolicy,
-    } from "./multiplayer";
+    import { loadCardLocales, loadGroups } from "./multiplayer";
+    import { CARD_TYPES, SOCIAL_SENSITIVITY_ORDER } from "../../../packages/game-core";
+    import type {
+        CardPolicyRulePreviewResponse,
+        CardPolicyDirectives,
+        CardPolicyPredicate,
+        GroupSummary,
+        ManagedCard,
+        PortableCardPolicy,
+        SessionCardPolicy,
+        StoredDefault,
+        StoredRule,
+    } from "../../../packages/protocol";
     import { operationalFlagIds } from "./gameSettingsOptions";
     import { cardTaxonomies, ensureCardTaxonomy, taxonomyLabel } from "./cardTaxonomy";
     import { dismissNotification, showNotification } from "./notifications";
@@ -25,6 +24,7 @@
     import { loadSetup, saveSetup } from "./setup";
     import UiIcon from "./UiIcon.svelte";
     import { randomUuidV4 } from "./randomUuid";
+    import WrappingSelect, { type WrappingSelectOption } from "./WrappingSelect.svelte";
 
     export let embedded = false;
 
@@ -38,12 +38,7 @@
         | "operationalFlagsAll"
         | "operationalFlagsAny"
         | "operationalFlagsNone";
-    type RulePreviewCard = {
-        id: string;
-        text: string;
-        cardType?: string;
-        taxonomyLabel?: string | null;
-    };
+    type RulePreviewCard = CardPolicyRulePreviewResponse["cards"][number];
     type CardPage = {
         cursor?: string;
         cards: ManagedCard[];
@@ -65,15 +60,9 @@
         "socialSensitivity",
         "playerCount",
     ] as const;
-    const sensitivityIds = [
-        "GENERAL",
-        "PERSONAL",
-        "CLOSE_PERSONAL",
-        "DEEP_PERSONAL",
-        "INTIMATE",
-        "EXPLICIT",
-    ];
-    const cardTypeIds = ["QUESTION", "DARE", "CONVERSATION_META"];
+    const sensitivityIds = SOCIAL_SENSITIVITY_ORDER;
+    const cardTypeIds = Object.values(CARD_TYPES);
+    const operationalFlagLabels: Record<string, string> = messages.boundaries.flags;
     const rulePageSize = 10;
     const groupPageSize = 8;
     const cardPageSize = 24;
@@ -166,6 +155,14 @@
     $: taxonomy = $cardTaxonomies[cardLocale];
     $: questionCategoryIds = taxonomy?.questionCategories.map(({ id }) => id) ?? [];
     $: dareTypeIds = taxonomy?.dareTypes.map(({ id }) => id) ?? [];
+    $: questionCategoryOptions = [
+        { value: "", label: messages.cardManagement.anyValue },
+        ...questionCategoryIds.map((id) => ({ value: id, label: taxonomyLabel(taxonomy, id) })),
+    ] satisfies WrappingSelectOption[];
+    $: dareTypeOptions = [
+        { value: "", label: messages.cardManagement.anyValue },
+        ...dareTypeIds.map((id) => ({ value: id, label: taxonomyLabel(taxonomy, id) })),
+    ] satisfies WrappingSelectOption[];
     onMount(async () => {
         try {
             if (sessionMode) {
@@ -1392,9 +1389,7 @@
                                                                     flagGroup[0] as PredicateListProperty,
                                                                     flag,
                                                                 )}
-                                                            >{messages.boundaries.flags[
-                                                                flag
-                                                            ]}</button
+                                                            >{operationalFlagLabels[flag]}</button
                                                         >
                                                     {/each}
                                                 </div>
@@ -1485,7 +1480,7 @@
                                                             string,
                                                             number
                                                         >
-                                                    )[numericFilter[0]] ?? ""}
+                                                    )[numericFilter[0]!] ?? ""}
                                                     on:input={(event) =>
                                                         updatePredicateValue(
                                                             numericFilter[0] as keyof CardPolicyPredicate,
@@ -1701,11 +1696,13 @@
                                 <span>{messages.cardManagement.search}</span>
                                 <span class="policy-search-control">
                                     <UiIcon name="content" />
-                                    <input
-                                        type="search"
+                                    <textarea
                                         bind:value={searchText}
+                                        maxlength="200"
+                                        rows="1"
+                                        wrap="soft"
                                         placeholder={messages.cardManagement.searchPlaceholder}
-                                    />
+                                    ></textarea>
                                 </span>
                             </label>
 
@@ -1731,36 +1728,24 @@
                                             </select>
                                         </span>
                                     </label>
-                                    <label class="policy-field">
+                                    <div class="policy-field">
                                         <span>{messages.cardManagement.category}</span>
-                                        <span class="policy-select-shell">
-                                            <select bind:value={questionCategoryId}>
-                                                <option value=""
-                                                    >{messages.cardManagement.anyValue}</option
-                                                >
-                                                {#each questionCategoryIds as id}
-                                                    <option value={id}
-                                                        >{taxonomyLabel(taxonomy, id)}</option
-                                                    >
-                                                {/each}
-                                            </select>
-                                        </span>
-                                    </label>
-                                    <label class="policy-field">
+                                        <WrappingSelect
+                                            value={questionCategoryId}
+                                            options={questionCategoryOptions}
+                                            label={messages.cardManagement.category}
+                                            onChange={(value) => (questionCategoryId = value)}
+                                        />
+                                    </div>
+                                    <div class="policy-field">
                                         <span>{messages.cardManagement.dareType}</span>
-                                        <span class="policy-select-shell">
-                                            <select bind:value={dareTypeId}>
-                                                <option value=""
-                                                    >{messages.cardManagement.anyValue}</option
-                                                >
-                                                {#each dareTypeIds as id}
-                                                    <option value={id}
-                                                        >{taxonomyLabel(taxonomy, id)}</option
-                                                    >
-                                                {/each}
-                                            </select>
-                                        </span>
-                                    </label>
+                                        <WrappingSelect
+                                            value={dareTypeId}
+                                            options={dareTypeOptions}
+                                            label={messages.cardManagement.dareType}
+                                            onChange={(value) => (dareTypeId = value)}
+                                        />
+                                    </div>
                                     <label class="policy-field">
                                         <span>{messages.cardManagement.sensitivity}</span>
                                         <span class="policy-select-shell">
@@ -1787,7 +1772,7 @@
                                                 >
                                                 {#each operationalFlagIds as id}
                                                     <option value={id}
-                                                        >{messages.boundaries.flags[id]}</option
+                                                        >{operationalFlagLabels[id]}</option
                                                     >
                                                 {/each}
                                             </select>
@@ -1957,7 +1942,7 @@
                                         aria-label={messages.cardManagement.operationalFlags}
                                     >
                                         {#each selectedCard.operationalFlags as flag}
-                                            <span>{messages.boundaries.flags[flag]}</span>
+                                            <span>{operationalFlagLabels[flag]}</span>
                                         {/each}
                                     </div>
                                 {/if}

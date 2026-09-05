@@ -3,15 +3,15 @@ import os from "node:os";
 import path from "node:path";
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { AppDataSource, initDataSource } from "../../src/modules/database/dataSource";
-import { AccountSession } from "../../src/modules/database/entities/session/AccountSession";
-import { DataSpace } from "../../src/modules/database/entities/user/DataSpace";
+import { AppDataSource, initDataSource } from "../../apps/server/src/modules/database/dataSource";
+import { AccountSession } from "../../packages/persistence/entities/session/AccountSession";
+import { DataSpace } from "../../packages/persistence/entities/user/DataSpace";
 import {
     consumeActivationToken,
     generateActivationToken,
     registerUser,
-} from "../../src/modules/database/services/UserService";
-import settings from "../../src/modules/settings";
+} from "../../apps/server/src/modules/database/services/UserService";
+import settings from "../../apps/server/src/modules/settings";
 
 let app: import("express").Express;
 let directory: string;
@@ -31,7 +31,7 @@ beforeAll(async () => {
     await initDataSource();
     accountId = await registerUser("anna", "Anna", "long-test-password", "anna@example.test");
     expect(await consumeActivationToken(await generateActivationToken(accountId))).toBe(true);
-    app = (await import("../../src/app")).default;
+    app = (await import("../../apps/server/src/app")).default;
 });
 
 afterAll(async () => {

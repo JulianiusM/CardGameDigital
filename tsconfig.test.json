@@ -4,9 +4,16 @@
         "rootDir": ".",
         "module": "ESNext",
         "moduleResolution": "Bundler",
+        "allowImportingTsExtensions": true,
         "allowSyntheticDefaultImports": true,
         "isolatedModules": true,
         "types": ["@playwright/test", "node"]
     },
-    "include": ["src/**/*.ts", "tests/**/*.ts", "tests/**/*.d.ts"]
+    "include": [
+        "apps/server/src/**/*.ts",
+        "apps/server/migrations/**/*.ts",
+        "packages/**/*.ts",
+        "tests/**/*.ts",
+        "tests/**/*.d.ts"
+    ]
 }

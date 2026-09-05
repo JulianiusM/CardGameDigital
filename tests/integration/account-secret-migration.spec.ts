@@ -2,8 +2,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { AppDataSource, initDataSource } from "../../src/modules/database/dataSource";
-import { User } from "../../src/modules/database/entities/user/User";
+import { AppDataSource, initDataSource } from "../../apps/server/src/modules/database/dataSource";
+import { User } from "../../packages/persistence/entities/user/User";
 import {
     consumeActivationToken,
     consumePasswordResetToken,
@@ -13,8 +13,8 @@ import {
     verifyActivationToken,
     verifyPassword,
     verifyPasswordResetToken,
-} from "../../src/modules/database/services/UserService";
-import settings from "../../src/modules/settings";
+} from "../../apps/server/src/modules/database/services/UserService";
+import settings from "../../apps/server/src/modules/settings";
 
 let directory: string;
 let userId: number;

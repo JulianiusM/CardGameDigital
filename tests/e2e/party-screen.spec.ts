@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import os from "node:os";
-import { localNetworkInterfaceAllowed } from "../../src/modules/localNetworkInterfaces";
+import { localNetworkInterfaceAllowed } from "../../apps/server/src/modules/localNetworkInterfaces";
 
 test.beforeEach(async ({ context }) => {
     await context.addInitScript(() => {
@@ -130,6 +130,53 @@ async function expectInsideViewport(page: Page, selector: string): Promise<void>
     expect(bounds.left).toBeGreaterThanOrEqual(-1);
     expect(bounds.right).toBeLessThanOrEqual(bounds.viewportWidth + 1);
     expect(bounds.bottom).toBeLessThanOrEqual(bounds.viewportHeight + 1);
+}
+
+async function expectInsideViewportDuringMotion(
+    page: Page,
+    selectors: readonly string[],
+    durationMs: number,
+): Promise<void> {
+    const maximumOverflow = await page.evaluate(
+        async ({ selectors: observedSelectors, durationMs: observedDuration }) => {
+            const elements = observedSelectors.map((selector) => {
+                const element = document.querySelector(selector);
+                if (!(element instanceof HTMLElement)) {
+                    throw new Error(`Missing motion geometry target: ${selector}`);
+                }
+                return element;
+            });
+            let worstOverflow = Number.NEGATIVE_INFINITY;
+            const sample = () => {
+                for (const element of elements) {
+                    const bounds = element.getBoundingClientRect();
+                    worstOverflow = Math.max(
+                        worstOverflow,
+                        -bounds.top,
+                        -bounds.left,
+                        bounds.right - window.innerWidth,
+                        bounds.bottom - window.innerHeight,
+                    );
+                }
+            };
+            sample();
+            const startedAt = performance.now();
+            await new Promise<void>((resolve) => {
+                const observeFrame = (now: number) => {
+                    sample();
+                    if (now - startedAt >= observedDuration) {
+                        resolve();
+                        return;
+                    }
+                    requestAnimationFrame(observeFrame);
+                };
+                requestAnimationFrame(observeFrame);
+            });
+            return worstOverflow;
+        },
+        { selectors, durationMs },
+    );
+    expect(maximumOverflow).toBeLessThanOrEqual(1);
 }
 
 test("taxonomy copy follows the Card language in settings and private boundaries", async ({
@@ -279,7 +326,7 @@ test("TV setup opens a display-only Room and the first phone becomes Host", asyn
     });
     const display = await displayContext.newPage();
     const advertisedOrigins = Array.from(
-        { length: 8 },
+        { length: 30 },
         (_, index) => `http://10.23.0.${index + 10}:3001`,
     );
     await display.route("**/api/v1/server-info", async (route) => {
@@ -304,15 +351,24 @@ test("TV setup opens a display-only Room and the first phone becomes Host", asyn
     await expect(display.locator(".room-availability-urls.auto-page")).toContainText(
         expectedJoinUrl,
     );
-    const urlPager = display.locator(".room-url-pages .auto-page-region");
+    const urlPager = display.locator(".room-url-pages .auto-page-text");
+    const completeUrlCopy = [
+        expectedJoinUrl,
+        ...advertisedOrigins.map((origin) => `${origin}/play/?room=${code}`),
+    ].join("\n");
+    await expect(urlPager.locator(".auto-page-copy").first()).toHaveAttribute(
+        "aria-label",
+        completeUrlCopy,
+    );
     await expect
-        .poll(async () => Number(await urlPager.getAttribute("data-page-size")))
+        .poll(async () => Number(await urlPager.getAttribute("data-page-count")))
         .toBeGreaterThan(1);
-    const tallPageSize = Number(await urlPager.getAttribute("data-page-size"));
+    const tallPageCount = Number(await urlPager.getAttribute("data-page-count"));
     await display.setViewportSize({ width: 1280, height: 600 });
     await expect
-        .poll(async () => Number(await urlPager.getAttribute("data-page-size")))
-        .toBeLessThan(tallPageSize);
+        .poll(async () => Number(await urlPager.getAttribute("data-page-count")))
+        .toBeGreaterThan(tallPageCount);
+    await expectInsideViewport(display, ".public-stage-lobby .join-card");
     await display.setViewportSize({ width: 1920, height: 1080 });
 
     const phone = await phoneContext.newPage();
@@ -409,7 +465,12 @@ test("settings, device players and transferred Host authority synchronize across
 
     await oldHost.getByRole("button", { name: "Einstellungen", exact: true }).click();
     await oldHost.getByRole("tab", { name: /Erweiterte Einstellungen/ }).click();
-    await oldHost.getByLabel("Host-Aufgabe übertragen").selectOption({ label: "Ben" });
+    const transferPicker = oldHost.locator(".host-transfer-control .wrapping-select");
+    await transferPicker.locator(":scope > summary").click();
+    await transferPicker
+        .locator(".wrapping-select-options")
+        .getByRole("button", { name: "Ben", exact: true })
+        .click();
     await oldHost.getByRole("button", { name: "Übertragen" }).click();
     await expect(
         newHost.getByRole("button", { name: "Spieleinstellungen bearbeiten" }),
@@ -476,7 +537,9 @@ test("players can inspect complete public settings without private boundaries", 
     );
     await expect(host.getByRole("tab", { name: /Erweiterte Einstellungen/ })).toBeVisible();
     await host.getByRole("tab", { name: /Erweiterte Einstellungen/ }).click();
-    await expect(host.getByLabel("Host-Aufgabe übertragen")).toBeVisible();
+    await expect(
+        host.locator(".host-transfer-control .wrapping-select > summary"),
+    ).toHaveAccessibleName("Host-Aufgabe übertragen");
     await host.getByLabel("Einstellungen schließen").click();
     await player.getByRole("button", { name: "Einstellungen", exact: true }).click();
     await expect(player.getByRole("tab", { name: "Raum" })).toHaveAttribute(
@@ -894,8 +957,21 @@ test("small public displays automatically page long voting rosters and named res
     const displayVoting = display.locator(".never-voting");
     await expect(display.locator(".public-stage")).toBeVisible();
     await expect(display.locator(".game-card")).toBeVisible();
+    await expect(display.locator(".gameplay-focus")).toHaveCSS(
+        "animation-name",
+        "public-stage-phase-enter",
+    );
+    await expect(display.locator(".game-card")).toHaveCSS(
+        "animation-name",
+        "public-stage-card-enter",
+    );
     await expectInsideViewport(display, ".game-card");
     await expectInsideViewport(display, ".never-voting");
+    await expectInsideViewportDuringMotion(
+        display,
+        [".gameplay-focus", ".game-card", ".never-voting"],
+        600,
+    );
     await expect(displayVoting.locator(".auto-page-status")).toBeVisible();
     const firstProgressPage = await displayVoting.locator(".vote-progress-list").innerText();
     await expect
@@ -1058,7 +1134,14 @@ test("hosted zero-card settings are rejected without leaving the lobby", async (
     await joinRoom(player, code, "Ben");
     await host.getByRole("button", { name: "Spiel starten" }).click();
     await expect(host.getByRole("alert")).toContainText("Keine Karte erfüllt alle aktiven Regeln.");
-    await expect(host.locator(".notification-toast")).toHaveCSS("position", "fixed");
+    const notificationLane = host.locator(".notification-lane");
+    const notificationToast = host.locator(".notification-toast");
+    await expect(notificationToast).toHaveCSS("position", "relative");
+    const notificationBounds = await notificationLane.boundingBox();
+    const contentBounds = await host.locator(".app-location").boundingBox();
+    expect(notificationBounds!.y + notificationBounds!.height).toBeLessThanOrEqual(
+        contentBounds!.y + 1,
+    );
     await expect(host.locator(".room-error, .error, .notice")).toHaveCount(0);
     await expect(host.getByRole("heading", { name: "Lobby" })).toBeVisible();
     await expect(player.getByRole("heading", { name: "Lobby" })).toBeVisible();

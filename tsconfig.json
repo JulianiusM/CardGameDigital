@@ -11,7 +11,7 @@
     "esModuleInterop": true,
     "skipLibCheck": true,
     "strict": true,
-    "rootDir": "src",
+    "rootDir": ".",
     "outDir": "dist",
     "experimentalDecorators": true,
     "emitDecoratorMetadata": true,
@@ -21,6 +21,8 @@
     // ← important: editor-only, don’t emit
   },
   "include": [
-    "src/**/*"
+    "apps/server/src/**/*.ts",
+    "apps/server/migrations/**/*.ts",
+    "packages/**/*.ts"
   ]
 }

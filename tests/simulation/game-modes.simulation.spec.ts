@@ -4,7 +4,7 @@ import {
     GAME_MODES,
     GameSession,
     SequenceRandomSource,
-} from "../../src/packages/game-core";
+} from "../../packages/game-core";
 import { card, profile } from "../support/game";
 
 const players = [

@@ -12,8 +12,7 @@
     },
     "exclude": [
         "node_modules",
-        "dist",
-        "src/public/js"
+        "dist"
     ],
     "ts-node": {
         "files": true,

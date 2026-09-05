@@ -1,13 +1,13 @@
 <script lang="ts">
     import { onDestroy, onMount } from "svelte";
-    import {
-        cardPolicyApi,
-        type EligibilityPreview,
-        type RoomEligibilityAccess,
-    } from "./cardPolicyApi";
+    import { cardPolicyApi } from "./cardPolicyApi";
     import { messages } from "./i18n";
     import { panelTransition } from "./motion";
-    import type { RoomGameSettings } from "./multiplayer";
+    import type {
+        EligibilityPreview,
+        RoomEligibilityAccess,
+        RoomGameSettings,
+    } from "../../../packages/protocol";
     import UiIcon from "./UiIcon.svelte";
 
     export let settings: RoomGameSettings;

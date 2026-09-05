@@ -8,8 +8,8 @@
         loadHostConfiguration,
         resetGroupHistory,
         updateGroup,
-        type GroupSummary,
     } from "./multiplayer";
+    import type { GroupSummary } from "../../../packages/protocol";
     import { dismissNotification, showNotification } from "./notifications";
     import UiIcon from "./UiIcon.svelte";
     import { announceGroupChange } from "./groupChanges";

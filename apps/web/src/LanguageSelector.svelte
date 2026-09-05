@@ -1,7 +1,10 @@
+<script context="module" lang="ts">
+    export type LanguageOption = { id: string; nativeName: string };
+</script>
+
 <script lang="ts">
     import { locale, messages } from "./i18n";
 
-    export type LanguageOption = { id: string; nativeName: string };
     export let options: readonly LanguageOption[];
     export let selected: string | null = null;
     export let label: string;

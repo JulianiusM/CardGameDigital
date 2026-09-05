@@ -1,6 +1,7 @@
 <script lang="ts">
     import { messages } from "./i18n";
     import { motifSymbolFor, type PresentedCard } from "./presentationMapping";
+    import AutoPageText from "./AutoPageText.svelte";
     import UiIcon from "./UiIcon.svelte";
     import { cardTaxonomies, requestCardTaxonomy, taxonomyLabel } from "./cardTaxonomy";
 
@@ -9,6 +10,7 @@
     export let showIntensity = false;
     export let replacementDraw = false;
     export let compact = false;
+    export let interactiveTextPages = true;
 
     $: motifSymbol = motifSymbolFor(card);
     $: requestCardTaxonomy(cardLocale);
@@ -30,7 +32,7 @@
         {messages.cardTypes[card.cardType]}
         {#if classification}<i>·</i>{classification}{/if}
     </span>
-    <p>{card.cardText}</p>
+    <AutoPageText text={card.cardText} variant="card" interactive={interactiveTextPages} />
     {#if showIntensity}
         <span class="intensity-pair">
             <span

@@ -1,6 +1,6 @@
 <script lang="ts">
     export let name: string;
-    export let label: string | undefined;
+    export let label: string | undefined = undefined;
 </script>
 
 <svg

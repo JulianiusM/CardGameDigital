@@ -1,15 +1,17 @@
+<script context="module" lang="ts">
+    export type BoundarySelection = {
+        disabledQuestionCategoryIds: string[];
+        disabledDareTypeIds: string[];
+        blockedOperationalFlags: string[];
+    };
+</script>
+
 <script lang="ts">
     import { messages } from "./i18n";
     import BulkSelectionActions from "./BulkSelectionActions.svelte";
     import { cardTaxonomies, requestCardTaxonomy } from "./cardTaxonomy";
     export let onSave: (boundaries: BoundarySelection) => void;
     export let cardLocale: string;
-
-    export type BoundarySelection = {
-        disabledQuestionCategoryIds: string[];
-        disabledDareTypeIds: string[];
-        blockedOperationalFlags: string[];
-    };
 
     const operationalFlags = Object.entries(messages.boundaries.flags);
 

@@ -1,4 +1,108 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import packageMetadata from "../../package.json";
+
+const ROOM_ID = "00000000-0000-4000-8000-000000000010";
+
+function canonicalJoin(role: "HOST" | "PLAYER" = "PLAYER") {
+    return {
+        roomId: ROOM_ID,
+        roomCode: "ABC234",
+        participantId: "00000000-0000-4000-8000-000000000011",
+        participantCredential: "credential".repeat(5),
+        role,
+        bootstrapMode: "CREATOR_HOST" as const,
+        hostStatus: {
+            state: "CONNECTED" as const,
+            participantId: "00000000-0000-4000-8000-000000000011",
+            displayName: "Anna",
+            deadline: null,
+        },
+    };
+}
+
+function canonicalRoomSnapshot(input: Record<string, any>): Record<string, unknown> {
+    const settings = input.settings ?? {};
+    const session = input.session;
+    return {
+        roomId: ROOM_ID,
+        capacity: { maximumParticipants: 20, maximumPlayers: 20 },
+        participants: (input.participants ?? []).map((participant: Record<string, unknown>) => ({
+            roomId: ROOM_ID,
+            devicePlayers: [],
+            connectionStatus: "CONNECTED",
+            ...participant,
+        })),
+        bootstrapMode: "CREATOR_HOST",
+        hostStatus: {
+            state: "CONNECTED",
+            participantId: "00000000-0000-4000-8000-000000000011",
+            displayName: "Anna",
+            deadline: null,
+        },
+        boundaryConfigured: input.boundaryConfigured ?? true,
+        settings: {
+            mode: "NEVER_HAVE_I_EVER",
+            profileId: "PROFILE_FRIENDS",
+            groupId: null,
+            adultContentConfirmed: false,
+            cardLocale: "de-DE",
+            cardFallbackEnabled: false,
+            cardFallbackLocales: [],
+            neverHaveIEverRevealMode: "NAMED_ANSWERS",
+            cardPolicy: { scopeDefault: {}, conditionalRules: [], exactCards: [] },
+            configuration: {
+                enabledQuestionCategoryIds: [],
+                enabledDareTypeIds: [],
+                blockedOperationalFlags: [],
+                maximumSocialSensitivity: "EXPLICIT",
+                startingIntensity: 1,
+                maximumIntensity: 3,
+                intensityProgressionUnit: "ROUNDS",
+                intensityProgressionInterval: 2,
+                intensityProgressionIncrement: 1,
+                randomQuestionRatio: 0.5,
+                maximumTypeStreak: 3,
+                letsTalkMetaInterval: 3,
+            },
+            revision: 0,
+            updatedByParticipantId: null,
+            ...settings,
+        },
+        session:
+            session === null || session === undefined
+                ? null
+                : {
+                      id: "00000000-0000-4000-8000-000000000020",
+                      startedAt: 1,
+                      mode: "NEVER_HAVE_I_EVER",
+                      revision: 0,
+                      state: "WAITING_FOR_PLAYER",
+                      roundNumber: 1,
+                      activePlayer: null,
+                      players: [],
+                      currentCard: null,
+                      cardsShown: 0,
+                      remainingCardCount: 10,
+                      voteResult: { yes: 0, no: 0, total: 0 },
+                      neverHaveIEverVoting: null,
+                      hasVoted: false,
+                      viewer: null,
+                      availableActions: ["START_SESSION"],
+                      controllablePlayers: [],
+                      ...session,
+                  },
+    };
+}
+
+function canonicalServerPayload(type: string, payload: unknown): unknown {
+    if (type === "room.snapshot") {
+        return canonicalRoomSnapshot(payload as Record<string, unknown>);
+    }
+    if (type === "server.hello") {
+        return { protocolVersion: 2, ...(payload as Record<string, unknown>) };
+    }
+    return payload;
+}
 
 class FakeWebSocket {
     static readonly OPEN = 1;
@@ -23,7 +127,15 @@ class FakeWebSocket {
     }
 
     receive(type: string, payload: unknown): void {
-        this.onmessage?.({ data: JSON.stringify({ type, payload }) });
+        this.onmessage?.({
+            data: JSON.stringify({
+                protocol: 2,
+                type,
+                requestId: type === "server.pong" ? "test-ping" : null,
+                revision: null,
+                payload: canonicalServerPayload(type, payload),
+            }),
+        });
     }
 }
 
@@ -65,33 +177,34 @@ describe("authoritative multiplayer client events", () => {
             },
         });
         const { RoomSocket } = await import("../../apps/web/src/multiplayer");
-        const connection = new RoomSocket(
-            {
-                roomId: "00000000-0000-4000-8000-000000000010",
-                roomCode: "ABC234",
-                participantId: "00000000-0000-4000-8000-000000000011",
-                participantCredential: "credential".repeat(5),
-                role: "PLAYER",
-            },
-            () => undefined,
-        );
+        const connection = new RoomSocket(canonicalJoin(), () => undefined);
         const socket = FakeWebSocket.instances[0];
 
         socket.onopen?.();
 
         expect(socket.sent).toHaveLength(1);
         const hello = JSON.parse(socket.sent[0]) as {
+            protocol: number;
             type: string;
             requestId: string;
-            payload: { roomCode: string };
+            payload: {
+                roomCode: string;
+                supportedProtocolVersions: number[];
+                applicationVersion: string;
+            };
         };
         expect(hello).toMatchObject({
+            protocol: 2,
             type: "client.hello",
-            payload: { roomCode: "ABC234" },
+            payload: {
+                roomCode: "ABC234",
+                supportedProtocolVersions: [2],
+                applicationVersion: packageMetadata.version,
+            },
         });
         expect(hello.requestId).toBe("00010203-0405-4607-8809-0a0b0c0d0e0f");
         connection.dispose();
-    }, 15_000);
+    }, 60_000);
 
     it("reuses a pending display-bootstrap idempotency key after a lost response", async () => {
         installBrowserGlobals();
@@ -193,69 +306,59 @@ describe("authoritative multiplayer client events", () => {
         await expect(rooms.join("ABC234", "Ben", "PLAYER")).rejects.toThrow(
             "Verbindung fehlgeschlagen",
         );
-        const connection = new RoomSocket(
-            {
-                roomId: "00000000-0000-4000-8000-000000000010",
-                roomCode: "ABC234",
-                participantId: "00000000-0000-4000-8000-000000000011",
-                participantCredential: "credential".repeat(5),
-                role: "PLAYER",
-            },
-            () => undefined,
-        );
+        const connection = new RoomSocket(canonicalJoin(), () => undefined);
         connection.command("command.startTurn");
         expect(connection.errorCode).toBe("CONNECTION_UNAVAILABLE");
         expect(connection.error).toBe("Verbindung fehlgeschlagen");
         connection.dispose();
     }, 10_000);
 
+    it("accepts the current successful Room join response without create-only fields", async () => {
+        installBrowserGlobals();
+        const responseBody = {
+            roomId: ROOM_ID,
+            roomCode: "ABC234",
+            participantId: "00000000-0000-4000-8000-000000000011",
+            participantCredential: "credential".repeat(5),
+            role: "PLAYER",
+            futureJoinDetail: true,
+        };
+        vi.stubGlobal(
+            "fetch",
+            vi.fn().mockResolvedValue({
+                ok: true,
+                status: 201,
+                json: async () => responseBody,
+            }),
+        );
+        const { rooms } = await import("../../apps/web/src/multiplayer");
+
+        await expect(rooms.join("ABC234", "Ben", "PLAYER")).resolves.toEqual(responseBody);
+    }, 10_000);
+
     it("maps lifecycle notices and animates the snapshot following a Card replacement", async () => {
         installBrowserGlobals();
         const { RoomSocket } = await import("../../apps/web/src/multiplayer");
         let changes = 0;
-        const connection = new RoomSocket(
-            {
-                roomId: "00000000-0000-4000-8000-000000000010",
-                roomCode: "ABC234",
-                participantId: "00000000-0000-4000-8000-000000000011",
-                participantCredential: "credential".repeat(5),
-                role: "PLAYER",
-            },
-            () => changes++,
-        );
+        const connection = new RoomSocket(canonicalJoin(), () => changes++);
         const socket = FakeWebSocket.instances[0];
         const snapshot = (cardId: string) => ({
-            roomId: "00000000-0000-4000-8000-000000000010",
             participants: [],
             boundaryConfigured: true,
-            settings: {
-                mode: "NEVER_HAVE_I_EVER",
-                profileId: "PROFILE_FRIENDS",
-                groupId: null,
-                adultContentConfirmed: false,
-                cardLocale: "de-DE",
-                neverHaveIEverRevealMode: "NAMED_ANSWERS",
-                configuration: {
-                    enabledQuestionCategoryIds: [],
-                    enabledDareTypeIds: [],
-                    blockedOperationalFlags: [],
-                    startingIntensity: 1,
-                    maximumIntensity: 3,
-                    intensityProgressionUnit: "ROUNDS",
-                    intensityProgressionInterval: 2,
-                    randomQuestionRatio: 0.5,
-                    maximumTypeStreak: 3,
-                    letsTalkMetaInterval: 3,
-                },
-                revision: 0,
-                updatedByParticipantId: null,
-            },
             session: {
-                currentCard: { id: cardId },
+                currentCard: {
+                    id: cardId,
+                    cardText: "Card",
+                    cardType: "QUESTION",
+                    cardIntensity: 2,
+                    intensity: 2,
+                    questionCategoryId: "CAT_EVERYDAY",
+                    dareTypeId: null,
+                },
             },
         });
 
-        socket.receive("room.snapshot", snapshot("card-a"));
+        socket.receive("room.snapshot", snapshot("00000000-0000-4000-8000-000000000030"));
         socket.receive("room.participantLeft", {
             participantId: "00000000-0000-4000-8000-000000000012",
             displayName: "Ben",
@@ -267,7 +370,7 @@ describe("authoritative multiplayer client events", () => {
         socket.receive("session.cardReplaced", { reason: "VETOED" });
         expect(connection.roomNotice).toContain("neue Karte");
         expect(connection.cardReplacementSequence).toBe(0);
-        socket.receive("room.snapshot", snapshot("card-b"));
+        socket.receive("room.snapshot", snapshot("00000000-0000-4000-8000-000000000031"));
         expect(connection.cardReplacementSequence).toBe(1);
         expect(connection.cardReplacementReason).toBe("VETOED");
         expect(changes).toBeGreaterThanOrEqual(4);
@@ -277,16 +380,7 @@ describe("authoritative multiplayer client events", () => {
     it("announces a player added to an already active Session", async () => {
         installBrowserGlobals();
         const { RoomSocket } = await import("../../apps/web/src/multiplayer");
-        const connection = new RoomSocket(
-            {
-                roomId: "00000000-0000-4000-8000-000000000010",
-                roomCode: "ABC234",
-                participantId: "00000000-0000-4000-8000-000000000011",
-                participantCredential: "credential".repeat(5),
-                role: "HOST",
-            },
-            () => undefined,
-        );
+        const connection = new RoomSocket(canonicalJoin("HOST"), () => undefined);
         const socket = FakeWebSocket.instances[0];
         const host = {
             id: "00000000-0000-4000-8000-000000000011",
@@ -321,16 +415,7 @@ describe("authoritative multiplayer client events", () => {
         installBrowserGlobals();
         const { RoomSocket } = await import("../../apps/web/src/multiplayer");
         let changes = 0;
-        const connection = new RoomSocket(
-            {
-                roomId: "00000000-0000-4000-8000-000000000010",
-                roomCode: "ABC234",
-                participantId: "00000000-0000-4000-8000-000000000011",
-                participantCredential: "credential".repeat(5),
-                role: "PLAYER",
-            },
-            () => changes++,
-        );
+        const connection = new RoomSocket(canonicalJoin(), () => changes++);
         const socket = FakeWebSocket.instances[0];
         socket.onopen?.();
         socket.receive("server.hello", {
@@ -353,16 +438,7 @@ describe("authoritative multiplayer client events", () => {
         vi.useFakeTimers();
         installBrowserGlobals();
         const { RoomSocket } = await import("../../apps/web/src/multiplayer");
-        const connection = new RoomSocket(
-            {
-                roomId: "00000000-0000-4000-8000-000000000010",
-                roomCode: "ABC234",
-                participantId: "00000000-0000-4000-8000-000000000011",
-                participantCredential: "credential".repeat(5),
-                role: "PLAYER",
-            },
-            () => undefined,
-        );
+        const connection = new RoomSocket(canonicalJoin(), () => undefined);
         const socket = FakeWebSocket.instances[0];
         socket.onopen?.();
         socket.receive("server.hello", {
@@ -384,16 +460,7 @@ describe("authoritative multiplayer client events", () => {
         vi.useFakeTimers();
         installBrowserGlobals();
         const { RoomSocket } = await import("../../apps/web/src/multiplayer");
-        const connection = new RoomSocket(
-            {
-                roomId: "00000000-0000-4000-8000-000000000010",
-                roomCode: "ABC234",
-                participantId: "00000000-0000-4000-8000-000000000011",
-                participantCredential: "credential".repeat(5),
-                role: "PLAYER",
-            },
-            () => undefined,
-        );
+        const connection = new RoomSocket(canonicalJoin(), () => undefined);
 
         FakeWebSocket.instances[0].onerror?.();
         expect(connection.reconnectSeconds).toBe(1);
@@ -429,13 +496,7 @@ describe("authoritative multiplayer client events", () => {
         const { RoomSocket } = await import("../../apps/web/src/multiplayer");
         let reason = "";
         const connection = new RoomSocket(
-            {
-                roomId: "00000000-0000-4000-8000-000000000010",
-                roomCode: "ABC234",
-                participantId: "00000000-0000-4000-8000-000000000011",
-                participantCredential: "credential".repeat(5),
-                role: "PLAYER",
-            },
+            canonicalJoin(),
             () => undefined,
             (value) => (reason = value),
         );

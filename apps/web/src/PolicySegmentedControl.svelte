@@ -1,9 +1,11 @@
-<script lang="ts">
+<script context="module" lang="ts">
     export type PolicySegmentOption = {
         value: string;
         label: string;
     };
+</script>
 
+<script lang="ts">
     export let label: string;
     export let options: readonly PolicySegmentOption[];
     export let value: string;

@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { jsonReplacer, mergeUnique, normalizeToArray } from "../../src/modules/lib/util";
+import {
+    jsonReplacer,
+    mergeUnique,
+    normalizeToArray,
+} from "../../apps/server/src/modules/lib/util";
 
 describe("generic collection utilities", () => {
     it("normalizes, merges and serializes without domain coupling", () => {

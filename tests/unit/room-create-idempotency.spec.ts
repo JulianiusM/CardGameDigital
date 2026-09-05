@@ -4,8 +4,8 @@ import {
     ROOM_CREATE_RESPONSE_SCHEMA_VERSION,
     ROOM_CREATE_ROUTE_KEY,
     RoomCreateIdempotencyProtection,
-} from "../../src/packages/application/roomCreateIdempotency";
-import type { RoomJoinResult } from "../../src/packages/application/realtimeRooms";
+} from "../../packages/application/roomCreateIdempotency";
+import type { RoomJoinResult } from "../../packages/application/realtimeRooms";
 
 describe("Room-create replay protection", () => {
     const rootSecret = randomBytes(32);

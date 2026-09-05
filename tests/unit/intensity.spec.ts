@@ -12,7 +12,7 @@ import {
     globalCardIntensityLevel,
     globalCardIntensityScore,
     intensityMaximumScoreForProgress,
-} from "../../src/packages/game-core";
+} from "../../packages/game-core";
 import { card, profile } from "../support/game";
 
 const players = [

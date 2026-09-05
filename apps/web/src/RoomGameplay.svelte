@@ -5,7 +5,8 @@
     import SessionSummary from "./SessionSummary.svelte";
     import { messages } from "./i18n";
     import { elapsedMinutes as minutesSince } from "./elapsedTime";
-    import type { Participant, Presence, Role, SessionView } from "./multiplayer";
+    import type { Participant, Presence, Role } from "./multiplayer";
+    import type { SessionView } from "../../../packages/protocol";
 
     export let session: SessionView;
     export let cardLocale: string;
@@ -24,6 +25,8 @@
     export let cardReplacementReason: "SKIPPED" | "VETOED" | "" = "";
 
     $: actions = new Set(session.availableActions);
+    $: hasVisibleActions =
+        actions.has("VETO_CARD") || actions.has("SKIP_CARD") || actions.has("ADVANCE_SESSION");
     $: elapsedMinutes = minutesSince(session.startedAt);
     $: showingVotingResults = Boolean(session.neverHaveIEverVoting?.result);
 </script>
@@ -133,6 +136,7 @@
                     {cardLocale}
                     showIntensity
                     compact={role === "DISPLAY" && showingVotingResults}
+                    interactiveTextPages={role !== "DISPLAY"}
                     replacementDraw={Boolean(cardReplacementReason)}
                 />
             {/key}
@@ -149,22 +153,22 @@
             {/if}
         </div>
 
-        <div class="actions">
-            {#if actions.has("VETO_CARD")}
-                <button class="secondary" on:click={() => onCommand("command.vetoCard")}>
-                    {messages.room.otherCard}
-                </button>
-            {/if}
-            {#if actions.has("SKIP_CARD")}
-                <button class="secondary" on:click={() => onCommand("command.skipCard")}>
-                    {messages.common.skip}
-                </button>
-            {/if}
-            {#if actions.has("ADVANCE_SESSION")}
-                <button class="primary" on:click={() => onCommand("command.advanceSession")}>
-                    {messages.common.next}
-                </button>
-            {/if}
-        </div>
+        {#if hasVisibleActions}<div class="actions">
+                {#if actions.has("VETO_CARD")}
+                    <button class="secondary" on:click={() => onCommand("command.vetoCard")}>
+                        {messages.room.otherCard}
+                    </button>
+                {/if}
+                {#if actions.has("SKIP_CARD")}
+                    <button class="secondary" on:click={() => onCommand("command.skipCard")}>
+                        {messages.common.skip}
+                    </button>
+                {/if}
+                {#if actions.has("ADVANCE_SESSION")}
+                    <button class="primary" on:click={() => onCommand("command.advanceSession")}>
+                        {messages.common.next}
+                    </button>
+                {/if}
+            </div>{/if}
     {/if}
 </section>

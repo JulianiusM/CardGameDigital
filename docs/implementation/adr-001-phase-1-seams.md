@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted for the incremental migration.
+Superseded by ADR-013 after the planned workspace relocation was completed.
 
 ## Decision
 

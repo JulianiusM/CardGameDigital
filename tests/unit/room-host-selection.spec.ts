@@ -3,8 +3,8 @@ import {
     decideRoomHost,
     derivePersistedRoomHostStatus,
     deriveRoomHostStatus,
-} from "../../src/packages/application/roomHostSelection";
-import type { RoomParticipant, RoomState } from "../../src/packages/application/realtimeRooms";
+} from "../../packages/application/roomHostSelection";
+import type { RoomParticipant, RoomState } from "../../packages/application/realtimeRooms";
 
 const NOW = 10_000;
 

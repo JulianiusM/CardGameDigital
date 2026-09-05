@@ -4,6 +4,10 @@ import type {
     PresentationScene,
     VisualFamily,
 } from "./presentation";
+import {
+    DARE_VISUAL_FAMILY_BY_TYPE_ID,
+    QUESTION_VISUAL_FAMILY_BY_CATEGORY_ID,
+} from "../../../packages/design-tokens";
 import { motifSymbolsForFamily } from "./motifFamilies";
 
 export type PresentedCard = {
@@ -29,43 +33,22 @@ export function sceneFor(
     return connected ? "LOBBY" : "MENU";
 }
 
-const questionFamilies: Record<string, VisualFamily> = {
-    CAT_EVERYDAY: "CURIOSITY",
-    CAT_CHILDHOOD: "CURIOSITY",
-    CAT_SCENARIO: "CURIOSITY",
-    CAT_PERSONALITY: "INNER_SELF",
-    CAT_BODY: "INNER_SELF",
-    CAT_FRIENDSHIP: "CONNECTION",
-    CAT_RELATIONSHIP: "CONNECTION",
-    CAT_INTOXICATION: "UNFILTERED",
-    CAT_SEXUALITY: "INTIMATE_TALK",
-    CAT_SEX_OPENNESS: "INTIMATE_TALK",
-    CAT_SEX_TENSION: "DESIRE_STORIES",
-    CAT_SEX_EXPERIENCE: "DESIRE_STORIES",
-};
-
-const dareFamilies: Record<string, VisualFamily> = {
-    DARE_SILLY: "MISCHIEF",
-    DARE_THIRD_PARTY: "SOCIAL_CHAOS",
-    DARE_KISS: "AFFECTION",
-    DARE_TOUCH: "AFFECTION",
-    DARE_KISS_SPICY: "FLIRT",
-    DARE_TOUCH_SPICY: "FLIRT",
-    DARE_SEXUAL_TENSION: "FLIRT",
-    DARE_CLOTHING: "REVEAL",
-    DARE_NUDITY: "REVEAL",
-    DARE_TOUCH_SEXY: "HEAT",
-    DARE_BORDERLINE_SEX: "HEAT",
-    DARE_SEX: "HEAT",
-    DARE_OTHER: "GENERIC_DARE",
-};
+function mappedVisualFamily(
+    mapping: Readonly<Record<string, VisualFamily>>,
+    taxonomyId: string,
+): VisualFamily | undefined {
+    return mapping[taxonomyId];
+}
 
 export function visualFamilyFor(card: PresentedCard): VisualFamily {
     if (card.cardType === "CONVERSATION_META") return "CONVERSATION";
     if (card.cardType === "QUESTION" && card.questionCategoryId)
-        return questionFamilies[card.questionCategoryId] ?? "CURIOSITY";
+        return (
+            mappedVisualFamily(QUESTION_VISUAL_FAMILY_BY_CATEGORY_ID, card.questionCategoryId) ??
+            "CURIOSITY"
+        );
     if (card.cardType === "DARE" && card.dareTypeId)
-        return dareFamilies[card.dareTypeId] ?? "GENERIC_DARE";
+        return mappedVisualFamily(DARE_VISUAL_FAMILY_BY_TYPE_ID, card.dareTypeId) ?? "GENERIC_DARE";
     return "GENERAL";
 }
 

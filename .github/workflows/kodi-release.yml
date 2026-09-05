@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: Version already declared in clients/kodi/addon.xml
+        description: Version already declared in apps/kodi/addon.xml
         required: true
         type: string
       publish:
@@ -42,7 +42,7 @@ jobs:
       - name: Validate version and package the Kodi add-on
         run: |
           set -euo pipefail
-          MANIFEST_VERSION=$(node -e "const fs=require('fs');const x=fs.readFileSync('clients/kodi/addon.xml','utf8');process.stdout.write(x.match(/version=\"([^\"]+)/)[1])")
+          MANIFEST_VERSION=$(node -e "const fs=require('fs');const x=fs.readFileSync('apps/kodi/addon.xml','utf8');process.stdout.write(x.match(/version=\"([^\"]+)/)[1])")
           test "${MANIFEST_VERSION}" = "${KODI_VERSION}"
           npm run kodi:package
           FIRST=$(sha256sum "artifacts/script.partycard.tv-${KODI_VERSION}.zip" | cut -d' ' -f1)

@@ -1,8 +1,8 @@
 import type { Request, Response } from "express";
 import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
-import { wrapErrorApi } from "../../src/middleware/validationErrorHandler";
-import { APIError } from "../../src/modules/lib/errors";
+import { wrapErrorApi } from "../../apps/server/src/middleware/validationErrorHandler";
+import { APIError } from "../../apps/server/src/modules/lib/errors";
 
 function responseRecorder(): {
     response: Response;

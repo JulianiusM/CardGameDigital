@@ -8,7 +8,7 @@ export function reducedMotion(): boolean {
     );
 }
 
-export function panelTransition(): TransitionConfig {
+export function panelTransition(_node: Element): TransitionConfig {
     if (reducedMotion()) return { duration: 200, css: (t) => `opacity: ${t}` };
     return {
         duration: 280,

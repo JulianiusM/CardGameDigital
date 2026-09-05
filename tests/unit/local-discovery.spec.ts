@@ -7,9 +7,9 @@ import {
     sanitizeDiscoveryInstanceName,
     type LocalServiceAdvertisement,
     type LocalServiceAdvertiser,
-} from "../../src/modules/localDiscovery";
-import type { LocalDiscoveryStatus } from "../../src/modules/localDiscoveryState";
-import { localDiscoveryMetrics } from "../../src/modules/localDiscoveryState";
+} from "../../apps/server/src/modules/localDiscovery";
+import type { LocalDiscoveryStatus } from "../../apps/server/src/modules/localDiscoveryState";
+import { localDiscoveryMetrics } from "../../apps/server/src/modules/localDiscoveryState";
 
 function address(value: string, family: "IPv4" | "IPv6", internal = false): NetworkInterfaceInfo {
     const common = {

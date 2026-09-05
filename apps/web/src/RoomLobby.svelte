@@ -3,18 +3,16 @@
     import { messages } from "./i18n";
     import ParticipantRoster from "./ParticipantRoster.svelte";
     import PlayerNameRow from "./PlayerNameRow.svelte";
+    import type { Participant, Presence, Role } from "./multiplayer";
     import type {
-        GameProfileSummary,
         CardLocaleSummary,
-        Participant,
-        Presence,
-        Role,
+        GameProfileSummary,
         RoomBootstrapMode,
         RoomHostStatus,
         VersionedRoomGameSettings,
-    } from "./multiplayer";
+    } from "../../../packages/protocol";
     import EligibleCardPreview from "./EligibleCardPreview.svelte";
-    import type { RoomEligibilityAccess } from "./cardPolicyApi";
+    import type { RoomEligibilityAccess } from "../../../packages/protocol";
     import RoomAvailabilityUrls from "./RoomAvailabilityUrls.svelte";
 
     export let participants: Participant[];

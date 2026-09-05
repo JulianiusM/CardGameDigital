@@ -15,13 +15,8 @@
     import { navigate } from "./router";
     import { dismissNotification, showNotification } from "./notifications";
     import { loadSetup, resetSetup, setupHref, setupRoomSettings } from "./setup";
-    import {
-        loadCardLocales,
-        loadGameProfiles,
-        loadHostConfiguration,
-        type CardLocaleSummary,
-        type GameProfileSummary,
-    } from "./multiplayer";
+    import { loadCardLocales, loadGameProfiles, loadHostConfiguration } from "./multiplayer";
+    import type { CardLocaleSummary, GameProfileSummary } from "../../../packages/protocol";
     import { authentication, refreshAuthentication } from "./authentication";
     import EligibleCardPreview from "./EligibleCardPreview.svelte";
 

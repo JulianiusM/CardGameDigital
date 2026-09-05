@@ -4,9 +4,9 @@
     export let cardsShown: number;
     export let roundNumber: number;
     export let elapsedMinutes: number;
-    export let onAnotherRound: (() => void) | undefined;
-    export let onNewGame: (() => void) | undefined;
-    export let onExit: (() => void) | undefined;
+    export let onAnotherRound: (() => void) | undefined = undefined;
+    export let onNewGame: (() => void) | undefined = undefined;
+    export let onExit: (() => void) | undefined = undefined;
     export let exitLabel = "";
     export let exitDanger = false;
 </script>

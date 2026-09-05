@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+    DARE_VISUAL_FAMILY_BY_TYPE_ID,
+    GOLDEN_MISCHIEF_ATMOSPHERES,
+    QUESTION_VISUAL_FAMILY_BY_CATEGORY_ID,
+} from "../../packages/design-tokens";
+import { DARE_TYPE_IDS, QUESTION_CATEGORY_IDS } from "../../packages/game-core/cards/taxonomy";
+import {
     atmosphereFor,
     effectForCommand,
     motifSymbolFor,
@@ -41,6 +47,7 @@ describe("presentation mapping", () => {
 
         for (const [family, categoryIds] of Object.entries(expected)) {
             for (const questionCategoryId of categoryIds) {
+                expect(QUESTION_VISUAL_FAMILY_BY_CATEGORY_ID[questionCategoryId]).toBe(family);
                 expect(atmosphereFor(presentedCard({ questionCategoryId }))).toEqual({
                     family,
                     intensity: 1,
@@ -62,6 +69,7 @@ describe("presentation mapping", () => {
 
         for (const [family, dareTypeIds] of Object.entries(expected)) {
             for (const dareTypeId of dareTypeIds) {
+                expect(DARE_VISUAL_FAMILY_BY_TYPE_ID[dareTypeId]).toBe(family);
                 expect(
                     atmosphereFor(
                         presentedCard({
@@ -73,6 +81,42 @@ describe("presentation mapping", () => {
                 ).toEqual({ family, intensity: 1 });
             }
         }
+    });
+
+    it("covers every Card taxonomy with a shared base atmosphere", () => {
+        expect(Object.keys(QUESTION_VISUAL_FAMILY_BY_CATEGORY_ID).sort()).toEqual(
+            [...QUESTION_CATEGORY_IDS].sort(),
+        );
+        expect(Object.keys(DARE_VISUAL_FAMILY_BY_TYPE_ID).sort()).toEqual(
+            [...DARE_TYPE_IDS].sort(),
+        );
+
+        const mappedFamilies = new Set([
+            ...Object.values(QUESTION_VISUAL_FAMILY_BY_CATEGORY_ID),
+            ...Object.values(DARE_VISUAL_FAMILY_BY_TYPE_ID),
+        ]);
+        for (const family of mappedFamilies) {
+            expect(GOLDEN_MISCHIEF_ATMOSPHERES).toHaveProperty(family);
+        }
+    });
+
+    it("generates the same classification maps for the native client", () => {
+        const generated = JSON.parse(
+            fs.readFileSync("apps/kodi/resources/data/design-tokens.json", "utf8"),
+        ) as {
+            presentation: {
+                questionFamilyByCategoryId: Record<string, string>;
+                dareFamilyByTypeId: Record<string, string>;
+            };
+        };
+        expect(generated.presentation.questionFamilyByCategoryId).toEqual(
+            QUESTION_VISUAL_FAMILY_BY_CATEGORY_ID,
+        );
+        expect(generated.presentation.dareFamilyByTypeId).toEqual(DARE_VISUAL_FAMILY_BY_TYPE_ID);
+
+        const nativeProjection = fs.readFileSync("apps/kodi/resources/lib/presentation.py", "utf8");
+        expect(nativeProjection).not.toContain('"CAT_EVERYDAY":');
+        expect(nativeProjection).not.toContain('"DARE_SILLY":');
     });
 
     it("uses global intensity as the family modifier and maps commands centrally", () => {
@@ -105,3 +149,4 @@ describe("presentation mapping", () => {
         );
     });
 });
+import fs from "node:fs";
