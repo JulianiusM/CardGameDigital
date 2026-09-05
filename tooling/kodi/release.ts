@@ -101,13 +101,14 @@ function deterministicZip(
 
 function addonVersion(): string {
     const manifest = fs.readFileSync(path.join(clientRoot, "addon.xml"), "utf8");
-    const match = manifest.match(/<addon\s+[^>]*version="([^"]+)"/);
-    if (!match) throw new Error("addon.xml does not declare a version");
-    const version = process.env.KODI_VERSION ?? match[1];
+    const addon = /<addon\b([^<>]*)>/i.exec(manifest);
+    const manifestVersion = addon ? xmlAttribute(addon[1], "version") : undefined;
+    if (!manifestVersion) throw new Error("addon.xml does not declare a version");
+    const version = process.env.KODI_VERSION ?? manifestVersion;
     if (!/^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(version))
         throw new Error("KODI_VERSION must be a semantic version");
-    if (version !== match[1])
-        throw new Error(`KODI_VERSION ${version} does not match addon.xml ${match[1]}`);
+    if (version !== manifestVersion)
+        throw new Error(`KODI_VERSION ${version} does not match addon.xml ${manifestVersion}`);
     return version;
 }
 
@@ -233,7 +234,7 @@ function zipEntryData(zip: Buffer, entry: ZipEntry): Buffer {
 }
 
 function xmlAttribute(attributes: string, name: string): string | undefined {
-    const expression = new RegExp(`(?:^|\\s)${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)')`, "i");
+    const expression = new RegExp(String.raw`(?:^|\s)${name}\s*=\s*(?:"([^"]*)"|'([^']*)')`, "i");
     const match = expression.exec(attributes);
     return match?.[1] ?? match?.[2];
 }
@@ -269,7 +270,7 @@ function verifyProductionManifest(manifestBytes: Buffer): void {
     );
     if (
         pluginProvides.length !== 1 ||
-        pluginProvides[0][1].trim().split(/\s+/).join(" ") !== "game"
+        pluginProvides[0][1].trim().replaceAll(/\s+/g, " ") !== "game"
     )
         throw new Error("Kodi ZIP Game plugin must provide only game content");
     if (
@@ -282,7 +283,7 @@ function verifyProductionManifest(manifestBytes: Buffer): void {
     );
     if (
         scriptProvides.length !== 1 ||
-        scriptProvides[0][1].trim().split(/\s+/).join(" ") !== "executable"
+        scriptProvides[0][1].trim().replaceAll(/\s+/g, " ") !== "executable"
     )
         throw new Error("Kodi ZIP script must provide only executable content");
 }

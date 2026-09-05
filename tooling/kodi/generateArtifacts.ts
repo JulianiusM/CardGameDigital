@@ -663,9 +663,8 @@ reconcileGeneratedDirectory(addonMediaRoot, new Set(["fanart.png", "icon.png"]))
 async function finish(): Promise<void> {
     await Promise.all(generatedWrites);
     if (drift.length > 0) {
-        throw new Error(
-            `Generated Kodi artifacts are stale:\n${drift.map((entry) => `- ${entry}`).join("\n")}`,
-        );
+        const staleArtifacts = drift.map((entry) => `- ${entry}`).join("\n");
+        throw new Error(`Generated Kodi artifacts are stale:\n${staleArtifacts}`);
     }
     if (!checkOnly) console.log("Generated Kodi protocol, token, fixture, and media artifacts.");
 }

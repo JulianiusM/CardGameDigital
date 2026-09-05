@@ -1300,6 +1300,7 @@ test("visually audits join failure and a 500-character notification", async ({
     page,
 }, testInfo) => {
     test.setTimeout(60_000);
+    await page.clock.install();
     const errorEndMarker = "_ERROR_END";
     const longError = `Fehler: ${"X".repeat(500 - "Fehler: ".length - errorEndMarker.length)}${errorEndMarker}`;
     expect(longError).toHaveLength(500);
@@ -1317,7 +1318,7 @@ test("visually audits join failure and a 500-character notification", async ({
     const appLocation = page.locator(".app-location");
     await expect(toastCopy).toHaveText(longError);
     await toastCopy.focus();
-    await page.waitForTimeout(5500);
+    await page.clock.runFor(5500);
     await expect(toastCopy).toBeVisible();
     await expectElementTopmost(page.locator(".notification-toast"));
     await expectElementsDoNotIntersect(notificationLane, appLocation);
@@ -1474,7 +1475,9 @@ test("visually audits a maximum-name Party Screen roster, voting, and results", 
         maximumRoomUrl(),
     );
     await expect(urlPager).toHaveAttribute("data-source-length", String(maximumRoomUrl().length));
-    await display.waitForTimeout(750);
+    await expect
+        .poll(async () => Number(await urlPager.getAttribute("data-page-count")))
+        .toBeGreaterThan(1);
     await auditFirstMiddleLastPages(
         display,
         testInfo,
@@ -1684,6 +1687,7 @@ test("visually audits text overflow with wide names and taxonomy in fixed game s
 test("text overflow remains readable with keyboard, touch, motion preferences, and Unicode", async ({
     page,
 }, testInfo) => {
+    await page.clock.install();
     await page.setViewportSize({ width: 320, height: 568 });
     await chooseStandardHostSetup(page, /Wahrheit oder Pflicht/);
     await finishHostSetup(page, "couch");
@@ -1710,7 +1714,7 @@ test("text overflow remains readable with keyboard, touch, motion preferences, a
     await name.evaluate((node) => node.blur());
     await page.mouse.move(0, 0);
     const reducedPosition = await name.evaluate((node) => node.scrollLeft);
-    await page.waitForTimeout(2000);
+    await page.clock.runFor(2000);
     expect(await name.evaluate((node) => node.scrollLeft)).toBe(reducedPosition);
 
     await page.emulateMedia({ reducedMotion: "no-preference" });
@@ -1720,7 +1724,7 @@ test("text overflow remains readable with keyboard, touch, motion preferences, a
         .toBeGreaterThan(reducedPosition + 5);
     await name.focus();
     const pausedPosition = await name.evaluate((node) => node.scrollLeft);
-    await page.waitForTimeout(350);
+    await page.clock.runFor(350);
     expect(await name.evaluate((node) => node.scrollLeft)).toBe(pausedPosition);
     await page.evaluate(() => (document.documentElement.dataset.reducedMotion = "true"));
 
