@@ -1,3 +1,4 @@
+import { waitForPaint } from "./visual-audit-helpers";
 import { expect, test, type Page } from "@playwright/test";
 
 test.beforeEach(async ({ context }) => {
@@ -47,6 +48,7 @@ async function createGame(page: Page, modeLabel: string) {
 }
 
 async function measureTrackSpeeds(page: Page): Promise<number[]> {
+    await waitForPaint(page);
     const sample = page.locator(".track-motion");
     const segmentWidth = await page
         .locator('.track-segment[data-segment="0"]')
@@ -63,7 +65,6 @@ async function measureTrackSpeeds(page: Page): Promise<number[]> {
                 ),
         segmentWidth,
     );
-    await page.waitForTimeout(800);
     return speeds;
 }
 
@@ -114,6 +115,15 @@ test("Golden Mischief uses warm local surfaces and a motion-aware adaptive backd
             return [...canvas.getContext("2d")!.getImageData(x, y, 1, 1).data.slice(0, 3)];
         }, gradientProbe);
     const desktopTrackSpeeds = await measureTrackSpeeds(page);
+    await expect
+        .poll(
+            async () => {
+                const phase = Number(await atmosphereLayer.getAttribute("data-gradient-phase"));
+                return (phase - beforeGradientPhase + 1) % 1;
+            },
+            { intervals: [50] },
+        )
+        .toBeGreaterThan(0.02);
     const afterGradientPhase = Number(await atmosphereLayer.getAttribute("data-gradient-phase"));
     expect(Math.min(...desktopTrackSpeeds)).toBeGreaterThan(35);
     expect(Math.max(...desktopTrackSpeeds)).toBeLessThan(55);
@@ -350,7 +360,7 @@ test("Golden Mischief uses warm local surfaces and a motion-aware adaptive backd
             );
         });
     expect(crossfadeAlignment).toBeLessThan(0.1);
-    await page.waitForTimeout(450);
+    await expect.poll(pixelAtCanvasCenter).not.toEqual(paletteBeforeTransition);
     const paletteDuringTransition = await pixelAtCanvasCenter();
     expect(paletteDuringTransition).not.toEqual(paletteBeforeTransition);
     await expect(atmosphereLayer).toHaveAttribute("data-gradient-palette-progress", "1", {
@@ -363,7 +373,7 @@ test("Golden Mischief uses warm local surfaces and a motion-aware adaptive backd
     await expect(page.getByRole("button", { name: /Spiel hosten/ })).toBeVisible();
 
     await page.setViewportSize({ width: 2560, height: 1440 });
-    await page.waitForTimeout(100);
+    await waitForPaint(page);
     const wideGradient = await page.locator(".atmosphere-gradient").evaluate((element) => {
         const canvas = element as HTMLCanvasElement;
         const context = canvas.getContext("2d")!;
@@ -406,7 +416,7 @@ test("Golden Mischief uses warm local surfaces and a motion-aware adaptive backd
     expect(wideGradient.maximumAdjacentDelta).toBeLessThanOrEqual(2);
 
     await page.setViewportSize({ width: 390, height: 844 });
-    await page.waitForTimeout(100);
+    await waitForPaint(page);
     const phoneTrackSpeeds = await measureTrackSpeeds(page);
     const averageDesktopSpeed =
         desktopTrackSpeeds.reduce((total, speed) => total + speed, 0) / desktopTrackSpeeds.length;
@@ -414,7 +424,7 @@ test("Golden Mischief uses warm local surfaces and a motion-aware adaptive backd
         phoneTrackSpeeds.reduce((total, speed) => total + speed, 0) / phoneTrackSpeeds.length;
     expect(Math.abs(averagePhoneSpeed - averageDesktopSpeed)).toBeLessThan(3);
     await page.setViewportSize({ width: 1280, height: 720 });
-    await page.waitForTimeout(100);
+    await waitForPaint(page);
 
     await page.getByRole("button", { name: "Einstellungen", exact: true }).click();
     await expect(page.locator(".settings-modal")).toHaveCSS(
@@ -437,7 +447,7 @@ test("Golden Mischief uses warm local surfaces and a motion-aware adaptive backd
         )
         .toBe("paused");
     const frozenGradientPhase = Number(await atmosphereLayer.getAttribute("data-gradient-phase"));
-    await page.waitForTimeout(350);
+    await waitForPaint(page);
     expect(Number(await atmosphereLayer.getAttribute("data-gradient-phase"))).toBeCloseTo(
         frozenGradientPhase,
         5,

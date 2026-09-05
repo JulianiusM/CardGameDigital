@@ -3,7 +3,10 @@ import os from "node:os";
 import path from "node:path";
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { AppDataSource, initDataSource } from "../../apps/server/src/modules/database/dataSource";
+import {
+    getAppDataSource,
+    initDataSource,
+} from "../../apps/server/src/modules/database/dataSource";
 import { AccountSession } from "../../packages/persistence/entities/session/AccountSession";
 import { DataSpace } from "../../packages/persistence/entities/user/DataSpace";
 import {
@@ -35,7 +38,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-    if (AppDataSource.isInitialized) await AppDataSource.destroy();
+    if (getAppDataSource().isInitialized) await getAppDataSource().destroy();
     fs.rmSync(directory, { recursive: true, force: true });
 });
 
@@ -125,7 +128,7 @@ describe("native account API", () => {
         expect(exported.headers["content-disposition"]).toContain("attachment");
 
         await agent.post("/api/v1/account/logout").expect(204);
-        expect(await AppDataSource.getRepository(AccountSession).count()).toBe(0);
+        expect(await getAppDataSource().getRepository(AccountSession).count()).toBe(0);
         await agent.get("/api/v1/account/me").expect(401);
     });
 
@@ -162,7 +165,9 @@ describe("native account API", () => {
     });
 
     it("repairs a stale account with no DataSpace before persistence APIs run", async () => {
-        await AppDataSource.getRepository(DataSpace).delete({ user: { id: accountId } });
+        await getAppDataSource()
+            .getRepository(DataSpace)
+            .delete({ user: { id: accountId } });
         const agent = request.agent(app);
         const login = await agent
             .post("/api/v1/account/login")

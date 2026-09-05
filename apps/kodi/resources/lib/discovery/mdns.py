@@ -13,6 +13,8 @@ from .dns import CLASS_IN, DnsFormatError, TYPE_A, TYPE_AAAA, TYPE_PTR, TYPE_SRV
 
 
 SERVICE_TYPE = "_partycard._tcp.local."
+
+# RFC 6762 link-local multicast groups; actual server origins are validated by HTTP probing.
 MDNS_IPV4 = ("224.0.0.251", 5353)
 MDNS_IPV6 = ("ff02::fb", 5353)
 MAX_DISCOVERY_ENDPOINTS = 50
@@ -53,31 +55,41 @@ class MdnsBrowser:
             while not self._closed and time.monotonic() < deadline:
                 now = time.monotonic()
                 if next_interval is not None and now >= next_query_at:
-                    for current, destination in sockets:
-                        try:
-                            current.sendto(query, destination)
-                        except OSError:
-                            pass
-                    next_interval = next(query_intervals, None)
-                    if next_interval is not None:
-                        next_query_at = now + next_interval
+                    next_interval, next_query_at = self._refresh_discovery_query(
+                        sockets, query, query_intervals, now
+                    )
                 readable, _, _ = select.select(
                     [current for current, _ in sockets], [], [], min(0.25, deadline - time.monotonic())
                 )
-                for current in readable:
-                    try:
-                        packet, sender = current.recvfrom(9001)
-                        if len(packet) > 9000:
-                            continue
-                        message = parse_message(packet)
-                        records.extend((record, sender) for record in message.records)
-                    except (OSError, DnsFormatError) as error:
-                        if on_packet_error:
-                            on_packet_error(error)
+                self._collect_discovery_packets(readable, records, on_packet_error)
         finally:
             for current, _ in sockets:
                 current.close()
         return endpoints_from_records(self.service_type, records)
+
+
+    def _collect_discovery_packets(self, readable, records, on_packet_error):
+        for current in readable:
+            try:
+                packet, sender = current.recvfrom(9001)
+                if len(packet) > 9000:
+                    continue
+                message = parse_message(packet)
+                records.extend((record, sender) for record in message.records)
+            except (OSError, DnsFormatError) as error:
+                if on_packet_error:
+                    on_packet_error(error)
+
+
+    def _refresh_discovery_query(self, sockets, query, query_intervals, now):
+        for current, destination in sockets:
+            try:
+                current.sendto(query, destination)
+            except OSError:
+                pass
+        next_interval = next(query_intervals, None)
+        next_query_at = now + next_interval if next_interval is not None else now
+        return next_interval, next_query_at
 
     @staticmethod
     def _open_sockets() -> list[tuple[socket.socket, tuple]]:
@@ -148,19 +160,7 @@ def endpoints_from_records(service_type: str, records: Iterable[tuple]) -> tuple
     services: dict[str, tuple[dict, int]] = {}
     texts: dict[str, tuple[dict[str, str], int]] = {}
     addresses: dict[str, list[tuple[str, int, int]]] = {}
-    for record, sender in records:
-        if record.record_class != CLASS_IN or record.ttl <= 0:
-            continue
-        name = record.name.casefold()
-        if record.record_type == TYPE_PTR and name == normalized_service:
-            instances.add(str(record.value).casefold())
-        elif record.record_type == TYPE_SRV:
-            services[name] = (record.value, record.ttl)
-        elif record.record_type == TYPE_TXT:
-            texts[name] = (record.value, record.ttl)
-        elif record.record_type in {TYPE_A, TYPE_AAAA}:
-            scope = int(sender[3]) if len(sender) >= 4 else 0
-            addresses.setdefault(name, []).append((str(record.value), scope, record.ttl))
+    _index_records(records, normalized_service, instances, services, texts, addresses)
     endpoints: list[DiscoveryEndpoint] = []
     for instance in sorted(instances):
         service = services.get(instance)
@@ -173,22 +173,46 @@ def endpoints_from_records(service_type: str, records: Iterable[tuple]) -> tuple
             continue
         scheme = "https" if text[0]["tls"] == "1" else "http"
         for address, scope, address_ttl in addresses.get(target, ()):
-            parsed = ipaddress.ip_address(address)
-            if parsed.version == 6:
-                zone = f"%25{scope}" if parsed.is_link_local and scope else ""
-                authority = f"[{parsed.compressed}{zone}]:{port}"
-            else:
-                authority = f"{parsed.compressed}:{port}"
-            endpoints.append(
-                DiscoveryEndpoint(
-                    instance=instance,
-                    origin=f"{scheme}://{authority}",
-                    txt=dict(text[0]),
-                    ttl=min(service[1], text[1], address_ttl),
-                )
-            )
+            _append_discovery_address(address, scope, address_ttl, port, scheme, endpoints, instance, service, text)
     unique = {entry.origin: entry for entry in endpoints}
     return tuple(unique[key] for key in sorted(unique)[:MAX_DISCOVERY_ENDPOINTS])
+
+
+def _append_discovery_address(address, scope, address_ttl, port, scheme, endpoints, instance, service, text):
+    parsed = ipaddress.ip_address(address)
+    if parsed.version == 6:
+        zone = f"%25{scope}" if parsed.is_link_local and scope else ""
+        authority = f"[{parsed.compressed}{zone}]:{port}"
+    else:
+        authority = f"{parsed.compressed}:{port}"
+    endpoints.append(
+        DiscoveryEndpoint(
+            instance=instance,
+            origin=f"{scheme}://{authority}",
+            txt=dict(text[0]),
+            ttl=min(service[1], text[1], address_ttl),
+        )
+    )
+
+
+def _index_records(records, normalized_service, instances, services, texts, addresses):
+    for record, sender in records:
+        _index_discovery_record(record, sender, normalized_service, instances, services, texts, addresses)
+
+
+def _index_discovery_record(record, sender, normalized_service, instances, services, texts, addresses):
+    if record.record_class != CLASS_IN or record.ttl <= 0:
+        return
+    name = record.name.casefold()
+    if record.record_type == TYPE_PTR and name == normalized_service:
+        instances.add(str(record.value).casefold())
+    elif record.record_type == TYPE_SRV:
+        services[name] = (record.value, record.ttl)
+    elif record.record_type == TYPE_TXT:
+        texts[name] = (record.value, record.ttl)
+    elif record.record_type in {TYPE_A, TYPE_AAAA}:
+        scope = int(sender[3]) if len(sender) >= 4 else 0
+        addresses.setdefault(name, []).append((str(record.value), scope, record.ttl))
 
 
 def valid_partycard_txt(value: dict[str, str]) -> bool:

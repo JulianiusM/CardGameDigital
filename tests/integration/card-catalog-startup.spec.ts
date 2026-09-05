@@ -3,7 +3,10 @@ import os from "node:os";
 import path from "node:path";
 import Database from "better-sqlite3";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { AppDataSource, initDataSource } from "../../apps/server/src/modules/database/dataSource";
+import {
+    getAppDataSource,
+    initDataSource,
+} from "../../apps/server/src/modules/database/dataSource";
 import { CardCatalogVersionEntity } from "../../packages/persistence/entities/card/CardCatalogVersionEntity";
 import { CardEntity } from "../../packages/persistence/entities/card/CardEntity";
 import settings from "../../apps/server/src/modules/settings";
@@ -33,7 +36,7 @@ beforeAll(async () => {
 }, 120_000);
 
 afterAll(async () => {
-    if (AppDataSource.isInitialized) await AppDataSource.destroy();
+    if (getAppDataSource().isInitialized) await getAppDataSource().destroy();
     fs.rmSync(directory, { recursive: true, force: true });
 });
 
@@ -54,11 +57,11 @@ describe("bundled catalog startup", () => {
             fs.readFileSync(path.resolve("catalog/card-catalog.json"), "utf8"),
         ) as { catalogVersion: string; cards: unknown[] };
         expect(
-            await AppDataSource.getRepository(CardCatalogVersionEntity).findOneByOrFail({
+            await getAppDataSource().getRepository(CardCatalogVersionEntity).findOneByOrFail({
                 catalogVersion: productionCatalog.catalogVersion,
             }),
         ).toMatchObject({ cardCount: productionCatalog.cards.length });
-        expect(await AppDataSource.getRepository(CardEntity).countBy({ active: true })).toBe(
+        expect(await getAppDataSource().getRepository(CardEntity).countBy({ active: true })).toBe(
             productionCatalog.cards.length,
         );
     });

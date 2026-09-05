@@ -24,6 +24,18 @@ def normalize_origin(value: str) -> str:
         host = probe.hostname or ""
         scheme = "http" if _obviously_local_name(host) else "https"
         candidate = f"{scheme}://{candidate}"
+    parsed, port = _parse_origin(candidate)
+    host = parsed.hostname.rstrip(".").encode("idna").decode("ascii").lower()
+    try:
+        address = ipaddress.ip_address(host)
+        rendered_host = f"[{address.compressed}]" if address.version == 6 else address.compressed
+    except ValueError:
+        rendered_host = host
+    default_port = 80 if parsed.scheme == "http" else 443
+    authority = rendered_host if port in {None, default_port} else f"{rendered_host}:{port}"
+    return urlunsplit((parsed.scheme, authority, "", "", ""))
+
+def _parse_origin(candidate):
     parsed = urlsplit(candidate)
     if parsed.scheme not in {"http", "https"}:
         raise AddressPolicyError("Only HTTP and HTTPS server origins are supported")
@@ -37,15 +49,7 @@ def normalize_origin(value: str) -> str:
         raise AddressPolicyError("Server port is invalid") from error
     if port is not None and not 1 <= port <= 65535:
         raise AddressPolicyError("Server port is invalid")
-    host = parsed.hostname.rstrip(".").encode("idna").decode("ascii").lower()
-    try:
-        address = ipaddress.ip_address(host)
-        rendered_host = f"[{address.compressed}]" if address.version == 6 else address.compressed
-    except ValueError:
-        rendered_host = host
-    default_port = 80 if parsed.scheme == "http" else 443
-    authority = rendered_host if port in {None, default_port} else f"{rendered_host}:{port}"
-    return urlunsplit((parsed.scheme, authority, "", "", ""))
+    return parsed, port
 
 
 def validate_transport(
@@ -55,14 +59,17 @@ def validate_transport(
 ) -> str:
     normalized = normalize_origin(origin)
     parsed = urlsplit(normalized)
-    if parsed.scheme == "https":
-        return normalized
+    if parsed.scheme != "https":
+        _validate_local_http(parsed, deployment_mode, resolver)
+    return normalized
+
+
+def _validate_local_http(parsed, deployment_mode, resolver) -> None:
     if deployment_mode is not None and deployment_mode != "local":
         raise AddressPolicyError("Public/global servers require HTTPS")
     addresses = resolve_addresses(parsed.hostname or "", parsed.port or 80, resolver)
     if not addresses or not all(_allowed_local_address(address) for address in addresses):
         raise AddressPolicyError("Plain HTTP is allowed only for local destinations")
-    return normalized
 
 
 def resolve_addresses(host: str, port: int, resolver: Resolver = socket.getaddrinfo) -> set[str]:
@@ -106,6 +113,7 @@ def _allowed_local_address(value: str) -> bool:
     address = ipaddress.ip_address(value)
     if address.is_loopback or address.is_link_local:
         return True
+    # These are RFC 1918 policy ranges, not hardcoded destination servers.
     if isinstance(address, ipaddress.IPv4Address):
         return any(
             address in network

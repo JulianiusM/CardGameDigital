@@ -68,7 +68,10 @@ function groupHistoryPayload(
     groupHistoryCardIds: readonly CardId[],
 ): GroupHistoryPayload {
     if (!compiledCardPolicy || !compiledCardPolicyDigest) {
-        return { format: "CARD_IDS_V1", cardIds: [...groupHistoryCardIds].sort() };
+        return {
+            format: "CARD_IDS_V1",
+            cardIds: [...groupHistoryCardIds].sort((left, right) => left.localeCompare(right)),
+        };
     }
     const history = new Set(groupHistoryCardIds);
     const bits = Buffer.alloc(Math.ceil(compiledCardPolicy.cards.length / 8));
@@ -127,23 +130,23 @@ async function persistEncodedPayload(
 export async function externalizeSessionImmutableState(
     manager: EntityManager,
     runtime: GameSessionRuntimeState,
-    existingDigests: {
+    existingDigests?: {
         compiledCardPolicyDigest: string | null;
         groupHistoryDigest: string | null;
-    } = { compiledCardPolicyDigest: null, groupHistoryDigest: null },
+    },
 ): Promise<{
     runtimeStateJson: string;
     compiledCardPolicyDigest: string | null;
     groupHistoryDigest: string | null;
 }> {
-    let compiledCardPolicyDigest = existingDigests.compiledCardPolicyDigest;
+    let compiledCardPolicyDigest = existingDigests?.compiledCardPolicyDigest ?? null;
     if (!compiledCardPolicyDigest && runtime.compiledCardPolicy) {
         const encoded = encodeCompiledCardPolicySnapshot(runtime.compiledCardPolicy);
         await persistEncodedPayload(manager, encoded);
         compiledCardPolicyDigest = encoded.digest;
     }
 
-    let groupHistoryDigest = existingDigests.groupHistoryDigest;
+    let groupHistoryDigest = existingDigests?.groupHistoryDigest ?? null;
     if (!groupHistoryDigest && runtime.groupHistoryCardIds.length > 0) {
         const payload = groupHistoryPayload(
             runtime.compiledCardPolicy,

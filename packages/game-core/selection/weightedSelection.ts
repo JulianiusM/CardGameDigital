@@ -18,5 +18,5 @@ export function selectWeighted<T extends Card>(cards: readonly T[], random: Rand
         cursor -= card.weight;
         if (cursor < 0) return card;
     }
-    return cards[cards.length - 1];
+    return cards.at(-1)!;
 }

@@ -28,8 +28,7 @@ const registration = credentials.extend({
     email: z
         .string()
         .trim()
-        .email()
-        .max(100)
+        .pipe(z.email().max(100))
         .transform((value) => value.toLowerCase()),
 });
 const dataSpaceInput = z.object({
@@ -179,7 +178,7 @@ router.post("/data-spaces", async (request, response) => {
 });
 
 router.delete("/data-spaces/:id", async (request, response) => {
-    const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
+    const { id } = z.object({ id: z.uuid() }).parse(request.params);
     response.json(await account.deleteDataSpace(request.session, id));
 });
 
@@ -190,7 +189,7 @@ router.put("/data-spaces/current", async (request, response) => {
 });
 
 router.put("/data-spaces/current-selection", async (request, response) => {
-    const { id } = z.object({ id: z.string().uuid() }).parse(request.body);
+    const { id } = z.object({ id: z.uuid() }).parse(request.body);
     await account.selectDataSpace(request.session, id);
     response.json(await account.accountSnapshot(request.session));
 });

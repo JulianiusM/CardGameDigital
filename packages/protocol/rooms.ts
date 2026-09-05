@@ -19,9 +19,9 @@ export const roomCreateRequestSchema = z
 
 export const roomJoinResponseSchema = z
     .object({
-        roomId: z.string().uuid(),
+        roomId: z.uuid(),
         roomCode: z.string().regex(new RegExp(ROOM_CODE_PATTERN_SOURCE)),
-        participantId: z.string().uuid(),
+        participantId: z.uuid(),
         participantCredential: z.string().min(32),
         role: z.enum(["PLAYER", "DISPLAY"]),
     })

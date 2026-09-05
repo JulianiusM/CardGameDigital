@@ -245,6 +245,13 @@ describe("Room WebSocket protocol", () => {
                     message.type === "error" && message.payload.code === "VALIDATION_ERROR",
             ),
         );
+        expect(messages).toContainEqual(
+            expect.objectContaining({
+                protocol: PROTOCOL_VERSION,
+                type: "error",
+                payload: expect.objectContaining({ code: "VALIDATION_ERROR" }),
+            }),
+        );
         socket.terminate();
         await new Promise<void>((resolve) => wss.close(() => resolve()));
     });
@@ -277,6 +284,13 @@ describe("Room WebSocket protocol", () => {
                     message.type === "error" &&
                     message.payload.code === "PROTOCOL_VERSION_UNSUPPORTED",
             ),
+        );
+        expect(messages).toContainEqual(
+            expect.objectContaining({
+                protocol: PROTOCOL_VERSION,
+                type: "error",
+                payload: expect.objectContaining({ code: "PROTOCOL_VERSION_UNSUPPORTED" }),
+            }),
         );
         socket.terminate();
         await new Promise<void>((resolve) => wss.close(() => resolve()));
@@ -732,6 +746,10 @@ describe("Room WebSocket protocol", () => {
                     message.type === "room.snapshot" && message.payload.session?.revision === 0,
             ),
         );
+        expect(
+            newHost.messages.filter((message) => message.type === "room.snapshot").at(-1)?.payload
+                .hostStatus.participantId,
+        ).toBe(player.participantId);
         oldHost.socket.terminate();
         newHost.socket.terminate();
         await new Promise<void>((resolve) => wss.close(() => resolve()));
@@ -1013,6 +1031,10 @@ describe("Room WebSocket protocol", () => {
                     message.payload.session.state === "CHOOSING_CARD_TYPE",
             ),
         );
+        expect(repository.runtime).toMatchObject({
+            currentCard: null,
+            state: "CHOOSING_CARD_TYPE",
+        });
         playerClient.socket.terminate();
         await new Promise<void>((resolve) => wss.close(() => resolve()));
     });
@@ -1209,16 +1231,7 @@ describe("Room WebSocket protocol", () => {
             display.role,
         );
         const clients = [hostClient, playerClient, displayClient];
-        const send = (client: typeof hostClient, type: string, revision: number, payload = {}) =>
-            client.socket.send(
-                JSON.stringify({
-                    protocol: PROTOCOL_VERSION,
-                    type,
-                    requestId: type,
-                    revision,
-                    payload,
-                }),
-            );
+        const send = sendRoomCommand;
         hostClient.socket.send(
             JSON.stringify({
                 protocol: PROTOCOL_VERSION,
@@ -1302,16 +1315,7 @@ describe("Room WebSocket protocol", () => {
             player.participantCredential,
             player.role,
         );
-        const send = (client: typeof hostClient, type: string, revision: number, payload = {}) =>
-            client.socket.send(
-                JSON.stringify({
-                    protocol: PROTOCOL_VERSION,
-                    type,
-                    requestId: type,
-                    revision,
-                    payload,
-                }),
-            );
+        const send = sendRoomCommand;
         hostClient.socket.send(
             JSON.stringify({
                 protocol: PROTOCOL_VERSION,
@@ -1456,4 +1460,21 @@ async function waitFor(predicate: () => boolean, details: () => string = () => "
         if (Date.now() > limit) throw new Error(`timed out ${details()}`);
         await new Promise((resolve) => setTimeout(resolve, 10));
     }
+}
+
+function sendRoomCommand(
+    client: { socket: WebSocket },
+    type: string,
+    revision: number,
+    payload = {},
+): void {
+    client.socket.send(
+        JSON.stringify({
+            protocol: PROTOCOL_VERSION,
+            type,
+            requestId: type,
+            revision,
+            payload,
+        }),
+    );
 }

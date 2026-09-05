@@ -70,7 +70,7 @@ export async function dropMariaTestDatabase(profile: MariaTestProfile): Promise<
 }
 
 function assertDisposableDatabaseName(database: string): void {
-    if (!/^[a-zA-Z0-9_]+$/.test(database) || !/(?:test|e2e)/i.test(database)) {
+    if (!/^\w+$/.test(database) || !/(?:test|e2e)/i.test(database)) {
         throw new Error(
             `Refusing destructive MariaDB reset for non-test database name '${database}'`,
         );

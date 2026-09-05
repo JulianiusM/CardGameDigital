@@ -15,7 +15,7 @@ export const cardPolicySearchSchema = z
     .object({
         locale: z.string().min(2).max(35),
         query: z.string().max(200).optional(),
-        cursor: z.string().uuid().optional(),
+        cursor: z.uuid().optional(),
         limit: z.coerce.number().int().min(1).max(50).default(24),
         cardType: z.enum(CARD_TYPES).optional(),
         questionCategoryId: z.string().max(40).optional(),
@@ -52,7 +52,7 @@ export const cardPolicyDefaultUpdateRequestSchema = z
     .strict();
 
 export const cardPolicyRuleReorderRequestSchema = z
-    .object({ orderedIds: z.array(z.string().uuid()).max(250) })
+    .object({ orderedIds: z.array(z.uuid()).max(250) })
     .strict();
 
 export const cardPolicyRulePreviewRequestSchema = z
@@ -100,8 +100,8 @@ export const eligibilityPreviewRequestSchema = z.union([
 
 export const policyScopeSchema = z
     .object({
-        dataSpaceId: z.string().uuid(),
-        groupId: z.string().uuid().nullable(),
+        dataSpaceId: z.uuid(),
+        groupId: z.uuid().nullable(),
         ownerKey: z.string().min(1),
         name: z.enum(["DataSpace", "Group"]),
     })
@@ -120,7 +120,7 @@ export const storedRuleSchema = cardPolicyRuleSchema.extend({
 
 export const managedCardSchema = z
     .object({
-        id: z.string().uuid(),
+        id: z.uuid(),
         text: z.string(),
         locale: z.string().min(2).max(35),
         lifecycle: cardLifecycleSchema,
@@ -141,7 +141,7 @@ export const managedCardSchema = z
 
 export const rulePreviewCardSchema = z
     .object({
-        id: z.string().uuid(),
+        id: z.uuid(),
         text: z.string(),
         cardType: z.enum(CARD_TYPES),
         taxonomyLabel: z.string().nullable(),
@@ -184,7 +184,7 @@ export const managedCardSearchResponseSchema = z
     .object({
         cards: z.array(managedCardSchema),
         total: z.number().int().nonnegative(),
-        nextCursor: z.string().uuid().nullable(),
+        nextCursor: z.uuid().nullable(),
     })
     .strict();
 
@@ -194,7 +194,7 @@ export const cardPolicyBulkApplyResponseSchema = z
 
 export const storedExactCardPolicySchema = z
     .object({
-        cardId: z.string().uuid(),
+        cardId: z.uuid(),
         directives: cardPolicyDirectivesSchema,
         revision: cardPolicyRevisionSchema,
     })

@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import express from "express";
 import { z } from "zod";
-import { AppDataSource } from "../../modules/database/dataSource";
+import { getAppDataSource } from "../../modules/database/dataSource";
 import { GroupEntity } from "../../../../../packages/persistence/entities/game/GroupEntity";
 import { DataSpaceGameSettingsEntity } from "../../../../../packages/persistence/entities/game/DataSpaceGameSettingsEntity";
 import { RoomEntity } from "../../../../../packages/persistence/entities/game/RoomEntity";
@@ -30,7 +30,7 @@ const inputSchema = z
         cardLanguageSettings: cardLanguageSettingsSchema.nullable().optional(),
     })
     .strict();
-const groupIdSchema = z.string().uuid();
+const groupIdSchema = z.uuid();
 const project = (group: GroupEntity) => ({
     id: group.id,
     name: group.name,
@@ -49,10 +49,12 @@ const project = (group: GroupEntity) => ({
 router.get("/", async (request, response, next) => {
     try {
         const space = await requireCurrentDataSpace(request);
-        const groups = await AppDataSource.getRepository(GroupEntity).find({
-            where: { dataSpaceId: space.id },
-            order: { name: "ASC" },
-        });
+        const groups = await getAppDataSource()
+            .getRepository(GroupEntity)
+            .find({
+                where: { dataSpaceId: space.id },
+                order: { name: "ASC" },
+            });
         response.json({ groups: groups.map(project) });
     } catch (error) {
         next(error);
@@ -65,7 +67,7 @@ router.post("/", async (request, response, next) => {
             requireCurrentDataSpace(request),
             inputSchema.parseAsync(request.body),
         ]);
-        const repository = AppDataSource.getRepository(GroupEntity);
+        const repository = getAppDataSource().getRepository(GroupEntity);
         await requireActiveCardLanguages(input.cardLanguageSettings);
         const now = new Date();
         const group = await repository.save(
@@ -99,9 +101,12 @@ router.put("/:id", async (request, response, next) => {
             inputSchema.parseAsync(request.body),
             groupIdSchema.parseAsync(request.params.id),
         ]);
-        const repository = AppDataSource.getRepository(GroupEntity);
+        const repository = getAppDataSource().getRepository(GroupEntity);
         const group = await repository.findOneBy({ id: groupId, dataSpaceId: space.id });
-        if (!group) return void response.status(404).json({ error: { code: "GROUP_NOT_FOUND" } });
+        if (!group) {
+            response.status(404).json({ error: { code: "GROUP_NOT_FOUND" } });
+            return;
+        }
         await requireActiveCardLanguages(input.cardLanguageSettings);
         group.name = input.name;
         group.membersJson = JSON.stringify(input.members);
@@ -130,7 +135,7 @@ router.delete("/:id", async (request, response, next) => {
             requireCurrentDataSpace(request),
             groupIdSchema.parseAsync(request.params.id),
         ]);
-        const deleted = await AppDataSource.transaction(async (manager) => {
+        const deleted = await getAppDataSource().transaction(async (manager) => {
             const groups = manager.getRepository(GroupEntity);
             const group = await groups.findOneBy({ id: groupId, dataSpaceId: space.id });
             if (!group) return false;
@@ -168,7 +173,10 @@ router.delete("/:id", async (request, response, next) => {
             await groups.delete({ id: groupId, dataSpaceId: space.id });
             return true;
         });
-        if (!deleted) return void response.status(404).json({ error: { code: "GROUP_NOT_FOUND" } });
+        if (!deleted) {
+            response.status(404).json({ error: { code: "GROUP_NOT_FOUND" } });
+            return;
+        }
         response.status(204).end();
     } catch (error) {
         next(error);
@@ -185,9 +193,12 @@ router.post("/:id/history-reset", async (request, response, next) => {
                 .strict()
                 .parseAsync(request.body),
         ]);
-        const repository = AppDataSource.getRepository(GroupEntity);
+        const repository = getAppDataSource().getRepository(GroupEntity);
         const group = await repository.findOneBy({ id: groupId, dataSpaceId: space.id });
-        if (!group) return void response.status(404).json({ error: { code: "GROUP_NOT_FOUND" } });
+        if (!group) {
+            response.status(404).json({ error: { code: "GROUP_NOT_FOUND" } });
+            return;
+        }
         group.historyResetAt = new Date();
         group.updatedAt = group.historyResetAt;
         response.json(project(await repository.save(group)));

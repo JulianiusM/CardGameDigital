@@ -15,7 +15,7 @@
  */
 
 import http from "node:http";
-import { AppDataSource, initDataSource } from "./modules/database/dataSource";
+import { getAppDataSource, initDataSource } from "./modules/database/dataSource";
 import settings from "./modules/settings";
 import { configuredErrorLogFields, logEvent } from "./modules/structuredLogger";
 import { CiaoLocalServiceAdvertiser, LocalDiscoveryController } from "./modules/localDiscovery";
@@ -88,8 +88,8 @@ async function bootstrap() {
         const localDiscovery = new LocalDiscoveryController(
             new CiaoLocalServiceAdvertiser(),
             async () => {
-                if (!AppDataSource.isInitialized) return false;
-                await AppDataSource.query("SELECT 1");
+                if (!getAppDataSource().isInitialized) return false;
+                await getAppDataSource().query("SELECT 1");
                 return true;
             },
         );
@@ -114,7 +114,7 @@ async function bootstrap() {
                 });
             });
             await Promise.all([closeServer(server), websocketClosed]);
-            if (AppDataSource.isInitialized) await AppDataSource.destroy();
+            if (getAppDataSource().isInitialized) await getAppDataSource().destroy();
             clearTimeout(deadline);
         };
         const handleSignal = (signal: string) => {

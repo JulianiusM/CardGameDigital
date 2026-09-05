@@ -1,4 +1,4 @@
-import { defaultLocale, localeCatalogs, localeDefinitions, type MessageCatalog } from "./locales";
+import { defaultLocale, localeCatalogs, type MessageCatalog } from "./locales";
 import {
     browserLanguageCandidates,
     loadLanguagePreferences,

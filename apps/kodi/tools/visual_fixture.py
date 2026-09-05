@@ -456,7 +456,7 @@ def _help_long() -> AppState:
 
 
 def _neutral_setup():
-    setup = initial_setup("COUCH", PROFILES, "en-GB", True)
+    setup = initial_setup("COUCH", "en-GB", True)
     return replace(setup, mode="CLASSIC_TRUTH_OR_DARE")
 
 
@@ -474,7 +474,7 @@ def _setup_profile_unselected() -> AppState:
 
 
 def _setup_profile_hostile() -> AppState:
-    setup = initial_setup("COUCH", (HOSTILE_PROFILE,), "en-GB", True)
+    setup = initial_setup("COUCH", "en-GB", True)
     return _base_state(
         Route.SETUP_PROFILE,
         route_stack=(Route.HOME, Route.SETUP_GROUP, Route.SETUP_MODE),

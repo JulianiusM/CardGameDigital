@@ -69,106 +69,111 @@ export class TypeOrmRealtimeRoomRepository implements RealtimeRoomRepository {
         let contentionAttempts = 0;
         while (true) {
             try {
-                return await this.source.transaction(async (manager) => {
-                    if (input.idempotency) {
-                        const existing = await manager
-                            .getRepository(RoomCreateIdempotencyEntity)
-                            .findOneBy({
-                                principalScopeDigest: input.idempotency.principalScopeDigest,
-                                routeKey: input.idempotency.routeKey,
-                                keyDigest: input.idempotency.keyDigest,
-                            });
-                        if (existing)
-                            return this.resolveCreateIdempotency(existing, input.idempotency);
-                    }
-                    if (input.settings.groupId) {
-                        const ownsGroup = input.dataSpaceId
-                            ? await manager.getRepository(GroupEntity).existsBy({
-                                  id: input.settings.groupId,
-                                  dataSpaceId: input.dataSpaceId,
-                              })
-                            : false;
-                        if (!ownsGroup) {
-                            throw Object.assign(new Error("Room Group is outside the DataSpace"), {
-                                code: "NOT_AUTHORIZED",
-                            });
-                        }
-                    }
-                    await manager.getRepository(RoomEntity).insert({
-                        id: input.roomId,
-                        code: input.code,
-                        dataSpaceId: input.dataSpaceId,
-                        groupId: input.settings.groupId,
-                        settingsRevision: 0,
-                        gameSettingsJson: JSON.stringify(input.settings),
-                        settingsUpdatedByParticipantId: input.participant.id,
-                        currentSessionId: null,
-                        createdAt: new Date(input.createdAt),
-                        expiresAt: input.expiresAt,
-                        closedAt: null,
-                        bootstrapMode: input.bootstrapMode,
-                        firstHostAssignedAt:
-                            input.firstHostAssignedAt === null
-                                ? null
-                                : new Date(input.firstHostAssignedAt),
-                        activationDeadline: new Date(input.activationDeadline),
-                        activatedAt: null,
-                        creatorParticipantId: input.participant.id,
-                    });
-                    await manager.getRepository(RoomParticipantEntity).insert({
-                        id: input.participant.id,
-                        roomId: input.participant.roomId,
-                        role: input.participant.role,
-                        displayName: input.participant.displayName,
-                        credentialHash: input.participant.credentialHash,
-                        devicePlayersJson: JSON.stringify(input.participant.devicePlayers),
-                        connectionStatus: input.participant.connectionStatus,
-                        activeHostRoomId:
-                            input.participant.role === "HOST" ? input.participant.roomId : null,
-                        createdAt: new Date(input.participant.joinedAt),
-                        lastSeenAt: new Date(input.participant.joinedAt),
-                        firstConnectedAt: null,
-                        lastConnectedAt: null,
-                        reconnectDeadline: null,
-                        activationExpiresAt: new Date(input.participant.activationExpiresAt),
-                        leftAt: null,
-                        revokedAt: null,
-                    });
-                    if (input.idempotency) {
-                        await manager.getRepository(RoomCreateIdempotencyEntity).insert({
-                            ...input.idempotency,
-                            resourceType: "ROOM",
-                            createdAt: new Date(input.idempotency.createdAt),
-                            updatedAt: new Date(input.idempotency.createdAt),
-                            tombstoneExpiresAt: null,
-                        });
-                    }
-                    return { created: true } as const;
-                });
+                return await this.createRoomTransaction(input);
             } catch (error) {
-                if (input.idempotency) {
-                    const existing = await this.findRoomCreateIdempotency(
-                        input.idempotency.principalScopeDigest,
-                        input.idempotency.routeKey,
-                        input.idempotency.keyDigest,
-                    );
-                    if (existing) {
-                        return this.resolveCreateIdempotency(existing, input.idempotency);
-                    }
-                    if (isDatabaseContention(error) && contentionAttempts < 2) {
-                        contentionAttempts += 1;
-                        continue;
-                    }
-                    if (isDatabaseContention(error)) {
-                        throw Object.assign(
-                            new Error("Idempotent Room create is still committing"),
-                            { code: "IDEMPOTENCY_REQUEST_IN_PROGRESS" },
-                        );
-                    }
+                if (!input.idempotency) throw error;
+                const existing = await this.findRoomCreateIdempotency(
+                    input.idempotency.principalScopeDigest,
+                    input.idempotency.routeKey,
+                    input.idempotency.keyDigest,
+                );
+                if (existing) {
+                    return this.resolveCreateIdempotency(existing, input.idempotency);
                 }
+                if (canRetryRoomCreation(error, contentionAttempts)) {
+                    contentionAttempts += 1;
+                    continue;
+                }
+                if (isDatabaseContention(error)) {
+                    throw Object.assign(new Error("Idempotent Room create is still committing"), {
+                        code: "IDEMPOTENCY_REQUEST_IN_PROGRESS",
+                    });
+                }
+
                 throw error;
             }
         }
+    }
+    private async createRoomTransaction(
+        input: Parameters<RealtimeRoomRepository["createRoom"]>[0],
+    ): ReturnType<RealtimeRoomRepository["createRoom"]> {
+        return await this.source.transaction(async (manager) => {
+            if (input.idempotency) {
+                const existing = await manager
+                    .getRepository(RoomCreateIdempotencyEntity)
+                    .findOneBy({
+                        principalScopeDigest: input.idempotency.principalScopeDigest,
+                        routeKey: input.idempotency.routeKey,
+                        keyDigest: input.idempotency.keyDigest,
+                    });
+                if (existing) return this.resolveCreateIdempotency(existing, input.idempotency);
+            }
+            await validateCreateGroupOwnership();
+            await manager.getRepository(RoomEntity).insert({
+                id: input.roomId,
+                code: input.code,
+                dataSpaceId: input.dataSpaceId,
+                groupId: input.settings.groupId,
+                settingsRevision: 0,
+                gameSettingsJson: JSON.stringify(input.settings),
+                settingsUpdatedByParticipantId: input.participant.id,
+                currentSessionId: null,
+                createdAt: new Date(input.createdAt),
+                expiresAt: input.expiresAt,
+                closedAt: null,
+                bootstrapMode: input.bootstrapMode,
+                firstHostAssignedAt:
+                    input.firstHostAssignedAt === null ? null : new Date(input.firstHostAssignedAt),
+                activationDeadline: new Date(input.activationDeadline),
+                activatedAt: null,
+                creatorParticipantId: input.participant.id,
+            });
+            await manager.getRepository(RoomParticipantEntity).insert({
+                id: input.participant.id,
+                roomId: input.participant.roomId,
+                role: input.participant.role,
+                displayName: input.participant.displayName,
+                credentialHash: input.participant.credentialHash,
+                devicePlayersJson: JSON.stringify(input.participant.devicePlayers),
+                connectionStatus: input.participant.connectionStatus,
+                activeHostRoomId:
+                    input.participant.role === "HOST" ? input.participant.roomId : null,
+                createdAt: new Date(input.participant.joinedAt),
+                lastSeenAt: new Date(input.participant.joinedAt),
+                firstConnectedAt: null,
+                lastConnectedAt: null,
+                reconnectDeadline: null,
+                activationExpiresAt: new Date(input.participant.activationExpiresAt),
+                leftAt: null,
+                revokedAt: null,
+            });
+            if (input.idempotency) {
+                await manager.getRepository(RoomCreateIdempotencyEntity).insert({
+                    ...input.idempotency,
+                    resourceType: "ROOM",
+                    createdAt: new Date(input.idempotency.createdAt),
+                    updatedAt: new Date(input.idempotency.createdAt),
+                    tombstoneExpiresAt: null,
+                });
+            }
+            return { created: true } as const;
+
+            async function validateCreateGroupOwnership() {
+                if (input.settings.groupId) {
+                    const ownsGroup = input.dataSpaceId
+                        ? await manager.getRepository(GroupEntity).existsBy({
+                              id: input.settings.groupId,
+                              dataSpaceId: input.dataSpaceId,
+                          })
+                        : false;
+                    if (!ownsGroup) {
+                        throw Object.assign(new Error("Room Group is outside the DataSpace"), {
+                            code: "NOT_AUTHORIZED",
+                        });
+                    }
+                }
+            }
+        });
     }
 
     async findRoomCreateIdempotency(
@@ -577,41 +582,49 @@ export class TypeOrmRealtimeRoomRepository implements RealtimeRoomRepository {
                         code: "STALE_SESSION_REVISION",
                     });
             }
-            const appearances = manager.getRepository(CardAppearanceEntity);
-            const storedLatest = await appearances.findOne({
-                where: { sessionId: runtime.id },
-                order: { sequence: "DESC" },
-            });
-            const changedAppearances = runtime.sessionHistory.filter(
-                ({ sequence }) => !storedLatest || sequence >= storedLatest.sequence,
-            );
-            for (const appearance of changedAppearances) {
-                const id = uuidv5(`${runtime.id}:${appearance.sequence}`, APPEARANCE_NAMESPACE);
-                const existing = storedLatest?.id === id ? storedLatest : null;
-                await appearances.save(
-                    appearances.create({
-                        id,
-                        sessionId: runtime.id,
-                        groupId: room.groupId,
-                        cardId: appearance.cardId,
-                        playerId: appearance.playerId,
-                        shownAt: existing?.shownAt ?? new Date(),
-                        roundNumber: appearance.roundNumber,
-                        sequence: appearance.sequence,
-                        skipped: appearance.skipped,
-                        completed: appearance.completed,
-                        vetoed: appearance.vetoed,
-                    }),
-                );
-            }
+            await this.persistChangedAppearances(manager, runtime, room);
         });
+    }
+
+    private async persistChangedAppearances(
+        manager: EntityManager,
+        runtime: GameSessionRuntimeState,
+        room: RoomEntity,
+    ) {
+        const appearances = manager.getRepository(CardAppearanceEntity);
+        const storedLatest = await appearances.findOne({
+            where: { sessionId: runtime.id },
+            order: { sequence: "DESC" },
+        });
+        const changedAppearances = runtime.sessionHistory.filter(
+            ({ sequence }) => !storedLatest || sequence >= storedLatest.sequence,
+        );
+        for (const appearance of changedAppearances) {
+            const id = uuidv5(`${runtime.id}:${appearance.sequence}`, APPEARANCE_NAMESPACE);
+            const existing = storedLatest?.id === id ? storedLatest : null;
+            await appearances.save(
+                appearances.create({
+                    id,
+                    sessionId: runtime.id,
+                    groupId: room.groupId,
+                    cardId: appearance.cardId,
+                    playerId: appearance.playerId,
+                    shownAt: existing?.shownAt ?? new Date(),
+                    roundNumber: appearance.roundNumber,
+                    sequence: appearance.sequence,
+                    skipped: appearance.skipped,
+                    completed: appearance.completed,
+                    vetoed: appearance.vetoed,
+                }),
+            );
+        }
     }
 
     async clearEndedRuntime(roomId: string, sessionId: string, revision: number): Promise<void> {
         await this.source.transaction(async (manager) => {
             const sessions = manager.getRepository(GameSessionEntity);
             const session = await sessions.findOneBy({ id: sessionId, roomId, revision });
-            if (!session || !session.endedAt)
+            if (!session?.endedAt)
                 throw Object.assign(new Error("Session cannot be reset in its current state"), {
                     code: "INVALID_GAME_STATE",
                 });
@@ -636,8 +649,8 @@ export class TypeOrmRealtimeRoomRepository implements RealtimeRoomRepository {
             if (this.source.options.type === "mariadb" || this.source.options.type === "mysql") {
                 roomQuery.setLock("pessimistic_write");
             }
-            const room = await roomQuery.getOne();
-            if (!room || room.closedAt) {
+            const storedRoom = await roomQuery.getOne();
+            if (!storedRoom || storedRoom.closedAt) {
                 return {
                     participant: null,
                     expiredParticipants: [],
@@ -651,6 +664,7 @@ export class TypeOrmRealtimeRoomRepository implements RealtimeRoomRepository {
                     invariantRepair: false,
                 };
             }
+            const room = storedRoom;
             const repository = manager.getRepository(RoomParticipantEntity);
             const participants = await repository.find({
                 where: { roomId: room.id },
@@ -679,80 +693,17 @@ export class TypeOrmRealtimeRoomRepository implements RealtimeRoomRepository {
                 terminalParticipantIds.add(participant.id);
             };
 
-            for (const participant of participants) {
-                if (participant.connectionStatus === "LEFT" || participant.leftAt) continue;
-                const activationExpired =
-                    participant.firstConnectedAt === null &&
-                    participant.activationExpiresAt !== null &&
-                    participant.activationExpiresAt <= at;
-                const reconnectExpired =
-                    participant.firstConnectedAt !== null &&
-                    participant.connectionStatus === "TEMPORARILY_DISCONNECTED" &&
-                    participant.reconnectDeadline !== null &&
-                    participant.reconnectDeadline <= at;
-                if (!activationExpired && !reconnectExpired) continue;
-                if (participant.role === "HOST") {
-                    hostLossReason = activationExpired
-                        ? "HOST_ACTIVATION_EXPIRED"
-                        : "HOST_DISCONNECT_EXPIRED";
-                }
-                markTerminal(participant);
-                expired.push(participant);
-            }
+            expireParticipants();
 
             let transitioned = transitionParticipantId
                 ? participants.find(({ id }) => id === transitionParticipantId)
                 : undefined;
             let activationRejected = false;
-            if (transition.type === "ACTIVATE") {
-                if (
-                    !transitioned ||
-                    transitioned.credentialHash !== transition.credentialHash ||
-                    transitioned.connectionStatus === "LEFT" ||
-                    transitioned.leftAt ||
-                    transitioned.revokedAt ||
-                    room.expiresAt <= at
-                ) {
-                    activationRejected = true;
-                    transitioned = undefined;
-                } else {
-                    participantFirstActivated = transitioned.firstConnectedAt === null;
-                    transitioned.firstConnectedAt ??= at;
-                    transitioned.lastConnectedAt = at;
-                    transitioned.lastSeenAt = at;
-                    transitioned.connectionStatus = "CONNECTED";
-                    transitioned.reconnectDeadline = null;
-                    room.activatedAt ??= at;
-                }
-            } else if (transition.type === "DISCONNECT") {
-                if (transitioned?.connectionStatus === "CONNECTED") {
-                    transitioned.connectionStatus = "TEMPORARILY_DISCONNECTED";
-                    transitioned.lastSeenAt = at;
-                    transitioned.reconnectDeadline = new Date(transition.reconnectDeadline);
-                }
-            } else if (transition.type === "LEAVE") {
-                if (transitioned && transitioned.connectionStatus !== "LEFT") {
-                    if (transitioned.role === "HOST") hostLossReason = "HOST_LEFT";
-                    markTerminal(transitioned);
-                }
-            }
+            applyParticipantTransition();
 
             const roomExpired = room.expiresAt <= at;
 
-            let trigger: HostSelectionTrigger = { type: "RECONCILE" };
-            if (transition.type === "ACTIVATE" && !activationRejected) {
-                trigger = { type: "ACTIVATE", participantId: transition.participantId };
-            } else if (transition.type === "TRANSFER_HOST") {
-                trigger = {
-                    type: "TRANSFER",
-                    participantId: transition.participantId,
-                    targetParticipantId: transition.targetParticipantId,
-                };
-            } else if (transition.type === "CLOSE") {
-                trigger = { type: "CLOSE", participantId: transition.participantId };
-            } else if (hostLossReason) {
-                trigger = { type: "HOST_LOST", reason: hostLossReason };
-            }
+            let trigger: HostSelectionTrigger = hostSelectionTrigger();
 
             const decision = decideRoomHost({
                 room: this.projectRoom(room),
@@ -762,51 +713,7 @@ export class TypeOrmRealtimeRoomRepository implements RealtimeRoomRepository {
                 trigger,
                 now: transition.at,
             });
-            const roleChanges: RoomRoleChange[] = [];
-            for (const demoteParticipantId of decision.demoteParticipantIds) {
-                const demoted = participants.find(({ id }) => id === demoteParticipantId);
-                if (demoted && demoted.role === "HOST") {
-                    demoted.role = "PLAYER";
-                    demoted.activeHostRoomId = null;
-                    await repository.update(
-                        { id: demoted.id, roomId: room.id },
-                        { role: "PLAYER", activeHostRoomId: null },
-                    );
-                    if (decision.reason) {
-                        roleChanges.push({
-                            participantId: demoted.id,
-                            previousRole: "HOST",
-                            role: "PLAYER",
-                            reason: decision.reason,
-                        });
-                    }
-                }
-            }
-            if (decision.promoteParticipantId) {
-                const promoted = participants.find(
-                    ({ id }) => id === decision.promoteParticipantId,
-                );
-                if (!promoted || promoted.role !== "PLAYER") {
-                    throw new Error("Selected Room Host is no longer an eligible Player");
-                }
-                await repository.update(
-                    { roomId: room.id, activeHostRoomId: room.id },
-                    { activeHostRoomId: null },
-                );
-                promoted.role = "HOST";
-                promoted.activeHostRoomId = room.id;
-                await repository.update(
-                    { id: promoted.id, roomId: room.id, role: "PLAYER" },
-                    { role: "HOST", activeHostRoomId: room.id },
-                );
-                room.firstHostAssignedAt ??= at;
-                roleChanges.push({
-                    participantId: promoted.id,
-                    previousRole: "PLAYER",
-                    role: "HOST",
-                    reason: decision.reason ?? "INITIAL_HOST_ASSIGNED",
-                });
-            }
+            const roleChanges: RoomRoleChange[] = await persistHostRoles();
             if (decision.closeRoom && !room.closedAt) {
                 room.closedAt = at;
                 for (const participant of participants) {
@@ -824,17 +731,8 @@ export class TypeOrmRealtimeRoomRepository implements RealtimeRoomRepository {
             transitioned = transitionParticipantId
                 ? participants.find(({ id }) => id === transitionParticipantId)
                 : undefined;
-            let closeReason: import("../application/realtimeRooms").RoomCloseReason | null = null;
-            if (decision.closeRoom) {
-                if (transition.type === "CLOSE") closeReason = "EXPLICIT_CLOSE";
-                else if (roomExpired) closeReason = "ROOM_EXPIRED";
-                else if (
-                    room.activatedAt === null &&
-                    (room.activationDeadline ?? room.expiresAt) <= at
-                ) {
-                    closeReason = "INITIAL_ACTIVATION_EXPIRED";
-                } else closeReason = "ABANDONED";
-            }
+            let closeReason: import("../application/realtimeRooms").RoomCloseReason | null =
+                roomCloseReason();
             return {
                 participant:
                     transitioned && !activationRejected
@@ -852,6 +750,146 @@ export class TypeOrmRealtimeRoomRepository implements RealtimeRoomRepository {
                 closeReason,
                 invariantRepair: decision.invariantRepair,
             };
+
+            function roomCloseReason() {
+                let closeReason: import("../application/realtimeRooms").RoomCloseReason | null =
+                    null;
+                if (decision.closeRoom) {
+                    if (transition.type === "CLOSE") closeReason = "EXPLICIT_CLOSE";
+                    else if (roomExpired) closeReason = "ROOM_EXPIRED";
+                    else if (
+                        room.activatedAt === null &&
+                        (room.activationDeadline ?? room.expiresAt) <= at
+                    ) {
+                        closeReason = "INITIAL_ACTIVATION_EXPIRED";
+                    } else closeReason = "ABANDONED";
+                }
+                return closeReason;
+            }
+
+            async function persistHostRoles() {
+                const roleChanges: RoomRoleChange[] = [];
+                for (const demoteParticipantId of decision.demoteParticipantIds) {
+                    const demoted = participants.find(({ id }) => id === demoteParticipantId);
+                    if (demoted?.role === "HOST") {
+                        demoted.role = "PLAYER";
+                        demoted.activeHostRoomId = null;
+                        await repository.update(
+                            { id: demoted.id, roomId: room.id },
+                            { role: "PLAYER", activeHostRoomId: null },
+                        );
+                        if (decision.reason) {
+                            roleChanges.push({
+                                participantId: demoted.id,
+                                previousRole: "HOST",
+                                role: "PLAYER",
+                                reason: decision.reason,
+                            });
+                        }
+                    }
+                }
+                if (decision.promoteParticipantId) {
+                    const promoted = participants.find(
+                        ({ id }) => id === decision.promoteParticipantId,
+                    );
+                    if (promoted?.role !== "PLAYER") {
+                        throw new Error("Selected Room Host is no longer an eligible Player");
+                    }
+                    await repository.update(
+                        { roomId: room.id, activeHostRoomId: room.id },
+                        { activeHostRoomId: null },
+                    );
+                    promoted.role = "HOST";
+                    promoted.activeHostRoomId = room.id;
+                    await repository.update(
+                        { id: promoted.id, roomId: room.id, role: "PLAYER" },
+                        { role: "HOST", activeHostRoomId: room.id },
+                    );
+                    room.firstHostAssignedAt ??= at;
+                    roleChanges.push({
+                        participantId: promoted.id,
+                        previousRole: "PLAYER",
+                        role: "HOST",
+                        reason: decision.reason ?? "INITIAL_HOST_ASSIGNED",
+                    });
+                }
+                return roleChanges;
+            }
+
+            function hostSelectionTrigger() {
+                let trigger: HostSelectionTrigger = { type: "RECONCILE" };
+                if (transition.type === "ACTIVATE" && !activationRejected) {
+                    trigger = { type: "ACTIVATE", participantId: transition.participantId };
+                } else if (transition.type === "TRANSFER_HOST") {
+                    trigger = {
+                        type: "TRANSFER",
+                        participantId: transition.participantId,
+                        targetParticipantId: transition.targetParticipantId,
+                    };
+                } else if (transition.type === "CLOSE") {
+                    trigger = { type: "CLOSE", participantId: transition.participantId };
+                } else if (hostLossReason) {
+                    trigger = { type: "HOST_LOST", reason: hostLossReason };
+                }
+                return trigger;
+            }
+
+            function applyParticipantTransition() {
+                if (transition.type === "ACTIVATE") {
+                    if (
+                        transitioned?.credentialHash !== transition.credentialHash ||
+                        transitioned.connectionStatus === "LEFT" ||
+                        transitioned.leftAt ||
+                        transitioned.revokedAt ||
+                        room.expiresAt <= at
+                    ) {
+                        activationRejected = true;
+                        transitioned = undefined;
+                    } else {
+                        participantFirstActivated = transitioned.firstConnectedAt === null;
+                        transitioned.firstConnectedAt ??= at;
+                        transitioned.lastConnectedAt = at;
+                        transitioned.lastSeenAt = at;
+                        transitioned.connectionStatus = "CONNECTED";
+                        transitioned.reconnectDeadline = null;
+                        room.activatedAt ??= at;
+                    }
+                } else if (transition.type === "DISCONNECT") {
+                    if (transitioned?.connectionStatus === "CONNECTED") {
+                        transitioned.connectionStatus = "TEMPORARILY_DISCONNECTED";
+                        transitioned.lastSeenAt = at;
+                        transitioned.reconnectDeadline = new Date(transition.reconnectDeadline);
+                    }
+                } else if (transition.type === "LEAVE") {
+                    if (transitioned && transitioned.connectionStatus !== "LEFT") {
+                        if (transitioned.role === "HOST") hostLossReason = "HOST_LEFT";
+                        markTerminal(transitioned);
+                    }
+                }
+            }
+
+            function expireParticipants() {
+                for (const participant of participants) {
+                    if (participant.connectionStatus === "LEFT" || participant.leftAt) continue;
+                    const activationExpired =
+                        participant.firstConnectedAt === null &&
+                        participant.activationExpiresAt !== null &&
+                        participant.activationExpiresAt <= at;
+                    const reconnectExpired =
+                        participant.firstConnectedAt !== null &&
+                        participant.connectionStatus === "TEMPORARILY_DISCONNECTED" &&
+                        participant.reconnectDeadline !== null &&
+                        participant.reconnectDeadline <= at;
+                    if (!activationExpired && !reconnectExpired) continue;
+                    if (participant.role === "HOST") {
+                        hostLossReason = activationExpired
+                            ? "HOST_ACTIVATION_EXPIRED"
+                            : "HOST_DISCONNECT_EXPIRED";
+                    }
+                    markTerminal(participant);
+                    expired.push(participant);
+                }
+            }
         });
     }
 
@@ -995,4 +1033,8 @@ function isDatabaseContention(error: unknown): boolean {
         details.errno === 1213 ||
         sqlState === "40001"
     );
+}
+
+function canRetryRoomCreation(error: unknown, attempts: number): boolean {
+    return attempts < 2 && isDatabaseContention(error);
 }

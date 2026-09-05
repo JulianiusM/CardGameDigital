@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import copy
+import ssl
 import unittest
+from unittest.mock import patch
+from urllib.request import HTTPSHandler
 
 from support import JsonServer
 from lib.discovery.address_policy import AddressPolicyError
@@ -10,6 +13,17 @@ from lib.transport.http import ApiClient, HttpFailure, JsonHttpClient, MAX_RESPO
 
 
 class HttpTransportTests(unittest.TestCase):
+    def test_https_requires_modern_tls_and_certificate_verification(self) -> None:
+        context = ssl.create_default_context()
+        context.minimum_version = ssl.TLSVersion.MINIMUM_SUPPORTED
+        with patch("lib.transport.http.ssl.create_default_context", return_value=context):
+            client = JsonHttpClient("https://example.test")
+        handler = next(item for item in client._opener.handlers if isinstance(item, HTTPSHandler))
+        self.assertIs(handler._context, context)
+        self.assertEqual(context.minimum_version, ssl.TLSVersion.TLSv1_2)
+        self.assertEqual(context.verify_mode, ssl.CERT_REQUIRED)
+        self.assertTrue(context.check_hostname)
+
     def test_probe_validates_local_server_and_rejects_redirects(self) -> None:
         info = load_generated_json("fixtures/server-info.json")
 

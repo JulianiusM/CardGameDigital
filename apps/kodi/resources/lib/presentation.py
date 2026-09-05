@@ -7,7 +7,7 @@ import re
 import textwrap
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Any, Iterable, Mapping, Optional
+from typing import cast, Any, Iterable, Mapping, Optional
 
 from .routes import Route
 from .state import AppState, ServerRecord, SetupDraft
@@ -43,6 +43,11 @@ from .protocol.validation import (
     YES_VOTE,
 )
 from . import strings
+
+
+PREDICATE_NUMBER_PREFIX = "predicate-number:"
+BACK_ACTION = 'nav:back'
+END_COUCH_ACTION = 'couch:end'
 
 
 COLLECTION_PAGE_SIZE = 4
@@ -267,167 +272,119 @@ def _card_type_label(card_type: object) -> int:
 
 
 def present(state: AppState) -> ViewModel:
-    route = state.route
-    if route == Route.BOOTSTRAP:
-        return ViewModel(msg(strings.APP_NAME), msg(strings.LOADING), server_pill=_pill(state))
-    if route == Route.SERVER_LIST:
-        return _server_list(state)
-    if route == Route.SERVER_DETAILS:
-        return _server_details(state)
-    if route == Route.MANUAL_SERVER:
-        return ViewModel(
-            msg(strings.SERVERS),
-            msg(strings.MANUAL_SERVER_TITLE),
-            msg(strings.MANUAL_ADDRESS_HINT),
-            actions=(item("server:manual-input", strings.SERVER_ADDRESS),),
-            server_pill=_pill(state),
+    presenter = _ROUTE_PRESENTERS.get(state.route)
+    if presenter is not None:
+        return presenter(state)
+    return ViewModel(msg(strings.APP_NAME), raw(state.route.value), server_pill=_pill(state))
+
+
+def _present_bootstrap(state: AppState) -> ViewModel:
+    return ViewModel(msg(strings.APP_NAME), msg(strings.LOADING), server_pill=_pill(state))
+
+
+def _present_manual_server(state: AppState) -> ViewModel:
+    return ViewModel(
+        msg(strings.SERVERS),
+        msg(strings.MANUAL_SERVER_TITLE),
+        msg(strings.MANUAL_ADDRESS_HINT),
+        actions=(item("server:manual-input", strings.SERVER_ADDRESS),),
+        server_pill=_pill(state),
+    )
+
+
+def _present_setup_categories(state: AppState) -> ViewModel:
+    return _taxonomy_toggle(state, "question")
+
+
+def _present_setup_dares(state: AppState) -> ViewModel:
+    return _taxonomy_toggle(state, "dare")
+
+
+def _present_setup_policy_default(state: AppState) -> ViewModel:
+    return _policy_directives(state, strings.DEFAULT_POLICY)
+
+
+def _present_setup_policy_directives(state: AppState) -> ViewModel:
+    return _policy_directives(state, strings.RULE_DIRECTIVE)
+
+
+def _present_setup_exact_card(state: AppState) -> ViewModel:
+    return _policy_directives(state, strings.EXACT_CARD_OVERRIDE)
+
+
+def _present_room_code_entry(state: AppState) -> ViewModel:
+    return ViewModel(
+        msg(strings.DISPLAY_ROOM),
+        msg(strings.ENTER_ROOM_CODE),
+        msg(strings.ROOM_CODE_HINT),
+        actions=(item("room:code-input", strings.ROOM_CODE),),
+        server_pill=_pill(state),
+    )
+
+
+def _present_room_creating(state: AppState) -> ViewModel:
+    actions = ()
+    if state.busy_operation is None:
+        actions = (
+            item("setup:start", strings.RETRY),
+            item(BACK_ACTION, strings.BACK),
         )
-    if route == Route.HOME:
-        return _home(state)
-    if route == Route.SETUP_GROUP:
-        return _setup_groups(state)
-    if route == Route.SETUP_GROUP_SELECT:
-        return _setup_group_select(state)
-    if route == Route.SETUP_MODE:
-        return _setup_modes(state)
-    if route == Route.SETUP_PROFILE:
-        return _setup_profiles(state)
-    if route == Route.SETUP_PLAYERS:
-        return _setup_players(state)
-    if route == Route.SETUP_PLAYER:
-        return _setup_player(state)
-    if route == Route.SETUP_CUSTOMIZE:
-        return _customize(state)
-    if route == Route.SETUP_CATEGORIES:
-        return _taxonomy_toggle(state, "question")
-    if route == Route.SETUP_DARES:
-        return _taxonomy_toggle(state, "dare")
-    if route == Route.SETUP_FLAGS:
-        return _flags(state)
-    if route == Route.SETUP_INTENSITY:
-        return _intensity(state)
-    if route == Route.SETUP_MODE_OPTIONS:
-        return _mode_options(state)
-    if route == Route.SETUP_OPTIONS:
-        return _setup_options(state)
-    if route == Route.SETUP_CARD_LANGUAGE:
-        return _card_language(state)
-    if route == Route.SETUP_CARD_LANGUAGE_PRIMARY:
-        return _primary_card_language(state)
-    if route == Route.SETUP_CARD_LANGUAGE_FALLBACKS:
-        return _fallback_languages(state)
-    if route == Route.SETUP_CARD_LANGUAGE_FALLBACK_ADD:
-        return _add_fallback_language(state)
-    if route == Route.SETUP_CARD_LANGUAGE_FALLBACK:
-        return _fallback_language(state)
-    if route == Route.SETUP_CARD_POLICY:
-        return _card_policy(state)
-    if route == Route.SETUP_POLICY_DEFAULT:
-        return _policy_directives(state, strings.DEFAULT_POLICY)
-    if route == Route.SETUP_POLICY_RULES:
-        return _policy_rules(state)
-    if route == Route.SETUP_POLICY_RULE:
-        return _policy_rule(state)
-    if route == Route.SETUP_POLICY_PREDICATE:
-        return _policy_predicate(state)
-    if route == Route.SETUP_POLICY_VALUES:
-        return _policy_values(state)
-    if route == Route.SETUP_POLICY_DIRECTIVES:
-        return _policy_directives(state, strings.RULE_DIRECTIVE)
-    if route == Route.SETUP_EXACT_CARDS:
-        return _exact_cards(state)
-    if route == Route.SETUP_EXACT_CARD_PREVIEW:
-        return _exact_card_preview(state)
-    if route == Route.SETUP_EXACT_CARD:
-        return _policy_directives(state, strings.EXACT_CARD_OVERRIDE)
-    if route == Route.SETUP_REVIEW:
-        return _review(state)
-    if route == Route.ROOM_CODE_ENTRY:
-        return ViewModel(
-            msg(strings.DISPLAY_ROOM),
-            msg(strings.ENTER_ROOM_CODE),
-            msg(strings.ROOM_CODE_HINT),
-            actions=(item("room:code-input", strings.ROOM_CODE),),
-            server_pill=_pill(state),
+    return ViewModel(
+        msg(strings.HOST_ROOM),
+        msg(strings.CREATING_ROOM),
+        actions=actions,
+        server_pill=_pill(state),
+    )
+
+
+def _present_room_lobby_display(state: AppState) -> ViewModel:
+    return _with_card_page(state, _room_display(state))
+
+
+def _present_couch_game(state: AppState) -> ViewModel:
+    return _with_card_page(state, _couch_game(state))
+
+
+def _present_group_create(state: AppState) -> ViewModel:
+    group_items: list[ViewItem] = [
+        item(
+            "group:name",
+            strings.GROUP_NAME,
+            secondary=raw(state.group_draft_name),
         )
-    if route == Route.ROOM_CREATING:
-        actions = ()
-        if state.busy_operation is None:
-            actions = (
-                item("setup:start", strings.RETRY),
-                item("nav:back", strings.BACK),
-            )
-        return ViewModel(
-            msg(strings.HOST_ROOM),
-            msg(strings.CREATING_ROOM),
-            actions=actions,
-            server_pill=_pill(state),
+    ]
+    member_page_size = COLLECTION_PAGE_SIZE - 1
+    members, member_page, member_pages = _page_slice(
+        state.group_draft_members,
+        state.collection_page,
+        member_page_size,
+    )
+    member_start = member_page * member_page_size
+    group_items.extend(
+        item(
+            f"group:member-open:{index}",
+            strings.PLAYER_OPTIONS,
+            secondary=raw(name),
+            kind="person",
         )
-    if route in (Route.ROOM_LOBBY_DISPLAY, Route.ROOM_GAME_DISPLAY):
-        return _with_card_page(state, _room_display(state))
-    if route == Route.ROOM_DISPLAY_MENU:
-        return _display_menu(state)
-    if route == Route.ROOM_SUMMARY_DISPLAY:
-        return _room_summary(state)
-    if route == Route.COUCH_GAME:
-        return _with_card_page(state, _couch_game(state))
-    if route == Route.COUCH_MENU:
-        return _couch_menu(state)
-    if route == Route.COUCH_SUMMARY:
-        return _couch_summary(state)
-    if route == Route.GROUP_LIST:
-        return _group_list(state)
-    if route == Route.GROUP_CREATE:
-        group_items: list[ViewItem] = [
-            item(
-                "group:name",
-                strings.GROUP_NAME,
-                secondary=raw(state.group_draft_name),
-            )
-        ]
-        member_page_size = COLLECTION_PAGE_SIZE - 1
-        members, member_page, member_pages = _page_slice(
-            state.group_draft_members,
-            state.collection_page,
-            member_page_size,
-        )
-        member_start = member_page * member_page_size
-        group_items.extend(
-            item(
-                f"group:member-open:{index}",
-                strings.PLAYER_OPTIONS,
-                secondary=raw(name),
-                kind="person",
-            )
-            for index, name in enumerate(members, start=member_start)
-        )
-        group_actions = (
-            item("group:add-member", strings.ADD_PLAYER),
-            item(
-                "group:save",
-                strings.UPDATE_GROUP if state.group_draft_id else strings.SAVE,
-                enabled=bool(state.group_draft_name.strip()),
-            ),
-        )
-        return ViewModel(
-            msg(strings.GROUP),
-            msg(strings.EDIT_GROUP if state.group_draft_id else strings.CREATE_GROUP),
-            items=tuple(group_items),
-            actions=group_actions,
-            pagination=_pagination("group:member", member_page, member_pages),
-            server_pill=_pill(state),
-        )
-    if route == Route.GROUP_MEMBER:
-        return _group_member(state)
-    if route == Route.PREFERENCES:
-        return _preferences(state)
-    if route == Route.HELP:
-        return _help(state)
-    if route == Route.DIAGNOSTICS:
-        return _diagnostics(state)
-    if route == Route.DEVICE_LINK:
-        return _device_link(state)
-    return ViewModel(msg(strings.APP_NAME), raw(route.value), server_pill=_pill(state))
+        for index, name in enumerate(members, start=member_start)
+    )
+    group_actions = (
+        item("group:add-member", strings.ADD_PLAYER),
+        item(
+            "group:save",
+            strings.UPDATE_GROUP if state.group_draft_id else strings.SAVE,
+            enabled=bool(state.group_draft_name.strip()),
+        ),
+    )
+    return ViewModel(
+        msg(strings.GROUP),
+        msg(strings.EDIT_GROUP if state.group_draft_id else strings.CREATE_GROUP),
+        items=tuple(group_items),
+        actions=group_actions,
+        pagination=_pagination("group:member", member_page, member_pages),
+        server_pill=_pill(state),
+    )
 
 
 def _has_text(value: Text) -> bool:
@@ -447,15 +404,15 @@ def _with_card_page(state: AppState, view: ViewModel) -> ViewModel:
     pages = card_text_pages(view.card_text.literal, result_layout=result_layout)
     page = min(max(0, state.card_page), len(pages) - 1)
     if len(pages) <= 1:
-        return replace(view, card_text=raw(pages[0]))
-    return replace(
+        return cast(ViewModel, replace(view, card_text=raw(pages[0])))
+    return cast(ViewModel, replace(
         view,
         card_text=raw(pages[page]),
         card_page_status=msg(strings.CARD_PAGE_STATUS, page + 1, len(pages)),
         card_page_count=len(pages),
         card_page_previous_enabled=page > 0,
         card_page_next_enabled=page + 1 < len(pages),
-    )
+    ))
 
 
 SERVER_PAGE_SIZE = COLLECTION_PAGE_SIZE
@@ -839,7 +796,7 @@ def _setup_player(state: AppState) -> ViewModel:
             state,
             strings.PLAYER_OPTIONS,
             (),
-            actions=(item("nav:back", strings.DONE),),
+            actions=(item(BACK_ACTION, strings.DONE),),
             view_mode="summary",
         )
     name = setup.players[index]
@@ -855,7 +812,7 @@ def _setup_player(state: AppState) -> ViewModel:
                 strings.REMOVE_PLAYER,
                 danger=True,
             ),
-            item("nav:back", strings.DONE),
+            item(BACK_ACTION, strings.DONE),
         ),
         facts=(
             ViewFact(msg(strings.NAME), raw(name)),
@@ -920,7 +877,7 @@ def _taxonomy_toggle(state: AppState, kind: str) -> ViewModel:
         actions=(
             item(f"setup:{kind}:all", strings.ALL),
             item(f"setup:{kind}:none", strings.NONE),
-            item("nav:back", strings.DONE),
+            item(BACK_ACTION, strings.DONE),
         ),
         view_mode="settings",
     )
@@ -964,7 +921,7 @@ def _flags(state: AppState) -> ViewModel:
         actions=(
             item("setup:flag:all", strings.ALL),
             item("setup:flag:none", strings.NONE),
-            item("nav:back", strings.DONE),
+            item(BACK_ACTION, strings.DONE),
         ),
         view_mode="settings",
     )
@@ -1015,7 +972,7 @@ def _intensity(state: AppState) -> ViewModel:
         state,
         strings.INTENSITY,
         entries,
-        actions=(item("nav:back", strings.DONE),),
+        actions=(item(BACK_ACTION, strings.DONE),),
         view_mode="settings",
     )
 
@@ -1069,7 +1026,7 @@ def _mode_options(state: AppState) -> ViewModel:
         strings.MODE_OPTIONS,
         tuple(entries),
         body,
-        actions=(item("nav:back", strings.DONE),),
+        actions=(item(BACK_ACTION, strings.DONE),),
         view_mode="settings",
     )
 
@@ -1133,6 +1090,73 @@ def _option_label(context: str, value: object) -> Text:
 def _setup_options(state: AppState) -> ViewModel:
     setup = _required_setup(state)
     context = setup.option_editor or ""
+    choices, current = _setup_option_choices(context, setup)
+
+    entries: list[ViewItem] = []
+    body = Text.raw("")
+    body = _setup_option_entries(choices, context, setup, entries, current, body)
+    return _setup_view(
+        state,
+        _option_heading(context),
+        tuple(entries),
+        body,
+        actions=(item(BACK_ACTION, strings.DONE),),
+        view_mode="choices",
+    )
+
+def _setup_option_entries(choices, context, setup, entries, current, body):
+    for value in choices:
+        body = _append_setup_option(value, setup, context, current, entries, body)
+    return body
+
+
+def _append_setup_option(value, setup, context, current, entries, body):
+    enabled = True
+    detail = Text.raw("")
+    secondary = Text.raw("")
+    if context == "config:startingIntensity" and int(value) > int(
+        setup.configuration.get("maximumIntensity", 1)
+    ):
+        enabled = False
+        detail = msg(strings.START_NOT_ABOVE_MAXIMUM)
+    elif context == "config:maximumIntensity" and int(value) < int(
+        setup.configuration.get("startingIntensity", 1)
+    ):
+        enabled = False
+        detail = msg(strings.MAXIMUM_NOT_BELOW_START)
+    elif context.startswith(PREDICATE_NUMBER_PREFIX) and value == "EDIT":
+        field = context.split(":", maxsplit=1)[1]
+        specification = PREDICATE_NUMBERS.get(field)
+        rule = _active_rule(setup)
+        predicate = rule.get("predicate", {}) if rule else {}
+        if field in predicate:
+            secondary = msg(strings.CURRENT_VALUE, predicate[field])
+        if specification:
+            body = msg(
+                strings.NUMBER_RANGE,
+                format_number(specification.minimum),
+                format_number(specification.maximum),
+            )
+            detail = msg(
+                strings.NUMBER_RANGE,
+                format_number(specification.minimum),
+                format_number(specification.maximum),
+            )
+    entries.append(
+        ViewItem(
+            f"setup:option:set:{encode_option(value)}",
+            _option_label(context, value),
+            secondary=secondary,
+            detail=detail,
+            kind="choice",
+            enabled=enabled,
+            selected=value == current,
+        )
+    )
+    return body
+
+
+def _setup_option_choices(context, setup):
     current: object = None
     choices: tuple[object, ...] = ()
     if context.startswith("config:"):
@@ -1142,18 +1166,8 @@ def _setup_options(state: AppState) -> ViewModel:
     elif context == "setup:neverRevealMode":
         choices = NEVER_HAVE_I_EVER_REVEAL_MODE_ORDER
         current = setup.never_reveal_mode
-    elif context.startswith("predicate-number:"):
-        field = context.split(":", maxsplit=1)[1]
-        rule = _active_rule(setup)
-        predicate = rule.get("predicate", {}) if rule else {}
-        choices = (None, "EDIT")
-        current = "EDIT" if field in predicate else None
-    elif context.startswith("predicate:"):
-        field = context.split(":", maxsplit=1)[1]
-        rule = _active_rule(setup)
-        predicate = rule.get("predicate", {}) if rule else {}
-        choices = tuple(PREDICATE_CHOICES.get(field, ()))
-        current = predicate.get(field)
+    elif context.startswith((PREDICATE_NUMBER_PREFIX, "predicate:")):
+        choices, current = _predicate_option_choices(context, setup)
     elif context.startswith("directive-value:"):
         field = context.split(":", maxsplit=1)[1]
         directive = _active_directives(setup).get(field)
@@ -1164,60 +1178,16 @@ def _setup_options(state: AppState) -> ViewModel:
         directive = _active_directives(setup).get(field)
         choices = tuple(DIRECTIVE_CHOICES.get(field, ()))
         current = directive.get("mode") if isinstance(directive, Mapping) else directive
+    return choices, current
 
-    entries: list[ViewItem] = []
-    body = Text.raw("")
-    for value in choices:
-        enabled = True
-        detail = Text.raw("")
-        secondary = Text.raw("")
-        if context == "config:startingIntensity" and int(value) > int(
-            setup.configuration.get("maximumIntensity", 1)
-        ):
-            enabled = False
-            detail = msg(strings.START_NOT_ABOVE_MAXIMUM)
-        elif context == "config:maximumIntensity" and int(value) < int(
-            setup.configuration.get("startingIntensity", 1)
-        ):
-            enabled = False
-            detail = msg(strings.MAXIMUM_NOT_BELOW_START)
-        elif context.startswith("predicate-number:") and value == "EDIT":
-            field = context.split(":", maxsplit=1)[1]
-            specification = PREDICATE_NUMBERS.get(field)
-            rule = _active_rule(setup)
-            predicate = rule.get("predicate", {}) if rule else {}
-            if field in predicate:
-                secondary = msg(strings.CURRENT_VALUE, predicate[field])
-            if specification:
-                body = msg(
-                    strings.NUMBER_RANGE,
-                    format_number(specification.minimum),
-                    format_number(specification.maximum),
-                )
-                detail = msg(
-                    strings.NUMBER_RANGE,
-                    format_number(specification.minimum),
-                    format_number(specification.maximum),
-                )
-        entries.append(
-            ViewItem(
-                f"setup:option:set:{encode_option(value)}",
-                _option_label(context, value),
-                secondary=secondary,
-                detail=detail,
-                kind="choice",
-                enabled=enabled,
-                selected=value == current,
-            )
-        )
-    return _setup_view(
-        state,
-        _option_heading(context),
-        tuple(entries),
-        body,
-        actions=(item("nav:back", strings.DONE),),
-        view_mode="choices",
-    )
+
+def _predicate_option_choices(context: str, setup: SetupDraft):
+    field = context.split(":", maxsplit=1)[1]
+    rule = _active_rule(setup)
+    predicate = rule.get("predicate", {}) if rule else {}
+    if context.startswith(PREDICATE_NUMBER_PREFIX):
+        return (None, "EDIT"), "EDIT" if field in predicate else None
+    return tuple(PREDICATE_CHOICES.get(field, ())), predicate.get(field)
 
 
 def _locale_name(state: AppState, locale_id: str) -> str:
@@ -1268,7 +1238,7 @@ def _card_language(state: AppState) -> ViewModel:
         state,
         strings.CARD_LANGUAGE,
         entries,
-        actions=(item("nav:back", strings.DONE),),
+        actions=(item(BACK_ACTION, strings.DONE),),
         view_mode="choices",
     )
 
@@ -1292,7 +1262,7 @@ def _primary_card_language(state: AppState) -> ViewModel:
         state,
         strings.PRIMARY_CARD_LANGUAGE,
         entries,
-        actions=(item("nav:back", strings.DONE),),
+        actions=(item(BACK_ACTION, strings.DONE),),
         pagination=_pagination("setup:language:primary", page, total_pages),
         view_mode="choices",
     )
@@ -1324,7 +1294,7 @@ def _fallback_languages(state: AppState) -> ViewModel:
         msg(strings.NO_FALLBACK_SELECTED) if not entries else Text.raw(""),
         actions=(
             item("setup:language:fallback-add", strings.ADD_LANGUAGE),
-            item("nav:back", strings.DONE),
+            item(BACK_ACTION, strings.DONE),
         ),
         pagination=_pagination("setup:language:fallback", page, total_pages),
         view_mode="choices",
@@ -1355,7 +1325,7 @@ def _add_fallback_language(state: AppState) -> ViewModel:
         state,
         strings.ADD_LANGUAGE,
         entries,
-        actions=(item("nav:back", strings.DONE),),
+        actions=(item(BACK_ACTION, strings.DONE),),
         pagination=_pagination("setup:language:fallback-add", page, total_pages),
         view_mode="choices",
     )
@@ -1369,7 +1339,7 @@ def _fallback_language(state: AppState) -> ViewModel:
             state,
             strings.FALLBACK_ORDER,
             (),
-            actions=(item("nav:back", strings.DONE),),
+            actions=(item(BACK_ACTION, strings.DONE),),
             view_mode="summary",
         )
     index = setup.card_fallback_locales.index(locale_id)
@@ -1432,7 +1402,7 @@ def _card_policy(state: AppState) -> ViewModel:
         strings.CARD_POLICY,
         entries,
         msg(strings.CARD_RULES_HELP),
-        actions=(item("nav:back", strings.DONE),),
+        actions=(item(BACK_ACTION, strings.DONE),),
     )
 
 
@@ -1458,7 +1428,7 @@ def _policy_rules(state: AppState) -> ViewModel:
         msg(strings.CONDITIONAL_RULES_HELP),
         actions=(
             item("setup:rule:add", strings.ADD_RULE),
-            item("nav:back", strings.DONE),
+            item(BACK_ACTION, strings.DONE),
         ),
         pagination=_pagination("setup:rule", page, total_pages),
     )
@@ -1469,7 +1439,7 @@ def _policy_rule(state: AppState) -> ViewModel:
     rules = setup.card_policy.get("conditionalRules", ())
     rule = next((entry for entry in rules if entry["id"] == setup.selected_rule_id), None)
     if not rule:
-        return _setup_view(state, strings.EDIT_RULE, (item("nav:back", strings.BACK),))
+        return _setup_view(state, strings.EDIT_RULE, (item(BACK_ACTION, strings.BACK),))
     availability = rule.get("directives", {}).get("availability", "INHERIT")
     entries = (
         ViewItem("setup:rule:name", raw(rule.get("name", "")), msg(strings.EDIT)),
@@ -1498,7 +1468,7 @@ def _policy_rule(state: AppState) -> ViewModel:
         msg(strings.RULE_PREDICATE_HELP),
         actions=(
             item("setup:rule:delete", strings.DELETE, danger=True),
-            item("nav:back", strings.DONE),
+            item(BACK_ACTION, strings.DONE),
         ),
     )
 
@@ -1569,7 +1539,7 @@ def _policy_predicate(state: AppState) -> ViewModel:
         strings.RULE_PREDICATE,
         tuple(entries),
         msg(strings.RULE_PREDICATE_HELP),
-        actions=(item("nav:back", strings.DONE),),
+        actions=(item(BACK_ACTION, strings.DONE),),
     )
 
 
@@ -1596,7 +1566,7 @@ def _policy_values(state: AppState) -> ViewModel:
         actions=(
             item("setup:predicate:all", strings.ALL),
             item("setup:predicate:none", strings.NONE),
-            item("nav:back", strings.DONE),
+            item(BACK_ACTION, strings.DONE),
         ),
     )
 
@@ -1705,51 +1675,7 @@ def _policy_directives(state: AppState, heading_id: int) -> ViewModel:
             )
         )
         if isinstance(current, Mapping) and current.get("mode") == "SET":
-            if field == "playerCount":
-                value = current.get("value", {})
-                entries.extend(
-                    (
-                        item(
-                            "setup:directive:value:playerMinimum",
-                            strings.MIN_PLAYER_COUNT,
-                            secondary=raw(value.get("minimum", 2)),
-                            detail=msg(strings.NUMBER_RANGE, 2, 100),
-                        ),
-                        item(
-                            "setup:directive:value:playerMaximum",
-                            strings.MAX_PLAYER_COUNT,
-                            secondary=_predicate_value(value.get("maximum")),
-                            detail=msg(strings.NUMBER_RANGE, 2, 100),
-                        ),
-                    )
-                )
-            else:
-                value = current.get("value")
-                secondary = (
-                    msg(SENSITIVITY_LABELS.get(str(value), strings.SENSITIVITY))
-                    if field == "socialSensitivity"
-                    else raw(value)
-                )
-                entries.append(
-                    item(
-                        (
-                            "setup:option:open:directive-value:socialSensitivity"
-                            if field == "socialSensitivity"
-                            else f"setup:directive:value:{field}"
-                        ),
-                        strings.EDIT_VALUE,
-                        secondary=secondary,
-                        detail=(
-                            msg(
-                                strings.NUMBER_RANGE,
-                                format_number(DIRECTIVE_NUMBERS[field].minimum),
-                                format_number(DIRECTIVE_NUMBERS[field].maximum),
-                            )
-                            if field in DIRECTIVE_NUMBERS
-                            else Text.raw("")
-                        ),
-                    )
-                )
+            _policy_directives_set_mode(field, current, entries)
     if setup.selected_card_id:
         entries.append(item("setup:directive:reset", strings.RESET_CARD, danger=True))
     return _setup_view(
@@ -1757,8 +1683,55 @@ def _policy_directives(state: AppState, heading_id: int) -> ViewModel:
         heading_id,
         tuple(entries),
         msg(strings.RULE_DIRECTIVE_HELP),
-        actions=(item("nav:back", strings.DONE),),
+        actions=(item(BACK_ACTION, strings.DONE),),
     )
+
+def _policy_directives_set_mode(field, current, entries):
+    if field == "playerCount":
+        value = current.get("value", {})
+        entries.extend(
+            (
+                item(
+                    "setup:directive:value:playerMinimum",
+                    strings.MIN_PLAYER_COUNT,
+                    secondary=raw(value.get("minimum", 2)),
+                    detail=msg(strings.NUMBER_RANGE, 2, 100),
+                ),
+                item(
+                    "setup:directive:value:playerMaximum",
+                    strings.MAX_PLAYER_COUNT,
+                    secondary=_predicate_value(value.get("maximum")),
+                    detail=msg(strings.NUMBER_RANGE, 2, 100),
+                ),
+            )
+        )
+    else:
+        value = current.get("value")
+        secondary = (
+            msg(SENSITIVITY_LABELS.get(str(value), strings.SENSITIVITY))
+            if field == "socialSensitivity"
+            else raw(value)
+        )
+        entries.append(
+            item(
+                (
+                    "setup:option:open:directive-value:socialSensitivity"
+                    if field == "socialSensitivity"
+                    else f"setup:directive:value:{field}"
+                ),
+                strings.EDIT_VALUE,
+                secondary=secondary,
+                detail=(
+                    msg(
+                        strings.NUMBER_RANGE,
+                        format_number(DIRECTIVE_NUMBERS[field].minimum),
+                        format_number(DIRECTIVE_NUMBERS[field].maximum),
+                    )
+                    if field in DIRECTIVE_NUMBERS
+                    else Text.raw("")
+                ),
+            )
+        )
 
 
 def _active_directives(setup: SetupDraft) -> Mapping[str, Any]:
@@ -1823,7 +1796,7 @@ def _exact_cards(state: AppState) -> ViewModel:
                 strings.SEARCH_CARDS,
                 secondary=raw(setup.card_search_query),
             ),
-            item("nav:back", strings.DONE),
+            item(BACK_ACTION, strings.DONE),
         ),
         pagination=pagination,
     )
@@ -1844,9 +1817,9 @@ def _exact_card_preview(state: AppState) -> ViewModel:
             msg(strings.EXACT_CARDS),
             msg(strings.EXACT_CARD_OVERRIDE),
             msg(strings.NO_CURRENT_CARD),
-            actions=(item("nav:back", strings.BACK),),
+            actions=(item(BACK_ACTION, strings.BACK),),
             server_pill=_pill(state),
-            preferred_focus="nav:back",
+            preferred_focus=BACK_ACTION,
         )
     preview = ViewModel(
         eyebrow=msg(strings.EXACT_CARDS),
@@ -1858,7 +1831,7 @@ def _exact_card_preview(state: AppState) -> ViewModel:
         ),
         actions=(
             item("setup:card:configure", strings.EDIT),
-            item("nav:back", strings.BACK),
+            item(BACK_ACTION, strings.BACK),
         ),
         view_mode="card",
         card_eyebrow=msg(strings.EXACT_CARD_OVERRIDE),
@@ -1944,8 +1917,8 @@ def _setup_view(
     alert: Text = Text.raw(""),
 ) -> ViewModel:
     setup = _required_setup(state)
-    command_items = tuple(entry for entry in items if entry.key == "nav:back")
-    visible_items = tuple(entry for entry in items if entry.key != "nav:back")
+    command_items = tuple(entry for entry in items if entry.key == BACK_ACTION)
+    visible_items = tuple(entry for entry in items if entry.key != BACK_ACTION)
     visible_actions = actions
     if command_items:
         visible_actions = (*visible_actions, *command_items)
@@ -2038,18 +2011,9 @@ def _couch_game(state: AppState) -> ViewModel:
         ),
         None,
     )
-    if waiting_for_card:
-        card_text = msg(strings.READY_NEXT_CARD)
-    elif snapshot.get("state") == "CHOOSING_CARD_TYPE":
-        card_text = msg(strings.CHOOSE_TRUTH_OR_DARE)
-    else:
-        card_text = raw(card.get("cardText", "")) if card else msg(strings.NO_CURRENT_CARD)
+    card_text = _couch_card_text(waiting_for_card, snapshot, card)
     visible_card = None if waiting_for_card else card
-    card_type = card.get("cardType", "") if card else ""
-    if waiting_for_card:
-        card_label = Text.raw("")
-    else:
-        card_label = msg(_card_type_label(card_type)) if card else Text.raw("")
+    card_label = _couch_card_label(waiting_for_card, card)
     body = _voting_result(state, snapshot)
     result_yes, result_no = _voting_result_values(state, snapshot)
     result_yes_names, result_no_names = _voting_result_names(state, snapshot)
@@ -2059,18 +2023,7 @@ def _couch_game(state: AppState) -> ViewModel:
         body = Text.raw("")
     entries = _couch_actions(state, snapshot)
     voters, voter_pagination = _couch_voters(state, snapshot)
-    voting_stage_label = Text.raw("")
-    voting_player = Text.raw("")
-    voting_hint = Text.raw("")
-    if selected_player:
-        voting_player = raw(selected_player.get("name", ""))
-        if state.couch_vote_phase == "CHOICE":
-            voting_stage_label = msg(strings.CASTING_VOTE)
-            voting_hint = msg(strings.PRIVATE_VOTE_HINT)
-        elif state.couch_vote_phase == "SUBMITTING":
-            voting_stage_label = msg(strings.SUBMITTING_VOTE)
-    elif voters:
-        voting_stage_label = msg(strings.CHOOSE_VOTER)
+    voting_stage_label, voting_player, voting_hint = _couch_vote_labels(selected_player, state, voters)
     if state.couch_sync_required:
         body = msg(strings.COUCH_SYNC_BODY)
         result_yes, result_no = Text.raw(""), Text.raw("")
@@ -2080,7 +2033,7 @@ def _couch_game(state: AppState) -> ViewModel:
         voting_stage_label, voting_player, voting_hint = Text.raw(""), Text.raw(""), Text.raw("")
         entries = (
             item("couch:resync", strings.REFRESH_STATE),
-            item("couch:end", strings.END_GAME, danger=True),
+            item(END_COUCH_ACTION, strings.END_GAME, danger=True),
         )
     elif state.couch_pool_exhausted:
         card_label = msg(strings.POOL_EXHAUSTED)
@@ -2093,29 +2046,14 @@ def _couch_game(state: AppState) -> ViewModel:
         voting_stage_label, voting_player, voting_hint = Text.raw(""), Text.raw(""), Text.raw("")
         entries = (
             item("couch:adjust", strings.ADJUST_SETUP, kind="wrap-action"),
-            item("couch:end", strings.END_GAME, danger=True),
+            item(END_COUCH_ACTION, strings.END_GAME, danger=True),
         )
     if state.busy_operation and state.busy_operation.startswith("couch."):
         entries = tuple(replace(entry, enabled=False) for entry in entries)
         voters = tuple(replace(entry, enabled=False) for entry in voters)
     preferred_focus = None
     if not state.busy_operation:
-        current_voter_page_complete = bool(voters) and not any(
-            voter.enabled for voter in voters
-        )
-        if (
-            current_voter_page_complete
-            and voter_pagination
-            and voter_pagination.next_enabled
-        ):
-            preferred_focus = voter_pagination.next_key
-        else:
-            preferred_voter = next((voter for voter in voters if voter.enabled), None)
-            preferred_action = next((entry for entry in entries if entry.enabled), None)
-            if preferred_voter:
-                preferred_focus = preferred_voter.key
-            elif preferred_action:
-                preferred_focus = preferred_action.key
+        preferred_focus = _couch_game_busy_operation(voters, voter_pagination, entries, preferred_focus)
     return ViewModel(
         msg(strings.COUCH_PLAY),
         msg(strings.GAME),
@@ -2132,21 +2070,7 @@ def _couch_game(state: AppState) -> ViewModel:
         card_eyebrow=card_label,
         card_classification=_card_classification(state, visible_card),
         card_text=card_text,
-        card_intensity=(
-            _intensity_marks(visible_card.get("cardIntensity"))
-            if visible_card and not state.couch_sync_required
-            else Text.raw("")
-        ),
-        game_intensity=(
-            _intensity_marks(visible_card.get("intensity"))
-            if visible_card and not state.couch_sync_required
-            else Text.raw("")
-        ),
-        current_player=(
-            raw(active.get("name", ""))
-            if active and not state.couch_sync_required
-            else Text.raw("")
-        ),
+        **_couch_card_details(state, visible_card, active),
         card_footer=Text.raw(""),
         server_pill=Text.raw(""),
         footer=Text.raw(""),
@@ -2167,6 +2091,63 @@ def _couch_game(state: AppState) -> ViewModel:
         voting_hint=voting_hint,
     )
 
+def _couch_vote_labels(selected_player, state, voters):
+    voting_stage_label = Text.raw("")
+    voting_player = Text.raw("")
+    voting_hint = Text.raw("")
+    if selected_player:
+        voting_player = raw(selected_player.get("name", ""))
+        if state.couch_vote_phase == "CHOICE":
+            voting_stage_label = msg(strings.CASTING_VOTE)
+            voting_hint = msg(strings.PRIVATE_VOTE_HINT)
+        elif state.couch_vote_phase == "SUBMITTING":
+            voting_stage_label = msg(strings.SUBMITTING_VOTE)
+    elif voters:
+        voting_stage_label = msg(strings.CHOOSE_VOTER)
+    return voting_stage_label, voting_player, voting_hint
+
+def _couch_card_text(waiting_for_card, snapshot, card):
+    if waiting_for_card:
+        card_text = msg(strings.READY_NEXT_CARD)
+    elif snapshot.get("state") == "CHOOSING_CARD_TYPE":
+        card_text = msg(strings.CHOOSE_TRUTH_OR_DARE)
+    else:
+        card_text = raw(card.get("cardText", "")) if card else msg(strings.NO_CURRENT_CARD)
+    return card_text
+
+def _couch_card_label(waiting_for_card: bool, card) -> Text:
+    if waiting_for_card or not card:
+        return Text.raw("")
+    return msg(_card_type_label(card.get("cardType", "")))
+
+
+def _couch_card_details(state: AppState, visible_card, active) -> dict[str, Text]:
+    return {
+        'card_intensity': _intensity_marks(visible_card.get('cardIntensity')) if visible_card and (not state.couch_sync_required) else Text.raw(''),
+        'game_intensity': _intensity_marks(visible_card.get('intensity')) if visible_card and (not state.couch_sync_required) else Text.raw(''),
+        'current_player': raw(active.get('name', '')) if active and (not state.couch_sync_required) else Text.raw('')
+    }
+
+
+def _couch_game_busy_operation(voters, voter_pagination, entries, preferred_focus):
+    current_voter_page_complete = bool(voters) and not any(
+        voter.enabled for voter in voters
+    )
+    if (
+        current_voter_page_complete
+        and voter_pagination
+        and voter_pagination.next_enabled
+    ):
+        preferred_focus = voter_pagination.next_key
+    else:
+        preferred_voter = next((voter for voter in voters if voter.enabled), None)
+        preferred_action = next((entry for entry in entries if entry.enabled), None)
+        if preferred_voter:
+            preferred_focus = preferred_voter.key
+        elif preferred_action:
+            preferred_focus = preferred_action.key
+    return preferred_focus
+
 
 def _couch_menu(state: AppState) -> ViewModel:
     return ViewModel(
@@ -2176,7 +2157,7 @@ def _couch_menu(state: AppState) -> ViewModel:
         actions=(
             item("couch:resume", strings.RESUME_GAME),
             item("couch:menu-help", strings.HELP),
-            item("couch:end", strings.END_GAME, danger=True),
+            item(END_COUCH_ACTION, strings.END_GAME, danger=True),
             item(
                 "app:exit",
                 strings.EXIT_ADDON,
@@ -2189,7 +2170,7 @@ def _couch_menu(state: AppState) -> ViewModel:
     )
 
 
-def _voting_result(state: AppState, snapshot: Mapping[str, Any]) -> Text:
+def _voting_result(_state: AppState, snapshot: Mapping[str, Any]) -> Text:
     voting = snapshot.get("neverHaveIEverVoting")
     if not isinstance(voting, Mapping):
         return Text.raw("")
@@ -2206,7 +2187,7 @@ def _voting_result(state: AppState, snapshot: Mapping[str, Any]) -> Text:
 
 
 def _voting_result_values(
-    state: AppState, snapshot: Mapping[str, Any]
+    _state: AppState, snapshot: Mapping[str, Any]
 ) -> tuple[Text, Text]:
     voting = snapshot.get("neverHaveIEverVoting")
     if not isinstance(voting, Mapping):
@@ -2422,63 +2403,7 @@ def _room_display(state: AppState) -> ViewModel:
     roster, roster_status, represented_count = _room_roster_view(state, snapshot, session)
     capacity = snapshot.get("capacity", {}).get("maximumPlayers", "—")
     if session:
-        session_state = session.get("state")
-        waiting_for_card = session_state in {
-            "WAITING_FOR_PLAYER",
-            "NEXT_PLAYER",
-            "TRANSITION",
-        }
-        card = None if waiting_for_card else session.get("currentCard")
-        body = _room_stage_body(state, snapshot, session)
-        result_yes, result_no = _voting_result_values(state, session)
-        result_yes_names, result_no_names = _voting_result_names(state, session)
-        result_yes_players, result_no_players = _voting_result_players(state, session)
-        active = session.get("activePlayer") or {}
-        if session.get("remainingCardCount") == 0 and not card:
-            card_label = msg(strings.POOL_EXHAUSTED)
-            card_text = msg(strings.POOL_EXHAUSTED_BODY)
-        elif waiting_for_card:
-            card_label = Text.raw("")
-            card_text = msg(strings.READY_NEXT_CARD)
-        elif session_state == "CHOOSING_CARD_TYPE" and not card:
-            card_label = Text.raw("")
-            card_text = msg(strings.TRUTH_DARE_DEVICE_CHOICE)
-        else:
-            card_label = msg(_card_type_label(card.get("cardType"))) if card else Text.raw("")
-            card_text = raw(card.get("cardText", "")) if card else msg(strings.NO_CURRENT_CARD)
-        return ViewModel(
-            eyebrow=msg(strings.DISPLAY_ROOM),
-            heading=msg(strings.ROOM_GAME),
-            body=body,
-            facts=(
-                ViewFact(msg(strings.ROUND_LABEL), raw(session.get("roundNumber", 0))),
-                ViewFact(msg(strings.CARDS), raw(session.get("cardsShown", 0))),
-                ViewFact(msg(strings.REMAINING), raw(session.get("remainingCardCount", 0))),
-                ViewFact(Text.raw(""), msg(strings.LIVE)),
-                ViewFact(msg(strings.ROOM_CODE), raw(code)),
-            ),
-            roster=roster,
-            view_mode="card",
-            card_eyebrow=card_label,
-            card_classification=_card_classification(state, card),
-            card_text=card_text,
-            card_intensity=_intensity_marks(card.get("cardIntensity")) if card else Text.raw(""),
-            game_intensity=_intensity_marks(card.get("intensity")) if card else Text.raw(""),
-            current_player=raw(active.get("name", "")) if active else Text.raw(""),
-            card_footer=Text.raw(""),
-            server_pill=Text.raw(""),
-            footer=roster_status,
-            preferred_focus=None,
-            atmosphere=_atmosphere(card),
-            result_yes=result_yes,
-            result_no=result_no,
-            result_yes_names=result_yes_names,
-            result_no_names=result_no_names,
-            result_yes_players=result_yes_players,
-            result_no_players=result_no_players,
-            result_status=_voting_result_status(state, session),
-            room_code=raw(code),
-        )
+        return _room_display_session(session, state, snapshot, code, roster, roster_status)
     settings = snapshot.get("settings", {})
     configuration = settings.get("configuration", {})
     profile = next(
@@ -2563,6 +2488,65 @@ def _room_display(state: AppState) -> ViewModel:
         room_code=raw(code),
         join_urls=join_urls,
         join_url_status=join_url_status,
+    )
+
+def _room_display_session(session, state, snapshot, code, roster, roster_status):
+    session_state = session.get("state")
+    waiting_for_card = session_state in {
+        "WAITING_FOR_PLAYER",
+        "NEXT_PLAYER",
+        "TRANSITION",
+    }
+    card = None if waiting_for_card else session.get("currentCard")
+    body = _room_stage_body(state, snapshot, session)
+    result_yes, result_no = _voting_result_values(state, session)
+    result_yes_names, result_no_names = _voting_result_names(state, session)
+    result_yes_players, result_no_players = _voting_result_players(state, session)
+    active = session.get("activePlayer") or {}
+    if session.get("remainingCardCount") == 0 and not card:
+        card_label = msg(strings.POOL_EXHAUSTED)
+        card_text = msg(strings.POOL_EXHAUSTED_BODY)
+    elif waiting_for_card:
+        card_label = Text.raw("")
+        card_text = msg(strings.READY_NEXT_CARD)
+    elif session_state == "CHOOSING_CARD_TYPE" and not card:
+        card_label = Text.raw("")
+        card_text = msg(strings.TRUTH_DARE_DEVICE_CHOICE)
+    else:
+        card_label = msg(_card_type_label(card.get("cardType"))) if card else Text.raw("")
+        card_text = raw(card.get("cardText", "")) if card else msg(strings.NO_CURRENT_CARD)
+    return ViewModel(
+        eyebrow=msg(strings.DISPLAY_ROOM),
+        heading=msg(strings.ROOM_GAME),
+        body=body,
+        facts=(
+            ViewFact(msg(strings.ROUND_LABEL), raw(session.get("roundNumber", 0))),
+            ViewFact(msg(strings.CARDS), raw(session.get("cardsShown", 0))),
+            ViewFact(msg(strings.REMAINING), raw(session.get("remainingCardCount", 0))),
+            ViewFact(Text.raw(""), msg(strings.LIVE)),
+            ViewFact(msg(strings.ROOM_CODE), raw(code)),
+        ),
+        roster=roster,
+        view_mode="card",
+        card_eyebrow=card_label,
+        card_classification=_card_classification(state, card),
+        card_text=card_text,
+        card_intensity=_intensity_marks(card.get("cardIntensity")) if card else Text.raw(""),
+        game_intensity=_intensity_marks(card.get("intensity")) if card else Text.raw(""),
+        current_player=raw(active.get("name", "")) if active else Text.raw(""),
+        card_footer=Text.raw(""),
+        server_pill=Text.raw(""),
+        footer=roster_status,
+        preferred_focus=None,
+        atmosphere=_atmosphere(card),
+        result_yes=result_yes,
+        result_no=result_no,
+        result_yes_names=result_yes_names,
+        result_no_names=result_no_names,
+        result_yes_players=result_yes_players,
+        result_no_players=result_no_players,
+        result_status=_voting_result_status(state, session),
+        room_code=raw(code),
     )
 
 
@@ -2663,44 +2647,48 @@ def _room_roster_view(
     }
     entries: list[ViewItem] = []
     for player in page_values:
-        role = player.get("role")
-        if role == "HOST":
-            secondary = msg(strings.HOST_ROLE)
-        elif role == "DEVICE_PLAYER":
-            secondary = msg(
-                strings.ON_DEVICE,
-                player.get("owner", ""),
-            )
-        else:
-            secondary = msg(strings.PLAYER_ROLE)
-        vote_status = voting_progress.get(player.get("id"))
-        badge = msg(strings.CONNECTED if player.get("connected") else strings.OFFLINE)
-        if vote_status == VOTED_VOTE_STATUS:
-            badge = msg(strings.VOTED_STATUS)
-        elif vote_status == PENDING_VOTE_STATUS:
-            badge = msg(strings.PENDING)
-        entries.append(
-            ViewItem(
-                key=f"roster:{player.get('id', '')}",
-                # Preserve names exactly. Dedicated Room roster labels use
-                # Kodi's horizontal marquee only when their width is exceeded,
-                # keeping ordinary names still and compact.
-                label=raw(player.get("name", "")),
-                secondary=secondary,
-                badge=badge,
-                kind="person",
-                enabled=False,
-                selected=player.get("id") == active_id,
-            )
-        )
+        _append_room_roster_player(player, voting_progress, active_id, entries)
     status = Text.raw("")
     if total_pages > 1:
         status = msg(strings.PAGE_STATUS, page + 1, total_pages)
     return tuple(entries), status, len(players)
 
 
+def _append_room_roster_player(player, voting_progress, active_id, entries):
+    role = player.get("role")
+    if role == "HOST":
+        secondary = msg(strings.HOST_ROLE)
+    elif role == "DEVICE_PLAYER":
+        secondary = msg(
+            strings.ON_DEVICE,
+            player.get("owner", ""),
+        )
+    else:
+        secondary = msg(strings.PLAYER_ROLE)
+    vote_status = voting_progress.get(player.get("id"))
+    badge = msg(strings.CONNECTED if player.get("connected") else strings.OFFLINE)
+    if vote_status == VOTED_VOTE_STATUS:
+        badge = msg(strings.VOTED_STATUS)
+    elif vote_status == PENDING_VOTE_STATUS:
+        badge = msg(strings.PENDING)
+    entries.append(
+        ViewItem(
+            key=f"roster:{player.get('id', '')}",
+            # Preserve names exactly. Dedicated Room roster labels use
+            # Kodi's horizontal marquee only when their width is exceeded,
+            # keeping ordinary names still and compact.
+            label=raw(player.get("name", "")),
+            secondary=secondary,
+            badge=badge,
+            kind="person",
+            enabled=False,
+            selected=player.get("id") == active_id,
+        )
+    )
+
+
 def _room_stage_body(
-    state: AppState, snapshot: Mapping[str, Any], session: Mapping[str, Any]
+    state: AppState, _snapshot: Mapping[str, Any], session: Mapping[str, Any]
 ) -> Text:
     if state.transport_state == "RECONNECTING":
         return msg(strings.RECONNECTING_BODY)
@@ -2789,7 +2777,7 @@ def _group_member(state: AppState) -> ViewModel:
         return ViewModel(
             msg(strings.GROUP),
             msg(strings.PLAYER_OPTIONS),
-            actions=(item("nav:back", strings.DONE),),
+            actions=(item(BACK_ACTION, strings.DONE),),
             view_mode="summary",
             server_pill=_pill(state),
         )
@@ -2801,7 +2789,7 @@ def _group_member(state: AppState) -> ViewModel:
         actions=(
             item(f"group:edit-member:{index}", strings.EDIT_PLAYER),
             item(f"group:remove-member:{index}", strings.REMOVE_PLAYER, danger=True),
-            item("nav:back", strings.DONE),
+            item(BACK_ACTION, strings.DONE),
         ),
         facts=(
             ViewFact(msg(strings.NAME), raw(name)),
@@ -2852,6 +2840,11 @@ def _help(state: AppState) -> ViewModel:
         help_body = raw(pages[page])
     else:
         help_body = msg(strings.HELP_BODY)
+    preferred_focus = None
+    if state.help_slug:
+        preferred_focus = f"help:topic:{state.help_slug}"
+    elif topics:
+        preferred_focus = topics[0].key
     return ViewModel(
         msg(strings.HELP),
         raw(state.help_title) if state.help_title else msg(strings.HELP),
@@ -2860,11 +2853,7 @@ def _help(state: AppState) -> ViewModel:
         pagination=pagination,
         view_mode="help",
         server_pill=_pill(state),
-        preferred_focus=(
-            f"help:topic:{state.help_slug}"
-            if state.help_slug
-            else (topics[0].key if topics else None)
-        ),
+        preferred_focus=preferred_focus,
     )
 
 
@@ -2878,6 +2867,48 @@ def _text_pages(
     normalized = value.replace("\r\n", "\n").replace("\r", "\n").strip()
     paragraphs = [paragraph.strip() for paragraph in re.split(r"\n\s*\n", normalized) if paragraph.strip()]
     units: list[tuple[tuple[str, ...], bool]] = []
+    _wrap_help_paragraphs(paragraphs, line_width, units)
+    pages: list[str] = []
+    current: list[str] = []
+    current = _paginate_help_units(units, current, maximum_lines, pages)
+    if current:
+        pages.append("\n".join(current).rstrip())
+    return tuple(page for page in pages if page) or ("",)
+
+def _paginate_help_units(units, current, maximum_lines, pages):
+    for unit, paragraph_break in units:
+        current = _paginate_help_unit(unit, paragraph_break, current, maximum_lines, pages)
+    return current
+
+
+def _paginate_help_unit(unit, paragraph_break, current, maximum_lines, pages):
+    remaining = list(unit)
+    while remaining:
+        separator = 1 if paragraph_break and current and current[-1] != "" else 0
+        room = maximum_lines - len(current) - separator
+        if room <= 0:
+            pages.append("\n".join(current).rstrip())
+            current = []
+            continue
+        if len(remaining) <= room:
+            if separator:
+                current.append("")
+            current.extend(remaining)
+            remaining = []
+            paragraph_break = False
+        elif current:
+            pages.append("\n".join(current).rstrip())
+            current = []
+        else:
+            current.extend(remaining[:maximum_lines])
+            pages.append("\n".join(current).rstrip())
+            current = []
+            remaining = remaining[maximum_lines:]
+            paragraph_break = False
+    return current
+
+
+def _wrap_help_paragraphs(paragraphs, line_width, units):
     for paragraph_index, paragraph in enumerate(paragraphs):
         logical_lines = tuple(line.strip() for line in paragraph.splitlines() if line.strip())
         structured = len(logical_lines) > 1 and any(
@@ -2909,35 +2940,6 @@ def _text_pages(
                     paragraph_index > 0 and sentence_index == 0,
                 )
             )
-    pages: list[str] = []
-    current: list[str] = []
-    for unit, paragraph_break in units:
-        remaining = list(unit)
-        while remaining:
-            separator = 1 if paragraph_break and current and current[-1] != "" else 0
-            room = maximum_lines - len(current) - separator
-            if room <= 0:
-                pages.append("\n".join(current).rstrip())
-                current = []
-                continue
-            if len(remaining) <= room:
-                if separator:
-                    current.append("")
-                current.extend(remaining)
-                remaining = []
-                paragraph_break = False
-            elif current:
-                pages.append("\n".join(current).rstrip())
-                current = []
-            else:
-                current.extend(remaining[:maximum_lines])
-                pages.append("\n".join(current).rstrip())
-                current = []
-                remaining = remaining[maximum_lines:]
-                paragraph_break = False
-    if current:
-        pages.append("\n".join(current).rstrip())
-    return tuple(page for page in pages if page) or ("",)
 
 
 def _preferences(state: AppState) -> ViewModel:
@@ -3116,3 +3118,57 @@ def _device_link(state: AppState) -> ViewModel:
         actions=(item("auth:start", strings.LINK_DEVICE),),
         server_pill=_pill(state),
     )
+
+
+_ROUTE_PRESENTERS = {
+    Route.BOOTSTRAP: _present_bootstrap,
+    Route.SERVER_LIST: _server_list,
+    Route.SERVER_DETAILS: _server_details,
+    Route.MANUAL_SERVER: _present_manual_server,
+    Route.HOME: _home,
+    Route.SETUP_GROUP: _setup_groups,
+    Route.SETUP_GROUP_SELECT: _setup_group_select,
+    Route.SETUP_MODE: _setup_modes,
+    Route.SETUP_PROFILE: _setup_profiles,
+    Route.SETUP_PLAYERS: _setup_players,
+    Route.SETUP_PLAYER: _setup_player,
+    Route.SETUP_CUSTOMIZE: _customize,
+    Route.SETUP_CATEGORIES: _present_setup_categories,
+    Route.SETUP_DARES: _present_setup_dares,
+    Route.SETUP_FLAGS: _flags,
+    Route.SETUP_INTENSITY: _intensity,
+    Route.SETUP_MODE_OPTIONS: _mode_options,
+    Route.SETUP_OPTIONS: _setup_options,
+    Route.SETUP_CARD_LANGUAGE: _card_language,
+    Route.SETUP_CARD_LANGUAGE_PRIMARY: _primary_card_language,
+    Route.SETUP_CARD_LANGUAGE_FALLBACKS: _fallback_languages,
+    Route.SETUP_CARD_LANGUAGE_FALLBACK_ADD: _add_fallback_language,
+    Route.SETUP_CARD_LANGUAGE_FALLBACK: _fallback_language,
+    Route.SETUP_CARD_POLICY: _card_policy,
+    Route.SETUP_POLICY_DEFAULT: _present_setup_policy_default,
+    Route.SETUP_POLICY_RULES: _policy_rules,
+    Route.SETUP_POLICY_RULE: _policy_rule,
+    Route.SETUP_POLICY_PREDICATE: _policy_predicate,
+    Route.SETUP_POLICY_VALUES: _policy_values,
+    Route.SETUP_POLICY_DIRECTIVES: _present_setup_policy_directives,
+    Route.SETUP_EXACT_CARDS: _exact_cards,
+    Route.SETUP_EXACT_CARD_PREVIEW: _exact_card_preview,
+    Route.SETUP_EXACT_CARD: _present_setup_exact_card,
+    Route.SETUP_REVIEW: _review,
+    Route.ROOM_CODE_ENTRY: _present_room_code_entry,
+    Route.ROOM_CREATING: _present_room_creating,
+    Route.ROOM_LOBBY_DISPLAY: _present_room_lobby_display,
+    Route.ROOM_GAME_DISPLAY: _present_room_lobby_display,
+    Route.ROOM_DISPLAY_MENU: _display_menu,
+    Route.ROOM_SUMMARY_DISPLAY: _room_summary,
+    Route.COUCH_GAME: _present_couch_game,
+    Route.COUCH_MENU: _couch_menu,
+    Route.COUCH_SUMMARY: _couch_summary,
+    Route.GROUP_LIST: _group_list,
+    Route.GROUP_CREATE: _present_group_create,
+    Route.GROUP_MEMBER: _group_member,
+    Route.PREFERENCES: _preferences,
+    Route.HELP: _help,
+    Route.DIAGNOSTICS: _diagnostics,
+    Route.DEVICE_LINK: _device_link,
+}

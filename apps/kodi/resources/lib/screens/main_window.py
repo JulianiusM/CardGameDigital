@@ -200,23 +200,11 @@ class MainWindow(xbmcgui.WindowXMLDialog):
             self.application.activate("couch:vote-cancel")
             return
         if control_id in {PRIVATE_VOTE_YES_BUTTON, PRIVATE_VOTE_NO_BUTTON}:
-            vote = YES_VOTE if control_id == PRIVATE_VOTE_YES_BUTTON else NO_VOTE
-            if self.application.private_vote_shortcut(vote):
-                self.setFocusId(49)
-                self._focused_control_id = 49
-                self._schedule_repaint()
-            return
+            return self._activate_private_vote(control_id)
         if control_id in INTERACTIVE_LISTS:
-            selected = self.getControl(control_id).getSelectedItem()
-            if not selected or selected.getProperty("Enabled") != "true":
-                return
-            self.application.activate(selected.getProperty("ActionId"))
-            return
+            return self._activate_list_selection(control_id)
         if control_id in HOME_CONTROLS:
-            action_data = self._home_actions.get(control_id)
-            if action_data and action_data[1]:
-                self.application.activate(action_data[0])
-            return
+            return self._activate_home_control(control_id)
         if control_id in {PAGE_PREVIOUS, PAGE_NEXT}:
             action_data = self._pagination_actions.get(control_id)
             if action_data and action_data[1]:
@@ -234,23 +222,35 @@ class MainWindow(xbmcgui.WindowXMLDialog):
         elif control_id == HELP_BUTTON:
             self._open_help()
 
+
+    def _activate_home_control(self, control_id):
+        action_data = self._home_actions.get(control_id)
+        if action_data and action_data[1]:
+            self.application.activate(action_data[0])
+
+
+    def _activate_list_selection(self, control_id):
+        selected = self.getControl(control_id).getSelectedItem()
+        if not selected or selected.getProperty("Enabled") != "true":
+            return
+        self.application.activate(selected.getProperty("ActionId"))
+
+
+    def _activate_private_vote(self, control_id):
+        vote = YES_VOTE if control_id == PRIVATE_VOTE_YES_BUTTON else NO_VOTE
+        if self.application.private_vote_shortcut(vote):
+            self.setFocusId(49)
+            self._focused_control_id = 49
+            self._schedule_repaint()
+
+
     def onAction(self, incoming: xbmcgui.Action) -> None:  # noqa: N802 - Kodi callback name
         if self.application is None:
             return
         action_id = incoming.getId()
         if action_id not in {MOVE_UP_ACTION, MOVE_DOWN_ACTION}:
             self._clear_focus_guard()
-        if action_id in {5, 59, 215} and self.application.private_vote_shortcut(YES_VOTE):
-            self.setFocusId(49)
-            self._focused_control_id = 49
-            return
-        if action_id in {6, 60, 216} and self.application.private_vote_shortcut(NO_VOTE):
-            self.setFocusId(49)
-            self._focused_control_id = 49
-            return
-        if action_id in {5, 59, 215} and self.application.change_card_page(-1):
-            return
-        if action_id in {6, 60, 216} and self.application.change_card_page(1):
+        if self._handle_card_shortcut(action_id):
             return
         # Kodi 21 does not consistently deliver onClick for horizontal-list items
         # that have a secondary label. Those are the public voter selectors.
@@ -263,15 +263,37 @@ class MainWindow(xbmcgui.WindowXMLDialog):
         elif action_id in INFO_ACTIONS:
             self._open_help()
         elif action_id in CONTEXT_ACTIONS:
-            if self.application.state.route == self.Route.GROUP_LIST:
-                selected = self.getControl(COLLECTION_LIST).getSelectedItem()
-                if selected:
-                    key = selected.getProperty("ActionId")
-                    if key.startswith("group:continue:"):
-                        self.application.activate(key.replace("group:continue:", "group:edit:", 1))
-                        return
-            self._open_game_settings()
+            if not self._activate_context_action():
+                return
         self._repair_native_directional_focus(action_id)
+
+
+    def _handle_card_shortcut(self, action_id: int) -> bool:
+        if action_id in {5, 59, 215} and self.application.private_vote_shortcut(YES_VOTE):
+            self.setFocusId(49)
+            self._focused_control_id = 49
+            return True
+        if action_id in {6, 60, 216} and self.application.private_vote_shortcut(NO_VOTE):
+            self.setFocusId(49)
+            self._focused_control_id = 49
+            return True
+        if action_id in {5, 59, 215} and self.application.change_card_page(-1):
+            return True
+        if action_id in {6, 60, 216} and self.application.change_card_page(1):
+            return True
+        return False
+
+    def _activate_context_action(self) -> bool:
+        if self.application.state.route == self.Route.GROUP_LIST:
+            selected = self.getControl(COLLECTION_LIST).getSelectedItem()
+            if selected:
+                key = selected.getProperty("ActionId")
+                if key.startswith("group:continue:"):
+                    self.application.activate(key.replace("group:continue:", "group:edit:", 1))
+                    return False
+        self._open_game_settings()
+        return True
+
 
     def _repair_native_directional_focus(self, action_id: int) -> None:
         """Recover a fixed-control graph move when Kodi leaves no usable focus."""
@@ -451,25 +473,7 @@ class MainWindow(xbmcgui.WindowXMLDialog):
             "AdaptiveTone",
             adaptive_tone(view.atmosphere),
         )
-        atmosphere_texture = ""
-        if view.atmosphere != "NEUTRAL":
-            atmosphere_texture = (
-                "partycard-tv-atmosphere-"
-                + view.atmosphere.lower().replace("_", "-")
-                + ".png"
-            )
-        self.setProperty("AtmosphereTexture", atmosphere_texture)
-        result_yes = self._resolve(view.result_yes)
-        result_no = self._resolve(view.result_no)
-        self.setProperty("ResultYes", result_yes)
-        self.setProperty("ResultNo", result_no)
-        self.setProperty("ResultYesNames", self._resolve(view.result_yes_names))
-        self.setProperty("ResultNoNames", self._resolve(view.result_no_names))
-        self.setProperty(
-            "HasNamedResults",
-            "true" if view.result_yes_players or view.result_no_players else "false",
-        )
-        self.setProperty("ResultVisible", "true" if result_yes or result_no else "false")
+        self._render_atmosphere_and_result(view)
         self.setProperty("ServerPill", self._resolve(view.server_pill))
         self.setProperty("Footer", self._resolve(view.footer))
         self.setProperty("Progress", self._resolve(view.progress))
@@ -557,6 +561,39 @@ class MainWindow(xbmcgui.WindowXMLDialog):
         self._configure_navigation(view, can_go_back, active_stage)
         self._clear_pending_focus()
 
+        self._restore_render_focus(view, force_couch_focus, route_changed, previous_focus, route, previous_keys, active_stage)
+
+    def _render_atmosphere_and_result(self, view):
+        atmosphere_texture = ""
+        if view.atmosphere != "NEUTRAL":
+            atmosphere_texture = (
+                "partycard-tv-atmosphere-"
+                + view.atmosphere.lower().replace("_", "-")
+                + ".png"
+            )
+        self.setProperty("AtmosphereTexture", atmosphere_texture)
+        result_yes = self._resolve(view.result_yes)
+        result_no = self._resolve(view.result_no)
+        self.setProperty("ResultYes", result_yes)
+        self.setProperty("ResultNo", result_no)
+        self.setProperty("ResultYesNames", self._resolve(view.result_yes_names))
+        self.setProperty("ResultNoNames", self._resolve(view.result_no_names))
+        self.setProperty(
+            "HasNamedResults",
+            "true" if view.result_yes_players or view.result_no_players else "false",
+        )
+        self.setProperty("ResultVisible", "true" if result_yes or result_no else "false")
+
+    def _restore_render_focus(self, view, force_couch_focus, route_changed, previous_focus, route, previous_keys, active_stage):
+        self._restore_focus_by_state(view, force_couch_focus, route_changed, previous_focus, route, previous_keys, active_stage)
+        self._last_route = route
+        # Window properties do not themselves dirty a Python WindowXML on Kodi 21.
+        # Defer the full-surface invalidation until the next add-on loop iteration so
+        # Kodi's GUI thread never paints a partially applied property snapshot.
+        self._schedule_repaint()
+
+
+    def _restore_focus_by_state(self, view, force_couch_focus, route_changed, previous_focus, route, previous_keys, active_stage):
         if self.application.state.confirmation:
             self._queue_focus_control(CONFIRM_CANCEL)
         elif view.private_vote_choice:
@@ -564,38 +601,38 @@ class MainWindow(xbmcgui.WindowXMLDialog):
         elif force_couch_focus:
             self._queue_focus_semantic(view.preferred_focus)
         elif not route_changed and self._header_focus_still_visible(self._focused_control_id):
-            pass
+            # Preserve the native focus on a header that remains visible.
+            return
         else:
-            keys = self._enabled_keys()
-            preferred = (
-                previous_focus
-                if not route_changed and previous_focus in keys
-                else view.preferred_focus
+            self._restore_content_focus(view, route_changed, previous_focus, route, previous_keys, active_stage)
+
+    def _restore_content_focus(self, view, route_changed, previous_focus, route, previous_keys, active_stage):
+        keys = self._enabled_keys()
+        preferred = (
+            previous_focus
+            if not route_changed and previous_focus in keys
+            else view.preferred_focus
+        )
+        if not route_changed and previous_focus in keys:
+            semantic = previous_focus
+        else:
+            semantic = self.focus.target(
+                route,
+                keys,
+                preferred,
+                previous_keys if not route_changed else (),
             )
-            if not route_changed and previous_focus in keys:
-                semantic = previous_focus
-            else:
-                semantic = self.focus.target(
-                    route,
-                    keys,
-                    preferred,
-                    previous_keys if not route_changed else (),
-                )
-            if semantic:
-                self._queue_focus_semantic(semantic)
-            elif self.application.state.busy_operation:
-                self._queue_focus_control(49)
-            elif self.getProperty("CanGoBack") == "true":
-                self._queue_focus_control(BACK_BUTTON)
-            elif self.getProperty("HelpVisible") == "true":
-                self._queue_focus_control(HELP_BUTTON)
-            elif active_stage:
-                self._queue_focus_control(GAME_SETTINGS)
-        self._last_route = route
-        # Window properties do not themselves dirty a Python WindowXML on Kodi 21.
-        # Defer the full-surface invalidation until the next add-on loop iteration so
-        # Kodi's GUI thread never paints a partially applied property snapshot.
-        self._schedule_repaint()
+        if semantic:
+            self._queue_focus_semantic(semantic)
+        elif self.application.state.busy_operation:
+            self._queue_focus_control(49)
+        elif self.getProperty("CanGoBack") == "true":
+            self._queue_focus_control(BACK_BUTTON)
+        elif self.getProperty("HelpVisible") == "true":
+            self._queue_focus_control(HELP_BUTTON)
+        elif active_stage:
+            self._queue_focus_control(GAME_SETTINGS)
+
 
     def _should_force_couch_focus(self, view) -> bool:
         """Apply the Couch stage's semantic target after each completed action.
@@ -696,24 +733,29 @@ class MainWindow(xbmcgui.WindowXMLDialog):
         self._home_actions = {}
         home_items = view.items if view.view_mode == "home" else ()
         for index, control_id in enumerate(HOME_CONTROLS):
-            current = home_items[index] if index < len(home_items) else None
-            suffix = index + 1
-            self.setProperty(f"Home{suffix}Visible", "true" if current else "false")
-            self.setProperty(f"Home{suffix}Label", self._resolve(current.label) if current else "")
-            self.setProperty(
-                f"Home{suffix}Secondary",
-                self._resolve(current.secondary) if current else "",
-            )
-            self.setProperty(
-                f"Home{suffix}Enabled",
-                "true" if current and current.enabled else "false",
-            )
-            self.setProperty(
-                f"Home{suffix}Danger",
-                "true" if current and current.danger else "false",
-            )
-            if current:
-                self._home_actions[control_id] = (current.key, current.enabled)
+            self._render_home_control(index, control_id, home_items)
+
+
+    def _render_home_control(self, index, control_id, home_items):
+        current = home_items[index] if index < len(home_items) else None
+        suffix = index + 1
+        self.setProperty(f"Home{suffix}Visible", "true" if current else "false")
+        self.setProperty(f"Home{suffix}Label", self._resolve(current.label) if current else "")
+        self.setProperty(
+            f"Home{suffix}Secondary",
+            self._resolve(current.secondary) if current else "",
+        )
+        self.setProperty(
+            f"Home{suffix}Enabled",
+            "true" if current and current.enabled else "false",
+        )
+        self.setProperty(
+            f"Home{suffix}Danger",
+            "true" if current and current.danger else "false",
+        )
+        if current:
+            self._home_actions[control_id] = (current.key, current.enabled)
+
 
     def _render_pagination(self, pagination) -> None:
         self._pagination_actions = {}
@@ -784,25 +826,30 @@ class MainWindow(xbmcgui.WindowXMLDialog):
             has_voters=bool(view.voters),
         )
         for control_id in ALL_LISTS:
-            values = ()
-            if control_id == item_control:
-                values = view.items
-            elif control_id == action_control:
-                values = view.actions
-            elif control_id == ROSTER_LIST:
-                values = view.roster if view.view_mode == "card" else ()
-            elif control_id == LOBBY_ROSTER_LIST:
-                values = view.roster if view.view_mode == "lobby" else ()
-            elif control_id == VOTER_LIST:
-                values = view.voters
-            elif control_id == RESULT_YES_LIST:
-                values = view.result_yes_players
-            elif control_id == RESULT_NO_LIST:
-                values = view.result_no_players
-            self._replace_items(control_id, values)
+            self._render_list_control(control_id, view, item_control, action_control)
         self.setProperty("HasItems", "true" if view.items and item_control else "false")
         self.setProperty("HasActions", "true" if view.actions else "false")
         self.setProperty("HasRoster", "true" if view.roster else "false")
+
+
+    def _render_list_control(self, control_id, view, item_control, action_control):
+        values = ()
+        if control_id == item_control:
+            values = view.items
+        elif control_id == action_control:
+            values = view.actions
+        elif control_id == ROSTER_LIST:
+            values = view.roster if view.view_mode == "card" else ()
+        elif control_id == LOBBY_ROSTER_LIST:
+            values = view.roster if view.view_mode == "lobby" else ()
+        elif control_id == VOTER_LIST:
+            values = view.voters
+        elif control_id == RESULT_YES_LIST:
+            values = view.result_yes_players
+        elif control_id == RESULT_NO_LIST:
+            values = view.result_no_players
+        self._replace_items(control_id, values)
+
 
     def _layout_action_control(
         self,
@@ -948,6 +995,13 @@ class MainWindow(xbmcgui.WindowXMLDialog):
                 self._focused_control_id = HELP_BUTTON
                 return True
             return False
+        return (
+            self._focus_list_semantic(semantic)
+            or self._focus_action_semantic(semantic, self._home_actions)
+            or self._focus_action_semantic(semantic, self._pagination_actions)
+        )
+
+    def _focus_list_semantic(self, semantic: str) -> bool:
         for control_id in INTERACTIVE_LISTS:
             for index, current in enumerate(self._items[control_id]):
                 if current.key == semantic and current.enabled:
@@ -960,13 +1014,10 @@ class MainWindow(xbmcgui.WindowXMLDialog):
                     if selected and selected.getProperty("ActionId") == semantic:
                         self._clear_pending_focus()
                     return True
-        for control_id, action_data in self._home_actions.items():
-            if action_data[0] == semantic and action_data[1]:
-                self.setFocusId(control_id)
-                self._focused_control_id = control_id
-                self._schedule_repaint()
-                return True
-        for control_id, action_data in self._pagination_actions.items():
+        return False
+
+    def _focus_action_semantic(self, semantic: str, actions) -> bool:
+        for control_id, action_data in actions.items():
             if action_data[0] == semantic and action_data[1]:
                 self.setFocusId(control_id)
                 self._focused_control_id = control_id

@@ -47,7 +47,7 @@ function batches<T>(values: readonly T[]): T[][] {
 }
 
 async function acquireCatalogLock(queryRunner: QueryRunner): Promise<void> {
-    const type = queryRunner.connection.options.type;
+    const type = queryRunner.dataSource.options.type;
     if (type !== "mariadb" && type !== "mysql") return;
     const rows = (await queryRunner.query("SELECT GET_LOCK(?, 30) AS acquired", [
         CATALOG_LOCK_NAME,
@@ -56,7 +56,7 @@ async function acquireCatalogLock(queryRunner: QueryRunner): Promise<void> {
 }
 
 async function releaseCatalogLock(queryRunner: QueryRunner): Promise<void> {
-    const type = queryRunner.connection.options.type;
+    const type = queryRunner.dataSource.options.type;
     if (type !== "mariadb" && type !== "mysql") return;
     await queryRunner.query("SELECT RELEASE_LOCK(?)", [CATALOG_LOCK_NAME]);
 }
@@ -89,7 +89,7 @@ async function decide(
         }
         return "UNCHANGED";
     }
-    const reusedVersion = releases.find(
+    const reusedVersion = releases.some(
         ({ catalogVersion }) => catalogVersion === artifact.catalog.catalogVersion,
     );
     if (reusedVersion) {

@@ -24,6 +24,7 @@ import type {
     RoomPresence,
     RoomSnapshot,
     ServerInfoPayload,
+    ServerEnvelope,
 } from "../../../packages/protocol";
 
 export type Role = ClientRole;
@@ -187,10 +188,11 @@ export class RoomSocket {
     private terminalReason: "LEFT" | "RECONNECT_EXPIRED" = "LEFT";
     private pendingCardReplacement: "SKIPPED" | "VETOED" | null = null;
     constructor(
-        private joined: Join,
-        private changed: () => void,
-        private left: (reason: "LEFT" | "ROOM_CLOSED" | "RECONNECT_EXPIRED") => void = () =>
-            undefined,
+        private readonly joined: Join,
+        private readonly changed: () => void,
+        private readonly left: (
+            reason: "LEFT" | "ROOM_CLOSED" | "RECONNECT_EXPIRED",
+        ) => void = () => undefined,
         private readonly webSocketPath = "/ws",
     ) {
         this.role = joined.role;
@@ -249,42 +251,7 @@ export class RoomSocket {
             if (!message) return;
             if (message.type === "server.pong") return;
             if (message.type === "room.snapshot") {
-                const next = message.payload;
-                const previousParticipantIds = new Set(
-                    this.snapshot?.participants.map(({ id }) => id) ?? [],
-                );
-                const previousCardId = this.snapshot?.session?.currentCard?.id;
-                const nextCardId = next.session?.currentCard?.id;
-                const previousRevision = this.snapshot?.settings.revision;
-                if (
-                    previousRevision !== undefined &&
-                    next.settings.revision > previousRevision &&
-                    next.settings.updatedByParticipantId !== this.joined.participantId
-                ) {
-                    this.settingsNotice = messages.room.settingsChanged;
-                    this.settingsNoticeId++;
-                }
-                if (this.pendingCardReplacement && nextCardId) {
-                    this.cardReplacementReason = this.pendingCardReplacement;
-                    this.cardReplacementSequence++;
-                    this.pendingCardReplacement = null;
-                } else if (previousCardId !== nextCardId) {
-                    this.cardReplacementReason = "";
-                }
-                if (this.snapshot?.session && next.session?.state !== "ENDED") {
-                    const joinedPlayers = next.participants.filter(
-                        ({ id, role }) => role === "PLAYER" && !previousParticipantIds.has(id),
-                    );
-                    if (joinedPlayers.length) {
-                        this.roomNotice = messages.room.participantJoined(
-                            joinedPlayers.map(({ displayName }) => displayName).join(", "),
-                        );
-                        this.roomNoticeId++;
-                    }
-                }
-                this.snapshot = next;
-                this.error = "";
-                this.errorCode = "";
+                this.applySnapshot(message);
             }
             if (message.type === "room.presence") {
                 this.presence = message.payload.connected;
@@ -292,23 +259,7 @@ export class RoomSocket {
             if (message.type === "room.roleChanged") {
                 this.role = message.payload.role;
             }
-            if (message.type === "room.participantLeft") {
-                const payload = message.payload;
-                this.roomNotice =
-                    payload.reason === "DISCONNECT_EXPIRED"
-                        ? messages.room.participantRemoved(payload.displayName)
-                        : messages.room.participantLeft(payload.displayName);
-                this.roomNoticeId++;
-            }
-            if (message.type === "session.cardReplaced") {
-                const payload = message.payload;
-                this.pendingCardReplacement = payload.reason;
-                this.roomNotice =
-                    payload.reason === "SKIPPED"
-                        ? messages.room.cardSkipped
-                        : messages.room.cardVetoed;
-                this.roomNoticeId++;
-            }
+            this.applyRoomNotice(message);
             if (message.type === "server.hello") {
                 const payload = message.payload;
                 this.authenticated = payload.participantId === this.joined.participantId;
@@ -351,6 +302,63 @@ export class RoomSocket {
             this.scheduleReconnect();
         };
     }
+    private applyRoomNotice(message: ServerEnvelope) {
+        if (message.type === "room.participantLeft") {
+            const payload = message.payload;
+            this.roomNotice =
+                payload.reason === "DISCONNECT_EXPIRED"
+                    ? messages.room.participantRemoved(payload.displayName)
+                    : messages.room.participantLeft(payload.displayName);
+            this.roomNoticeId++;
+        }
+        if (message.type === "session.cardReplaced") {
+            const payload = message.payload;
+            this.pendingCardReplacement = payload.reason;
+            this.roomNotice =
+                payload.reason === "SKIPPED" ? messages.room.cardSkipped : messages.room.cardVetoed;
+            this.roomNoticeId++;
+        }
+    }
+
+    private applySnapshot(message: Extract<ServerEnvelope, { type: "room.snapshot" }>) {
+        const next = message.payload;
+        const previousParticipantIds = new Set(
+            this.snapshot?.participants.map(({ id }) => id) ?? [],
+        );
+        const previousCardId = this.snapshot?.session?.currentCard?.id;
+        const nextCardId = next.session?.currentCard?.id;
+        const previousRevision = this.snapshot?.settings.revision;
+        if (
+            previousRevision !== undefined &&
+            next.settings.revision > previousRevision &&
+            next.settings.updatedByParticipantId !== this.joined.participantId
+        ) {
+            this.settingsNotice = messages.room.settingsChanged;
+            this.settingsNoticeId++;
+        }
+        if (this.pendingCardReplacement && nextCardId) {
+            this.cardReplacementReason = this.pendingCardReplacement;
+            this.cardReplacementSequence++;
+            this.pendingCardReplacement = null;
+        } else if (previousCardId !== nextCardId) {
+            this.cardReplacementReason = "";
+        }
+        if (this.snapshot?.session && next.session?.state !== "ENDED") {
+            const joinedPlayers = next.participants.filter(
+                ({ id, role }) => role === "PLAYER" && !previousParticipantIds.has(id),
+            );
+            if (joinedPlayers.length) {
+                this.roomNotice = messages.room.participantJoined(
+                    joinedPlayers.map(({ displayName }) => displayName).join(", "),
+                );
+                this.roomNoticeId++;
+            }
+        }
+        this.snapshot = next;
+        this.error = "";
+        this.errorCode = "";
+    }
+
     private startHeartbeat(socket: WebSocket): void {
         this.stopHeartbeat();
         this.heartbeat = window.setInterval(() => {
@@ -425,14 +433,14 @@ export class RoomSocket {
         if (this.connectTimeout) window.clearTimeout(this.connectTimeout);
         this.connectTimeout = undefined;
     }
-    private browserOffline = (): void => {
+    private readonly browserOffline = (): void => {
         if (this.socket) this.reconnectFrom(this.socket);
         else {
             this.markReconnecting("OFFLINE");
             this.scheduleReconnect();
         }
     };
-    private browserOnline = (): void => {
+    private readonly browserOnline = (): void => {
         if (this.authenticated || this.leaving || this.disposed) return;
         if (["STOPPED", "EXHAUSTED"].includes(this.reconnectPhase)) return;
         this.clearRetryTimers();

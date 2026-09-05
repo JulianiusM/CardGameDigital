@@ -1,6 +1,6 @@
 import { MESSAGE_KEYS } from "../../../../packages/localization/keys";
 import type { NextFunction, Request, Response } from "express";
-import { ZodError } from "zod";
+import { z, ZodError } from "zod";
 import { APIError, ExpectedError, ValidationError } from "../modules/lib/errors";
 import settings from "../modules/settings";
 import { configuredErrorLogFields, logEvent } from "../modules/structuredLogger";
@@ -48,29 +48,32 @@ export function wrapErrorApi(
             settings.value.logLevel,
         );
     }
+    const locale = detectLocale(request.get("accept-language"));
+    if (validation) {
+        response.status(status).json({
+            error: {
+                code: "VALIDATION_ERROR",
+                message: translate(locale, MESSAGE_KEYS.REQUEST_INVALID),
+                data: z.flattenError(error),
+            },
+        });
+        return;
+    }
+    if (serverFailure) {
+        response.status(status).json({
+            error: {
+                code: "INTERNAL_ERROR",
+                message: translate(locale, MESSAGE_KEYS.REQUEST_INTERNAL),
+                data: {},
+            },
+        });
+        return;
+    }
     response.status(status).json({
         error: {
-            code: validation
-                ? "VALIDATION_ERROR"
-                : serverFailure
-                  ? "INTERNAL_ERROR"
-                  : ((error as { code?: string }).code ?? "INTERNAL_ERROR"),
-            message: validation
-                ? translate(
-                      detectLocale(request.get("accept-language")),
-                      MESSAGE_KEYS.REQUEST_INVALID,
-                  )
-                : serverFailure
-                  ? translate(
-                        detectLocale(request.get("accept-language")),
-                        MESSAGE_KEYS.REQUEST_INTERNAL,
-                    )
-                  : translateError(detectLocale(request.get("accept-language")), error.message),
-            data: validation
-                ? error.flatten()
-                : expected && !serverFailure
-                  ? (error.data ?? {})
-                  : {},
+            code: (error as { code?: string }).code ?? "INTERNAL_ERROR",
+            message: translateError(locale, error.message),
+            data: expected ? (error.data ?? {}) : {},
         },
     });
 }

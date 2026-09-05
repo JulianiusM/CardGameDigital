@@ -107,7 +107,7 @@ class ReducerTests(unittest.TestCase):
             application.effects.submit = submitted_effects.append
             application.state = AppState(
                 route=Route.SETUP_MODE,
-                setup=initial_setup("COUCH", (PROFILE,), "en-GB", True),
+                setup=initial_setup("COUCH", "en-GB", True),
                 profiles=(PROFILE,),
                 servers=(SERVER,),
                 selected_server_id=SERVER.server_id,
@@ -150,7 +150,7 @@ class ReducerTests(unittest.TestCase):
             application.state = AppState(
                 route=Route.SETUP_PROFILE,
                 setup=replace(
-                    initial_setup("COUCH", (adult_profile,), "en-GB", True),
+                    initial_setup("COUCH", "en-GB", True),
                     mode="NEVER_HAVE_I_EVER",
                 ),
                 profiles=(adult_profile,),
@@ -356,7 +356,7 @@ class ReducerTests(unittest.TestCase):
 
     def test_new_game_returns_to_unselected_mode_and_preserves_players(self) -> None:
         setup = replace(
-            initial_setup("COUCH", (PROFILE,), "en-GB", True),
+            initial_setup("COUCH", "en-GB", True),
             mode="NEVER_HAVE_I_EVER",
             players=("Alex", "Sam"),
             profile_id="PROFILE_FRIENDS",
@@ -387,7 +387,7 @@ class ReducerTests(unittest.TestCase):
             application.state = AppState(
                 route=Route.SETUP_GROUP_SELECT,
                 setup=replace(
-                    initial_setup("COUCH", (PROFILE,), "en-GB", True),
+                    initial_setup("COUCH", "en-GB", True),
                     profile_id="PROFILE_FRIENDS",
                     adult_content_confirmed=True,
                 ),
@@ -432,7 +432,7 @@ class ReducerTests(unittest.TestCase):
             application.state = AppState(
                 route=Route.HOME,
                 setup=replace(
-                    initial_setup("COUCH", (custom_profile,), "en-GB", True),
+                    initial_setup("COUCH", "en-GB", True),
                     profile_id="PROFILE_CUSTOM",
                     adult_content_confirmed=True,
                     players=("Previous player",),
@@ -1283,7 +1283,7 @@ class ReducerTests(unittest.TestCase):
         state = AppState(
             route=Route.COUCH_GAME,
             couch_snapshot=snapshot,
-            setup=initial_setup("COUCH", (), "en-GB", False),
+            setup=initial_setup("COUCH", "en-GB", False),
             recovery=RecoveryEnvelope(
                 1,
                 SERVER.server_id,
@@ -1379,7 +1379,7 @@ class ReducerTests(unittest.TestCase):
             application = Application(directory)
             application.state = AppState(
                 route=Route.SETUP_PROFILE,
-                setup=initial_setup("HOST", (PROFILE,), "en-GB", False),
+                setup=initial_setup("HOST", "en-GB", False),
                 profiles=(PROFILE,),
             )
             application.activate("setup:profile:PROFILE_FRIENDS")
@@ -1398,7 +1398,7 @@ class ReducerTests(unittest.TestCase):
             application = Application(directory)
             application.state = AppState(
                 route=Route.SETUP_PROFILE,
-                setup=initial_setup("HOST", (adult_profile,), "en-GB", False),
+                setup=initial_setup("HOST", "en-GB", False),
                 profiles=(adult_profile,),
             )
             application.activate("setup:profile:PROFILE_SPICY")
@@ -1421,7 +1421,7 @@ class ReducerTests(unittest.TestCase):
     def test_intensity_choices_do_not_mutate_the_other_boundary(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             application = Application(directory)
-            setup = initial_setup("COUCH", (PROFILE,), "en-GB", True)
+            setup = initial_setup("COUCH", "en-GB", True)
             application.state = AppState(route=Route.SETUP_INTENSITY, setup=setup)
             application.activate("setup:option:open:config:maximumIntensity")
             application.activate("setup:option:set:2")
@@ -1442,7 +1442,7 @@ class ReducerTests(unittest.TestCase):
             application = Application(directory)
             ui = StubUi(number="999")
             application.attach_ui(ui)
-            setup = initial_setup("COUCH", (PROFILE,), "en-GB", True)
+            setup = initial_setup("COUCH", "en-GB", True)
             application.state = AppState(route=Route.SETUP_INTENSITY, setup=setup)
             original = setup.configuration["intensityProgressionInterval"]
             application.activate("setup:value:intensityProgressionInterval")
@@ -1458,7 +1458,7 @@ class ReducerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             application = Application(directory)
             setup = replace(
-                initial_setup("COUCH", (PROFILE,), "en-GB", True),
+                initial_setup("COUCH", "en-GB", True),
                 card_fallback_enabled=True,
                 card_fallback_locales=(),
             )
@@ -1480,7 +1480,7 @@ class ReducerTests(unittest.TestCase):
     def test_enabling_empty_fallback_opens_language_choice_without_invalid_preview(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             application = Application(directory)
-            setup = initial_setup("COUCH", (PROFILE,), "en-GB", True)
+            setup = initial_setup("COUCH", "en-GB", True)
             application.state = AppState(
                 route=Route.SETUP_CARD_LANGUAGE,
                 setup=setup,
@@ -1524,7 +1524,7 @@ class ReducerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             application = Application(directory)
             setup = replace(
-                initial_setup("COUCH", (PROFILE,), "en-GB", True),
+                initial_setup("COUCH", "en-GB", True),
                 card_policy={
                     "scopeDefault": {},
                     "conditionalRules": [rule],
@@ -1573,7 +1573,7 @@ class ReducerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             application = Application(directory)
             setup = replace(
-                initial_setup("COUCH", (PROFILE,), "en-GB", True),
+                initial_setup("COUCH", "en-GB", True),
                 players=("Alex", "Sam", "Jo"),
                 selected_player_index=1,
             )
@@ -1595,7 +1595,7 @@ class ReducerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             application = Application(directory)
             setup = replace(
-                initial_setup("COUCH", (PROFILE,), "en-GB", True),
+                initial_setup("COUCH", "en-GB", True),
                 card_fallback_enabled=True,
                 card_fallback_locales=("de-DE",),
                 selected_fallback_locale="de-DE",
@@ -1648,7 +1648,7 @@ class ReducerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             application = Application(directory)
             setup = replace(
-                initial_setup("COUCH", (PROFILE,), "en-GB", True),
+                initial_setup("COUCH", "en-GB", True),
                 card_policy={
                     "scopeDefault": {},
                     "conditionalRules": [rule],
@@ -1675,7 +1675,7 @@ class ReducerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             application = Application(directory)
             setup = replace(
-                initial_setup("COUCH", (PROFILE,), "en-GB", True),
+                initial_setup("COUCH", "en-GB", True),
                 card_search_results=({"id": card_id, "text": card_text},),
                 card_search_total=1,
             )

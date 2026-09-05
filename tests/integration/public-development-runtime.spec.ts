@@ -3,7 +3,10 @@ import os from "node:os";
 import path from "node:path";
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { AppDataSource, initDataSource } from "../../apps/server/src/modules/database/dataSource";
+import {
+    getAppDataSource,
+    initDataSource,
+} from "../../apps/server/src/modules/database/dataSource";
 import { DataSpace } from "../../packages/persistence/entities/user/DataSpace";
 import settings from "../../apps/server/src/modules/settings";
 
@@ -40,7 +43,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-    if (AppDataSource.isInitialized) await AppDataSource.destroy();
+    if (getAppDataSource().isInitialized) await getAppDataSource().destroy();
     fs.rmSync(directory, { recursive: true, force: true });
     for (const [key, value] of originalEnvironment) {
         if (value === undefined) delete process.env[key];
@@ -55,7 +58,7 @@ describe("public development runtime", () => {
             publicRuntimeSecurity: "development",
             dbType: "sqlite",
         });
-        await expect(AppDataSource.getRepository(DataSpace).count()).resolves.toBe(0);
+        await expect(getAppDataSource().getRepository(DataSpace).count()).resolves.toBe(0);
         const locales = await request(app).get("/api/v1/catalog/locales").expect(200);
         expect(locales.body.locales).toEqual(
             expect.arrayContaining([

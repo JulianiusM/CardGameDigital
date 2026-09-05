@@ -572,13 +572,15 @@ for (const [family, palette] of Object.entries(GOLDEN_MISCHIEF_ATMOSPHERES)) {
         const espresso = rgb(GOLDEN_MISCHIEF_COLORS.espresso);
         const startBase = rgb(palette.start);
         const endBase = rgb(palette.end);
+        const startPaperStrength = intensity === 1 ? 0.58 : 0.8;
+        const endPaperStrength = intensity === 1 ? 0.52 : 0.76;
         const start =
             intensity < 3
-                ? blend(paper, startBase, intensity === 1 ? 0.58 : 0.8)
+                ? blend(paper, startBase, startPaperStrength)
                 : blend(startBase, espresso, Math.max(0, intensity - 3) * 0.07);
         const end =
             intensity < 3
-                ? blend(paper, endBase, intensity === 1 ? 0.52 : 0.76)
+                ? blend(paper, endBase, endPaperStrength)
                 : blend(endBase, espresso, Math.max(0, intensity - 3) * 0.09);
         const motif = rgb(palette.motif);
         const filename = `partycard-tv-atmosphere-${family.toLowerCase().replaceAll("_", "-")}-${intensity}.png`;

@@ -109,103 +109,100 @@ function extractExportsByStrategy(
     const results: { name: string; isDefault: boolean }[] = [];
 
     // Normalize spacing a bit
-    const code = tsCode.replace(/\r\n/g, "\n");
+    const code = tsCode.replaceAll("\r\n", "\n");
 
     const add = (name: string, isDefault = false) => {
         if (name) results.push({ name, isDefault });
     };
 
-    switch (strategy) {
-        case "interface:MigrationInterface": {
-            // Named export: export class Foo implements MigrationInterface
-            const reNamed = /export\s+class\s+([A-Za-z0-9_]+)\s+implements\s+MigrationInterface\b/g;
-            // Default export: export default class Foo implements MigrationInterface
-            const reDefault =
-                /export\s+default\s+class\s+([A-Za-z0-9_]+)\s+implements\s+MigrationInterface\b/g;
+    collectMatchingExports();
 
-            let m: RegExpExecArray | null;
-            while ((m = reNamed.exec(code))) add(m[1], false);
-            while ((m = reDefault.exec(code))) add(m[1], true);
-            break;
-        }
+    return results;
 
-        case "decorator:Entity": {
-            // Heuristic: find classes with @Entity decorator
-            // Matches e.g.:
-            //   @Entity() export class User { ... }
-            //   @Entity('table') export default class User { ... }
-            // Two passes: default and named
-            const reDefault = /@Entity\s*\([^)]*\)\s*export\s+default\s+class\s+([A-Za-z0-9_]+)/g;
-            const reNamed = /@Entity\s*\([^)]*\)\s*export\s+class\s+([A-Za-z0-9_]+)/g;
-            const reDefaultNoArg =
-                /@Entity\s*\(\s*\)\s*export\s+default\s+class\s+([A-Za-z0-9_]+)/g;
-            const reNamedNoArg = /@Entity\s*\(\s*\)\s*export\s+class\s+([A-Za-z0-9_]+)/g;
-
-            let m: RegExpExecArray | null;
-            while ((m = reDefault.exec(code))) add(m[1], true);
-            while ((m = reNamed.exec(code))) add(m[1], false);
-            while ((m = reDefaultNoArg.exec(code))) add(m[1], true);
-            while ((m = reNamedNoArg.exec(code))) add(m[1], false);
-
-            // Fallback: if file imports Entity and has export class X { ... }, accept it
-            if (
-                results.length === 0 &&
-                /\bfrom\s+["']typeorm["']/.test(code) &&
-                /\bEntity\b/.test(code)
-            ) {
-                const reAnyExport = /export\s+(?:default\s+)?class\s+([A-Za-z0-9_]+)/g;
-                let n: RegExpExecArray | null;
-                while ((n = reAnyExport.exec(code)))
-                    add(n[1], /export\s+default\s+class/.test(n[0]));
+    function collectMatchingExports() {
+        switch (strategy) {
+            case "interface:MigrationInterface": {
+                collectMigrationExports();
+                break;
             }
 
-            break;
-        }
-
-        case "decorator:EventSubscriber": {
-            const reDefault =
-                /@EventSubscriber\s*\([^)]*\)\s*export\s+default\s+class\s+([A-Za-z0-9_]+)/g;
-            const reNamed = /@EventSubscriber\s*\([^)]*\)\s*export\s+class\s+([A-Za-z0-9_]+)/g;
-            const reDefaultNoArg =
-                /@EventSubscriber\s*\(\s*\)\s*export\s+default\s+class\s+([A-Za-z0-9_]+)/g;
-            const reNamedNoArg = /@EventSubscriber\s*\(\s*\)\s*export\s+class\s+([A-Za-z0-9_]+)/g;
-
-            let m: RegExpExecArray | null;
-            while ((m = reDefault.exec(code))) add(m[1], true);
-            while ((m = reNamed.exec(code))) add(m[1], false);
-            while ((m = reDefaultNoArg.exec(code))) add(m[1], true);
-            while ((m = reNamedNoArg.exec(code))) add(m[1], false);
-            break;
-        }
-
-        case "interface:EntitySubscriberInterface": {
-            const reNamed =
-                /export\s+class\s+([A-Za-z0-9_]+)\s+implements\s+EntitySubscriberInterface\b/g;
-            const reDefault =
-                /export\s+default\s+class\s+([A-Za-z0-9_]+)\s+implements\s+EntitySubscriberInterface\b/g;
-            let m: RegExpExecArray | null;
-            while ((m = reNamed.exec(code))) add(m[1], false);
-            while ((m = reDefault.exec(code))) add(m[1], true);
-
-            // Fallback to decorator form:
-            if (results.length === 0) {
-                const reEventSubNamed = /@EventSubscriber[\s\S]*?export\s+class\s+([A-Za-z0-9_]+)/g;
-                const reEventSubDefault =
-                    /@EventSubscriber[\s\S]*?export\s+default\s+class\s+([A-Za-z0-9_]+)/g;
-                while ((m = reEventSubNamed.exec(code))) add(m[1], false);
-                while ((m = reEventSubDefault.exec(code))) add(m[1], true);
+            case "decorator:Entity": {
+                collectEntityExports();
+                break;
             }
-            break;
+
+            case "decorator:EventSubscriber": {
+                collectSubscriberDecorators();
+                break;
+            }
+
+            case "interface:EntitySubscriberInterface": {
+                collectSubscriberInterfaces();
+                break;
+            }
+        }
+    }
+    function collectMigrationExports() {
+        const reNamed = /export\s+class\s+(\w+)\s+implements\s+MigrationInterface\b/g;
+        const reDefault = /export\s+default\s+class\s+(\w+)\s+implements\s+MigrationInterface\b/g;
+        let m: RegExpExecArray | null;
+        while ((m = reNamed.exec(code))) add(m[1], false);
+        while ((m = reDefault.exec(code))) add(m[1], true);
+    }
+
+    function collectEntityExports() {
+        const reDefault = /@Entity\s*\([^)]*\)\s*export\s+default\s+class\s+(\w+)/g;
+        const reNamed = /@Entity\s*\([^)]*\)\s*export\s+class\s+(\w+)/g;
+        const reDefaultNoArg = /@Entity\s*\(\s*\)\s*export\s+default\s+class\s+(\w+)/g;
+        const reNamedNoArg = /@Entity\s*\(\s*\)\s*export\s+class\s+(\w+)/g;
+        let m: RegExpExecArray | null;
+        while ((m = reDefault.exec(code))) add(m[1], true);
+        while ((m = reNamed.exec(code))) add(m[1], false);
+        while ((m = reDefaultNoArg.exec(code))) add(m[1], true);
+        while ((m = reNamedNoArg.exec(code))) add(m[1], false);
+        if (
+            results.length === 0 &&
+            /\bfrom\s+["']typeorm["']/.test(code) &&
+            /\bEntity\b/.test(code)
+        ) {
+            const reAnyExport = /export\s+(?:default\s+)?class\s+(\w+)/g;
+            let n: RegExpExecArray | null;
+            while ((n = reAnyExport.exec(code))) add(n[1], /export\s+default\s+class/.test(n[0]));
         }
     }
 
-    return results;
+    function collectSubscriberDecorators() {
+        const reDefault = /@EventSubscriber\s*\([^)]*\)\s*export\s+default\s+class\s+(\w+)/g;
+        const reNamed = /@EventSubscriber\s*\([^)]*\)\s*export\s+class\s+(\w+)/g;
+        const reDefaultNoArg = /@EventSubscriber\s*\(\s*\)\s*export\s+default\s+class\s+(\w+)/g;
+        const reNamedNoArg = /@EventSubscriber\s*\(\s*\)\s*export\s+class\s+(\w+)/g;
+        let m: RegExpExecArray | null;
+        while ((m = reDefault.exec(code))) add(m[1], true);
+        while ((m = reNamed.exec(code))) add(m[1], false);
+        while ((m = reDefaultNoArg.exec(code))) add(m[1], true);
+        while ((m = reNamedNoArg.exec(code))) add(m[1], false);
+    }
+
+    function collectSubscriberInterfaces() {
+        const reNamed = /export\s+class\s+(\w+)\s+implements\s+EntitySubscriberInterface\b/g;
+        const reDefault =
+            /export\s+default\s+class\s+(\w+)\s+implements\s+EntitySubscriberInterface\b/g;
+        let m: RegExpExecArray | null;
+        while ((m = reNamed.exec(code))) add(m[1], false);
+        while ((m = reDefault.exec(code))) add(m[1], true);
+        if (results.length === 0) {
+            const reEventSubNamed = /@EventSubscriber[\s\S]*?export\s+class\s+(\w+)/g;
+            const reEventSubDefault = /@EventSubscriber[\s\S]*?export\s+default\s+class\s+(\w+)/g;
+            while ((m = reEventSubNamed.exec(code))) add(m[1], false);
+            while ((m = reEventSubDefault.exec(code))) add(m[1], true);
+        }
+    }
 }
 
 function toImportPath(fromFile: string, targetFile: string): string {
     const rel = path
         .relative(path.dirname(fromFile), targetFile)
-        .replace(/\\/g, "/")
+        .replaceAll("\\", "/")
         .replace(/\.(ts|js)x?$/, ""); // drop extension
     return rel.startsWith(".") ? rel : "./" + rel;
 }

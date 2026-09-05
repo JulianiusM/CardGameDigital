@@ -1,7 +1,6 @@
 import { MESSAGE_KEYS } from "../localization/keys";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import {
-    CARD_TYPES,
     GameSession,
     type DareTypeId,
     type OperationalFlag,
@@ -228,19 +227,7 @@ export class RoomService {
               }
             | undefined;
         if (options.idempotency) {
-            if (!protection) {
-                this.lifecycle.observability.roomCreateIdempotency("PROTECTION_UNAVAILABLE", null);
-                throw Object.assign(new Error(MESSAGE_KEYS.ROOM_BOOTSTRAP_UNSUPPORTED), {
-                    code: "ROOM_BOOTSTRAP_MODE_UNSUPPORTED",
-                });
-            }
-            idempotency = {
-                principalScopeDigest: protection.principalScopeDigest(
-                    options.idempotency.principalScope,
-                ),
-                keyDigest: protection.keyDigest(options.idempotency.key),
-                requestFingerprint: protection.requestFingerprint(options.idempotency.requestBody),
-            };
+            idempotency = this.protectRoomCreate(protection, options.idempotency);
             const replay = await this.repository.findRoomCreateIdempotency(
                 idempotency.principalScopeDigest,
                 ROOM_CREATE_ROUTE_KEY,
@@ -255,14 +242,7 @@ export class RoomService {
                 };
             }
         }
-        if (
-            bootstrapMode === "DISPLAY_WAITING_FOR_HOST" &&
-            !this.lifecycle.displayBootstrapEnabled
-        ) {
-            throw Object.assign(new Error(MESSAGE_KEYS.ROOM_BOOTSTRAP_UNSUPPORTED), {
-                code: "ROOM_BOOTSTRAP_MODE_UNSUPPORTED",
-            });
-        }
+        this.validateBootstrapMode(bootstrapMode);
         const settings = normalizeRoomGameSettings(
             initialSettings ?? {
                 ...defaultRoomGameSettings(),
@@ -270,13 +250,7 @@ export class RoomService {
             },
         );
         await this.validateRoomSettings(settings);
-        let code = "";
-        do {
-            code = Array.from(
-                randomBytes(6),
-                (byte) => CODE_ALPHABET[byte % CODE_ALPHABET.length],
-            ).join("");
-        } while (await this.repository.roomCodeExists(code));
+        const code = await this.createUnusedRoomCode();
         const roomId = randomUUID();
         const participantId = randomUUID();
         const credential = randomBytes(32).toString("base64url");
@@ -384,6 +358,45 @@ export class RoomService {
         this.observeRoomCreate(response, bootstrapMode, "CREATED", createdAt);
         if (idempotency) this.lifecycle.observability.roomCreateIdempotency("CREATED", roomId);
         return { response, outcome: "CREATED" };
+    }
+
+    private validateBootstrapMode(bootstrapMode: string) {
+        if (
+            bootstrapMode === "DISPLAY_WAITING_FOR_HOST" &&
+            !this.lifecycle.displayBootstrapEnabled
+        ) {
+            throw Object.assign(new Error(MESSAGE_KEYS.ROOM_BOOTSTRAP_UNSUPPORTED), {
+                code: "ROOM_BOOTSTRAP_MODE_UNSUPPORTED",
+            });
+        }
+    }
+
+    private protectRoomCreate(
+        protection: RoomCreateIdempotencyProtection | null,
+        input: NonNullable<CreateRoomOptions["idempotency"]>,
+    ) {
+        if (!protection) {
+            this.lifecycle.observability.roomCreateIdempotency("PROTECTION_UNAVAILABLE", null);
+            throw Object.assign(new Error(MESSAGE_KEYS.ROOM_BOOTSTRAP_UNSUPPORTED), {
+                code: "ROOM_BOOTSTRAP_MODE_UNSUPPORTED",
+            });
+        }
+        return {
+            principalScopeDigest: protection.principalScopeDigest(input.principalScope),
+            keyDigest: protection.keyDigest(input.key),
+            requestFingerprint: protection.requestFingerprint(input.requestBody),
+        };
+    }
+
+    private async createUnusedRoomCode() {
+        let code = "";
+        do {
+            code = Array.from(
+                randomBytes(6),
+                (byte) => CODE_ALPHABET[byte % CODE_ALPHABET.length],
+            ).join("");
+        } while (await this.repository.roomCodeExists(code));
+        return code;
     }
 
     async joinRoom(
@@ -717,103 +730,19 @@ export class RoomService {
             return this.snapshot(roomId);
         }
         if (command.type === "command.closeRoom") {
-            const current = await this.loadSession(roomId);
-            if (current && current.state !== "ENDED") {
-                const proposed = GameSession.restore(current.toRuntimeState(), this.random);
-                proposed.end(command.revision ?? current.revision);
-                await this.repository.commitRuntime(
-                    roomId,
-                    current.revision,
-                    proposed.toRuntimeState(),
-                );
-                this.sessions.set(roomId, proposed);
-            }
-            const transition = {
-                type: "CLOSE",
-                roomId,
-                participantId: participant.id,
-                at: Date.now(),
-            } as const;
-            const result = await this.repository.applyLifecycleTransition(transition);
-            this.observeLifecycleTransition(transition, result);
-            const closedSnapshot = await this.snapshot(roomId);
-            this.sessions.delete(roomId);
-            return closedSnapshot;
+            return await this.closeRoom(roomId, command, participant);
         }
         if (command.type === "command.setDevicePlayers") {
-            if (await this.loadSession(roomId)) {
-                throw Object.assign(new Error(MESSAGE_KEYS.ROOM_DEVICE_PLAYERS_LOCKED), {
-                    code: "INVALID_GAME_STATE",
-                });
-            }
-            const participants = await this.repository.listParticipants(roomId);
-            const playerCount = participants.reduce((total, current) => {
-                if (current.role === "DISPLAY") return total;
-                const devicePlayerCount =
-                    current.id === participant.id
-                        ? command.payload.names.length
-                        : current.devicePlayers.length;
-                return total + 1 + devicePlayerCount;
-            }, 0);
-            if (playerCount > this.capacity.maximumPlayers) {
-                throw Object.assign(new Error(MESSAGE_KEYS.ROOM_FULL), { code: "ROOM_FULL" });
-            }
-            await this.repository.saveDevicePlayers(
-                participant.id,
-                command.payload.names.map((name) => ({ id: randomUUID(), name: name.trim() })),
-            );
-            return this.snapshot(roomId, participant);
+            return await this.setDevicePlayers(roomId, participant, command);
         }
         if (command.type === "command.transferHost") {
-            if (participant.role !== "HOST") {
-                throw Object.assign(new Error(MESSAGE_KEYS.ROOM_HOST_ONLY_TRANSFER), {
-                    code: "NOT_AUTHORIZED",
-                });
-            }
-            const transition = {
-                type: "TRANSFER_HOST",
-                roomId,
-                participantId: participant.id,
-                targetParticipantId: command.payload.participantId,
-                at: Date.now(),
-            } as const;
-            const result = await this.repository.applyLifecycleTransition(transition);
-            this.observeLifecycleTransition(transition, result);
-            return this.snapshot(roomId);
+            return await this.transferHost(participant, roomId, command);
         }
         if (command.type === "command.updateRoomSettings") {
-            if (await this.loadSession(roomId)) {
-                throw Object.assign(new Error(MESSAGE_KEYS.ROOM_SETTINGS_LOCKED), {
-                    code: "INVALID_GAME_STATE",
-                });
-            }
-            const settings = normalizeRoomGameSettings(command.payload.settings);
-            await this.validateRoomSettings(settings);
-            await this.repository.saveSettings(
-                roomId,
-                participant.id,
-                command.payload.expectedRevision,
-                settings,
-            );
-            return this.snapshot(roomId, participant);
+            return await this.updateRoomSettings(roomId, command, participant);
         }
         if (command.type === "command.setBoundaries") {
-            if (await this.loadSession(roomId)) {
-                throw Object.assign(new Error(MESSAGE_KEYS.ROOM_BOUNDARIES_LOCKED), {
-                    code: "INVALID_GAME_STATE",
-                });
-            }
-            const boundaries: PlayerBoundaries = {
-                disabledQuestionCategoryIds: new Set(
-                    command.payload.disabledQuestionCategoryIds as QuestionCategoryId[],
-                ),
-                disabledDareTypeIds: new Set(command.payload.disabledDareTypeIds as DareTypeId[]),
-                blockedOperationalFlags: new Set(
-                    command.payload.blockedOperationalFlags as OperationalFlag[],
-                ),
-            };
-            await this.repository.saveBoundaries(participant.id, boundaries);
-            return this.snapshot(roomId, participant);
+            return await this.setBoundaries(roomId, command, participant);
         }
         if (command.type === "command.resetSession") {
             const current = await this.loadSession(roomId);
@@ -827,80 +756,216 @@ export class RoomService {
             return this.snapshot(roomId, participant);
         }
         if (command.type === "command.startSession") {
-            if (await this.loadSession(roomId))
-                throw Object.assign(new Error(MESSAGE_KEYS.ROOM_SESSION_ALREADY_STARTED), {
-                    code: "INVALID_GAME_STATE",
-                });
-            const settings = await this.repository.loadSettings(roomId);
-            await this.validateRoomSettings(settings);
-            if (
-                profileRequiresAdultConfirmation(settings.profileId) &&
-                !settings.adultContentConfirmed
-            ) {
-                throw Object.assign(new Error(MESSAGE_KEYS.ROOM_ADULT_CONFIRMATION_REQUIRED), {
-                    code: "NOT_AUTHORIZED",
-                });
-            }
-            const profile = roomSettingsGameProfile(settings);
-            const participants = await this.repository.listParticipants(roomId);
-            const players = sessionPlayers(participants);
-            if (players.length < 2) {
-                throw Object.assign(new Error(MESSAGE_KEYS.ROOM_MINIMUM_PLAYERS), {
-                    code: "VALIDATION_ERROR",
-                });
-            }
-            const boundariesByPlayer = boundariesForSessionPlayers(
-                participants,
-                await this.repository.listBoundaries(roomId),
-            );
-            const groupHistoryCardIds = await this.repository.selectGroup(roomId, settings.groupId);
-            const cards = await this.cards.listActive({
-                locale: settings.cardLocale,
-                missingTranslation: settings.cardFallbackEnabled
-                    ? "FALLBACK"
-                    : this.cardTranslationPolicy.missingTranslation,
-                fallbackLocales: settings.cardFallbackEnabled
-                    ? settings.cardFallbackLocales
-                    : this.cardTranslationPolicy.fallbackLocales,
-            });
-            const policyOwner = await this.repository.policyOwner?.(roomId);
-            const compiled = this.cardPolicies
-                ? await this.cardPolicies.compileSessionCards({
-                      cards,
-                      dataSpaceId: policyOwner?.dataSpaceId,
-                      groupId: policyOwner?.groupId,
-                      profile,
-                      sessionPolicy: settings.cardPolicy,
-                  })
-                : null;
-            const proposed = new GameSession(
-                {
-                    id: randomUUID(),
-                    startedAt: Date.now(),
-                    mode: settings.mode,
-                    profile,
-                    players,
-                    boundariesByPlayer,
-                    groupHistoryCardIds,
-                    cardLocale: settings.cardLocale,
-                    cardFallbackEnabled: settings.cardFallbackEnabled,
-                    cardFallbackLocales: settings.cardFallbackLocales,
-                    neverHaveIEverRevealMode: settings.neverHaveIEverRevealMode,
-                    compiledCardPolicy: compiled?.snapshot,
-                    sessionCardPolicy: settings.cardPolicy,
-                },
-                this.random,
-            );
-            if (!proposed.hasEligibleCards(cards)) {
-                throw Object.assign(new Error(MESSAGE_KEYS.GAME_CARD_POOL_EXHAUSTED), {
-                    code: "CARD_POOL_EXHAUSTED",
-                });
-            }
-            // Publish to the runtime cache only after the database transaction commits.
-            await this.repository.commitRuntime(roomId, null, proposed.toRuntimeState());
-            this.sessions.set(roomId, proposed);
-            return this.snapshot(roomId, participant);
+            return await this.startSession(roomId, participant);
         }
+        return this.executeSessionCommand(roomId, participant, command);
+    }
+
+    private async startSession(roomId: string, participant: RoomParticipant) {
+        if (await this.loadSession(roomId))
+            throw Object.assign(new Error(MESSAGE_KEYS.ROOM_SESSION_ALREADY_STARTED), {
+                code: "INVALID_GAME_STATE",
+            });
+        const settings = await this.repository.loadSettings(roomId);
+        await this.validateRoomSettings(settings);
+        if (
+            profileRequiresAdultConfirmation(settings.profileId) &&
+            !settings.adultContentConfirmed
+        ) {
+            throw Object.assign(new Error(MESSAGE_KEYS.ROOM_ADULT_CONFIRMATION_REQUIRED), {
+                code: "NOT_AUTHORIZED",
+            });
+        }
+        const profile = roomSettingsGameProfile(settings);
+        const participants = await this.repository.listParticipants(roomId);
+        const players = sessionPlayers(participants);
+        if (players.length < 2) {
+            throw Object.assign(new Error(MESSAGE_KEYS.ROOM_MINIMUM_PLAYERS), {
+                code: "VALIDATION_ERROR",
+            });
+        }
+        const boundariesByPlayer = boundariesForSessionPlayers(
+            participants,
+            await this.repository.listBoundaries(roomId),
+        );
+        const groupHistoryCardIds = await this.repository.selectGroup(roomId, settings.groupId);
+        const cards = await this.cards.listActive({
+            locale: settings.cardLocale,
+            missingTranslation: settings.cardFallbackEnabled
+                ? "FALLBACK"
+                : this.cardTranslationPolicy.missingTranslation,
+            fallbackLocales: settings.cardFallbackEnabled
+                ? settings.cardFallbackLocales
+                : this.cardTranslationPolicy.fallbackLocales,
+        });
+        const policyOwner = await this.repository.policyOwner?.(roomId);
+        const compiled = this.cardPolicies
+            ? await this.cardPolicies.compileSessionCards({
+                  cards,
+                  dataSpaceId: policyOwner?.dataSpaceId,
+                  groupId: policyOwner?.groupId,
+                  profile,
+                  sessionPolicy: settings.cardPolicy,
+              })
+            : null;
+        const proposed = new GameSession(
+            {
+                id: randomUUID(),
+                startedAt: Date.now(),
+                mode: settings.mode,
+                profile,
+                players,
+                boundariesByPlayer,
+                groupHistoryCardIds,
+                cardLocale: settings.cardLocale,
+                cardFallbackEnabled: settings.cardFallbackEnabled,
+                cardFallbackLocales: settings.cardFallbackLocales,
+                neverHaveIEverRevealMode: settings.neverHaveIEverRevealMode,
+                compiledCardPolicy: compiled?.snapshot,
+                sessionCardPolicy: settings.cardPolicy,
+            },
+            this.random,
+        );
+        if (!proposed.hasEligibleCards(cards)) {
+            throw Object.assign(new Error(MESSAGE_KEYS.GAME_CARD_POOL_EXHAUSTED), {
+                code: "CARD_POOL_EXHAUSTED",
+            });
+        }
+        // Publish to the runtime cache only after the database transaction commits.
+        await this.repository.commitRuntime(roomId, null, proposed.toRuntimeState());
+        this.sessions.set(roomId, proposed);
+        return this.snapshot(roomId, participant);
+    }
+
+    private async setBoundaries(
+        roomId: string,
+        command: Extract<RoomCommand, { type: "command.setBoundaries" }>,
+        participant: RoomParticipant,
+    ) {
+        if (await this.loadSession(roomId)) {
+            throw Object.assign(new Error(MESSAGE_KEYS.ROOM_BOUNDARIES_LOCKED), {
+                code: "INVALID_GAME_STATE",
+            });
+        }
+        const boundaries: PlayerBoundaries = {
+            disabledQuestionCategoryIds: new Set(
+                command.payload.disabledQuestionCategoryIds as QuestionCategoryId[],
+            ),
+            disabledDareTypeIds: new Set(command.payload.disabledDareTypeIds as DareTypeId[]),
+            blockedOperationalFlags: new Set(
+                command.payload.blockedOperationalFlags as OperationalFlag[],
+            ),
+        };
+        await this.repository.saveBoundaries(participant.id, boundaries);
+        return this.snapshot(roomId, participant);
+    }
+
+    private async updateRoomSettings(
+        roomId: string,
+        command: Extract<RoomCommand, { type: "command.updateRoomSettings" }>,
+        participant: RoomParticipant,
+    ) {
+        if (await this.loadSession(roomId)) {
+            throw Object.assign(new Error(MESSAGE_KEYS.ROOM_SETTINGS_LOCKED), {
+                code: "INVALID_GAME_STATE",
+            });
+        }
+        const settings = normalizeRoomGameSettings(command.payload.settings);
+        await this.validateRoomSettings(settings);
+        await this.repository.saveSettings(
+            roomId,
+            participant.id,
+            command.payload.expectedRevision,
+            settings,
+        );
+        return this.snapshot(roomId, participant);
+    }
+
+    private async transferHost(
+        participant: RoomParticipant,
+        roomId: string,
+        command: Extract<RoomCommand, { type: "command.transferHost" }>,
+    ) {
+        if (participant.role !== "HOST") {
+            throw Object.assign(new Error(MESSAGE_KEYS.ROOM_HOST_ONLY_TRANSFER), {
+                code: "NOT_AUTHORIZED",
+            });
+        }
+        const transition = {
+            type: "TRANSFER_HOST",
+            roomId,
+            participantId: participant.id,
+            targetParticipantId: command.payload.participantId,
+            at: Date.now(),
+        } as const;
+        const result = await this.repository.applyLifecycleTransition(transition);
+        this.observeLifecycleTransition(transition, result);
+        return this.snapshot(roomId);
+    }
+
+    private async setDevicePlayers(
+        roomId: string,
+        participant: RoomParticipant,
+        command: Extract<RoomCommand, { type: "command.setDevicePlayers" }>,
+    ) {
+        if (await this.loadSession(roomId)) {
+            throw Object.assign(new Error(MESSAGE_KEYS.ROOM_DEVICE_PLAYERS_LOCKED), {
+                code: "INVALID_GAME_STATE",
+            });
+        }
+        const participants = await this.repository.listParticipants(roomId);
+        const playerCount = participants.reduce((total, current) => {
+            if (current.role === "DISPLAY") return total;
+            const devicePlayerCount =
+                current.id === participant.id
+                    ? command.payload.names.length
+                    : current.devicePlayers.length;
+            return total + 1 + devicePlayerCount;
+        }, 0);
+        if (playerCount > this.capacity.maximumPlayers) {
+            throw Object.assign(new Error(MESSAGE_KEYS.ROOM_FULL), { code: "ROOM_FULL" });
+        }
+        await this.repository.saveDevicePlayers(
+            participant.id,
+            command.payload.names.map((name) => ({ id: randomUUID(), name: name.trim() })),
+        );
+        return this.snapshot(roomId, participant);
+    }
+
+    private async closeRoom(
+        roomId: string,
+        command: Extract<RoomCommand, { type: "command.closeRoom" }>,
+        participant: RoomParticipant,
+    ) {
+        const current = await this.loadSession(roomId);
+        if (current && current.state !== "ENDED") {
+            const proposed = GameSession.restore(current.toRuntimeState(), this.random);
+            proposed.end(command.revision ?? current.revision);
+            await this.repository.commitRuntime(
+                roomId,
+                current.revision,
+                proposed.toRuntimeState(),
+            );
+            this.sessions.set(roomId, proposed);
+        }
+        const transition = {
+            type: "CLOSE",
+            roomId,
+            participantId: participant.id,
+            at: Date.now(),
+        } as const;
+        const result = await this.repository.applyLifecycleTransition(transition);
+        this.observeLifecycleTransition(transition, result);
+        const closedSnapshot = await this.snapshot(roomId);
+        this.sessions.delete(roomId);
+        return closedSnapshot;
+    }
+
+    private async executeSessionCommand(
+        roomId: string,
+        participant: RoomParticipant,
+        command: SessionCommand,
+    ): Promise<RoomSnapshot> {
         const current = await this.loadSession(roomId);
         if (!current)
             throw Object.assign(new Error(MESSAGE_KEYS.ROOM_SESSION_NOT_STARTED), {
@@ -935,6 +1000,19 @@ export class RoomService {
                       ...this.localizationPolicy(current),
                   })
                 : [];
+        this.applySessionCommand(command, proposed, cards, participant, controllablePlayerIds);
+        // The proposed aggregate is invisible to readers and WebSocket clients until commit.
+        await this.repository.commitRuntime(roomId, current.revision, proposed.toRuntimeState());
+        this.sessions.set(roomId, proposed);
+        return this.snapshot(roomId, participant);
+    }
+    private applySessionCommand(
+        command: SessionCommand,
+        proposed: GameSession,
+        cards: readonly PlayableCard[],
+        participant: RoomParticipant,
+        controllablePlayerIds: ReadonlySet<string>,
+    ) {
         if (command.type === "command.startTurn") proposed.startTurn(command.revision, cards);
         else if (command.type === "command.chooseCardType")
             proposed.chooseCardType(command.revision, command.payload.cardType, cards);
@@ -950,10 +1028,6 @@ export class RoomService {
             }
             proposed.submitVote(command.revision, voterId, command.payload.vote);
         } else if (command.type === "command.endSession") proposed.end(command.revision);
-        // The proposed aggregate is invisible to readers and WebSocket clients until commit.
-        await this.repository.commitRuntime(roomId, current.revision, proposed.toRuntimeState());
-        this.sessions.set(roomId, proposed);
-        return this.snapshot(roomId, participant);
     }
 
     private async loadSession(roomId: string): Promise<GameSession | null> {
@@ -963,8 +1037,7 @@ export class RoomService {
             this.sessions.delete(roomId);
             return null;
         }
-        if (cached && cached.id === runtime.id && cached.revision === runtime.revision)
-            return cached;
+        if (cached?.id === runtime.id && cached.revision === runtime.revision) return cached;
         const restored = GameSession.restore(runtime, this.random);
         this.sessions.set(roomId, restored);
         return restored;
@@ -1153,42 +1226,11 @@ export class RoomService {
         const controllablePlayerIds = viewer
             ? controlledPlayerIds(viewer, participants)
             : new Set<string>();
-        const controlsActivePlayer = session.activePlayer
-            ? controllablePlayerIds.has(session.activePlayer.id)
-            : false;
-        const cardCanBeSkipped =
-            session.state === "SHOWING_CARD" || session.state === "COLLECTING_ANSWERS";
-        const sessionCanAdvance =
-            session.state === "WAITING_FOR_PLAYER" ||
-            session.state === "SHOWING_CARD" ||
-            session.state === "SHOWING_RESULTS";
-        const availableActions = viewer
-            ? [
-                  ...(viewer.role === "HOST"
-                      ? [
-                            "START_SESSION",
-                            ...(sessionCanAdvance ? ["ADVANCE_SESSION"] : []),
-                            ...(cardCanBeSkipped ? ["SKIP_CARD"] : []),
-                            "END_SESSION",
-                        ]
-                      : []),
-                  ...(viewer.role !== "DISPLAY" && controlsActivePlayer
-                      ? [
-                            "CHOOSE_CARD_TYPE",
-                            ...(sessionCanAdvance ? ["ADVANCE_SESSION"] : []),
-                            ...(cardCanBeSkipped ? ["SKIP_CARD"] : []),
-                        ]
-                      : []),
-                  ...(viewer.role !== "DISPLAY" &&
-                  session.state === "COLLECTING_ANSWERS" &&
-                  [...controllablePlayerIds].some(
-                      (id) => session.isCurrentVoter(id) && !session.votes.has(id),
-                  )
-                      ? ["SUBMIT_VOTE"]
-                      : []),
-                  ...(viewer.role !== "DISPLAY" && cardCanBeSkipped ? ["VETO_CARD"] : []),
-              ]
-            : [];
+        const availableActions = this.availableSessionActions(
+            session,
+            controllablePlayerIds,
+            viewer,
+        );
         return {
             id: session.id,
             startedAt: session.startedAt,
@@ -1213,4 +1255,51 @@ export class RoomService {
             availableActions,
         };
     }
+
+    private availableSessionActions(
+        session: GameSession,
+        controllablePlayerIds: ReadonlySet<string>,
+        viewer: RoomParticipant | undefined,
+    ): string[] {
+        if (!viewer || viewer.role === "DISPLAY") return [];
+        const cardCanBeSkipped =
+            session.state === "SHOWING_CARD" || session.state === "COLLECTING_ANSWERS";
+        const sessionCanAdvance =
+            session.state === "WAITING_FOR_PLAYER" ||
+            session.state === "SHOWING_CARD" ||
+            session.state === "SHOWING_RESULTS";
+        const progressionActions: string[] = [];
+        if (sessionCanAdvance) progressionActions.push("ADVANCE_SESSION");
+        if (cardCanBeSkipped) progressionActions.push("SKIP_CARD");
+        const availableActions: string[] = [];
+        if (viewer.role === "HOST")
+            availableActions.push("START_SESSION", ...progressionActions, "END_SESSION");
+        if (session.activePlayer && controllablePlayerIds.has(session.activePlayer.id)) {
+            availableActions.push("CHOOSE_CARD_TYPE", ...progressionActions);
+        }
+        if (
+            session.state === "COLLECTING_ANSWERS" &&
+            [...controllablePlayerIds].some(
+                (id) => session.isCurrentVoter(id) && !session.votes.has(id),
+            )
+        ) {
+            availableActions.push("SUBMIT_VOTE");
+        }
+        if (cardCanBeSkipped) availableActions.push("VETO_CARD");
+        return availableActions;
+    }
 }
+
+type SessionCommand = Extract<
+    RoomCommand,
+    {
+        type:
+            | "command.startTurn"
+            | "command.chooseCardType"
+            | "command.skipCard"
+            | "command.vetoCard"
+            | "command.advanceSession"
+            | "command.submitVote"
+            | "command.endSession";
+    }
+>;

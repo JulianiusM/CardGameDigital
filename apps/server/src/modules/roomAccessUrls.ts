@@ -53,25 +53,7 @@ function detectedLocalBaseUrls(
     >();
     for (const [interfaceName, entries] of Object.entries(interfaces)) {
         if (!entries || !localNetworkInterfaceAllowed(interfaceName, normalizedPolicy)) continue;
-        for (const entry of entries) {
-            if (entry.internal || (bind === "0.0.0.0" && entry.family !== "IPv4")) continue;
-            const address = stripIpv6Scope(entry.address);
-            if (entry.family === "IPv4") {
-                ipv4.push({ interfaceName, address });
-                continue;
-            }
-            const scope = ipv6AddressScope(address);
-            if (!scope || scope === "LINK_LOCAL") continue;
-            const candidate = {
-                interfaceName,
-                address,
-                priority: scope === "GLOBAL" ? 0 : 1,
-            };
-            const current = ipv6ByInterface.get(interfaceName);
-            if (!current || candidate.priority < current.priority) {
-                ipv6ByInterface.set(interfaceName, candidate);
-            }
-        }
+        collectInterfaceAddresses(entries, bind, ipv4, interfaceName, ipv6ByInterface);
     }
     const addresses = [...ipv4, ...ipv6ByInterface.values()].sort((left, right) => {
         const familyOrder =
@@ -88,6 +70,34 @@ function detectedLocalBaseUrls(
                 .filter((url): url is string => Boolean(url)),
         ),
     ];
+}
+
+function collectInterfaceAddresses(
+    entries: readonly os.NetworkInterfaceInfo[],
+    bind: string,
+    ipv4: { interfaceName: string; address: string }[],
+    interfaceName: string,
+    ipv6ByInterface: Map<string, { interfaceName: string; address: string; priority: number }>,
+) {
+    for (const entry of entries) {
+        if (entry.internal || (bind === "0.0.0.0" && entry.family !== "IPv4")) continue;
+        const address = stripIpv6Scope(entry.address);
+        if (entry.family === "IPv4") {
+            ipv4.push({ interfaceName, address });
+            continue;
+        }
+        const scope = ipv6AddressScope(address);
+        if (!scope || scope === "LINK_LOCAL") continue;
+        const candidate = {
+            interfaceName,
+            address,
+            priority: scope === "GLOBAL" ? 0 : 1,
+        };
+        const current = ipv6ByInterface.get(interfaceName);
+        if (!current || candidate.priority < current.priority) {
+            ipv6ByInterface.set(interfaceName, candidate);
+        }
+    }
 }
 
 /** Builds the credential-free origins advertised to Room clients. */

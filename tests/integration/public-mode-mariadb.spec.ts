@@ -1,7 +1,10 @@
 import path from "node:path";
 import request, { type Response } from "supertest";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { AppDataSource, initDataSource } from "../../apps/server/src/modules/database/dataSource";
+import {
+    getAppDataSource,
+    initDataSource,
+} from "../../apps/server/src/modules/database/dataSource";
 import { CouchGameSessionEntity } from "../../packages/persistence/entities/game/CouchGameSessionEntity";
 import { CardPolicyScopeDefaultEntity } from "../../packages/persistence/entities/game/CardPolicyScopeDefaultEntity";
 import { RoomEntity } from "../../packages/persistence/entities/game/RoomEntity";
@@ -117,12 +120,12 @@ suite("public mode on MariaDB", () => {
 
     afterAll(async () => {
         vi.restoreAllMocks();
-        if (AppDataSource?.isInitialized) await AppDataSource.destroy();
+        if (getAppDataSource()?.isInitialized) await getAppDataSource().destroy();
         if (profile && mariaSchemaCreated) await dropMariaTestDatabase(profile);
     });
 
     it("stores production Room and Session snapshots beyond the MariaDB TEXT limit", async () => {
-        const columns = (await AppDataSource.query(
+        const columns = (await getAppDataSource().query(
             `SELECT TABLE_NAME AS tableName, DATA_TYPE AS dataType
              FROM information_schema.COLUMNS
              WHERE TABLE_SCHEMA = DATABASE()
@@ -163,10 +166,12 @@ suite("public mode on MariaDB", () => {
                 })
                 .expect(201);
             await expect(
-                AppDataSource.getRepository(RoomEntity).findOneByOrFail({ id: room.body.roomId }),
+                getAppDataSource()
+                    .getRepository(RoomEntity)
+                    .findOneByOrFail({ id: room.body.roomId }),
             ).resolves.toMatchObject({ dataSpaceId: null });
         }
-        expect(await AppDataSource.getRepository(CouchGameSessionEntity).count()).toBe(0);
+        expect(await getAppDataSource().getRepository(CouchGameSessionEntity).count()).toBe(0);
     });
 
     it("keeps persistence authenticated and enforces the public Origin boundary", async () => {
@@ -252,7 +257,7 @@ suite("public mode on MariaDB", () => {
             authenticated: true,
             account: { user: { username, email: "maria@example.test" } },
         });
-        const stored = await AppDataSource.getRepository(AccountSession).find();
+        const stored = await getAppDataSource().getRepository(AccountSession).find();
         expect(stored).toHaveLength(1);
         expect(stored[0].accountUserId).toBe(login.body.user.id);
         expect(JSON.parse(stored[0].json)).toMatchObject({
@@ -420,7 +425,7 @@ suite("public mode on MariaDB", () => {
             .send({ revision: shown.body.revision })
             .expect(200);
         await expect(
-            AppDataSource.getRepository(CouchGameSessionEntity).findOneByOrFail({
+            getAppDataSource().getRepository(CouchGameSessionEntity).findOneByOrFail({
                 id: couch.body.id,
             }),
         ).resolves.toMatchObject({ dataSpaceId: activeDataSpaceId, groupId: group.body.id });
@@ -433,7 +438,7 @@ suite("public mode on MariaDB", () => {
             })
             .expect(201);
         await expect(
-            AppDataSource.getRepository(RoomEntity).findOneByOrFail({ id: room.body.roomId }),
+            getAppDataSource().getRepository(RoomEntity).findOneByOrFail({ id: room.body.roomId }),
         ).resolves.toMatchObject({ dataSpaceId: activeDataSpaceId, groupId: group.body.id });
 
         const exported = await publicRequest("get", "/api/v1/account/export", firstCookie).expect(
@@ -470,7 +475,7 @@ suite("public mode on MariaDB", () => {
         } finally {
             roomExpiryClock.mockRestore();
         }
-        const closedRoom = await AppDataSource.getRepository(RoomEntity).findOneByOrFail({
+        const closedRoom = await getAppDataSource().getRepository(RoomEntity).findOneByOrFail({
             id: room.body.roomId,
         });
         expect(closedRoom.closedAt).toBeInstanceOf(Date);
@@ -546,17 +551,17 @@ suite("public mode on MariaDB", () => {
                 expect(body.dataSpaces).toHaveLength(1);
             });
         expect(
-            await AppDataSource.getRepository(CouchGameSessionEntity).countBy({
+            await getAppDataSource().getRepository(CouchGameSessionEntity).countBy({
                 dataSpaceId: activeDataSpaceId,
             }),
         ).toBe(0);
         expect(
-            await AppDataSource.getRepository(RoomEntity).countBy({
+            await getAppDataSource().getRepository(RoomEntity).countBy({
                 dataSpaceId: activeDataSpaceId,
             }),
         ).toBe(0);
         expect(
-            await AppDataSource.getRepository(CardPolicyScopeDefaultEntity).countBy({
+            await getAppDataSource().getRepository(CardPolicyScopeDefaultEntity).countBy({
                 dataSpaceId: activeDataSpaceId,
             }),
         ).toBe(0);
@@ -569,18 +574,18 @@ suite("public mode on MariaDB", () => {
         await publicRequest("delete", "/api/v1/account/me", firstCookie)
             .send({ username })
             .expect(204);
-        expect(await AppDataSource.getRepository(User).count()).toBe(0);
-        expect(await AppDataSource.getRepository(DataSpace).count()).toBe(0);
+        expect(await getAppDataSource().getRepository(User).count()).toBe(0);
+        expect(await getAppDataSource().getRepository(DataSpace).count()).toBe(0);
         expect(
-            await AppDataSource.getRepository(CouchGameSessionEntity).countBy({
+            await getAppDataSource().getRepository(CouchGameSessionEntity).countBy({
                 dataSpaceId: activeDataSpaceId,
             }),
         ).toBe(0);
         expect(
-            await AppDataSource.getRepository(RoomEntity).countBy({
+            await getAppDataSource().getRepository(RoomEntity).countBy({
                 dataSpaceId: activeDataSpaceId,
             }),
         ).toBe(0);
-        expect(await AppDataSource.getRepository(AccountSession).count()).toBe(0);
+        expect(await getAppDataSource().getRepository(AccountSession).count()).toBe(0);
     });
 });

@@ -3,7 +3,10 @@ import os from "node:os";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { AppDataSource, initDataSource } from "../../apps/server/src/modules/database/dataSource";
+import {
+    getAppDataSource,
+    initDataSource,
+} from "../../apps/server/src/modules/database/dataSource";
 import settings from "../../apps/server/src/modules/settings";
 import { TypeOrmRealtimeRoomRepository } from "../../packages/persistence";
 import { DARE_TYPES, OPERATIONAL_FLAGS, QUESTION_CATEGORIES } from "../../packages/game-core";
@@ -27,7 +30,7 @@ beforeAll(async () => {
     });
     await settings.read("/dev/null");
     await initDataSource();
-    repository = new TypeOrmRealtimeRoomRepository(AppDataSource);
+    repository = new TypeOrmRealtimeRoomRepository(getAppDataSource());
     roomId = randomUUID();
     participantId = randomUUID();
     const createdAt = Date.now();
@@ -61,7 +64,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-    if (AppDataSource.isInitialized) await AppDataSource.destroy();
+    if (getAppDataSource().isInitialized) await getAppDataSource().destroy();
     fs.rmSync(directory, { recursive: true, force: true });
 });
 

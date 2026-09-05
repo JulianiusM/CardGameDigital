@@ -9,7 +9,7 @@ import {
     TypeOrmCardRepository,
     TypeOrmCouchSessionRepository,
 } from "../../../../../packages/persistence";
-import { AppDataSource } from "../../modules/database/dataSource";
+import { getAppDataSource } from "../../modules/database/dataSource";
 import settings from "../../modules/settings";
 import { CardEntity } from "../../../../../packages/persistence/entities/card/CardEntity";
 import { asyncHandler } from "../../modules/lib/asyncHandler";
@@ -26,16 +26,16 @@ import { CardPolicyService } from "../../../../../packages/application/cardPolic
 
 const router = express.Router();
 const service = new CouchSessionService(
-    new TypeOrmCardRepository(AppDataSource.getRepository(CardEntity)),
+    new TypeOrmCardRepository(getAppDataSource().getRepository(CardEntity)),
     new CryptoRandomSource(),
     {
         missingTranslation: settings.value.cardMissingTranslation,
         fallbackLocales: [settings.value.cardFallbackLocale],
     },
-    new TypeOrmCouchSessionRepository(AppDataSource),
-    new CardPolicyService(new TypeOrmCardPolicyRepository(AppDataSource)),
+    new TypeOrmCouchSessionRepository(getAppDataSource()),
+    new CardPolicyService(new TypeOrmCardPolicyRepository(getAppDataSource())),
 );
-const idSchema = z.string().uuid();
+const idSchema = z.uuid();
 const revisionSchema = z.number().int().nonnegative();
 const createSchema = z
     .object({
@@ -53,7 +53,7 @@ const createSchema = z
         configuration: effectiveGameSettingsSchema,
         profileId: z.string().min(1),
         adultContentConfirmed: z.boolean(),
-        groupId: z.string().uuid().nullable().optional(),
+        groupId: z.uuid().nullable().optional(),
         cardLocale: z.string().min(2).max(35).optional(),
         cardFallbackEnabled: z.boolean().default(false),
         cardFallbackLocales: z.array(z.string().min(2).max(35)).max(100).default([]),
@@ -137,7 +137,7 @@ router.post(
     "/sessions/:id/vote",
     asyncHandler(async (req, res) => {
         const { revision, playerId, vote } = revisionBody
-            .extend({ playerId: z.string().uuid(), vote: z.enum(["YES", "NO"]) })
+            .extend({ playerId: z.uuid(), vote: z.enum(["YES", "NO"]) })
             .parse(req.body);
         const id = idSchema.parse(req.params.id);
         await requireSessionAccess(req, id);
@@ -180,7 +180,7 @@ router.use((error: unknown, req: Request, res: Response, next: NextFunction) => 
                     detectLocale(req.get("accept-language")),
                     MESSAGE_KEYS.COUCH_INVALID_REQUEST,
                 ),
-                data: error.flatten(),
+                data: z.flattenError(error),
             },
         });
     }

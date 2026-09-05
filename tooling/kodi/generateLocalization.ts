@@ -108,7 +108,9 @@ function assertString(value: unknown, context: string): asserts value is string 
 }
 
 function placeholders(value: string): string[] {
-    return (value.match(/%%|%(?:\d+\$)?[sdif]/g) ?? []).filter((token) => token !== "%%").sort();
+    return (value.match(/%%|%(?:\d+\$)?[sdif]/g) ?? [])
+        .filter((token) => token !== "%%")
+        .sort((left, right) => left.localeCompare(right));
 }
 
 const clientVocabularyKeys = Object.keys(CLIENT_VOCABULARY) as ClientVocabularyKey[];
@@ -146,152 +148,31 @@ function validateCatalog(value: unknown): KodiCatalog {
         throw new Error("Kodi localization catalog must define nativeSettings");
     }
 
+    const sourceLocale = candidate.sourceLocale;
+    const locales = candidate.locales;
+    const messages = candidate.messages;
     const localeTags = new Set<string>();
     const localeDirectories = new Set<string>();
-    for (const [index, locale] of candidate.locales.entries()) {
-        assertString(locale.tag, `locales[${index}].tag`);
-        assertString(locale.directory, `locales[${index}].directory`);
-        assertString(locale.poLanguage, `locales[${index}].poLanguage`);
-        assertString(locale.englishName, `locales[${index}].englishName`);
-        assertString(locale.nativeLabelConstant, `locales[${index}].nativeLabelConstant`);
-        if (localeTags.has(locale.tag)) {
-            throw new Error(`Duplicate locale tag ${locale.tag}`);
-        }
-        if (localeDirectories.has(locale.directory)) {
-            throw new Error(`Duplicate locale directory ${locale.directory}`);
-        }
-        localeTags.add(locale.tag);
-        localeDirectories.add(locale.directory);
-    }
-    if (!localeTags.has(candidate.sourceLocale)) {
-        throw new Error(`Source locale ${candidate.sourceLocale} is not defined`);
+    validateLocales();
+    if (!localeTags.has(sourceLocale)) {
+        throw new Error(`Source locale ${sourceLocale} is not defined`);
     }
     if (!sameValues(localeTags, clientVocabularyLocaleSet)) {
         throw new Error(
             "Kodi catalog locales must exactly match CLIENT_VOCABULARY_LOCALES so shared messages remain complete",
         );
     }
-    if (!isClientVocabularyLocale(candidate.sourceLocale)) {
-        throw new Error(
-            `Source locale ${candidate.sourceLocale} is missing from CLIENT_VOCABULARY`,
-        );
+    if (!isClientVocabularyLocale(sourceLocale)) {
+        throw new Error(`Source locale ${sourceLocale} is missing from CLIENT_VOCABULARY`);
     }
 
+    const vocabularySourceLocale: ClientVocabularyLocale = sourceLocale;
     const constants = new Set<string>();
     const ids = new Set<number>();
     const consumedSharedKeys = new Set<ClientVocabularyKey>();
     const resolvedMessages: ResolvedMessageDefinition[] = [];
     let previousId = -1;
-    for (const [index, message] of candidate.messages.entries()) {
-        if (typeof message !== "object" || message === null) {
-            throw new Error(`messages[${index}] must be an object`);
-        }
-        assertString(message.constant, `messages[${index}].constant`);
-        if (!/^[A-Z][A-Z0-9_]*$/.test(message.constant)) {
-            throw new Error(`Invalid Python constant ${message.constant}`);
-        }
-        if (!Number.isInteger(message.id) || message.id < 32000 || message.id > 32999) {
-            throw new Error(`Invalid Kodi localization id for ${message.constant}`);
-        }
-        if (constants.has(message.constant)) {
-            throw new Error(`Duplicate Python constant ${message.constant}`);
-        }
-        if (ids.has(message.id)) {
-            throw new Error(`Duplicate Kodi localization id ${message.id}`);
-        }
-        if (message.id <= previousId) {
-            throw new Error("Kodi localization messages must be sorted by id");
-        }
-
-        let source: string;
-        const translations: Record<string, string> = {};
-        if (Object.prototype.hasOwnProperty.call(message, "sharedKey")) {
-            const sharedKey: unknown = message.sharedKey;
-            assertString(sharedKey, `${message.constant} sharedKey`);
-            if (!isClientVocabularyKey(sharedKey)) {
-                throw new Error(`Unknown CLIENT_VOCABULARY key ${sharedKey}`);
-            }
-            if (message.constant !== sharedKey) {
-                throw new Error(
-                    `Kodi shared message ${message.constant} must use its same-named sharedKey`,
-                );
-            }
-            if (
-                Object.prototype.hasOwnProperty.call(message, "source") ||
-                Object.prototype.hasOwnProperty.call(message, "translations")
-            ) {
-                throw new Error(
-                    `Kodi shared message ${message.constant} must not duplicate source or translations`,
-                );
-            }
-            if (consumedSharedKeys.has(sharedKey)) {
-                throw new Error(`CLIENT_VOCABULARY key ${sharedKey} is consumed more than once`);
-            }
-            const vocabulary = CLIENT_VOCABULARY[sharedKey];
-            const vocabularyLocales = new Set(Object.keys(vocabulary));
-            if (!sameValues(vocabularyLocales, localeTags)) {
-                throw new Error(`CLIENT_VOCABULARY key ${sharedKey} has incomplete locales`);
-            }
-            source = vocabulary[candidate.sourceLocale];
-            assertString(source, `${sharedKey} vocabulary source for ${candidate.sourceLocale}`);
-            for (const locale of candidate.locales) {
-                if (!isClientVocabularyLocale(locale.tag)) {
-                    throw new Error(`Unsupported shared vocabulary locale ${locale.tag}`);
-                }
-                const text: unknown = vocabulary[locale.tag];
-                assertString(text, `${sharedKey} vocabulary value for ${locale.tag}`);
-                if (locale.tag !== candidate.sourceLocale) {
-                    translations[locale.tag] = text;
-                }
-            }
-            consumedSharedKeys.add(sharedKey);
-        } else {
-            if (isClientVocabularyKey(message.constant)) {
-                throw new Error(
-                    `Kodi message ${message.constant} must consume its CLIENT_VOCABULARY sharedKey`,
-                );
-            }
-            const literalSource: unknown = message.source;
-            assertString(literalSource, `messages[${index}].source`);
-            source = literalSource;
-            if (typeof message.translations !== "object" || message.translations === null) {
-                throw new Error(`Missing translations for ${message.constant}`);
-            }
-            for (const translatedLocale of Object.keys(message.translations)) {
-                if (
-                    !localeTags.has(translatedLocale) ||
-                    translatedLocale === candidate.sourceLocale
-                ) {
-                    throw new Error(
-                        `Unexpected translation locale ${translatedLocale} for ${message.constant}`,
-                    );
-                }
-                translations[translatedLocale] = message.translations[translatedLocale];
-            }
-        }
-
-        for (const locale of candidate.locales) {
-            if (locale.tag === candidate.sourceLocale) {
-                continue;
-            }
-            const translation: unknown = translations[locale.tag];
-            assertString(translation, `${message.constant} translation for ${locale.tag}`);
-            const sourcePlaceholders = placeholders(source);
-            const translatedPlaceholders = placeholders(translation);
-            if (sourcePlaceholders.join("\0") !== translatedPlaceholders.join("\0")) {
-                throw new Error(`Placeholder mismatch for ${message.constant} in ${locale.tag}`);
-            }
-        }
-        constants.add(message.constant);
-        ids.add(message.id);
-        previousId = message.id;
-        resolvedMessages.push({
-            constant: message.constant,
-            id: message.id,
-            source,
-            translations,
-        });
-    }
+    validateMessages();
     const missingSharedKeys = clientVocabularyKeys.filter(
         (sharedKey) => !consumedSharedKeys.has(sharedKey),
     );
@@ -327,9 +208,32 @@ function validateCatalog(value: unknown): KodiCatalog {
     let localeSettingCount = 0;
     const referencedMessageConstants = new Set<string>([
         nativeSettings.automaticLocale.labelConstant,
-        ...candidate.locales.map((locale) => locale.nativeLabelConstant),
+        ...locales.map((locale) => locale.nativeLabelConstant),
     ]);
-    for (const [categoryIndex, category] of nativeSettings.categories.entries()) {
+    validateNativeCategories();
+    if (localeSettingCount !== 1) {
+        throw new Error("Exactly one native setting must provide localeOptions");
+    }
+    validateReferencedMessages();
+    return { ...candidate, messages: resolvedMessages } as KodiCatalog;
+
+    function validateReferencedMessages() {
+        for (const messageConstant of referencedMessageConstants) {
+            if (!constants.has(messageConstant)) {
+                throw new Error(`Native settings reference unknown message ${messageConstant}`);
+            }
+        }
+    }
+
+    function validateNativeCategories() {
+        for (const [categoryIndex, category] of nativeSettings.categories.entries()) {
+            validateNativeCategory(category, categoryIndex);
+        }
+    }
+    function validateNativeCategory(
+        category: NativeSettingCategoryDefinition,
+        categoryIndex: number,
+    ) {
         assertString(category.id, `nativeSettings.categories[${categoryIndex}].id`);
         assertString(
             category.labelConstant,
@@ -345,6 +249,10 @@ function validateCatalog(value: unknown): KodiCatalog {
         referencedMessageConstants.add(category.labelConstant);
 
         for (const [settingIndex, setting] of category.settings.entries()) {
+            validateNativeSetting(settingIndex, setting);
+        }
+
+        function validateNativeSetting(settingIndex: number, setting: NativeSettingDefinition) {
             const context = `nativeSettings.categories[${categoryIndex}].settings[${settingIndex}]`;
             assertString(setting.constant, `${context}.constant`);
             assertString(setting.id, `${context}.id`);
@@ -373,29 +281,57 @@ function validateCatalog(value: unknown): KodiCatalog {
                 assertString(setting.control.headingConstant, `${context}.control.headingConstant`);
                 referencedMessageConstants.add(setting.control.headingConstant);
             }
-            if (setting.type === "string") {
-                if (typeof setting.default !== "string") {
-                    throw new Error(
-                        `Native string setting ${setting.id} must have a string default`,
-                    );
+            validateSettingValue();
+            validateLocaleSetting();
+            settingConstants.add(setting.constant);
+            settingIds.add(setting.id);
+            referencedMessageConstants.add(setting.labelConstant);
+            referencedMessageConstants.add(setting.helpConstant);
+
+            function validateLocaleSetting() {
+                if (setting.localeOptions === true) {
+                    localeSettingCount += 1;
+                    if (setting.type !== "string") {
+                        throw new Error("Native locale options require a string setting");
+                    }
+                    if (setting.default !== nativeSettings.automaticLocale.value) {
+                        throw new Error(
+                            "Native locale setting must default to the automatic locale",
+                        );
+                    }
+                } else if (setting.localeOptions !== undefined && setting.localeOptions !== false) {
+                    throw new Error(`Native setting ${setting.id} localeOptions must be boolean`);
                 }
-                if (setting.allowEmpty !== undefined && typeof setting.allowEmpty !== "boolean") {
-                    throw new Error(`Native setting ${setting.id} allowEmpty must be boolean`);
-                }
-                if (
-                    setting.maximumLength !== undefined &&
-                    (!Number.isInteger(setting.maximumLength) || setting.maximumLength < 1)
-                ) {
-                    throw new Error(`Native setting ${setting.id} maximumLength must be positive`);
-                }
-            } else if (setting.type === "boolean") {
-                if (typeof setting.default !== "boolean") {
-                    throw new Error(
-                        `Native boolean setting ${setting.id} must have a boolean default`,
-                    );
-                }
-            } else {
-                if (
+            }
+
+            function validateSettingValue() {
+                if (setting.type === "string") {
+                    if (typeof setting.default !== "string") {
+                        throw new TypeError(
+                            `Native string setting ${setting.id} must have a string default`,
+                        );
+                    }
+                    if (
+                        setting.allowEmpty !== undefined &&
+                        typeof setting.allowEmpty !== "boolean"
+                    ) {
+                        throw new Error(`Native setting ${setting.id} allowEmpty must be boolean`);
+                    }
+                    if (
+                        setting.maximumLength !== undefined &&
+                        (!Number.isInteger(setting.maximumLength) || setting.maximumLength < 1)
+                    ) {
+                        throw new Error(
+                            `Native setting ${setting.id} maximumLength must be positive`,
+                        );
+                    }
+                } else if (setting.type === "boolean") {
+                    if (typeof setting.default !== "boolean") {
+                        throw new TypeError(
+                            `Native boolean setting ${setting.id} must have a boolean default`,
+                        );
+                    }
+                } else if (
                     !Number.isInteger(setting.default) ||
                     !Number.isInteger(setting.minimum) ||
                     !Number.isInteger(setting.step) ||
@@ -407,32 +343,147 @@ function validateCatalog(value: unknown): KodiCatalog {
                     throw new Error(`Native integer setting ${setting.id} has invalid constraints`);
                 }
             }
-            if (setting.localeOptions === true) {
-                localeSettingCount += 1;
-                if (setting.type !== "string") {
-                    throw new Error("Native locale options require a string setting");
-                }
-                if (setting.default !== nativeSettings.automaticLocale.value) {
-                    throw new Error("Native locale setting must default to the automatic locale");
-                }
-            } else if (setting.localeOptions !== undefined && setting.localeOptions !== false) {
-                throw new Error(`Native setting ${setting.id} localeOptions must be boolean`);
+        }
+    }
+
+    function validateMessages() {
+        for (const [index, message] of messages.entries()) {
+            validateMessage(message, index);
+        }
+    }
+    function validateMessage(message: MessageDefinition, index: number) {
+        if (typeof message !== "object" || message === null) {
+            throw new Error(`messages[${index}] must be an object`);
+        }
+        assertString(message.constant, `messages[${index}].constant`);
+        if (!/^[A-Z][A-Z0-9_]*$/.test(message.constant)) {
+            throw new Error(`Invalid Python constant ${message.constant}`);
+        }
+        if (!Number.isInteger(message.id) || message.id < 32000 || message.id > 32999) {
+            throw new Error(`Invalid Kodi localization id for ${message.constant}`);
+        }
+        if (constants.has(message.constant)) {
+            throw new Error(`Duplicate Python constant ${message.constant}`);
+        }
+        if (ids.has(message.id)) {
+            throw new Error(`Duplicate Kodi localization id ${message.id}`);
+        }
+        if (message.id <= previousId) {
+            throw new Error("Kodi localization messages must be sorted by id");
+        }
+        const translations: Record<string, string> = {};
+        const source = resolveMessageText();
+
+        for (const locale of locales) {
+            if (locale.tag === sourceLocale) {
+                continue;
             }
-            settingConstants.add(setting.constant);
-            settingIds.add(setting.id);
-            referencedMessageConstants.add(setting.labelConstant);
-            referencedMessageConstants.add(setting.helpConstant);
+            const translation: unknown = translations[locale.tag];
+            assertString(translation, `${message.constant} translation for ${locale.tag}`);
+            const sourcePlaceholders = placeholders(source);
+            const translatedPlaceholders = placeholders(translation);
+            if (sourcePlaceholders.join("\0") !== translatedPlaceholders.join("\0")) {
+                throw new Error(`Placeholder mismatch for ${message.constant} in ${locale.tag}`);
+            }
+        }
+        constants.add(message.constant);
+        ids.add(message.id);
+        previousId = message.id;
+        resolvedMessages.push({
+            constant: message.constant,
+            id: message.id,
+            source,
+            translations,
+        });
+
+        function resolveMessageText() {
+            if (Object.hasOwn(message, "sharedKey")) {
+                return resolveSharedMessage();
+            } else {
+                if (isClientVocabularyKey(message.constant)) {
+                    throw new Error(
+                        `Kodi message ${message.constant} must consume its CLIENT_VOCABULARY sharedKey`,
+                    );
+                }
+                const literalSource: unknown = message.source;
+                assertString(literalSource, `messages[${index}].source`);
+                if (typeof message.translations !== "object" || message.translations === null) {
+                    throw new Error(`Missing translations for ${message.constant}`);
+                }
+                for (const translatedLocale of Object.keys(message.translations)) {
+                    if (!localeTags.has(translatedLocale) || translatedLocale === sourceLocale) {
+                        throw new Error(
+                            `Unexpected translation locale ${translatedLocale} for ${message.constant}`,
+                        );
+                    }
+                    translations[translatedLocale] = message.translations[translatedLocale];
+                }
+
+                return literalSource;
+            }
+
+            function resolveSharedMessage() {
+                const sharedKey: unknown = message.sharedKey;
+                assertString(sharedKey, `${message.constant} sharedKey`);
+                if (!isClientVocabularyKey(sharedKey)) {
+                    throw new Error(`Unknown CLIENT_VOCABULARY key ${sharedKey}`);
+                }
+                if (message.constant !== sharedKey) {
+                    throw new Error(
+                        `Kodi shared message ${message.constant} must use its same-named sharedKey`,
+                    );
+                }
+                if (Object.hasOwn(message, "source") || Object.hasOwn(message, "translations")) {
+                    throw new Error(
+                        `Kodi shared message ${message.constant} must not duplicate source or translations`,
+                    );
+                }
+                if (consumedSharedKeys.has(sharedKey)) {
+                    throw new Error(
+                        `CLIENT_VOCABULARY key ${sharedKey} is consumed more than once`,
+                    );
+                }
+                const vocabulary = CLIENT_VOCABULARY[sharedKey];
+                const vocabularyLocales = new Set(Object.keys(vocabulary));
+                if (!sameValues(vocabularyLocales, localeTags)) {
+                    throw new Error(`CLIENT_VOCABULARY key ${sharedKey} has incomplete locales`);
+                }
+                const source = vocabulary[vocabularySourceLocale];
+                assertString(source, `${sharedKey} vocabulary source for ${sourceLocale}`);
+                for (const locale of locales) {
+                    if (!isClientVocabularyLocale(locale.tag)) {
+                        throw new Error(`Unsupported shared vocabulary locale ${locale.tag}`);
+                    }
+                    const text: unknown = vocabulary[locale.tag];
+                    assertString(text, `${sharedKey} vocabulary value for ${locale.tag}`);
+                    if (locale.tag !== sourceLocale) {
+                        translations[locale.tag] = text;
+                    }
+                }
+                consumedSharedKeys.add(sharedKey);
+
+                return source;
+            }
         }
     }
-    if (localeSettingCount !== 1) {
-        throw new Error("Exactly one native setting must provide localeOptions");
-    }
-    for (const messageConstant of referencedMessageConstants) {
-        if (!constants.has(messageConstant)) {
-            throw new Error(`Native settings reference unknown message ${messageConstant}`);
+
+    function validateLocales() {
+        for (const [index, locale] of locales.entries()) {
+            assertString(locale.tag, `locales[${index}].tag`);
+            assertString(locale.directory, `locales[${index}].directory`);
+            assertString(locale.poLanguage, `locales[${index}].poLanguage`);
+            assertString(locale.englishName, `locales[${index}].englishName`);
+            assertString(locale.nativeLabelConstant, `locales[${index}].nativeLabelConstant`);
+            if (localeTags.has(locale.tag)) {
+                throw new Error(`Duplicate locale tag ${locale.tag}`);
+            }
+            if (localeDirectories.has(locale.directory)) {
+                throw new Error(`Duplicate locale directory ${locale.directory}`);
+            }
+            localeTags.add(locale.tag);
+            localeDirectories.add(locale.directory);
         }
     }
-    return { ...candidate, messages: resolvedMessages } as KodiCatalog;
 }
 
 function readAddonMetadata(): { id: string; name: string; version: string } {
@@ -442,7 +493,7 @@ function readAddonMetadata(): { id: string; name: string; version: string } {
         throw new Error(`Unable to find <addon> in ${addonPath}`);
     }
     const readAttribute = (name: string): string => {
-        const match = new RegExp(`\\b${name}="([^"]+)"`).exec(addon[1]);
+        const match = new RegExp(String.raw`\b${name}="([^"]+)"`).exec(addon[1]);
         if (match === null) {
             throw new Error(`Missing add-on ${name} attribute in ${addonPath}`);
         }
@@ -460,7 +511,7 @@ function renderStrings(catalog: KodiCatalog): string {
         .map((message) => `${message.constant} = ${message.id}`)
         .join("\n");
     const preamble = [
-        '\"\"\"Stable Kodi localization identifiers used by Python presentation code.\"\"\"',
+        '"""Stable Kodi localization identifiers used by Python presentation code."""',
         "",
         "from __future__ import annotations",
         "",
@@ -475,11 +526,11 @@ function renderStrings(catalog: KodiCatalog): string {
         "    literal: Optional[str] = None",
         "",
         "    @classmethod",
-        '    def message(cls, message_id: int, *arguments: Any) -> \"Text\":',
+        '    def message(cls, message_id: int, *arguments: Any) -> "Text":',
         "        return cls(message_id=message_id, arguments=arguments)",
         "",
         "    @classmethod",
-        '    def raw(cls, value: object) -> \"Text\":',
+        '    def raw(cls, value: object) -> "Text":',
         "        return cls(literal=str(value))",
     ].join("\n");
     return `${preamble}\n\n\n${constants}\n`;
@@ -519,21 +570,51 @@ function renderSettingsXml(catalog: KodiCatalog): string {
             `        <category id="${xml(category.id)}" label="${messageId(catalog, category.labelConstant)}">`,
             '            <group id="1">',
         );
+        renderCategorySettings(category);
+        lines.push("            </group>", "        </category>");
+    }
+    lines.push("    </section>", "</settings>");
+    return `${lines.join("\n")}\n`;
+
+    function renderCategorySettings(category: NativeSettingCategoryDefinition) {
         for (const setting of category.settings) {
+            renderSetting(setting);
+        }
+    }
+    function renderSetting(setting: NativeSettingDefinition) {
+        lines.push(
+            `                <setting id="${xml(setting.id)}" type="${setting.type}" label="${messageId(catalog, setting.labelConstant)}" help="${messageId(catalog, setting.helpConstant)}">`,
+            "                    <level>0</level>",
+        );
+        const defaultValue = settingDefault(setting);
+        lines.push(
+            defaultValue.length === 0
+                ? "                    <default />"
+                : `                    <default>${xml(defaultValue)}</default>`,
+        );
+        const hasConstraints =
+            setting.allowEmpty !== undefined ||
+            setting.localeOptions === true ||
+            setting.type === "integer";
+        renderSettingConstraints();
+        const controlAttributes = [
+            `type="${xml(setting.control.type)}"`,
+            ...(setting.control.format === undefined
+                ? []
+                : [`format="${xml(setting.control.format)}"`]),
+        ].join(" ");
+        if (setting.control.headingConstant === undefined) {
+            lines.push(`                    <control ${controlAttributes} />`);
+        } else {
             lines.push(
-                `                <setting id="${xml(setting.id)}" type="${setting.type}" label="${messageId(catalog, setting.labelConstant)}" help="${messageId(catalog, setting.helpConstant)}">`,
-                "                    <level>0</level>",
+                `                    <control ${controlAttributes}>`,
+                `                        <heading>${messageId(catalog, setting.control.headingConstant)}</heading>`,
+                "                    </control>",
             );
-            const defaultValue = settingDefault(setting);
-            lines.push(
-                defaultValue.length === 0
-                    ? "                    <default />"
-                    : `                    <default>${xml(defaultValue)}</default>`,
-            );
-            const hasConstraints =
-                setting.allowEmpty !== undefined ||
-                setting.localeOptions === true ||
-                setting.type === "integer";
+        }
+        lines.push("                </setting>");
+
+        function renderSettingConstraints() {
             if (hasConstraints) {
                 lines.push("                    <constraints>");
                 if (setting.allowEmpty !== undefined) {
@@ -563,27 +644,8 @@ function renderSettingsXml(catalog: KodiCatalog): string {
                 }
                 lines.push("                    </constraints>");
             }
-            const controlAttributes = [
-                `type="${xml(setting.control.type)}"`,
-                ...(setting.control.format === undefined
-                    ? []
-                    : [`format="${xml(setting.control.format)}"`]),
-            ].join(" ");
-            if (setting.control.headingConstant === undefined) {
-                lines.push(`                    <control ${controlAttributes} />`);
-            } else {
-                lines.push(
-                    `                    <control ${controlAttributes}>`,
-                    `                        <heading>${messageId(catalog, setting.control.headingConstant)}</heading>`,
-                    "                    </control>",
-                );
-            }
-            lines.push("                </setting>");
         }
-        lines.push("            </group>", "        </category>");
     }
-    lines.push("    </section>", "</settings>");
-    return `${lines.join("\n")}\n`;
 }
 
 function pythonLiteral(value: string | boolean | number): string {
@@ -658,11 +720,11 @@ function renderPo(
     locale: LocaleDefinition,
     addon: { name: string; version: string },
 ): string {
-    const header = `# ${addon.name} ${locale.englishName} localization\nmsgid \"\"\nmsgstr \"\"\n\"Project-Id-Version: ${addon.name} ${addon.version}\\n\"\n\"Language: ${locale.poLanguage}\\n\"\n\"Content-Type: text/plain; charset=UTF-8\\n\"\n`;
+    const header = `# ${addon.name} ${locale.englishName} localization\nmsgid ""\nmsgstr ""\n"Project-Id-Version: ${addon.name} ${addon.version}\\n"\n"Language: ${locale.poLanguage}\\n"\n"Content-Type: text/plain; charset=UTF-8\\n"\n`;
     const entries = catalog.messages.map((message) => {
         const translation =
             locale.tag === catalog.sourceLocale ? message.source : message.translations[locale.tag];
-        return `msgctxt \"#${message.id}\"\nmsgid ${JSON.stringify(message.source)}\nmsgstr ${JSON.stringify(translation)}\n`;
+        return `msgctxt "#${message.id}"\nmsgid ${JSON.stringify(message.source)}\nmsgstr ${JSON.stringify(translation)}\n`;
     });
     return `${header}\n${entries.join("\n")}`;
 }
@@ -711,7 +773,7 @@ function generate(checkOnly: boolean): void {
 }
 
 function main(): void {
-    const arguments_ = new Set(process.argv.slice(2));
+    const arguments_ = new Set<string>(process.argv.slice(2));
     const checkOnly = arguments_.delete("--check");
     if (arguments_.size > 0) {
         throw new Error(`Unknown arguments: ${[...arguments_].join(", ")}`);

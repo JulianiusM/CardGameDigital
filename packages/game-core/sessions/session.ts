@@ -313,11 +313,12 @@ export class GameSession {
         session.turnsCompletedInRound = runtime.turnsCompletedInRound;
         session.lastCardTypes = [...runtime.lastCardTypes];
         session.pendingCardType = runtime.pendingCardType;
-        session.voterIds = runtime.voterIds
-            ? [...runtime.voterIds]
-            : runtime.mode === GAME_MODES.NEVER_HAVE_I_EVER && runtime.currentCard
-              ? runtime.players.map(({ id }) => id)
-              : [];
+        session.voterIds = [];
+        if (runtime.voterIds) {
+            session.voterIds = [...runtime.voterIds];
+        } else if (runtime.mode === GAME_MODES.NEVER_HAVE_I_EVER && runtime.currentCard) {
+            session.voterIds = runtime.players.map(({ id }) => id);
+        }
         return session;
     }
 
@@ -568,7 +569,7 @@ export class GameSession {
             this.pool(cards, this.pendingCardType, requireYesNo),
             this.random,
         );
-        const appearance = this.sessionHistory[this.sessionHistory.length - 1];
+        const appearance = this.sessionHistory.at(-1)!;
         if (appearance) {
             appearance.skipped = reason === "SKIPPED";
             appearance.vetoed = reason === "VETOED";
@@ -599,7 +600,7 @@ export class GameSession {
     advance(expectedRevision: number): void {
         this.assertRevision(expectedRevision);
         this.assertState("advance", SESSION_STATES.SHOWING_CARD, SESSION_STATES.SHOWING_RESULTS);
-        const appearance = this.sessionHistory[this.sessionHistory.length - 1];
+        const appearance = this.sessionHistory.at(-1)!;
         if (appearance && !appearance.skipped && !appearance.vetoed) appearance.completed = true;
         this.currentCard = null;
         this.pendingCardType = null;

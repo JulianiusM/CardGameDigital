@@ -1604,7 +1604,9 @@
                             >
                                 <header>
                                     <div>
-                                        <span class="eyebrow">{messages.cardManagement.then}</span>
+                                        <span class="eyebrow"
+                                            >{messages.cardManagement.ruleOutcome}</span
+                                        >
                                         <h3 id="rule-actions-title">
                                             {messages.cardManagement.properties}
                                         </h3>

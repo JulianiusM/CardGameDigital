@@ -1,6 +1,6 @@
 import { In } from "typeorm";
 import { z } from "zod";
-import { AppDataSource } from "../../modules/database/dataSource";
+import { getAppDataSource } from "../../modules/database/dataSource";
 import { LocaleEntity } from "../../../../../packages/persistence/entities/card/LocaleEntity";
 import { ExpectedError } from "../../modules/lib/errors";
 import { MESSAGE_KEYS } from "../../../../../packages/localization/keys";
@@ -51,10 +51,12 @@ export async function requireActiveCardLanguages(
 ): Promise<void> {
     if (!value) return;
     const requested = [...new Set([value.cardLocale, ...value.cardFallbackLocales])];
-    const active = await AppDataSource.getRepository(LocaleEntity).countBy({
-        id: In(requested),
-        active: true,
-    });
+    const active = await getAppDataSource()
+        .getRepository(LocaleEntity)
+        .countBy({
+            id: In(requested),
+            active: true,
+        });
     if (active !== requested.length) {
         throw new ExpectedError(MESSAGE_KEYS.CARD_LOCALE_UNAVAILABLE, "error", 400);
     }

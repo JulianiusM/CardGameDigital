@@ -3,6 +3,7 @@ from __future__ import annotations
 import struct
 import random
 import unittest
+from unittest.mock import Mock, patch
 
 from support import RESOURCES_ROOT
 from lib.discovery.dns import (
@@ -18,6 +19,8 @@ from lib.discovery.dns import (
 )
 from lib.discovery.mdns import (
     SERVICE_TYPE,
+    MDNS_IPV4,
+    MdnsBrowser,
     endpoints_from_records,
     same_machine_origins,
     valid_partycard_txt,
@@ -29,6 +32,26 @@ def record(name: str, kind: int, value: bytes, ttl: int = 120) -> bytes:
 
 
 class DnsParserTests(unittest.TestCase):
+    def test_browser_retries_queries_on_schedule_and_stops_at_deadline(self) -> None:
+        now = [0.0]
+        sent_at = []
+        connection = Mock()
+        connection.sendto.side_effect = lambda _query, _destination: sent_at.append(now[0])
+
+        def select_ready(_readers, _writers, _errors, timeout):
+            now[0] += timeout
+            return [], [], []
+
+        with patch.object(MdnsBrowser, "_open_sockets", return_value=[(connection, MDNS_IPV4)]), \
+                patch("lib.discovery.mdns.time.monotonic", side_effect=lambda: now[0]), \
+                patch("lib.discovery.mdns.select.select", side_effect=select_ready):
+            endpoints = MdnsBrowser().browse(duration=5.5)
+
+        self.assertEqual(endpoints, ())
+        self.assertEqual(sent_at, [0.0, 0.5, 2.0, 5.0])
+        self.assertEqual(now[0], 5.5)
+        connection.close.assert_called_once()
+
     def test_same_machine_discovery_does_not_depend_on_multicast_loopback(self) -> None:
         origins = same_machine_origins()
         self.assertIn("http://127.0.0.1:3000", origins)

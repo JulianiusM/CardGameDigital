@@ -18,7 +18,7 @@ import { createHash } from "node:crypto";
 import { EntityManager, MoreThan, Repository } from "typeorm";
 import type { OidcClaims } from "../../../types/UserTypes";
 import { generateUniqueToken } from "../../lib/util";
-import { AppDataSource } from "../dataSource";
+import { getAppDataSource } from "../dataSource";
 import { DataSpace } from "../../../../../../packages/persistence/entities/user/DataSpace";
 import { User } from "../../../../../../packages/persistence/entities/user/User";
 import { hashPassword, verifyPasswordHash } from "../../passwordHash";
@@ -38,13 +38,13 @@ function syntheticOidcEmail(issuer: string, sub: string): string {
 }
 
 function isUniqueConstraintError(error: unknown): boolean {
+    if (typeof error !== "object" || error === null) return false;
     const candidate = error as { code?: unknown; message?: unknown };
     return (
         candidate.code === "ER_DUP_ENTRY" ||
         candidate.code === "23505" ||
-        String(candidate.message ?? "")
-            .toUpperCase()
-            .includes("UNIQUE")
+        (typeof candidate.message === "string" &&
+            candidate.message.toUpperCase().includes("UNIQUE"))
     );
 }
 
@@ -54,7 +54,7 @@ export async function registerUser(
     password: string,
     email: string,
 ) {
-    return await AppDataSource.transaction(async (em: EntityManager) => {
+    return await getAppDataSource().transaction(async (em: EntityManager) => {
         const repo = em.getRepository(User);
         const hashed = await hashPassword(password);
 
@@ -75,7 +75,7 @@ export async function registerUser(
 }
 
 export async function getUserByUsername(username: string) {
-    const repo = AppDataSource.getRepository(User);
+    const repo = getAppDataSource().getRepository(User);
     return await repo.findOne({
         where: { username },
         select: {
@@ -92,19 +92,21 @@ export async function getUserByUsername(username: string) {
 }
 
 export async function getUserByEmail(email: string) {
-    return await AppDataSource.getRepository(User).findOne({
-        where: { email },
-        select: {
-            id: true,
-            name: true,
-            username: true,
-            email: true,
-            isActive: true,
-        },
-        relations: {
-            dataSpaces: true,
-        },
-    });
+    return await getAppDataSource()
+        .getRepository(User)
+        .findOne({
+            where: { email },
+            select: {
+                id: true,
+                name: true,
+                username: true,
+                email: true,
+                isActive: true,
+            },
+            relations: {
+                dataSpaces: true,
+            },
+        });
 }
 
 export async function verifyPassword(userId: number | null, password: string) {
@@ -112,7 +114,7 @@ export async function verifyPassword(userId: number | null, password: string) {
         await verifyPasswordHash(password, await missingAccountPasswordHash);
         return false;
     }
-    const repo = AppDataSource.getRepository(User);
+    const repo = getAppDataSource().getRepository(User);
     const user = await repo.findOne({
         where: { id: userId },
         select: {
@@ -124,7 +126,7 @@ export async function verifyPassword(userId: number | null, password: string) {
 }
 
 export async function generateActivationToken(userId: number) {
-    const repo = AppDataSource.getRepository(User);
+    const repo = getAppDataSource().getRepository(User);
     const token = generateUniqueToken();
     const expiration = new Date(Date.now() + 3_600_000);
     await repo.update(
@@ -138,7 +140,7 @@ export async function generateActivationToken(userId: number) {
 }
 
 export async function verifyActivationToken(token: string) {
-    const repo = AppDataSource.getRepository(User);
+    const repo = getAppDataSource().getRepository(User);
     return await repo.findOne({
         where: {
             activationTokenHash: hashOneTimeToken(token),
@@ -155,7 +157,8 @@ export async function verifyActivationToken(token: string) {
 }
 
 export async function consumeActivationToken(token: string): Promise<boolean> {
-    const result = await AppDataSource.getRepository(User)
+    const result = await getAppDataSource()
+        .getRepository(User)
         .createQueryBuilder()
         .update(User)
         .set({
@@ -170,7 +173,7 @@ export async function consumeActivationToken(token: string): Promise<boolean> {
 }
 
 export async function generatePasswordResetToken(username: string) {
-    const repo = AppDataSource.getRepository(User);
+    const repo = getAppDataSource().getRepository(User);
     const token = generateUniqueToken();
     const expiration = new Date(Date.now() + 3_600_000);
     await repo.update(
@@ -184,7 +187,7 @@ export async function generatePasswordResetToken(username: string) {
 }
 
 export async function verifyPasswordResetToken(token: string) {
-    const repo = AppDataSource.getRepository(User);
+    const repo = getAppDataSource().getRepository(User);
     return await repo.findOne({
         where: {
             resetTokenHash: hashOneTimeToken(token),
@@ -204,7 +207,7 @@ export async function consumePasswordResetToken(
     token: string,
     newPassword: string,
 ): Promise<number | null> {
-    return AppDataSource.transaction(async (manager) => {
+    return getAppDataSource().transaction(async (manager) => {
         const repository = manager.getRepository(User);
         const user = await repository.findOne({
             where: {
@@ -231,7 +234,7 @@ export async function consumePasswordResetToken(
  */
 
 async function usernameExists(username: string): Promise<boolean> {
-    const repo = AppDataSource.getRepository(User);
+    const repo = getAppDataSource().getRepository(User);
     const count = await repo.count({ where: { username } });
     return count > 0;
 }
@@ -256,7 +259,7 @@ async function toUniqueUsername(base: string): Promise<string> {
  * Find a user by OIDC issuer+sub.
  */
 export async function getUserByOidc(oidcIssuer: string, oidcSub: string) {
-    const repo = AppDataSource.getRepository(User);
+    const repo = getAppDataSource().getRepository(User);
     return await repo.findOne({
         where: { oidcIssuer, oidcSub },
         select: {
@@ -283,7 +286,7 @@ export async function findOrCreateUserFromOidc(
     claims: OidcClaims,
     { linkByEmail = true } = {},
 ) {
-    const repo = AppDataSource.getRepository(User);
+    const repo = getAppDataSource().getRepository(User);
     const { sub, email, email_verified, preferred_username, name } = claims;
 
     // 1) Try exact OIDC match first
@@ -298,39 +301,25 @@ export async function findOrCreateUserFromOidc(
         if (user) {
             user.oidcIssuer = oidcIssuer;
             user.oidcSub = sub;
-            if (user.isActive !== true) user.isActive = true;
+            user.isActive = true;
             await repo.save(user);
         }
     }
 
     // 3) If still not found: create a new local user (JIT provisioning)
     if (!user) {
-        const rawBaseUsername =
-            preferred_username || (email ? email.split("@")[0] : `oidc_${sub.slice(0, 8)}`);
-        const identityHash = oidcIdentityHash(oidcIssuer, sub);
-        const baseUsername =
-            rawBaseUsername
-                .toLowerCase()
-                .replace(/[^a-z0-9._-]/g, "")
-                .slice(0, 40) || "user";
-        const uniqueUsername = await toUniqueUsername(
-            `${baseUsername}-${identityHash.slice(0, 8)}`,
+        const { uniqueUsername, baseUsername, emailToUse } = await resolveNewOidcIdentity(
+            preferred_username,
+            email,
+            sub,
+            oidcIssuer,
+            email_verified,
+            repo,
+            linkByEmail,
         );
 
-        // Ensure we don't violate unique(email)
-        let emailToUse =
-            email_verified === true && email ? email : syntheticOidcEmail(oidcIssuer, sub);
-
-        // If linkByEmail is disabled OR the email is already taken, use a synthetic email
-        if (email_verified === true && email) {
-            const emailTaken = await repo.exists({ where: { email } });
-            if (!linkByEmail || emailTaken) {
-                emailToUse = syntheticOidcEmail(oidcIssuer, sub);
-            }
-        }
-
         try {
-            return await AppDataSource.transaction(async (em) => {
+            return await getAppDataSource().transaction(async (em) => {
                 const users = em.getRepository(User);
                 const newUser = users.create({
                     username: uniqueUsername,
@@ -364,6 +353,38 @@ export async function findOrCreateUserFromOidc(
     return user;
 }
 
+async function resolveNewOidcIdentity(
+    preferred_username: string | undefined,
+    email: string | undefined,
+    sub: string,
+    oidcIssuer: string,
+    email_verified: boolean | undefined,
+    repo: Repository<User>,
+    linkByEmail: boolean,
+) {
+    const rawBaseUsername =
+        preferred_username || (email ? email.split("@")[0] : `oidc_${sub.slice(0, 8)}`);
+    const identityHash = oidcIdentityHash(oidcIssuer, sub);
+    const baseUsername =
+        rawBaseUsername
+            .toLowerCase()
+            .replace(/[^a-z0-9._-]/g, "")
+            .slice(0, 40) || "user";
+    const uniqueUsername = await toUniqueUsername(`${baseUsername}-${identityHash.slice(0, 8)}`);
+
+    // Ensure we don't violate unique(email)
+    let emailToUse = email_verified === true && email ? email : syntheticOidcEmail(oidcIssuer, sub);
+
+    // If linkByEmail is disabled OR the email is already taken, use a synthetic email
+    if (email_verified === true && email) {
+        const emailTaken = await repo.exists({ where: { email } });
+        if (!linkByEmail || emailTaken) {
+            emailToUse = syntheticOidcEmail(oidcIssuer, sub);
+        }
+    }
+    return { uniqueUsername, baseUsername, emailToUse };
+}
+
 async function saveOidcUser(
     user: User,
     issuer: string,
@@ -380,10 +401,12 @@ async function saveOidcUser(
 }
 
 export async function getUserById(id: number): Promise<User | null> {
-    return await AppDataSource.getRepository(User).findOne({
-        where: { id },
-        relations: { dataSpaces: true },
-    });
+    return await getAppDataSource()
+        .getRepository(User)
+        .findOne({
+            where: { id },
+            relations: { dataSpaces: true },
+        });
 }
 
 export type StoredLanguagePreferences = {
@@ -423,7 +446,7 @@ export async function updateLanguagePreferences(
     userId: number,
     patch: Partial<StoredLanguagePreferences>,
 ): Promise<void> {
-    const repository = AppDataSource.getRepository(User);
+    const repository = getAppDataSource().getRepository(User);
     const user = await repository.findOneByOrFail({ id: userId });
     const current = languagePreferencesForUser(user) ?? {
         useSystemLanguage: true,
@@ -444,11 +467,11 @@ export async function updateLanguagePreferences(
 }
 
 export async function getDataSpaceById(id: string) {
-    return await AppDataSource.getRepository(DataSpace).findOneBy({ id });
+    return await getAppDataSource().getRepository(DataSpace).findOneBy({ id });
 }
 
 export async function deleteUser(userId: number) {
-    return AppDataSource.transaction(async (manager) => {
+    return getAppDataSource().transaction(async (manager) => {
         const users = manager.getRepository(User);
         const deleted = await users.findOneBy({ id: userId });
         if (!deleted) return null;
@@ -459,7 +482,7 @@ export async function deleteUser(userId: number) {
 }
 
 export async function getDataSpacesForUser(userId: number) {
-    const repo = AppDataSource.getRepository(DataSpace);
+    const repo = getAppDataSource().getRepository(DataSpace);
     return await repo.findBy({ user: { id: userId } });
 }
 
@@ -472,12 +495,12 @@ export async function getDataSpacesForUser(userId: number) {
  * pessimistic locks.
  */
 export async function ensureDataSpaceForUser(userId: number): Promise<DataSpace | null> {
-    return AppDataSource.transaction(async (manager) => {
+    return getAppDataSource().transaction(async (manager) => {
         const userQuery = manager
             .getRepository(User)
             .createQueryBuilder("user")
             .where("user.id = :userId", { userId });
-        if (AppDataSource.options.type !== "better-sqlite3") {
+        if (getAppDataSource().options.type !== "better-sqlite3") {
             userQuery.setLock("pessimistic_write");
         }
         const user = await userQuery.getOne();
@@ -500,12 +523,12 @@ export async function ensureDataSpaceForUser(userId: number): Promise<DataSpace 
 }
 
 export async function updateDataSpaceName(dataSpaceId: string, name: string) {
-    const repo = AppDataSource.getRepository(DataSpace);
+    const repo = getAppDataSource().getRepository(DataSpace);
     await repo.update({ id: dataSpaceId }, { name: name });
 }
 
 export async function updateDataSpaceDefault(dataSpaceId: string, isDefault: boolean) {
-    await AppDataSource.transaction(async (em) => {
+    await getAppDataSource().transaction(async (em) => {
         const repo = em.getRepository(DataSpace);
         if (isDefault) {
             // Remove all other defaults for the owner of this dataSpace if a new one is set
@@ -519,7 +542,7 @@ export async function updateDataSpaceDefault(dataSpaceId: string, isDefault: boo
 }
 
 export async function createDataSpace(userId: number, name: string) {
-    const repo = AppDataSource.getRepository(DataSpace);
+    const repo = getAppDataSource().getRepository(DataSpace);
     const dataSpace = repo.create({ user: { id: userId }, name: name });
     return await repo.save(dataSpace);
 }
@@ -534,12 +557,12 @@ export async function deleteDataSpace(
     userId: number,
     dataSpaceId: string,
 ): Promise<DeleteDataSpaceResult> {
-    return AppDataSource.transaction(async (manager) => {
+    return getAppDataSource().transaction(async (manager) => {
         const userQuery = manager
             .getRepository(User)
             .createQueryBuilder("user")
             .where("user.id = :userId", { userId });
-        if (AppDataSource.options.type !== "better-sqlite3") {
+        if (getAppDataSource().options.type !== "better-sqlite3") {
             userQuery.setLock("pessimistic_write");
         }
         if (!(await userQuery.getOne())) return { status: "not-found" };

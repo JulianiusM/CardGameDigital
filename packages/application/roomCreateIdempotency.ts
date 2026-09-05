@@ -35,7 +35,7 @@ function canonicalJson(value: unknown): string {
     if (typeof value === "object") {
         const record = value as Record<string, unknown>;
         const entries = Object.keys(record)
-            .sort()
+            .sort(compareCanonicalKeys)
             .map((key) => `${JSON.stringify(key)}:${canonicalJson(record[key])}`);
         return `{${entries.join(",")}}`;
     }
@@ -126,4 +126,11 @@ export class RoomCreateIdempotencyProtection {
         const plaintext = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
         return JSON.parse(plaintext.toString("utf8")) as RoomJoinResult;
     }
+}
+
+// Preserve the code-unit ordering used by persisted request fingerprints.
+function compareCanonicalKeys(left: string, right: string): number {
+    if (left < right) return -1;
+    if (left > right) return 1;
+    return 0;
 }

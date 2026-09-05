@@ -10,7 +10,7 @@ export const serverWebPlatformSchema = z.enum(["linux", "win32", "darwin"]);
 export const serverWebArchitectureSchema = z.enum(["x64", "arm64"]);
 export const releaseVersionSchema = z
     .string()
-    .regex(/^[0-9]+\.[0-9]+\.[0-9]+(?:-(?:alpha|beta|rc)(?:\.[0-9A-Za-z.-]+)?)?$/);
+    .regex(/^\d+\.\d+\.\d+(?:-(?:alpha|beta|rc)(?:\.[0-9A-Za-z.-]+)?)?$/);
 
 const bundledComponentSchema = z.object({
     server: z.string().min(1),

@@ -59,7 +59,7 @@ class ProfileStore:
             if not isinstance(server_values, list) or len(server_values) > 50:
                 raise ValueError("saved server registry is invalid")
             servers = tuple(_server(entry) for entry in server_values)
-        except (KeyError, TypeError, ValueError) as error:
+        except (KeyError, TypeError, ValueError):
             self._quarantine(self._settings_path)
             preferences = Preferences()
             servers = ()
@@ -277,6 +277,24 @@ def _recovery(value: dict[str, Any]) -> RecoveryEnvelope:
     last_connected_at = _timestamp(value["last_connected_at"], "recovery connection time")
     if last_connected_at < created_at:
         raise ValueError("recovery connection time predates creation")
+    couch_session_id, room_code, participant_id, credential_reference, protocol_version = _recovery_credentials(value, mode)
+    return RecoveryEnvelope(
+        schema_version=schema_version,
+        server_id=server_id,
+        origin=origin,
+        mode=str(mode),
+        created_at=created_at,
+        last_connected_at=last_connected_at,
+        couch_session_id=couch_session_id,
+        room_code=str(room_code) if room_code is not None else None,
+        participant_id=participant_id,
+        credential_reference=(
+            str(credential_reference) if credential_reference is not None else None
+        ),
+        protocol_version=protocol_version,
+    )
+
+def _recovery_credentials(value, mode):
     couch_session_id = value.get("couch_session_id")
     room_code = value.get("room_code")
     participant_id = value.get("participant_id")
@@ -296,21 +314,7 @@ def _recovery(value: dict[str, Any]) -> RecoveryEnvelope:
         raise ValueError("Couch recovery is incomplete")
     if mode == "ROOM" and not all((room_code, participant_id, credential_reference)):
         raise ValueError("Room recovery is incomplete")
-    return RecoveryEnvelope(
-        schema_version=schema_version,
-        server_id=server_id,
-        origin=origin,
-        mode=str(mode),
-        created_at=created_at,
-        last_connected_at=last_connected_at,
-        couch_session_id=couch_session_id,
-        room_code=str(room_code) if room_code is not None else None,
-        participant_id=participant_id,
-        credential_reference=(
-            str(credential_reference) if credential_reference is not None else None
-        ),
-        protocol_version=protocol_version,
-    )
+    return couch_session_id, room_code, participant_id, credential_reference, protocol_version
 
 
 def _uuid(value: Any, name: str) -> str:

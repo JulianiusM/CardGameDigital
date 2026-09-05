@@ -64,6 +64,7 @@ class WebSocketConnection:
         raw = socket.create_connection((host, port), timeout=self.timeout)
         if parsed.scheme == "wss":
             context = ssl.create_default_context()
+            context.minimum_version = ssl.TLSVersion.TLSv1_2
             raw = context.wrap_socket(raw, server_hostname=host.split("%", maxsplit=1)[0])
         raw.settimeout(self.timeout)
         key = base64.b64encode(os.urandom(16)).decode("ascii")
@@ -87,26 +88,23 @@ class WebSocketConnection:
             f"User-Agent: PartyGameKodi/{APPLICATION_VERSION}\r\n\r\n"
         ).encode("ascii")
         raw.sendall(request)
-        response = bytearray()
-        while b"\r\n\r\n" not in response:
-            chunk = raw.recv(4096)
-            if not chunk:
-                raw.close()
-                raise WebSocketFailure("WebSocket handshake ended early")
-            response.extend(chunk)
-            if len(response) > 16 * 1024:
-                raw.close()
-                raise WebSocketFailure("WebSocket handshake is too large")
+        response = self._read_handshake(raw)
         header, remainder = bytes(response).split(b"\r\n\r\n", maxsplit=1)
         lines = header.decode("iso-8859-1").split("\r\n")
         if not lines or " 101 " not in f" {lines[0]} ":
             raw.close()
             raise WebSocketFailure("Server refused the WebSocket upgrade")
+        self._validate_upgrade_headers(lines, key, raw)
+        self._socket = raw
+        self._buffer.extend(remainder)
+
+    def _validate_upgrade_headers(self, lines, key, raw):
         headers: dict[str, str] = {}
         for line in lines[1:]:
             name, separator, value = line.partition(":")
             if separator:
                 headers[name.strip().casefold()] = value.strip()
+        # RFC 6455 requires SHA-1 for this public handshake proof, not for secret storage.
         expected = base64.b64encode(
             hashlib.sha1(f"{key}{WEBSOCKET_GUID}".encode("ascii")).digest()
         ).decode("ascii")
@@ -122,8 +120,19 @@ class WebSocketConnection:
         if "upgrade" not in connection_tokens:
             raw.close()
             raise WebSocketFailure("WebSocket connection header is invalid")
-        self._socket = raw
-        self._buffer.extend(remainder)
+
+    def _read_handshake(self, raw):
+        response = bytearray()
+        while b"\r\n\r\n" not in response:
+            chunk = raw.recv(4096)
+            if not chunk:
+                raw.close()
+                raise WebSocketFailure("WebSocket handshake ended early")
+            response.extend(chunk)
+            if len(response) > 16 * 1024:
+                raw.close()
+                raise WebSocketFailure("WebSocket handshake is too large")
+        return response
 
     def set_timeout(self, timeout: float) -> None:
         if self._socket:
@@ -138,45 +147,58 @@ class WebSocketConnection:
     def receive_json(self) -> dict:
         while True:
             opcode, final, payload = self._receive_frame()
-            if opcode == 0x8:
-                code = struct.unpack("!H", payload[:2])[0] if len(payload) >= 2 else 1000
-                reason = payload[2:].decode("utf-8", errors="replace")[:123]
-                try:
-                    self._send_frame(0x8, payload[:125])
-                except WebSocketFailure:
-                    pass
-                raise WebSocketClosed(code, reason)
-            if opcode == 0x9:
-                self._send_frame(0xA, payload)
-                continue
-            if opcode == 0xA:
-                continue
-            if opcode in {0x1, 0x2}:
-                if self._fragment_opcode is not None:
-                    raise WebSocketFailure("Started a second fragmented message")
-                if final:
-                    if opcode != 0x1:
-                        raise WebSocketFailure("Binary messages are not supported")
-                    return decode_envelope(payload)
-                self._fragment_opcode = opcode
-                self._fragments = bytearray(payload)
-                continue
-            if opcode == 0x0:
-                if self._fragment_opcode is None:
-                    raise WebSocketFailure("Unexpected continuation frame")
-                self._fragments.extend(payload)
-                if len(self._fragments) > MAX_MESSAGE_BYTES:
-                    raise WebSocketFailure("Fragmented message exceeds 64 KiB")
-                if final:
-                    original_opcode = self._fragment_opcode
-                    message = bytes(self._fragments)
-                    self._fragment_opcode = None
-                    self._fragments.clear()
-                    if original_opcode != 0x1:
-                        raise WebSocketFailure("Binary messages are not supported")
-                    return decode_envelope(message)
-                continue
-            raise WebSocketFailure("Unsupported WebSocket opcode")
+            message = self._receive_message_frame(opcode, final, payload)
+            if message is not None:
+                return message
+
+    def _receive_message_frame(self, opcode: int, final: bool, payload: bytes) -> Optional[dict]:
+        if opcode == 0x8:
+            self._receive_close(payload)
+        if opcode == 0x9:
+            self._send_frame(0xA, payload)
+            return None
+        if opcode == 0xA:
+            return None
+        if opcode in {0x1, 0x2}:
+            if self._fragment_opcode is not None:
+                raise WebSocketFailure("Started a second fragmented message")
+            if final:
+                return self._decode_text_message(opcode, payload)
+            self._fragment_opcode = opcode
+            self._fragments = bytearray(payload)
+            return None
+        if opcode == 0x0:
+            return self._receive_continuation(final, payload)
+        raise WebSocketFailure("Unsupported WebSocket opcode")
+
+    def _receive_close(self, payload: bytes) -> None:
+        code = struct.unpack("!H", payload[:2])[0] if len(payload) >= 2 else 1000
+        reason = payload[2:].decode("utf-8", errors="replace")[:123]
+        try:
+            self._send_frame(0x8, payload[:125])
+        except WebSocketFailure:
+            pass
+        raise WebSocketClosed(code, reason)
+
+    @staticmethod
+    def _decode_text_message(opcode: int, payload: bytes) -> dict:
+        if opcode != 0x1:
+            raise WebSocketFailure("Binary messages are not supported")
+        return decode_envelope(payload)
+
+    def _receive_continuation(self, final: bool, payload: bytes) -> Optional[dict]:
+        if self._fragment_opcode is None:
+            raise WebSocketFailure("Unexpected continuation frame")
+        self._fragments.extend(payload)
+        if len(self._fragments) > MAX_MESSAGE_BYTES:
+            raise WebSocketFailure("Fragmented message exceeds 64 KiB")
+        if not final:
+            return None
+        original_opcode = self._fragment_opcode
+        message = bytes(self._fragments)
+        self._fragment_opcode = None
+        self._fragments.clear()
+        return self._decode_text_message(original_opcode, message)
 
     def close(self, code: int = 1000, reason: str = "") -> None:
         current = self._socket
@@ -346,19 +368,7 @@ class RoomWebSocketWorker:
                 attempt = 0
                 self._connected_loop(connection)
             except WebSocketClosed as error:
-                if self._leaving.is_set():
-                    self._on_event("left", {"code": error.code})
-                    return
-                if error.code in {4001, 4401}:
-                    self._on_event("closed", {"code": error.code})
-                    return
-                if error.code == 4002:
-                    self._on_event(
-                        "error",
-                        {"code": "CONNECTION_REPLACED", "transport_state": "ERROR"},
-                    )
-                    return
-                if self._stop.is_set():
+                if self._handle_closed(error):
                     return
             except ProtocolViolation:
                 self._on_event(
@@ -366,11 +376,8 @@ class RoomWebSocketWorker:
                     {"code": "PROTOCOL_VIOLATION", "transport_state": "ERROR"},
                 )
                 return
-            except (WebSocketFailure, OSError, ssl.SSLError):
-                if self._leaving.is_set():
-                    self._on_event("left", {"code": 1006})
-                    return
-                if self._stop.is_set():
+            except (WebSocketFailure, OSError):
+                if self._handle_connection_failure():
                     return
             finally:
                 connection.close()
@@ -381,18 +388,46 @@ class RoomWebSocketWorker:
             self._on_event("state", {"state": "RECONNECTING"})
             self._stop.wait(delay)
 
+
+    def _handle_connection_failure(self) -> bool:
+        if self._leaving.is_set():
+            self._on_event("left", {"code": 1006})
+            return True
+        return self._stop.is_set()
+
+    def _handle_closed(self, error: WebSocketClosed) -> bool:
+        if self._leaving.is_set():
+            self._on_event("left", {"code": error.code})
+            return True
+        if error.code in {4001, 4401}:
+            self._on_event("closed", {"code": error.code})
+            return True
+        if error.code == 4002:
+            self._on_event(
+                "error",
+                {"code": "CONNECTION_REPLACED", "transport_state": "ERROR"},
+            )
+            return True
+        if self._stop.is_set():
+            return True
+        return False
+
+    def _flush_outgoing(self, connection: WebSocketConnection) -> bool:
+        while True:
+            try:
+                outgoing = self._outgoing.get_nowait()
+            except queue.Empty:
+                return True
+            if outgoing is None:
+                return False
+            connection.send_json(outgoing)
+
     def _connected_loop(self, connection: WebSocketConnection) -> None:
         last_ping = time.monotonic()
         pending_ping: tuple[str, float] | None = None
         while not self._stop.is_set():
-            while True:
-                try:
-                    outgoing = self._outgoing.get_nowait()
-                except queue.Empty:
-                    break
-                if outgoing is None:
-                    return
-                connection.send_json(outgoing)
+            if not self._flush_outgoing(connection):
+                return
             if time.monotonic() - last_ping >= 20.0:
                 ping = envelope("client.ping", {})
                 connection.send_json(ping)
@@ -404,20 +439,24 @@ class RoomWebSocketWorker:
                 self._on_event("left", {"code": 1006})
                 return
             try:
-                incoming = connection.receive_json()
-                if (
-                    incoming.get("type") == "server.pong"
-                    and pending_ping
-                    and incoming.get("requestId") == pending_ping[0]
-                ):
-                    pending_ping = None
-                if incoming.get("type") == "server.hello":
-                    participant_id = incoming.get("payload", {}).get("participantId")
-                    if participant_id != self.settings.participant_id:
-                        raise ProtocolViolation("Server hello participant identity changed")
-                self._on_event("envelope", {"envelope": incoming})
-                if incoming.get("type") == "server.hello":
-                    self._on_event("state", {"state": "CONNECTED"})
-                    connection.send_json(envelope("room.snapshot.request", {}))
+                pending_ping = self._receive_server_envelope(connection, pending_ping)
             except socket.timeout:
                 continue
+
+    def _receive_server_envelope(self, connection, pending_ping):
+        incoming = connection.receive_json()
+        if (
+            incoming.get("type") == "server.pong"
+            and pending_ping
+            and incoming.get("requestId") == pending_ping[0]
+        ):
+            pending_ping = None
+        if incoming.get("type") == "server.hello":
+            participant_id = incoming.get("payload", {}).get("participantId")
+            if participant_id != self.settings.participant_id:
+                raise ProtocolViolation("Server hello participant identity changed")
+        self._on_event("envelope", {"envelope": incoming})
+        if incoming.get("type") == "server.hello":
+            self._on_event("state", {"state": "CONNECTED"})
+            connection.send_json(envelope("room.snapshot.request", {}))
+        return pending_ping

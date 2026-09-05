@@ -10,7 +10,7 @@ function duplicates(values: readonly string[]): string[] {
         if (seen.has(value)) duplicate.add(value);
         seen.add(value);
     }
-    return [...duplicate].sort();
+    return [...duplicate].sort((left, right) => left.localeCompare(right));
 }
 
 function canonicalLocale(locale: string): string | null {
@@ -64,27 +64,7 @@ export function catalogSemanticIssues(catalog: CardCatalog): CatalogSemanticIssu
         catalog.taxonomy.questionCategories.map((category) => [category.id, category]),
     );
     const dareTypes = new Map(catalog.taxonomy.dareTypes.map((type) => [type.id, type]));
-    for (const [collectionName, collection] of [
-        ["taxonomy.questionCategories", catalog.taxonomy.questionCategories],
-        ["taxonomy.dareTypes", catalog.taxonomy.dareTypes],
-    ] as const) {
-        for (const [index, taxonomy] of collection.entries()) {
-            const taxonomyPath = `${collectionName}.${index}.id(${taxonomy.id})`;
-            addDuplicates(
-                issues,
-                `${taxonomyPath}.localizations`,
-                taxonomy.localizations.map((entry) => entry.locale),
-            );
-            for (const localization of taxonomy.localizations) {
-                if (!localeIds.has(localization.locale)) {
-                    issues.push({
-                        path: `${taxonomyPath}.localizations`,
-                        message: `references undeclared locale '${localization.locale}'`,
-                    });
-                }
-            }
-        }
-    }
+    validateTaxonomyLocalizations();
 
     for (const [index, card] of catalog.cards.entries()) {
         const path = `cards.${index}.id(${card.id})`;
@@ -94,6 +74,35 @@ export function catalogSemanticIssues(catalog: CardCatalog): CatalogSemanticIssu
             card.localizations.map((item) => item.locale),
         );
         addDuplicates(issues, `${path}.operationalFlags`, card.operationalFlags);
+        validateCardLocales(card, path);
+        if (
+            card.lifecycle === "ACTIVE" &&
+            !card.localizations.some((entry) => entry.locale === catalog.defaultLocale)
+        ) {
+            issues.push({ path, message: "active Card requires default-locale text" });
+        }
+        validateCardTaxonomy(card, path);
+        if (!card.repeatableInSession && card.repeatCooldown !== 0) {
+            issues.push({
+                path: `${path}.repeatCooldown`,
+                message: "must be 0 when repeatableInSession is false",
+            });
+        }
+        const resolved = resolveProducerCardMetadata(catalog, card);
+        if (
+            resolved.maximumPlayerCount !== null &&
+            resolved.maximumPlayerCount < resolved.minimumPlayerCount
+        ) {
+            issues.push({
+                path,
+                message: "resolved maximumPlayerCount must be null or at least minimumPlayerCount",
+            });
+        }
+        validateCardTaxonomyLabels(card, path);
+    }
+    return issues;
+
+    function validateCardLocales(card: CardCatalog["cards"][number], path: string) {
         for (const localization of card.localizations) {
             if (!localeIds.has(localization.locale)) {
                 issues.push({
@@ -102,12 +111,38 @@ export function catalogSemanticIssues(catalog: CardCatalog): CatalogSemanticIssu
                 });
             }
         }
-        if (
-            card.lifecycle === "ACTIVE" &&
-            !card.localizations.some((entry) => entry.locale === catalog.defaultLocale)
-        ) {
-            issues.push({ path, message: "active Card requires default-locale text" });
+    }
+
+    function validateCardTaxonomyLabels(card: CardCatalog["cards"][number], path: string) {
+        const references = [
+            [
+                card.questionCategoryId,
+                card.questionCategoryId
+                    ? questionCategories.get(card.questionCategoryId)
+                    : undefined,
+            ],
+            [
+                card.dareAffinityCategoryId,
+                card.dareAffinityCategoryId
+                    ? questionCategories.get(card.dareAffinityCategoryId)
+                    : undefined,
+            ],
+            [card.dareTypeId, card.dareTypeId ? dareTypes.get(card.dareTypeId) : undefined],
+        ] as const;
+        for (const localization of card.localizations) {
+            for (const [id, taxonomy] of references) {
+                if (!id) continue;
+                if (!taxonomy?.localizations.some((item) => item.locale === localization.locale)) {
+                    issues.push({
+                        path,
+                        message: `missing ${localization.locale} label for '${id}'`,
+                    });
+                }
+            }
         }
+    }
+
+    function validateCardTaxonomy(card: CardCatalog["cards"][number], path: string) {
         if (card.cardType === CARD_TYPES.QUESTION) {
             if (!card.questionCategoryId || card.dareTypeId || card.dareAffinityCategoryId) {
                 issues.push({ path, message: "Question taxonomy is inconsistent" });
@@ -125,6 +160,10 @@ export function catalogSemanticIssues(catalog: CardCatalog): CatalogSemanticIssu
         } else if (card.dareTypeId || card.dareAffinityCategoryId) {
             issues.push({ path, message: "Conversation taxonomy is inconsistent" });
         }
+        validateCardAffinity(card, path);
+    }
+
+    function validateCardAffinity(card: CardCatalog["cards"][number], path: string) {
         if (
             card.questionCategoryId &&
             card.cardType === CARD_TYPES.CONVERSATION_META &&
@@ -138,62 +177,39 @@ export function catalogSemanticIssues(catalog: CardCatalog): CatalogSemanticIssu
                 message: `references missing '${card.dareAffinityCategoryId}'`,
             });
         }
-        if (!card.repeatableInSession && card.repeatCooldown !== 0) {
-            issues.push({
-                path: `${path}.repeatCooldown`,
-                message: "must be 0 when repeatableInSession is false",
-            });
-        }
-        const resolved = resolveProducerCardMetadata(catalog, card);
-        if (
-            resolved.maximumPlayerCount !== null &&
-            resolved.maximumPlayerCount < resolved.minimumPlayerCount
-        ) {
-            issues.push({
-                path,
-                message: "resolved maximumPlayerCount must be null or at least minimumPlayerCount",
-            });
-        }
-        for (const localization of card.localizations) {
-            if (card.questionCategoryId) {
-                const taxonomy = questionCategories.get(card.questionCategoryId);
-                if (!taxonomy?.localizations.some((item) => item.locale === localization.locale)) {
-                    issues.push({
-                        path,
-                        message: `missing ${localization.locale} label for '${card.questionCategoryId}'`,
-                    });
-                }
-            }
-            if (card.dareAffinityCategoryId) {
-                const taxonomy = questionCategories.get(card.dareAffinityCategoryId);
-                if (!taxonomy?.localizations.some((item) => item.locale === localization.locale)) {
-                    issues.push({
-                        path,
-                        message: `missing ${localization.locale} label for '${card.dareAffinityCategoryId}'`,
-                    });
-                }
-            }
-            if (card.dareTypeId) {
-                const taxonomy = dareTypes.get(card.dareTypeId);
-                if (!taxonomy?.localizations.some((item) => item.locale === localization.locale)) {
-                    issues.push({
-                        path,
-                        message: `missing ${localization.locale} label for '${card.dareTypeId}'`,
-                    });
+    }
+
+    function validateTaxonomyLocalizations() {
+        for (const [collectionName, collection] of [
+            ["taxonomy.questionCategories", catalog.taxonomy.questionCategories],
+            ["taxonomy.dareTypes", catalog.taxonomy.dareTypes],
+        ] as const) {
+            for (const [index, taxonomy] of collection.entries()) {
+                const taxonomyPath = `${collectionName}.${index}.id(${taxonomy.id})`;
+                addDuplicates(
+                    issues,
+                    `${taxonomyPath}.localizations`,
+                    taxonomy.localizations.map((entry) => entry.locale),
+                );
+                for (const localization of taxonomy.localizations) {
+                    if (!localeIds.has(localization.locale)) {
+                        issues.push({
+                            path: `${taxonomyPath}.localizations`,
+                            message: `references undeclared locale '${localization.locale}'`,
+                        });
+                    }
                 }
             }
         }
     }
-    return issues;
 }
 
 export function validateCardCatalog(input: unknown): CardCatalog {
     const catalog = cardCatalogSchema.parse(input);
     const issues = catalogSemanticIssues(catalog);
     if (issues.length) {
-        throw new Error(
-            `Card catalog semantic validation failed:\n${issues.map((issue) => `${issue.path}: ${issue.message}`).join("\n")}`,
-        );
+        const details = issues.map((issue) => `${issue.path}: ${issue.message}`).join("\n");
+        throw new Error(`Card catalog semantic validation failed:\n${details}`);
     }
     return catalog;
 }

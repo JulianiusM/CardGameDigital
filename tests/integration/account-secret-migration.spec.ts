@@ -2,7 +2,10 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { AppDataSource, initDataSource } from "../../apps/server/src/modules/database/dataSource";
+import {
+    getAppDataSource,
+    initDataSource,
+} from "../../apps/server/src/modules/database/dataSource";
 import { User } from "../../packages/persistence/entities/user/User";
 import {
     consumeActivationToken,
@@ -35,13 +38,13 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-    if (AppDataSource.isInitialized) await AppDataSource.destroy();
+    if (getAppDataSource().isInitialized) await getAppDataSource().destroy();
     fs.rmSync(directory, { recursive: true, force: true });
 });
 
 describe("account secret migration", () => {
     it("stores only hashes for activation and reset tokens and consumes them once", async () => {
-        const users = AppDataSource.getRepository(User);
+        const users = getAppDataSource().getRepository(User);
         const activation = await generateActivationToken(userId);
         let stored = await users.findOne({
             where: { id: userId },
@@ -67,7 +70,7 @@ describe("account secret migration", () => {
     });
 
     it("registers an account with an Argon2id password", async () => {
-        const users = AppDataSource.getRepository(User);
+        const users = getAppDataSource().getRepository(User);
         await expect(verifyPassword(userId, "new-password")).resolves.toBe(true);
         await expect(verifyPassword(userId, "wrong-password")).resolves.toBe(false);
         const stored = await users.findOne({

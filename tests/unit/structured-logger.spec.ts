@@ -81,6 +81,25 @@ describe("structured logging", () => {
         expect(mailFailure.errorMessage).not.toContain("one-time-value");
     });
 
+    it("redacts email tokens without repeatedly scanning malformed addresses", () => {
+        const malformed = "a".repeat(100_000) + "@";
+        const details = errorLogFields(
+            new Error(`mail to person+tag@example.test failed: ${malformed}`),
+        );
+        expect(details.errorMessage).toBe(`mail to [redacted] failed: ${malformed}`);
+    });
+
+    it("does not invoke custom object stringification in error logs", () => {
+        const toString = vi.fn(() => {
+            throw new Error("unexpected object serialization");
+        });
+        expect(errorLogFields({ password: "private-value", toString })).toMatchObject({
+            errorMessage: "Non-Error object",
+            errorStack: "unavailable",
+        });
+        expect(toString).not.toHaveBeenCalled();
+    });
+
     it("adds the stable API failure reason to every failed request log", async () => {
         const lines: string[] = [];
         const write = vi.spyOn(process.stdout, "write").mockImplementation((chunk) => {

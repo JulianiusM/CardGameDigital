@@ -642,7 +642,7 @@ export const de = {
         disabled: "Deaktiviert",
         conditions: (count: number) => (count === 1 ? "1 Bedingung" : `${count} Bedingungen`),
         when: "WENN",
-        then: "DANN",
+        ruleOutcome: "DANN",
         matchPreview: "Treffer prüfen",
         checkMatches: "Treffer vorschauen",
         matchPreviewHint:

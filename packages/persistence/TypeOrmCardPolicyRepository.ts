@@ -481,14 +481,17 @@ export class TypeOrmCardPolicyRepository implements CardPolicyRepository {
         const localization = entity.localizations.find((entry) => entry.locale === locale);
         if (!localization) throw new Error("Managed Card lacks requested localization");
         const card = cardEntityToDomain(entity, localization);
+        let taxonomyLabel: string | null = null;
+        if (entity.questionCategoryId) {
+            taxonomyLabel =
+                labels.categories.get(entity.questionCategoryId) ?? entity.questionCategoryId;
+        } else if (entity.dareTypeId) {
+            taxonomyLabel = labels.dareTypes.get(entity.dareTypeId) ?? entity.dareTypeId;
+        }
         return {
             ...card,
             lifecycle: entity.active ? "ACTIVE" : "RETIRED",
-            taxonomyLabel: entity.questionCategoryId
-                ? (labels.categories.get(entity.questionCategoryId) ?? entity.questionCategoryId)
-                : entity.dareTypeId
-                  ? (labels.dareTypes.get(entity.dareTypeId) ?? entity.dareTypeId)
-                  : null,
+            taxonomyLabel,
         };
     }
 

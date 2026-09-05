@@ -1,6 +1,6 @@
 import express from "express";
 import { z } from "zod";
-import { AppDataSource } from "../../modules/database/dataSource";
+import { getAppDataSource } from "../../modules/database/dataSource";
 import { CardEntity } from "../../../../../packages/persistence/entities/card/CardEntity";
 import { CardLocalizationEntity } from "../../../../../packages/persistence/entities/card/CardLocalizationEntity";
 import { DareTypeTranslationEntity } from "../../../../../packages/persistence/entities/card/DareTypeTranslationEntity";
@@ -15,18 +15,21 @@ const localeSchema = z.string().min(2).max(35);
 
 router.get("/locales", async (_request, response, next) => {
     try {
-        const locales = await AppDataSource.getRepository(LocaleEntity).find({
-            where: { active: true },
-            order: { id: "ASC" },
-        });
+        const locales = await getAppDataSource()
+            .getRepository(LocaleEntity)
+            .find({
+                where: { active: true },
+                order: { id: "ASC" },
+            });
         const defaultLocale = locales.find((locale) => locale.isDefault);
         if (!defaultLocale) throw new Error("No active default Card locale is installed");
-        const activeCardCount = await AppDataSource.getRepository(CardEntity).countBy({
+        const activeCardCount = await getAppDataSource().getRepository(CardEntity).countBy({
             active: true,
         });
         const result = [];
         for (const locale of locales) {
-            const localizedCardCount = await AppDataSource.getRepository(CardLocalizationEntity)
+            const localizedCardCount = await getAppDataSource()
+                .getRepository(CardLocalizationEntity)
                 .createQueryBuilder("localization")
                 .innerJoin("localization.card", "card", "card.active = :active", { active: true })
                 .where("localization.locale = :locale", { locale: locale.id })
@@ -47,7 +50,7 @@ router.get("/locales", async (_request, response, next) => {
 router.get("/taxonomies", async (request, response, next) => {
     try {
         const locale = localeSchema.parse(request.query.locale);
-        const activeLocale = await AppDataSource.getRepository(LocaleEntity).existsBy({
+        const activeLocale = await getAppDataSource().getRepository(LocaleEntity).existsBy({
             id: locale,
             active: true,
         });
@@ -63,12 +66,12 @@ router.get("/taxonomies", async (request, response, next) => {
             });
             return;
         }
-        const questionCategoryTranslations = await AppDataSource.getRepository(
-            QuestionCategoryTranslationEntity,
-        ).find({ where: { locale } });
-        const dareTypeTranslations = await AppDataSource.getRepository(
-            DareTypeTranslationEntity,
-        ).find({ where: { locale } });
+        const questionCategoryTranslations = await getAppDataSource()
+            .getRepository(QuestionCategoryTranslationEntity)
+            .find({ where: { locale } });
+        const dareTypeTranslations = await getAppDataSource()
+            .getRepository(DareTypeTranslationEntity)
+            .find({ where: { locale } });
         const questionCategoriesById = new Map(
             questionCategoryTranslations.map((item) => [item.categoryId, item]),
         );

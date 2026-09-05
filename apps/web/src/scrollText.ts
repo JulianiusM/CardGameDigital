@@ -40,10 +40,13 @@ function createTextScroller(node: HTMLElement, passive: boolean, vertical: boole
     function currentPosition(): number {
         return vertical ? node.scrollTop : node.scrollLeft * inlineDirection;
     }
-    function moveTo(next: number): void {
-        if (vertical) node.scrollTop = next;
-        else node.scrollLeft = next * inlineDirection;
+    function moveVertically(next: number): void {
+        node.scrollTop = next;
     }
+    function moveHorizontally(next: number): void {
+        node.scrollLeft = next * inlineDirection;
+    }
+    const moveTo = vertical ? moveVertically : moveHorizontally;
 
     function restoreTabIndex(): void {
         if (originalTabIndex === null) node.removeAttribute("tabindex");
@@ -220,12 +223,11 @@ function createTextScroller(node: HTMLElement, passive: boolean, vertical: boole
             control.removeEventListener("keydown", keydown);
             document.removeEventListener("visibilitychange", restart);
             motionPreference.removeEventListener("change", restart);
-            node.classList.remove("scroll-text");
-            node.classList.remove("scroll-notice");
-            node.removeAttribute("data-text-overflow");
-            node.removeAttribute("data-text-scroll-duration");
-            node.removeAttribute("data-text-scroll-ready-at");
-            node.removeAttribute("data-text-scroll-paused");
+            node.classList.remove("scroll-text", "scroll-notice");
+            delete node.dataset.textOverflow;
+            delete node.dataset.textScrollDuration;
+            delete node.dataset.textScrollReadyAt;
+            delete node.dataset.textScrollPaused;
             restoreTabIndex();
         },
     };

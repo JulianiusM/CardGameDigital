@@ -81,7 +81,7 @@ export type NeverHaveIEverRevealMode = z.infer<typeof neverHaveIEverRevealModeSc
 export const roomHostStatusSchema = z
     .object({
         state: roomHostStateSchema,
-        participantId: z.string().uuid().nullable(),
+        participantId: z.uuid().nullable(),
         displayName: z.string().min(1).max(40).nullable(),
         deadline: z.number().int().nonnegative().nullable(),
     })
@@ -117,7 +117,7 @@ export type Envelope = z.infer<typeof envelopeSchema>;
 
 export const participantLeftEventPayloadSchema = z
     .object({
-        participantId: z.string().uuid(),
+        participantId: z.uuid(),
         displayName: z.string().min(1).max(80),
         reason: participantLeftReasonSchema,
     })
@@ -188,7 +188,7 @@ export const roomGameSettingsSchema = z
             "LETS_TALK",
         ]),
         profileId: z.string().min(1).max(80),
-        groupId: z.string().uuid().nullable(),
+        groupId: z.uuid().nullable(),
         adultContentConfirmed: z.boolean(),
         cardLocale: z.string().min(2).max(35),
         cardFallbackEnabled: z.boolean().default(false),
@@ -206,8 +206,7 @@ export const roomGameSettingsSchema = z
         configuration: effectiveGameSettingsSchema,
     })
     .strict();
-export type RoomGameSettingsPayload = z.infer<typeof roomGameSettingsSchema>;
-export type RoomGameSettings = RoomGameSettingsPayload;
+export type RoomGameSettings = z.infer<typeof roomGameSettingsSchema>;
 
 export const roomRoleChangedPayloadSchema = z
     .object({

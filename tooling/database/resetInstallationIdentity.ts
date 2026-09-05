@@ -1,4 +1,7 @@
-import { AppDataSource, initDataSource } from "../../apps/server/src/modules/database/dataSource";
+import {
+    getAppDataSource,
+    initDataSource,
+} from "../../apps/server/src/modules/database/dataSource";
 import { resetInstallationIdentity } from "../../apps/server/src/modules/installationIdentityReset";
 import settings from "../../apps/server/src/modules/settings";
 
@@ -9,7 +12,7 @@ async function main(): Promise<void> {
     const invalidateRuntime = arguments_.includes("--invalidate-runtime");
     await settings.read();
     await initDataSource();
-    const result = await resetInstallationIdentity(AppDataSource, {
+    const result = await resetInstallationIdentity(getAppDataSource(), {
         invalidateRuntime,
         tombstoneRetentionSeconds: settings.value.roomCreateIdempotencyTombstoneSeconds,
     });
@@ -26,5 +29,5 @@ void main()
         process.exitCode = 1;
     })
     .finally(async () => {
-        if (AppDataSource?.isInitialized) await AppDataSource.destroy();
+        if (getAppDataSource()?.isInitialized) await getAppDataSource().destroy();
     });

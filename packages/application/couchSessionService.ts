@@ -1,13 +1,21 @@
 import { MESSAGE_KEYS } from "../localization/keys";
 import { randomUUID } from "node:crypto";
-import { GameSession, type GameMode, CARD_TYPES, type DataSpaceId } from "../game-core";
+import {
+    GameSession,
+    type GameMode,
+    CARD_TYPES,
+    type DataSpaceId,
+    type RandomSource,
+    NEVER_HAVE_I_EVER_REVEAL_MODES,
+    type NeverHaveIEverRevealMode,
+    type SessionCardPolicyInput,
+} from "../game-core";
 import {
     DEFAULT_CARD_TRANSLATION_POLICY,
     type CardLocalizationPolicy,
     type CardRepository,
     type CouchSessionRepository,
 } from "./repositories";
-import type { RandomSource } from "../game-core";
 import {
     profileRequiresAdultConfirmation,
     roomSettingsGameProfile,
@@ -17,9 +25,7 @@ import {
     projectNeverHaveIEverVoting,
     type NeverHaveIEverVotingProjection,
 } from "./neverHaveIEverVoting";
-import { NEVER_HAVE_I_EVER_REVEAL_MODES, type NeverHaveIEverRevealMode } from "../game-core";
 import { projectCardIntensities } from "./cardIntensityProjection";
-import type { SessionCardPolicyInput } from "../game-core";
 import type { CardPolicyService } from "./cardPolicyService";
 
 export type CreateCouchSession = {
@@ -111,33 +117,7 @@ export class CouchSessionService {
                 code: "NOT_AUTHORIZED",
             });
         }
-        if (!(await this.cards.isLocaleActive(input.cardLocale))) {
-            throw Object.assign(new Error(MESSAGE_KEYS.CARD_LOCALE_UNAVAILABLE), {
-                code: "CARD_LOCALE_UNAVAILABLE",
-            });
-        }
-        if (input.cardFallbackEnabled && !input.cardFallbackLocales?.length) {
-            throw Object.assign(new Error(MESSAGE_KEYS.CARD_LOCALE_UNAVAILABLE), {
-                code: "CARD_LOCALE_UNAVAILABLE",
-            });
-        }
-        const fallbackLocales = [...(input.cardFallbackLocales ?? [])];
-        const normalizedFallbacks = fallbackLocales.map((entry) => entry.toLowerCase());
-        if (
-            new Set(normalizedFallbacks).size !== normalizedFallbacks.length ||
-            normalizedFallbacks.includes(input.cardLocale.toLowerCase())
-        ) {
-            throw Object.assign(new Error(MESSAGE_KEYS.CARD_LOCALE_UNAVAILABLE), {
-                code: "CARD_LOCALE_UNAVAILABLE",
-            });
-        }
-        for (const fallbackLocale of fallbackLocales) {
-            if (!(await this.cards.isLocaleActive(fallbackLocale))) {
-                throw Object.assign(new Error(MESSAGE_KEYS.CARD_LOCALE_UNAVAILABLE), {
-                    code: "CARD_LOCALE_UNAVAILABLE",
-                });
-            }
-        }
+        const fallbackLocales = await this.validateCardLocales(input);
         if (profileRequiresAdultConfirmation(input.profileId) && !input.adultContentConfirmed) {
             throw Object.assign(new Error(MESSAGE_KEYS.GAME_ADULT_CONFIRMATION_REQUIRED), {
                 code: "VALIDATION_ERROR",
@@ -227,6 +207,37 @@ export class CouchSessionService {
             input.persistence === "DATASPACE" ? (input.dataSpaceId ?? null) : null,
         );
         return this.snapshot(session);
+    }
+
+    private async validateCardLocales(input: CreateCouchSession) {
+        if (!(await this.cards.isLocaleActive(input.cardLocale))) {
+            throw Object.assign(new Error(MESSAGE_KEYS.CARD_LOCALE_UNAVAILABLE), {
+                code: "CARD_LOCALE_UNAVAILABLE",
+            });
+        }
+        if (input.cardFallbackEnabled && !input.cardFallbackLocales?.length) {
+            throw Object.assign(new Error(MESSAGE_KEYS.CARD_LOCALE_UNAVAILABLE), {
+                code: "CARD_LOCALE_UNAVAILABLE",
+            });
+        }
+        const fallbackLocales = [...(input.cardFallbackLocales ?? [])];
+        const normalizedFallbacks = fallbackLocales.map((entry) => entry.toLowerCase());
+        if (
+            new Set(normalizedFallbacks).size !== normalizedFallbacks.length ||
+            normalizedFallbacks.includes(input.cardLocale.toLowerCase())
+        ) {
+            throw Object.assign(new Error(MESSAGE_KEYS.CARD_LOCALE_UNAVAILABLE), {
+                code: "CARD_LOCALE_UNAVAILABLE",
+            });
+        }
+        for (const fallbackLocale of fallbackLocales) {
+            if (!(await this.cards.isLocaleActive(fallbackLocale))) {
+                throw Object.assign(new Error(MESSAGE_KEYS.CARD_LOCALE_UNAVAILABLE), {
+                    code: "CARD_LOCALE_UNAVAILABLE",
+                });
+            }
+        }
+        return fallbackLocales;
     }
 
     async ownerDataSpaceId(id: string): Promise<DataSpaceId | null> {

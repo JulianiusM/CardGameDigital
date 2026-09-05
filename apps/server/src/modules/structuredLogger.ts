@@ -71,7 +71,7 @@ const sensitiveLabel =
 const sensitiveUrlParameter = `${sensitiveLabel}|code|state|activate|reset`;
 
 function escapeRegularExpression(value: string): string {
-    return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    return value.replace(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`);
 }
 
 function sensitiveEnvironmentValues(): string[] {
@@ -89,17 +89,20 @@ function redactSensitiveText(value: string, secrets: readonly string[]): string 
     let redacted = value
         .replace(
             new RegExp(
-                `((?:${sensitiveLabel})\\s*(?:[:=]|\\bis\\b)\\s*)(?:"[^"]*"|'[^']*'|[^\\s,;]+)`,
+                String.raw`((?:${sensitiveLabel})\s*(?:[:=]|\bis\b)\s*)(?:"[^"]*"|'[^']*'|[^\s,;]+)`,
                 "gi",
             ),
             `$1${REDACTED}`,
         )
-        .replace(new RegExp(`([?&](?:${sensitiveUrlParameter})=)[^&#\\s]*`, "gi"), `$1${REDACTED}`)
-        .replace(/(bearer\s+)[A-Za-z0-9._~+\/-]+=*/gi, `$1${REDACTED}`)
+        .replace(
+            new RegExp(String.raw`([?&](?:${sensitiveUrlParameter})=)[^&#\s]*`, "gi"),
+            `$1${REDACTED}`,
+        )
+        .replace(/(bearer\s+)[A-Z0-9._~+/-]+=*/gi, `$1${REDACTED}`)
         .replace(/(connect\.sid=)[^;\s]+/gi, `$1${REDACTED}`)
         .replace(/(Access denied for user\s+)'[^']*'/gi, `$1'${REDACTED}'`)
         .replace(/(Duplicate entry\s+)'[^']*'/gi, `$1'${REDACTED}'`)
-        .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, REDACTED)
+        .replace(/[A-Z0-9._%+@-]+/gi, redactEmailToken)
         .replace(/\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/g, REDACTED);
     for (const secret of new Set([...sensitiveEnvironmentValues(), ...secrets])) {
         if (!secret) continue;
@@ -135,7 +138,7 @@ function diagnosticCauseStack(error: Error, secrets: readonly string[]): string 
             stacks.push(cause.stack ?? `${safeErrorName(cause)}: ${cause.message}`);
             cause = (cause as Error & { cause?: unknown }).cause;
         } else {
-            stacks.push(String(cause));
+            stacks.push(nonErrorDescription(cause));
             cause = undefined;
         }
     }
@@ -155,7 +158,7 @@ export function errorLogFields(error: unknown, options: ErrorLogOptions = {}): L
     if (!(error instanceof Error)) {
         return {
             errorName,
-            errorMessage: redactSensitiveText(String(error), secrets),
+            errorMessage: redactSensitiveText(nonErrorDescription(error), secrets),
             errorStack: "unavailable",
         };
     }
@@ -235,8 +238,7 @@ export function structuredRequestLogger(
             if (written) return;
             written = true;
             const durationMs = Number(process.hrtime.bigint() - startedAt) / 1_000_000;
-            const level: LogLevel =
-                response.statusCode >= 500 ? "error" : response.statusCode >= 400 ? "warn" : "info";
+            const level = responseLogLevel(response.statusCode);
             logEvent(
                 level,
                 "http.request",
@@ -260,4 +262,38 @@ export function structuredRequestLogger(
         response.once("close", writeRequest);
         next();
     };
+}
+
+// Scan each token once so long malformed addresses cannot trigger repeated regex searches.
+function redactEmailToken(token: string): string {
+    const separator = token.indexOf("@");
+    if (separator > 0 && separator < token.length - 1) return REDACTED;
+    return token;
+}
+
+function nonErrorDescription(value: unknown): string {
+    if (value === null) return "null";
+    switch (typeof value) {
+        case "object":
+            return "Non-Error object";
+        case "function":
+            return "Non-Error function";
+        case "undefined":
+            return "undefined";
+        case "string":
+            return value;
+        case "number":
+        case "bigint":
+        case "boolean":
+        case "symbol":
+            return value.toString();
+        default:
+            return "Non-Error value";
+    }
+}
+
+function responseLogLevel(status: number): LogLevel {
+    if (status >= 500) return "error";
+    if (status >= 400) return "warn";
+    return "info";
 }

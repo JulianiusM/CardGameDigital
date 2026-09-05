@@ -130,29 +130,7 @@ function recordRoleChanges(event: RoomLifecycleObservation): void {
 }
 
 function recordLifecycle(event: RoomLifecycleObservation): void {
-    const before = event.result.hostStatusBefore?.state;
-    const after = event.result.hostStatusAfter?.state;
-    if (before && after && before !== after) {
-        increment(
-            roomHostStateTransitionTotal,
-            `from=${before},to=${after},reason=${transitionReason(event)}`,
-        );
-        if (before === "CONNECTED" && after === "RECONNECTING") {
-            logEvent(
-                "info",
-                "room.host_reconnect_grace_entered",
-                { roomId: event.roomId, participantId: event.participantId },
-                settings.value.logLevel,
-            );
-        } else if (before === "RECONNECTING" && after === "CONNECTED") {
-            logEvent(
-                "info",
-                "room.host_reconnect_grace_exited",
-                { roomId: event.roomId, participantId: event.participantId },
-                settings.value.logLevel,
-            );
-        }
-    }
+    recordHostTransition(event);
     reconcileHostless(event);
     recordRoleChanges(event);
 
@@ -238,6 +216,32 @@ export const roomLifecycleObservability: RoomLifecycleObservability = {
     roomCreateIdempotency: recordIdempotency,
     lifecycleTransition: recordLifecycle,
 };
+
+function recordHostTransition(event: RoomLifecycleObservation) {
+    const before = event.result.hostStatusBefore?.state;
+    const after = event.result.hostStatusAfter?.state;
+    if (before && after && before !== after) {
+        increment(
+            roomHostStateTransitionTotal,
+            `from=${before},to=${after},reason=${transitionReason(event)}`,
+        );
+        if (before === "CONNECTED" && after === "RECONNECTING") {
+            logEvent(
+                "info",
+                "room.host_reconnect_grace_entered",
+                { roomId: event.roomId, participantId: event.participantId },
+                settings.value.logLevel,
+            );
+        } else if (before === "RECONNECTING" && after === "CONNECTED") {
+            logEvent(
+                "info",
+                "room.host_reconnect_grace_exited",
+                { roomId: event.roomId, participantId: event.participantId },
+                settings.value.logLevel,
+            );
+        }
+    }
+}
 
 export function recordRoomCreateBoundaryIdempotency(
     outcome: Extract<RoomCreateIdempotencyOutcome, "INVALID" | "REQUIRED">,

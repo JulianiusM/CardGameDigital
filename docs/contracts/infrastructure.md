@@ -31,6 +31,10 @@ from any caller. Session cookies use `Secure` whenever `PUBLIC_URL` is HTTPS. Th
 must preserve `Origin`, `Referer`, `Host`, `X-Forwarded-Proto`, and the WebSocket upgrade
 headers.
 
+The Kodi client requires TLS 1.2 or newer for HTTPS and WSS and verifies server
+certificates and hostnames. TLS front doors that only support TLS 1.0 or 1.1 are
+incompatible; local HTTP/WS discovery and connections retain their address policy.
+
 With `PUBLIC_RUNTIME_SECURITY=enforced` (the default), public startup fails unless
 `PUBLIC_URL` is HTTPS, `TRUST_PROXY` is explicit, MariaDB/MySQL and SMTP credentials are
 complete, account authentication is enabled, and `SESSION_SECRET` is an explicit stable

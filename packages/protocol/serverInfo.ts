@@ -6,25 +6,22 @@ const sameOriginRelativePathSchema = z
     .startsWith("/")
     .refine((value) => !value.startsWith("//"), "Endpoint must be same-origin relative");
 
-const httpOriginSchema = z
-    .string()
-    .url()
-    .refine((value) => {
-        const parsed = new URL(value);
-        return (
-            (parsed.protocol === "http:" || parsed.protocol === "https:") &&
-            !parsed.username &&
-            !parsed.password &&
-            parsed.pathname === "/" &&
-            !parsed.search &&
-            !parsed.hash
-        );
-    }, "Value must be an HTTP(S) origin without credentials, path, query, or fragment");
+const httpOriginSchema = z.url().refine((value) => {
+    const parsed = new URL(value);
+    return (
+        (parsed.protocol === "http:" || parsed.protocol === "https:") &&
+        !parsed.username &&
+        !parsed.password &&
+        parsed.pathname === "/" &&
+        !parsed.search &&
+        !parsed.hash
+    );
+}, "Value must be an HTTP(S) origin without credentials, path, query, or fragment");
 
 export const serverInfoSchema = z
     .object({
         version: z.literal(1),
-        serverId: z.string().uuid(),
+        serverId: z.uuid(),
         displayName: z.string().trim().min(1).max(80),
         deploymentMode: z.enum(["local", "public"]),
         publicRuntimeSecurity: z.enum(["enforced", "development"]),

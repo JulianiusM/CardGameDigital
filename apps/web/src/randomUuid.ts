@@ -7,7 +7,7 @@ type BrowserCrypto = {
 export function randomUuidV4(source: BrowserCrypto = globalThis.crypto): string {
     if (typeof source?.randomUUID === "function") return source.randomUUID();
     if (typeof source?.getRandomValues !== "function") {
-        throw new Error("Secure random generation is unavailable");
+        throw new TypeError("Secure random generation is unavailable");
     }
     const bytes = source.getRandomValues(new Uint8Array(16));
     bytes[6] = (bytes[6] & 0x0f) | 0x40;

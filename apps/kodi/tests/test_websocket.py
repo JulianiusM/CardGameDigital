@@ -4,9 +4,11 @@ import base64
 import hashlib
 import json
 import socket
+import ssl
 import struct
 import threading
 import unittest
+from unittest.mock import Mock, patch
 
 from support import RESOURCES_ROOT
 from lib.transport.websocket import WEBSOCKET_GUID, WebSocketConnection
@@ -36,6 +38,21 @@ def read_client_frame(connection: socket.socket) -> tuple[int, bytes, bool]:
 
 
 class WebSocketTransportTests(unittest.TestCase):
+    def test_wss_requires_modern_tls_and_verifies_the_server_hostname(self) -> None:
+        context = ssl.create_default_context()
+        context.minimum_version = ssl.TLSVersion.MINIMUM_SUPPORTED
+        raw = Mock()
+        connection = WebSocketConnection("wss://example.test/ws", "https://example.test")
+        with patch("lib.transport.websocket.socket.create_connection", return_value=raw), patch(
+            "lib.transport.websocket.ssl.create_default_context", return_value=context
+        ), patch.object(context, "wrap_socket", side_effect=ssl.SSLError("untrusted certificate")) as wrap:
+            with self.assertRaises(ssl.SSLError):
+                connection.connect()
+        wrap.assert_called_once_with(raw, server_hostname="example.test")
+        self.assertEqual(context.minimum_version, ssl.TLSVersion.TLSv1_2)
+        self.assertEqual(context.verify_mode, ssl.CERT_REQUIRED)
+        self.assertTrue(context.check_hostname)
+
     def test_handshake_client_masking_ping_pong_and_json_validation(self) -> None:
         listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         listener.bind(("127.0.0.1", 0))

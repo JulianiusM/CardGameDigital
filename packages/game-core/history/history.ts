@@ -23,7 +23,7 @@ export function isAllowedByHistory(
     const sessionAppearances = sessionHistory.filter((entry) => entry.cardId === card.id);
     if (sessionAppearances.length && !card.repeatableInSession) return false;
     if (sessionAppearances.length) {
-        const last = sessionAppearances[sessionAppearances.length - 1];
+        const last = sessionAppearances.at(-1)!;
         const otherCardsSince = sessionHistory.length - last.sequence;
         if (otherCardsSince < card.repeatCooldown) return false;
     }

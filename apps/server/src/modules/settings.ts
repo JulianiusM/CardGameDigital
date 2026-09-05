@@ -12,7 +12,7 @@ dotenv.config({ path: envPath });
 const booleanValue = z
     .union([z.boolean(), z.enum(["1", "0", "true", "false", "yes", "no", "on", "off"])])
     .transform((value) => (typeof value === "boolean" ? value : /^(1|true|yes|on)$/i.test(value)));
-const numberValue = z.union([z.number(), z.string()]).transform(Number).pipe(z.number().finite());
+const numberValue = z.union([z.number(), z.string()]).transform(Number).pipe(z.number());
 const commaSeparatedValues = z
     .union([z.array(z.string()), z.string()])
     .transform((value) => (Array.isArray(value) ? value : value.split(",")))
@@ -99,7 +99,7 @@ export const settingsSchema = z
         mdnsAdvertisedTls: booleanValue,
         webSocketPath: webSocketEndpointPath,
         roomJoinPathTemplate,
-        publicUrl: z.string().url(),
+        publicUrl: z.url(),
         publicUrlConfigured: z.boolean(),
         dbType: z.enum(["sqlite", "mariadb", "mysql"]),
         dbFile: z.string().min(1),
@@ -132,9 +132,7 @@ export const settingsSchema = z
         file: z.string(),
         testMode: z.boolean(),
     })
-    .superRefine((value, context) => {
-        const publicSecurityEnforced =
-            value.deploymentMode === "public" && value.publicRuntimeSecurity === "enforced";
+    .superRefine(function validateDeploymentOrigin(value, context) {
         if (value.deploymentMode === "public" && !value.publicUrlConfigured) {
             context.addIssue({
                 code: "custom",
@@ -166,6 +164,8 @@ export const settingsSchema = z
                 message: "local deployment requires DB_TYPE=sqlite",
             });
         }
+    })
+    .superRefine(function validateDiscoverySettings(value, context) {
         const overlappingInterfaces = value.mdnsInterfaceAllowlist.filter((name) =>
             value.mdnsInterfaceDenylist.includes(name),
         );
@@ -191,12 +191,11 @@ export const settingsSchema = z
             ? new URL(value.publicUrl).protocol === "https:"
             : false;
         const configuredFrontDoor = value.publicUrlConfigured ? new URL(value.publicUrl) : null;
-        const frontDoorPort = configuredFrontDoor
-            ? Number(
-                  configuredFrontDoor.port ||
-                      (configuredFrontDoor.protocol === "https:" ? "443" : "80"),
-              )
-            : value.httpPort;
+        let frontDoorPort = value.httpPort;
+        if (configuredFrontDoor) {
+            const defaultPort = configuredFrontDoor.protocol === "https:" ? "443" : "80";
+            frontDoorPort = Number(configuredFrontDoor.port || defaultPort);
+        }
         if (value.mdnsDiscoveryEnabled && value.mdnsAdvertisedTls !== endpointUsesTls) {
             context.addIssue({
                 code: "custom",
@@ -212,6 +211,9 @@ export const settingsSchema = z
                     "mDNS port must match the configured HTTP listener or PUBLIC_URL front door",
             });
         }
+    })
+    .superRefine(function validatePublicDatabase(value, context) {
+        const publicSecurityEnforced = isPublicRuntimeSecurityEnforced(value);
         if (publicSecurityEnforced && value.dbType === "sqlite") {
             context.addIssue({
                 code: "custom",
@@ -226,61 +228,68 @@ export const settingsSchema = z
                 message: "public deployment requires account authentication",
             });
         }
-        if (publicSecurityEnforced) {
-            const publicUrl = new URL(value.publicUrl);
-            const testLoopbackOrigin =
-                value.testMode &&
-                publicUrl.protocol === "http:" &&
-                ["localhost", "127.0.0.1", "[::1]"].includes(publicUrl.hostname);
-            if (
-                (publicUrl.protocol !== "https:" && !testLoopbackOrigin) ||
-                publicUrl.username ||
-                publicUrl.password ||
-                publicUrl.pathname !== "/" ||
-                publicUrl.search ||
-                publicUrl.hash
-            ) {
-                context.addIssue({
-                    code: "custom",
-                    path: ["publicUrl"],
-                    message:
-                        "public deployment requires a credential-free HTTPS origin PUBLIC_URL (HTTP loopback is E2E-only)",
-                });
-            }
-            if (!value.dbUser.trim() || !value.dbPassword) {
-                context.addIssue({
-                    code: "custom",
-                    path: ["dbUser"],
-                    message: "public deployment requires database credentials",
-                });
-            }
-            if (value.sessionSecret.startsWith("local-") || value.sessionSecret.length < 32) {
-                context.addIssue({
-                    code: "custom",
-                    path: ["sessionSecret"],
-                    message: "public deployment requires an explicit 32-character SESSION_SECRET",
-                });
-            }
-            if (
-                !value.smtpHost.trim() ||
-                !value.smtpUser.trim() ||
-                !value.smtpPassword ||
-                !z.email().safeParse(value.smtpEmail).success
-            ) {
-                context.addIssue({
-                    code: "custom",
-                    path: ["smtpHost"],
-                    message: "public deployment requires complete SMTP configuration",
-                });
-            }
-            if (typeof value.trustProxy !== "number" || value.trustProxy < 1) {
-                context.addIssue({
-                    code: "custom",
-                    path: ["trustProxy"],
-                    message: "public deployment requires a positive TRUST_PROXY hop count",
-                });
-            }
+    })
+    .superRefine(function validatePublicOrigin(value, context) {
+        if (!isPublicRuntimeSecurityEnforced(value)) return;
+        const publicUrl = new URL(value.publicUrl);
+        const testLoopbackOrigin =
+            value.testMode &&
+            publicUrl.protocol === "http:" &&
+            ["localhost", "127.0.0.1", "[::1]"].includes(publicUrl.hostname);
+        if (
+            (publicUrl.protocol !== "https:" && !testLoopbackOrigin) ||
+            publicUrl.username ||
+            publicUrl.password ||
+            publicUrl.pathname !== "/" ||
+            publicUrl.search ||
+            publicUrl.hash
+        ) {
+            context.addIssue({
+                code: "custom",
+                path: ["publicUrl"],
+                message:
+                    "public deployment requires a credential-free HTTPS origin PUBLIC_URL (HTTP loopback is E2E-only)",
+            });
         }
+    })
+    .superRefine(function validatePublicCredentials(value, context) {
+        if (!isPublicRuntimeSecurityEnforced(value)) return;
+        if (!value.dbUser.trim() || !value.dbPassword) {
+            context.addIssue({
+                code: "custom",
+                path: ["dbUser"],
+                message: "public deployment requires database credentials",
+            });
+        }
+        if (value.sessionSecret.startsWith("local-") || value.sessionSecret.length < 32) {
+            context.addIssue({
+                code: "custom",
+                path: ["sessionSecret"],
+                message: "public deployment requires an explicit 32-character SESSION_SECRET",
+            });
+        }
+        if (
+            !value.smtpHost.trim() ||
+            !value.smtpUser.trim() ||
+            !value.smtpPassword ||
+            !z.email().safeParse(value.smtpEmail).success
+        ) {
+            context.addIssue({
+                code: "custom",
+                path: ["smtpHost"],
+                message: "public deployment requires complete SMTP configuration",
+            });
+        }
+        if (typeof value.trustProxy !== "number" || value.trustProxy < 1) {
+            context.addIssue({
+                code: "custom",
+                path: ["trustProxy"],
+                message: "public deployment requires a positive TRUST_PROXY hop count",
+            });
+        }
+    })
+    .superRefine(function validateOidcSettings(value, context) {
+        const publicSecurityEnforced = isPublicRuntimeSecurityEnforced(value);
         if (value.oidcEnabled && value.authMode !== "account") {
             context.addIssue({
                 code: "custom",
@@ -288,46 +297,44 @@ export const settingsSchema = z
                 message: "OIDC requires account authentication",
             });
         }
-        if (value.oidcEnabled) {
-            const requiredOidcValues = [
-                value.oidcIssuer,
-                value.oidcClientId,
-                value.oidcClientSecret,
-                value.oidcRedirectUrl,
-                value.oidcName,
-            ];
-            if (requiredOidcValues.some((entry) => !entry.trim())) {
-                context.addIssue({
-                    code: "custom",
-                    path: ["oidcEnabled"],
-                    message: "enabled OIDC requires complete provider configuration",
-                });
-            }
-            const redirect = z.url().safeParse(value.oidcRedirectUrl);
-            const issuer = z.url().safeParse(value.oidcIssuer);
-            if (!redirect.success || !issuer.success) {
+        if (!value.oidcEnabled) return;
+        const requiredOidcValues = [
+            value.oidcIssuer,
+            value.oidcClientId,
+            value.oidcClientSecret,
+            value.oidcRedirectUrl,
+            value.oidcName,
+        ];
+        if (requiredOidcValues.some((entry) => !entry.trim())) {
+            context.addIssue({
+                code: "custom",
+                path: ["oidcEnabled"],
+                message: "enabled OIDC requires complete provider configuration",
+            });
+        }
+        const redirect = z.url().safeParse(value.oidcRedirectUrl);
+        const issuer = z.url().safeParse(value.oidcIssuer);
+        if (!redirect.success || !issuer.success) {
+            context.addIssue({
+                code: "custom",
+                path: ["oidcRedirectUrl"],
+                message: "OIDC issuer and redirect must be valid URLs",
+            });
+        }
+        if (value.deploymentMode === "public" && redirect.success && issuer.success) {
+            const expectedRedirect = new URL("/api/v1/account/oidc/callback", value.publicUrl).href;
+            const insecureOidc =
+                publicSecurityEnforced &&
+                (new URL(value.oidcRedirectUrl).protocol !== "https:" ||
+                    new URL(value.oidcIssuer).protocol !== "https:");
+            if (insecureOidc || value.oidcRedirectUrl !== expectedRedirect) {
                 context.addIssue({
                     code: "custom",
                     path: ["oidcRedirectUrl"],
-                    message: "OIDC issuer and redirect must be valid URLs",
+                    message: publicSecurityEnforced
+                        ? "public OIDC requires HTTPS URLs and the canonical callback URL"
+                        : "public OIDC requires the canonical callback URL",
                 });
-            }
-            if (value.deploymentMode === "public" && redirect.success && issuer.success) {
-                const expectedRedirect = new URL("/api/v1/account/oidc/callback", value.publicUrl)
-                    .href;
-                const insecureOidc =
-                    publicSecurityEnforced &&
-                    (new URL(value.oidcRedirectUrl).protocol !== "https:" ||
-                        new URL(value.oidcIssuer).protocol !== "https:");
-                if (insecureOidc || value.oidcRedirectUrl !== expectedRedirect) {
-                    context.addIssue({
-                        code: "custom",
-                        path: ["oidcRedirectUrl"],
-                        message: publicSecurityEnforced
-                            ? "public OIDC requires HTTPS URLs and the canonical callback URL"
-                            : "public OIDC requires the canonical callback URL",
-                    });
-                }
             }
         }
     });

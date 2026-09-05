@@ -8,8 +8,8 @@ from dataclasses import dataclass
 from html.parser import HTMLParser
 from typing import Any, Mapping, Optional
 from urllib.parse import urlencode
-from urllib.error import HTTPError, URLError
-from urllib.request import HTTPRedirectHandler, Request, build_opener
+from urllib.error import HTTPError
+from urllib.request import HTTPRedirectHandler, HTTPSHandler, Request, build_opener
 
 from ..discovery.address_policy import relative_url, validate_transport
 from ..native_settings_metadata import SOURCE_LOCALE
@@ -29,6 +29,9 @@ from ..protocol.validation import (
     validate_taxonomy,
 )
 from ..version import APPLICATION_VERSION
+
+
+JSON_CONTENT_TYPE = 'application/json'
 
 
 MAX_RESPONSE_BYTES = 1024 * 1024
@@ -71,7 +74,9 @@ class JsonHttpClient:
         self.locale = locale
         self._bearer_token = bearer_token
         self.timeout = timeout
-        self._opener = build_opener(_RejectRedirects())
+        context = ssl.create_default_context()
+        context.minimum_version = ssl.TLSVersion.TLSv1_2
+        self._opener = build_opener(_RejectRedirects(), HTTPSHandler(context=context))
 
     def request(
         self,
@@ -81,7 +86,7 @@ class JsonHttpClient:
         headers: Optional[Mapping[str, str]] = None,
     ) -> HttpResponse:
         data = None if body is None else json.dumps(body, separators=(",", ":")).encode("utf-8")
-        content_type = "application/json" if data is not None else None
+        content_type = JSON_CONTENT_TYPE if data is not None else None
         return self._request(method, endpoint, data, content_type, headers, expect_json=True)
 
     def request_form(
@@ -115,7 +120,7 @@ class JsonHttpClient:
     ) -> HttpResponse:
         validate_transport(self.origin)
         request_headers = {
-            "Accept": "application/json" if expect_json else "text/plain",
+            "Accept": JSON_CONTENT_TYPE if expect_json else "text/plain",
             "Accept-Language": self.locale,
             "User-Agent": f"PartyGameKodi/{APPLICATION_VERSION}",
         }
@@ -141,8 +146,12 @@ class JsonHttpClient:
                 raise HttpFailure("Server redirects are not accepted", error.code) from error
             raw = error.read(MAX_RESPONSE_BYTES + 1)
             raise _http_error(error.code, raw) from error
-        except (URLError, TimeoutError, ssl.SSLError, OSError) as error:
+        except OSError as error:
             raise HttpFailure("Server connection failed") from error
+        parsed = self._decode_response(raw, status, expect_json, response_headers)
+        return HttpResponse(status=status, headers=response_headers, body=parsed)
+
+    def _decode_response(self, raw, status, expect_json, response_headers):
         if len(raw) > MAX_RESPONSE_BYTES:
             raise HttpFailure("Server response exceeded the size limit", status)
         if not raw:
@@ -162,7 +171,7 @@ class JsonHttpClient:
                 "",
             )
             if response_type.split(";", maxsplit=1)[0].strip().casefold() not in {
-                "application/json",
+                JSON_CONTENT_TYPE,
                 "application/problem+json",
             }:
                 raise HttpFailure("Server returned a non-JSON response", status)
@@ -170,28 +179,33 @@ class JsonHttpClient:
                 parsed = json.loads(raw.decode("utf-8", errors="strict"))
             except (UnicodeDecodeError, json.JSONDecodeError) as error:
                 raise HttpFailure("Server returned invalid JSON", status) from error
-        return HttpResponse(status=status, headers=response_headers, body=parsed)
+        return parsed
 
 
 def _http_error(status: int, raw: bytes) -> HttpFailure:
     message = f"Server request failed ({status})"
     code = None
-    if len(raw) <= MAX_RESPONSE_BYTES:
-        try:
-            body = json.loads(raw.decode("utf-8", errors="strict"))
-            error = body.get("error", {}) if isinstance(body, dict) else {}
-            if isinstance(error, str):
-                code = error[:100]
-                description = body.get("error_description")
-                message = description[:500] if isinstance(description, str) else code
-            elif isinstance(error, dict):
-                if isinstance(error.get("message"), str):
-                    message = error["message"][:500]
-                if isinstance(error.get("code"), str):
-                    code = error["code"][:100]
-        except (UnicodeDecodeError, json.JSONDecodeError):
-            pass
+    message, code = _parse_http_error(raw, code, message)
     return HttpFailure(message, status, code)
+
+def _parse_http_error(raw, code, message):
+    if len(raw) > MAX_RESPONSE_BYTES:
+        return message, code
+    try:
+        body = json.loads(raw.decode("utf-8", errors="strict"))
+        error = body.get("error", {}) if isinstance(body, dict) else {}
+        if isinstance(error, str):
+            code = error[:100]
+            description = body.get("error_description")
+            message = description[:500] if isinstance(description, str) else code
+        elif isinstance(error, dict):
+            if isinstance(error.get("message"), str):
+                message = error["message"][:500]
+            if isinstance(error.get("code"), str):
+                code = error["code"][:100]
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        pass
+    return message, code
 
 
 class ApiClient:

@@ -29,6 +29,10 @@ from .worker_pool import BoundedWorkerPool
 from . import strings
 
 
+ROOM_QR_FILENAME = 'room-join.png'
+DEVICE_QR_FILENAME = 'device-link.png'
+
+
 class CouchStateUnresolved(RuntimeError):
     code = "COUCH_STATE_UNRESOLVED"
 
@@ -69,11 +73,7 @@ class EffectRunner:
                 self._room_worker.send(envelope("room.snapshot.request", {}))
             return
         if request.kind == "WS_LEAVE":
-            if self._room_worker:
-                self._room_worker.leave()
-            else:
-                self._publish(action("LEAVE_COMPLETED"))
-            return
+            return self._leave_room()
         if request.kind == "WS_DISCONNECT":
             self._stop_room()
             return
@@ -89,6 +89,14 @@ class EffectRunner:
         token = self._claim(request.owner)
         if not self._executor.submit(self._execute, request, token):
             self.diagnostics.add("effect.queue_rejected", effect=request.kind)
+
+
+    def _leave_room(self):
+        if self._room_worker:
+            self._room_worker.leave()
+        else:
+            self._publish(action("LEAVE_COMPLETED"))
+
 
     def shutdown(self) -> None:
         if self._stopping:
@@ -177,7 +185,7 @@ class EffectRunner:
             self.profile.clear_recovery()
             if reference:
                 self.secrets.delete(str(reference))
-        self._remove_temporary_image("room-join.png")
+        self._remove_temporary_image(ROOM_QR_FILENAME)
         return None
 
     def _effect_clear_all_storage(self, _request: Effect) -> None:
@@ -185,11 +193,11 @@ class EffectRunner:
         with self._storage_lock:
             self.profile.clear_all()
             self.secrets.clear()
-        self._remove_temporary_image("room-join.png")
-        self._remove_temporary_image("device-link.png")
+        self._remove_temporary_image(ROOM_QR_FILENAME)
+        self._remove_temporary_image(DEVICE_QR_FILENAME)
         return None
 
-    def _effect_discover_servers(self, request: Effect) -> Action:
+    def _effect_discover_servers(self, _request: Effect) -> Action:
         self._publish(action("DISCOVERY_STARTED"))
         if not self._discovery_enabled:
             return action("DISCOVERY_FINISHED")
@@ -238,7 +246,7 @@ class EffectRunner:
             server = validated_record(origin, source, info)
             self._publish(action("SERVER_DISCOVERED", server=server))
             return True
-        except (HttpFailure, ProtocolViolation, ValueError, OSError) as error:
+        except (HttpFailure, ValueError, OSError) as error:
             self.diagnostics.add(
                 "discovery.candidate_rejected",
                 source=source,
@@ -254,7 +262,7 @@ class EffectRunner:
                 origin, info = ApiClient.probe(saved.origin, self._locale())
                 server = validated_record(origin, "saved", info)
                 self._publish(action("SERVER_DISCOVERED", server=server))
-            except (HttpFailure, ProtocolViolation, ValueError, OSError) as error:
+            except (HttpFailure, ValueError, OSError) as error:
                 self.diagnostics.add(
                     "discovery.saved_probe_failed",
                     server_id=saved.server_id,
@@ -502,12 +510,12 @@ class EffectRunner:
         join_url = relative_url(str(base), path)
         if any(name in join_url.casefold() for name in ("credential=", "token=", "secret=")):
             raise ValueError("Join URL unexpectedly contains secret material")
-        target = self.profile_directory / "room-join.png"
+        target = self.profile_directory / ROOM_QR_FILENAME
         write_png(encode_text(join_url), target)
         return action("QR_READY", path=str(target))
 
     def _effect_clear_room_qr(self, _request: Effect) -> None:
-        self._remove_temporary_image("room-join.png")
+        self._remove_temporary_image(ROOM_QR_FILENAME)
         return None
 
     def _effect_create_group(self, request: Effect) -> Action:
@@ -552,7 +560,7 @@ class EffectRunner:
         self._authorization_cancel = cancelled
         try:
             authorization = client.begin(client.client_id, client.scope)
-            target = self.profile_directory / "device-link.png"
+            target = self.profile_directory / DEVICE_QR_FILENAME
             qr_value = authorization.verification_uri_complete or authorization.verification_uri
             write_png(encode_text(qr_value), target)
             self._publish(
@@ -580,7 +588,7 @@ class EffectRunner:
         finally:
             if self._authorization_cancel is cancelled:
                 self._authorization_cancel = None
-            self._remove_temporary_image("device-link.png")
+            self._remove_temporary_image(DEVICE_QR_FILENAME)
 
     def _effect_unlink_device(self, request: Effect) -> Action:
         server_id = str(request.payload["server_id"])
@@ -606,7 +614,7 @@ class EffectRunner:
             )
         finally:
             self.secrets.delete(reference)
-            target = self.profile_directory / "device-link.png"
+            target = self.profile_directory / DEVICE_QR_FILENAME
             try:
                 target.unlink()
             except FileNotFoundError:
@@ -806,18 +814,7 @@ def _failure_notice(error: Exception, effect_kind: str) -> dict[str, object]:
             "code": error.code,
         }
     if isinstance(error, HttpFailure):
-        if error.code == "CARD_POOL_EXHAUSTED":
-            return {
-                "message_id": strings.POOL_EXHAUSTED,
-                "code": error.code,
-            }
-        if error.code == "SERVER_NOT_READY":
-            return {"message_id": strings.SERVER_NOT_READY}
-        if error.code and error.status:
-            return {"message": str(error)[:500], "code": error.code}
-        if error.status and "non-JSON" in str(error):
-            return {"message_id": strings.UNSUPPORTED_SERVER}
-        return {"message_id": strings.NETWORK_ERROR}
+        return _http_failure_notice(error)
     if isinstance(error, ProtocolViolation):
         return {"message_id": strings.UNSUPPORTED_SERVER}
     if isinstance(error, StorageVersionError):
@@ -826,4 +823,19 @@ def _failure_notice(error: Exception, effect_kind: str) -> dict[str, object]:
         return {"message_id": strings.INVALID_SERVER_ADDRESS}
     if isinstance(error, ValueError):
         return {"message_id": strings.INVALID_CONFIGURATION}
+    return {"message_id": strings.NETWORK_ERROR}
+
+
+def _http_failure_notice(error):
+    if error.code == "CARD_POOL_EXHAUSTED":
+        return {
+            "message_id": strings.POOL_EXHAUSTED,
+            "code": error.code,
+        }
+    if error.code == "SERVER_NOT_READY":
+        return {"message_id": strings.SERVER_NOT_READY}
+    if error.code and error.status:
+        return {"message": str(error)[:500], "code": error.code}
+    if error.status and "non-JSON" in str(error):
+        return {"message_id": strings.UNSUPPORTED_SERVER}
     return {"message_id": strings.NETWORK_ERROR}

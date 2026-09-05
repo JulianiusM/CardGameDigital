@@ -93,7 +93,7 @@ function respondOrNext(
             error: {
                 code: "VALIDATION_ERROR",
                 message: translate(locale, MESSAGE_KEYS.ROOM_INVALID_REQUEST),
-                data: error.flatten(),
+                data: z.flattenError(error),
             },
         });
         return;

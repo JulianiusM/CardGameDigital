@@ -106,7 +106,8 @@ the same machine” case independent of operating-system multicast loopback beha
 
 Plain HTTP/WebSocket is accepted only for loopback, private, link-local, or `.local`
 destinations that validate as a local deployment. Public/global servers require
-HTTPS/WSS. Redirects are rejected, response and WebSocket message sizes are bounded,
+HTTPS/WSS with certificate verification and TLS 1.2 or newer, including on Python 3.8.
+Redirects are rejected, response and WebSocket message sizes are bounded,
 and endpoint metadata must be same-origin relative paths. The client requests a fresh
 snapshot after every WebSocket hello and resynchronizes after stale or ambiguous
 commands.

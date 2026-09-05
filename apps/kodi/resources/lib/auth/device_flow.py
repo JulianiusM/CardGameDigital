@@ -144,17 +144,19 @@ class DeviceAuthorizationClient:
                     raise DeviceAuthorizationError("Token response has no access token")
                 return response
             except HttpFailure as error:
-                if error.code == "authorization_pending":
-                    if on_pending:
-                        on_pending(authorization.expires_at - time.time())
-                    continue
-                if error.code == "slow_down":
-                    interval = min(30, interval + 5)
-                    continue
-                if error.code in {"access_denied", "expired_token"}:
-                    raise DeviceAuthorizationError(error.code) from error
-                raise
+                interval = self._poll_retry_interval(error, interval, authorization, on_pending)
         raise DeviceAuthorizationError("Device authorization expired or was cancelled")
+
+    def _poll_retry_interval(self, error, interval, authorization, on_pending):
+        if error.code == "authorization_pending":
+            if on_pending:
+                on_pending(authorization.expires_at - time.time())
+            return interval
+        if error.code == "slow_down":
+            return min(30, interval + 5)
+        if error.code in {"access_denied", "expired_token"}:
+            raise DeviceAuthorizationError(error.code) from error
+        raise error
 
     def revoke(self, token: str) -> None:
         if not self.revocation_path:

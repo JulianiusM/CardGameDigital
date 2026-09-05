@@ -17,7 +17,7 @@ import {
     roomRoleChangedPayloadSchema,
 } from "./common";
 
-const playerSchema = z.object({ id: z.string().uuid(), name: z.string().min(1).max(40) }).strict();
+const playerSchema = z.object({ id: z.uuid(), name: z.string().min(1).max(40) }).strict();
 const voteResultSchema = z
     .object({
         yes: z.number().int().nonnegative(),
@@ -28,7 +28,7 @@ const voteResultSchema = z
 
 const namedAnswerSchema = z
     .object({
-        playerId: z.string().uuid(),
+        playerId: z.uuid(),
         displayName: z.string().min(1).max(40),
         vote: neverHaveIEverVoteValueSchema,
     })
@@ -40,7 +40,7 @@ export const neverHaveIEverVotingViewSchema = z
         progress: z.array(
             z
                 .object({
-                    playerId: z.string().uuid(),
+                    playerId: z.uuid(),
                     displayName: z.string().min(1).max(40),
                     status: neverHaveIEverVoteStatusSchema,
                 })
@@ -55,7 +55,7 @@ export type NeverHaveIEverVotingView = z.infer<typeof neverHaveIEverVotingViewSc
 
 export const sessionViewSchema = z
     .object({
-        id: z.string().uuid(),
+        id: z.uuid(),
         startedAt: z.number().int().nonnegative(),
         mode: z.enum([
             "CLASSIC_TRUTH_OR_DARE",
@@ -81,7 +81,7 @@ export const sessionViewSchema = z
         players: z.array(playerSchema),
         currentCard: z
             .object({
-                id: z.string().uuid(),
+                id: z.uuid(),
                 cardText: z.string(),
                 cardType: z.enum(["QUESTION", "DARE", "CONVERSATION_META"]),
                 cardIntensity: z.number().int().min(1).max(5),
@@ -89,7 +89,7 @@ export const sessionViewSchema = z
                 questionCategoryId: z.string().nullable(),
                 dareTypeId: z.string().nullable(),
             })
-            .passthrough()
+            .loose()
             .nullable(),
         cardsShown: z.number().int().nonnegative(),
         remainingCardCount: z.number().int().nonnegative(),
@@ -99,7 +99,7 @@ export const sessionViewSchema = z
         controllablePlayers: z.array(playerSchema.extend({ hasVoted: z.boolean() })),
         viewer: z
             .object({
-                participantId: z.string().uuid(),
+                participantId: z.uuid(),
                 role: clientRoleSchema,
                 displayName: z.string().min(1).max(40),
             })
@@ -112,8 +112,8 @@ export type SessionView = z.infer<typeof sessionViewSchema>;
 
 export const publicRoomParticipantSchema = z
     .object({
-        id: z.string().uuid(),
-        roomId: z.string().uuid(),
+        id: z.uuid(),
+        roomId: z.uuid(),
         role: clientRoleSchema,
         displayName: z.string().min(1).max(40),
         devicePlayers: z.array(playerSchema).max(19),
@@ -125,14 +125,14 @@ export type PublicRoomParticipant = z.infer<typeof publicRoomParticipantSchema>;
 const versionedRoomGameSettingsSchema = z.lazy(() =>
     roomGameSettingsSchema.extend({
         revision: z.number().int().nonnegative(),
-        updatedByParticipantId: z.string().uuid().nullable(),
+        updatedByParticipantId: z.uuid().nullable(),
     }),
 );
 export type VersionedRoomGameSettings = z.infer<typeof versionedRoomGameSettingsSchema>;
 
 export const roomSnapshotSchema = z
     .object({
-        roomId: z.string().uuid(),
+        roomId: z.uuid(),
         capacity: z
             .object({
                 maximumParticipants: z.number().int().min(2),
@@ -155,7 +155,7 @@ export const serverHelloEnvelopeSchema = envelopeSchema.extend({
     payload: z
         .object({
             protocolVersion: z.literal(PROTOCOL_VERSION),
-            participantId: z.string().uuid(),
+            participantId: z.uuid(),
             role: clientRoleSchema,
         })
         .strict(),
@@ -181,7 +181,7 @@ export const roomPresenceEnvelopeSchema = envelopeSchema.extend({
             connected: z.array(
                 z
                     .object({
-                        participantId: z.string().uuid(),
+                        participantId: z.uuid(),
                         displayName: z.string().min(1).max(40),
                         role: clientRoleSchema,
                     })

@@ -130,7 +130,7 @@ class SurfaceGeometryRegressionTests(unittest.TestCase):
         self.assertEqual(len(SPICY_DESCRIPTION), 203)
         self.assertEqual(PROFILE_PAGE_SIZE, 3)
 
-        setup = initial_setup("COUCH", profiles, "en-GB", False)
+        setup = initial_setup("COUCH", "en-GB", False)
         self.assertEqual(setup.profile_id, "")
         pages = []
         for page in range(3):

@@ -9,9 +9,9 @@ export const httpErrorResponseSchema = z
                 message: z.string().min(1).optional(),
                 data: z.unknown().optional(),
             })
-            .passthrough(),
+            .loose(),
     })
-    .passthrough();
+    .loose();
 
 export type HttpErrorResponse = z.infer<typeof httpErrorResponseSchema>;
 

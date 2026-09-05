@@ -1,5 +1,5 @@
 import settings from "../../apps/server/src/modules/settings";
-import { spawn } from "child_process";
+import { spawn } from "node:child_process";
 
 async function main() {
     try {
@@ -18,16 +18,17 @@ async function main() {
         const cmd = cliArgs.shift();
 
         const typeormProcess = spawn(
-            "npx",
+            process.execPath,
             [
-                "ts-node",
-                "--project ./tsconfig.server.json",
-                "./node_modules/typeorm/cli.js",
+                require.resolve("ts-node/dist/bin.js"),
+                "--project",
+                "./tsconfig.server.json",
+                require.resolve("typeorm/cli.js"),
                 cmd as string,
                 "-d",
                 ...cliArgs,
             ],
-            { stdio: "inherit", shell: true, env: process.env },
+            { stdio: "inherit", shell: false, env: process.env },
         );
 
         typeormProcess.on("exit", (code) => process.exit(code));

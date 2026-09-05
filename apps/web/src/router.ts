@@ -88,7 +88,6 @@ export function startRouter(onRoute: RouteListener): () => void {
     const beforeUnload = (event: BeforeUnloadEvent) => {
         if (suppressNextUnloadPrompt || !shouldProtect()) return;
         event.preventDefault();
-        event.returnValue = "";
     };
     window.addEventListener("popstate", popstate);
     document.addEventListener("click", click);

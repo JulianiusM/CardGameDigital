@@ -237,7 +237,7 @@ export function attachWebSocketServer(
         broadcastPresence(sockets, roomId);
     }
     function closeConnectedRoom(roomId: string): void {
-        for (const peer of [...sockets]) {
+        for (const peer of sockets) {
             if (peer.participant.roomId !== roomId) continue;
             const timer = disconnectTimers.get(peer.participant.id);
             if (timer) clearTimeout(timer);
@@ -275,70 +275,11 @@ export function attachWebSocketServer(
                 if (isBinary) {
                     throw coded("VALIDATION_ERROR", MESSAGE_KEYS.REALTIME_INVALID_MESSAGE);
                 }
-                const value: unknown = JSON.parse(raw.toString());
-                const receivedProtocol =
-                    typeof value === "object" && value !== null && "protocol" in value
-                        ? (value as { protocol?: unknown }).protocol
-                        : undefined;
-                if (typeof receivedProtocol === "number" && receivedProtocol !== PROTOCOL_VERSION)
-                    throw coded(
-                        "PROTOCOL_VERSION_UNSUPPORTED",
-                        MESSAGE_KEYS.REALTIME_PROTOCOL_UNSUPPORTED,
-                    );
+                const value: unknown = parseProtocolMessage(raw);
                 const base = envelopeSchema.parse(value);
                 requestId = base.requestId;
                 if (!context) {
-                    const hello = clientHelloEnvelopeSchema.parse(value);
-                    if (!hello.payload.supportedProtocolVersions.includes(PROTOCOL_VERSION))
-                        throw coded(
-                            "PROTOCOL_VERSION_UNSUPPORTED",
-                            MESSAGE_KEYS.REALTIME_PROTOCOL_UNSUPPORTED,
-                        );
-                    const activation = await service.authenticate(
-                        hello.payload.roomCode,
-                        hello.payload.participantCredential,
-                    );
-                    if (!activation)
-                        throw coded("ROOM_NOT_FOUND", MESSAGE_KEYS.REALTIME_CREDENTIAL_NOT_FOUND);
-                    const participant = activation;
-                    const pendingFallback = disconnectTimers.get(participant.id);
-                    if (pendingFallback) {
-                        clearTimeout(pendingFallback);
-                        disconnectTimers.delete(participant.id);
-                    }
-                    for (const existing of [...sockets]) {
-                        if (existing.participant.id !== participant.id) continue;
-                        existing.intentionalLeave = true;
-                        sockets.delete(existing);
-                        existing.socket.close(4002, "connection replaced");
-                    }
-                    context = { socket, participant, roomCode: hello.payload.roomCode };
-                    sockets.add(context);
-                    clearTimeout(deadline);
-                    send(socket, "server.hello", requestId, null, {
-                        protocolVersion: PROTOCOL_VERSION,
-                        participantId: participant.id,
-                        role: participant.role,
-                    });
-                    const ownRoleChange = activation.roleChanges.find(
-                        ({ participantId }) => participantId === participant.id,
-                    );
-                    const noticesSent = new Set<string>();
-                    if (ownRoleChange) {
-                        send(socket, "room.roleChanged", null, null, {
-                            role: ownRoleChange.role,
-                            previousRole: ownRoleChange.previousRole,
-                            reason: ownRoleChange.reason,
-                        });
-                        noticesSent.add(participant.id);
-                    }
-                    await refreshRoom(
-                        participant.roomId,
-                        requestId,
-                        activation.roleChanges,
-                        noticesSent,
-                    );
-                    return;
+                    return await authenticateSocket(value);
                 }
                 if (snapshotRequestEnvelopeSchema.safeParse(value).success) {
                     const snapshot = await service.snapshot(
@@ -358,6 +299,38 @@ export function attachWebSocketServer(
                     send(socket, "server.pong", requestId, null, { serverTime: Date.now() });
                     return;
                 }
+                await executeAuthenticatedCommand(context, value);
+            } catch (error) {
+                reportMessageError(error);
+            }
+
+            function reportMessageError(error: unknown) {
+                const details = error as { code?: string; message?: string };
+                const expectedCode = details.code
+                    ? expectedRealtimeErrorCodes.has(details.code)
+                    : false;
+                if (
+                    !expectedCode &&
+                    !(error instanceof ZodError) &&
+                    !(error instanceof SyntaxError)
+                ) {
+                    logEvent(
+                        "error",
+                        "realtime.unhandled_error",
+                        { requestId, ...configuredErrorLogFields(error, settings.value) },
+                        settings.value.logLevel,
+                    );
+                }
+                send(socket, "error", requestId, null, {
+                    code: details.code ?? "VALIDATION_ERROR",
+                    message: translateError(
+                        locale,
+                        details.message ?? MESSAGE_KEYS.REALTIME_INVALID_MESSAGE,
+                    ),
+                });
+            }
+
+            async function executeAuthenticatedCommand(context: Context, value: unknown) {
                 const command = roomCommandEnvelopeSchema.parse(value) as RoomCommand;
                 if (
                     isPublicRuntimeSecurityEnforced(settings.value) &&
@@ -388,21 +361,7 @@ export function attachWebSocketServer(
                     return;
                 }
                 if (leaving) {
-                    for (const peer of [...sockets]) {
-                        if (peer.participant.id !== context.participant.id) continue;
-                        peer.intentionalLeave = true;
-                        sockets.delete(peer);
-                        peer.socket.close(1000, "left room");
-                    }
-                    broadcastRoomEvent(sockets, roomId, "room.participantLeft", {
-                        participantId: context.participant.id,
-                        displayName: context.participant.displayName,
-                        reason: "LEFT",
-                    });
-                    if (commandSnapshot.participants.length === 0) {
-                        closeConnectedRoom(roomId);
-                        return;
-                    }
+                    if (finishParticipantLeave()) return;
                 }
                 if (command.type === "command.skipCard" || command.type === "command.vetoCard") {
                     broadcastRoomEvent(sockets, roomId, "session.cardReplaced", {
@@ -416,30 +375,77 @@ export function attachWebSocketServer(
                     ? roleChangesFromSnapshot(priorRoles, commandSnapshot.participants, roleReason)
                     : [];
                 await refreshRoom(roomId, requestId, roleChanges);
-            } catch (error) {
-                const details = error as { code?: string; message?: string };
-                const expectedCode = details.code
-                    ? expectedRealtimeErrorCodes.has(details.code)
-                    : false;
-                if (
-                    !expectedCode &&
-                    !(error instanceof ZodError) &&
-                    !(error instanceof SyntaxError)
-                ) {
-                    logEvent(
-                        "error",
-                        "realtime.unhandled_error",
-                        { requestId, ...configuredErrorLogFields(error, settings.value) },
-                        settings.value.logLevel,
-                    );
+                function finishParticipantLeave(): boolean {
+                    for (const peer of sockets) {
+                        if (peer.participant.id !== context.participant.id) continue;
+                        peer.intentionalLeave = true;
+                        sockets.delete(peer);
+                        peer.socket.close(1000, "left room");
+                    }
+                    broadcastRoomEvent(sockets, roomId, "room.participantLeft", {
+                        participantId: context.participant.id,
+                        displayName: context.participant.displayName,
+                        reason: "LEFT",
+                    });
+                    if (commandSnapshot.participants.length === 0) {
+                        closeConnectedRoom(roomId);
+                        return true;
+                    }
+                    return false;
                 }
-                send(socket, "error", requestId, null, {
-                    code: details.code ?? "VALIDATION_ERROR",
-                    message: translateError(
-                        locale,
-                        details.message ?? MESSAGE_KEYS.REALTIME_INVALID_MESSAGE,
-                    ),
+            }
+
+            async function authenticateSocket(value: unknown) {
+                const hello = clientHelloEnvelopeSchema.parse(value);
+                if (!hello.payload.supportedProtocolVersions.includes(PROTOCOL_VERSION))
+                    throw coded(
+                        "PROTOCOL_VERSION_UNSUPPORTED",
+                        MESSAGE_KEYS.REALTIME_PROTOCOL_UNSUPPORTED,
+                    );
+                const activation = await service.authenticate(
+                    hello.payload.roomCode,
+                    hello.payload.participantCredential,
+                );
+                if (!activation)
+                    throw coded("ROOM_NOT_FOUND", MESSAGE_KEYS.REALTIME_CREDENTIAL_NOT_FOUND);
+                const participant = activation;
+                const pendingFallback = disconnectTimers.get(participant.id);
+                if (pendingFallback) {
+                    clearTimeout(pendingFallback);
+                    disconnectTimers.delete(participant.id);
+                }
+                for (const existing of sockets) {
+                    if (existing.participant.id !== participant.id) continue;
+                    existing.intentionalLeave = true;
+                    sockets.delete(existing);
+                    existing.socket.close(4002, "connection replaced");
+                }
+                context = { socket, participant, roomCode: hello.payload.roomCode };
+                sockets.add(context);
+                clearTimeout(deadline);
+                send(socket, "server.hello", requestId, null, {
+                    protocolVersion: PROTOCOL_VERSION,
+                    participantId: participant.id,
+                    role: participant.role,
                 });
+                const ownRoleChange = activation.roleChanges.find(
+                    ({ participantId }) => participantId === participant.id,
+                );
+                const noticesSent = new Set<string>();
+                if (ownRoleChange) {
+                    send(socket, "room.roleChanged", null, null, {
+                        role: ownRoleChange.role,
+                        previousRole: ownRoleChange.previousRole,
+                        reason: ownRoleChange.reason,
+                    });
+                    noticesSent.add(participant.id);
+                }
+                await refreshRoom(
+                    participant.roomId,
+                    requestId,
+                    activation.roleChanges,
+                    noticesSent,
+                );
             }
         };
         let messageQueue = Promise.resolve();
@@ -500,6 +506,21 @@ export function attachWebSocketServer(
         devicePairings.clear();
     });
     return wss as WebSocketServer & { roomLifecycleReady: Promise<void> };
+}
+
+function parseProtocolMessage(raw: RawData) {
+    let buffer: Buffer;
+    if (Buffer.isBuffer(raw)) buffer = raw;
+    else if (Array.isArray(raw)) buffer = Buffer.concat(raw);
+    else buffer = Buffer.from(raw);
+    const value: unknown = JSON.parse(buffer.toString("utf8"));
+    const receivedProtocol =
+        typeof value === "object" && value !== null && "protocol" in value
+            ? (value as { protocol?: unknown }).protocol
+            : undefined;
+    if (typeof receivedProtocol === "number" && receivedProtocol !== PROTOCOL_VERSION)
+        throw coded("PROTOCOL_VERSION_UNSUPPORTED", MESSAGE_KEYS.REALTIME_PROTOCOL_UNSUPPORTED);
+    return value;
 }
 
 function roleChangesFromSnapshot(

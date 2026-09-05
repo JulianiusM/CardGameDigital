@@ -1,6 +1,6 @@
 import express from "express";
 import { z } from "zod";
-import { AppDataSource } from "../../modules/database/dataSource";
+import { getAppDataSource } from "../../modules/database/dataSource";
 import { DataSpaceGameSettingsEntity } from "../../../../../packages/persistence/entities/game/DataSpaceGameSettingsEntity";
 import { GroupEntity } from "../../../../../packages/persistence/entities/game/GroupEntity";
 import {
@@ -8,8 +8,10 @@ import {
     SOCIAL_SENSITIVITIES,
     builtInGameProfile,
 } from "../../../../../packages/game-core";
-import { CUSTOM_GAME_PROFILE_ID } from "../../../../../packages/application/roomGameSettings";
-import { effectiveSettingsFromProfile } from "../../../../../packages/application/roomGameSettings";
+import {
+    CUSTOM_GAME_PROFILE_ID,
+    effectiveSettingsFromProfile,
+} from "../../../../../packages/application/roomGameSettings";
 import { effectiveGameSettingsSchema } from "../../../../../packages/protocol";
 import { requireCurrentDataSpace } from "./dataSpaceAccess";
 import { cardLanguageSettingsSchema, requireActiveCardLanguages } from "./cardLanguageSettings";
@@ -26,7 +28,7 @@ const inputSchema = z
         intensityProgressionIncrement: z.number().min(0.5).max(4).multipleOf(0.5).default(1),
         randomQuestionRatio: z.number().min(0).max(1),
         letsTalkMetaInterval: z.number().int().min(1).max(100),
-        defaultGroupId: z.string().uuid().nullable(),
+        defaultGroupId: z.uuid().nullable(),
         customConfiguration: effectiveGameSettingsSchema.optional(),
         cardLanguageSettings: cardLanguageSettingsSchema.nullable().optional(),
     })
@@ -74,9 +76,11 @@ function project(stored: DataSpaceGameSettingsEntity | null) {
 router.get("/", async (request, response, next) => {
     try {
         const space = await requireCurrentDataSpace(request);
-        const stored = await AppDataSource.getRepository(DataSpaceGameSettingsEntity).findOneBy({
-            dataSpaceId: space.id,
-        });
+        const stored = await getAppDataSource()
+            .getRepository(DataSpaceGameSettingsEntity)
+            .findOneBy({
+                dataSpaceId: space.id,
+            });
         response.json({
             settings: project(stored),
             dataSpace: { id: space.id, name: space.name },
@@ -96,19 +100,21 @@ router.put("/", async (request, response, next) => {
             input.preferredProfileId !== CUSTOM_GAME_PROFILE_ID &&
             !builtInGameProfile(input.preferredProfileId)
         ) {
-            return void response.status(400).json({ error: { code: "UNKNOWN_GAME_PROFILE" } });
+            response.status(400).json({ error: { code: "UNKNOWN_GAME_PROFILE" } });
+            return;
         }
         if (
             input.defaultGroupId &&
-            !(await AppDataSource.getRepository(GroupEntity).existsBy({
+            !(await getAppDataSource().getRepository(GroupEntity).existsBy({
                 id: input.defaultGroupId,
                 dataSpaceId: space.id,
             }))
         ) {
-            return void response.status(400).json({ error: { code: "GROUP_NOT_FOUND" } });
+            response.status(400).json({ error: { code: "GROUP_NOT_FOUND" } });
+            return;
         }
         await requireActiveCardLanguages(input.cardLanguageSettings);
-        const repository = AppDataSource.getRepository(DataSpaceGameSettingsEntity);
+        const repository = getAppDataSource().getRepository(DataSpaceGameSettingsEntity);
         const stored = await repository.findOneBy({ dataSpaceId: space.id });
         const current = project(stored);
         const customConfiguration =

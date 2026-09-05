@@ -46,7 +46,7 @@ class FocusAndPresentationTests(unittest.TestCase):
                 for index in range(8)
             ],
         }
-        setup = initial_setup("COUCH", (PROFILE,), "en-GB", True)
+        setup = initial_setup("COUCH", "en-GB", True)
         for route, expected_prefix in (
             (Route.SETUP_CATEGORIES, "setup:question"),
             (Route.SETUP_DARES, "setup:dare"),
@@ -94,7 +94,7 @@ class FocusAndPresentationTests(unittest.TestCase):
         )
 
     def test_exact_card_search_keeps_the_complete_page_count_on_every_cursor_page(self) -> None:
-        setup = initial_setup("COUCH", (PROFILE,), "en-GB", True)
+        setup = initial_setup("COUCH", "en-GB", True)
         cards = tuple(
             {
                 "id": f"00000000-0000-4000-8000-{index:012d}",
@@ -128,7 +128,7 @@ class FocusAndPresentationTests(unittest.TestCase):
         card_text = prefix + ("W" * (10_000 - len(prefix) - len(suffix))) + suffix
         self.assertEqual(len(card_text), 10_000)
         setup = replace(
-            initial_setup("COUCH", (PROFILE,), "en-GB", True),
+            initial_setup("COUCH", "en-GB", True),
             selected_card_id=card_id,
             card_search_results=({"id": card_id, "text": card_text},),
             card_search_total=1,
@@ -158,7 +158,7 @@ class FocusAndPresentationTests(unittest.TestCase):
         )
 
     def test_intensity_numeric_card_uses_the_compact_range_hint(self) -> None:
-        setup = initial_setup("COUCH", (PROFILE,), "en-GB", True)
+        setup = initial_setup("COUCH", "en-GB", True)
         view = present(AppState(route=Route.SETUP_INTENSITY, setup=setup))
         interval = next(
             entry
@@ -207,7 +207,7 @@ class FocusAndPresentationTests(unittest.TestCase):
         )
 
     def test_every_setup_route_has_unique_remote_actions(self) -> None:
-        setup = initial_setup("COUCH", (PROFILE,), "de-DE", True)
+        setup = initial_setup("COUCH", "de-DE", True)
         taxonomy = {
             "questionCategories": [{"id": "CAT_EVERYDAY", "label": "Everyday"}],
             "dareTypes": [{"id": "DARE_SILLY", "label": "Silly"}],
@@ -405,7 +405,7 @@ class FocusAndPresentationTests(unittest.TestCase):
             COLLECTION_PAGE_SIZE,
         )
 
-        setup = initial_setup("COUCH", (PROFILE,), "en-GB", True)
+        setup = initial_setup("COUCH", "en-GB", True)
         rules = [
             {
                 "id": f"00000000-0000-4000-8000-{index:012d}",
@@ -674,7 +674,7 @@ class FocusAndPresentationTests(unittest.TestCase):
 
     def test_players_are_cards_with_a_separate_edit_remove_submenu(self) -> None:
         setup = replace(
-            initial_setup("COUCH", (PROFILE,), "en-GB", True),
+            initial_setup("COUCH", "en-GB", True),
             players=("Alex", "Sam", "Jo"),
             selected_player_index=1,
         )
@@ -845,7 +845,7 @@ class FocusAndPresentationTests(unittest.TestCase):
         )
 
     def test_setup_choice_steps_advance_from_cards_without_continue_actions(self) -> None:
-        setup = initial_setup("COUCH", (PROFILE,), "en-GB", True)
+        setup = initial_setup("COUCH", "en-GB", True)
         self.assertEqual(setup.mode, "")
         self.assertEqual(setup.profile_id, "")
         for route in (Route.SETUP_GROUP, Route.SETUP_MODE, Route.SETUP_PROFILE):
@@ -860,7 +860,7 @@ class FocusAndPresentationTests(unittest.TestCase):
                     self.assertFalse(any(entry.selected for entry in view.items))
 
     def test_customize_hides_mode_specific_controls_that_do_not_apply(self) -> None:
-        base = initial_setup("COUCH", (PROFILE,), "en-GB", True)
+        base = initial_setup("COUCH", "en-GB", True)
         never = present(
             AppState(
                 route=Route.SETUP_CUSTOMIZE,
@@ -947,7 +947,7 @@ class FocusAndPresentationTests(unittest.TestCase):
             for index in range(15)
         )
         setup = replace(
-            initial_setup("COUCH", (PROFILE,), "lang-0", True),
+            initial_setup("COUCH", "lang-0", True),
             card_fallback_enabled=True,
             card_fallback_locales=(),
         )
@@ -977,7 +977,7 @@ class FocusAndPresentationTests(unittest.TestCase):
 
     def test_player_validation_is_prominent_and_remove_is_never_fake_disabled(self) -> None:
         setup = replace(
-            initial_setup("COUCH", (PROFILE,), "en-GB", True),
+            initial_setup("COUCH", "en-GB", True),
             players=("Alex", "Alex"),
             selected_player_index=0,
         )
@@ -1032,7 +1032,7 @@ class FocusAndPresentationTests(unittest.TestCase):
         self.assertFalse(any(entry.key == "home:groups" for entry in view.items))
 
     def test_customize_uses_a_separate_continue_command_not_review(self) -> None:
-        setup = initial_setup("COUCH", (PROFILE,), "en-GB", True)
+        setup = initial_setup("COUCH", "en-GB", True)
         view = present(AppState(route=Route.SETUP_CUSTOMIZE, setup=setup))
         self.assertLessEqual(len(view.items), 6)
         self.assertEqual(view.view_mode, "settings")

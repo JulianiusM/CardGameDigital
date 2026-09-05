@@ -128,7 +128,7 @@ export async function callback(req: Request): Promise<string> {
     // Prefer userInfo claims if present, otherwise ID Token claims
     // UserInfo can omit email_verified. Merge it over the verified ID-token claims
     // so an absent UserInfo field never downgrades the linking decision.
-    const parsedClaims = oidcIdentityClaimsSchema.safeParse({ ...claims, ...(userInfo ?? {}) });
+    const parsedClaims = oidcIdentityClaimsSchema.safeParse({ ...claims, ...userInfo });
     if (!parsedClaims.success) {
         throw new ExpectedError(MESSAGE_KEYS.ACCOUNT_INVALID_OIDC_SESSION);
     }

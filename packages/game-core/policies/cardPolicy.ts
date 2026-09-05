@@ -80,73 +80,31 @@ export type EffectivePolicyCard<T extends Card = Card> = T & {
     provenance: PolicyProvenance;
 };
 
-function includes<T>(values: readonly T[] | undefined, value: T): boolean {
-    return !values?.length || values.includes(value);
+function includes<T>(values: readonly T[] | undefined, value: T | null): boolean {
+    return !values?.length || (value !== null && values.includes(value));
 }
 
-export function matchesCardPolicyPredicate(card: Card, predicate: CardPolicyPredicate): boolean {
-    if (!includes(predicate.cardTypes, card.cardType)) return false;
-    if (
-        predicate.questionCategoryIds?.length &&
-        (!card.questionCategoryId ||
-            !predicate.questionCategoryIds.includes(card.questionCategoryId))
-    )
-        return false;
-    if (
-        predicate.dareTypeIds?.length &&
-        (!card.dareTypeId || !predicate.dareTypeIds.includes(card.dareTypeId))
-    )
-        return false;
-    if (
-        predicate.dareAffinityCategoryIds?.length &&
-        (!card.dareAffinityCategoryId ||
-            !predicate.dareAffinityCategoryIds.includes(card.dareAffinityCategoryId))
-    )
-        return false;
-    if (
-        predicate.yesNoAnswerPossible !== undefined &&
-        predicate.yesNoAnswerPossible !== card.yesNoAnswerPossible
-    )
-        return false;
-    if (!includes(predicate.socialSensitivities, card.socialSensitivity)) return false;
-    if (predicate.lifecycle && predicate.lifecycle !== (card.active ? "ACTIVE" : "RETIRED"))
-        return false;
-    if (predicate.minimumIntensity !== undefined && card.intensity < predicate.minimumIntensity)
-        return false;
-    if (predicate.maximumIntensity !== undefined && card.intensity > predicate.maximumIntensity)
-        return false;
-    if (predicate.alwaysEligible !== undefined && card.alwaysEligible !== predicate.alwaysEligible)
-        return false;
-    if (
-        predicate.repeatableInSession !== undefined &&
-        card.repeatableInSession !== predicate.repeatableInSession
-    )
-        return false;
-    if (
-        predicate.minimumRepeatCooldown !== undefined &&
-        card.repeatCooldown < predicate.minimumRepeatCooldown
-    )
-        return false;
-    if (
-        predicate.maximumRepeatCooldown !== undefined &&
-        card.repeatCooldown > predicate.maximumRepeatCooldown
-    )
-        return false;
-    if (predicate.minimumWeight !== undefined && card.weight < predicate.minimumWeight)
-        return false;
-    if (predicate.maximumWeight !== undefined && card.weight > predicate.maximumWeight)
-        return false;
-    if (
-        predicate.minimumPlayerCountAtLeast !== undefined &&
-        card.minimumPlayerCount < predicate.minimumPlayerCountAtLeast
-    )
-        return false;
-    if (
-        predicate.maximumPlayerCountAtMost !== undefined &&
-        (card.maximumPlayerCount === null ||
-            card.maximumPlayerCount > predicate.maximumPlayerCountAtMost)
-    )
-        return false;
+function matchesOptionalValue<T>(expected: T | undefined, actual: T): boolean {
+    return expected === undefined || expected === actual;
+}
+
+function matchesRange(value: number, minimum?: number, maximum?: number): boolean {
+    return (
+        (minimum === undefined || value >= minimum) && (maximum === undefined || value <= maximum)
+    );
+}
+
+function matchesTaxonomy(card: Card, predicate: CardPolicyPredicate): boolean {
+    return (
+        includes(predicate.cardTypes, card.cardType) &&
+        includes(predicate.questionCategoryIds, card.questionCategoryId) &&
+        includes(predicate.dareTypeIds, card.dareTypeId) &&
+        includes(predicate.dareAffinityCategoryIds, card.dareAffinityCategoryId) &&
+        includes(predicate.socialSensitivities, card.socialSensitivity)
+    );
+}
+
+function matchesOperationalFlags(card: Card, predicate: CardPolicyPredicate): boolean {
     const flags = new Set(card.operationalFlags);
     if (predicate.operationalFlagsAll?.some((flag) => !flags.has(flag))) return false;
     if (
@@ -154,8 +112,35 @@ export function matchesCardPolicyPredicate(card: Card, predicate: CardPolicyPred
         !predicate.operationalFlagsAny.some((flag) => flags.has(flag))
     )
         return false;
-    if (predicate.operationalFlagsNone?.some((flag) => flags.has(flag))) return false;
-    return true;
+    return !predicate.operationalFlagsNone?.some((flag) => flags.has(flag));
+}
+
+function matchesPlayerCount(card: Card, predicate: CardPolicyPredicate): boolean {
+    if (!matchesRange(card.minimumPlayerCount, predicate.minimumPlayerCountAtLeast)) return false;
+    if (predicate.maximumPlayerCountAtMost === undefined) return true;
+    return (
+        card.maximumPlayerCount !== null &&
+        card.maximumPlayerCount <= predicate.maximumPlayerCountAtMost
+    );
+}
+
+export function matchesCardPolicyPredicate(card: Card, predicate: CardPolicyPredicate): boolean {
+    return (
+        matchesTaxonomy(card, predicate) &&
+        matchesOptionalValue(predicate.yesNoAnswerPossible, card.yesNoAnswerPossible) &&
+        matchesOptionalValue(predicate.lifecycle, card.active ? "ACTIVE" : "RETIRED") &&
+        matchesOptionalValue(predicate.alwaysEligible, card.alwaysEligible) &&
+        matchesOptionalValue(predicate.repeatableInSession, card.repeatableInSession) &&
+        matchesRange(card.intensity, predicate.minimumIntensity, predicate.maximumIntensity) &&
+        matchesRange(
+            card.repeatCooldown,
+            predicate.minimumRepeatCooldown,
+            predicate.maximumRepeatCooldown,
+        ) &&
+        matchesRange(card.weight, predicate.minimumWeight, predicate.maximumWeight) &&
+        matchesPlayerCount(card, predicate) &&
+        matchesOperationalFlags(card, predicate)
+    );
 }
 
 function applyBoolean(value: boolean, directive: BooleanDirective | undefined): boolean {
@@ -179,7 +164,7 @@ function applyDirectives<T extends Card>(
 ): EffectivePolicyCard<T> {
     if (!directives) return current;
     const next = { ...current, provenance: { ...current.provenance } };
-    if (includeAvailability && directives.availability && directives.availability !== "INHERIT") {
+    if (includeAvailability && isAvailabilityOverride(directives.availability)) {
         next.policyAvailable = directives.availability === "INCLUDE";
         next.provenance.availability = source;
     }
@@ -209,6 +194,28 @@ function applyDirectives<T extends Card>(
         );
         next.provenance[property] = directive.mode === "CATALOG" ? "Catalog" : source;
     }
+    applyPlayerCountDirective<T>(directives, producer, next, source);
+    return next;
+}
+
+function applyPlayerCountDirective<T extends Card>(
+    directives: CardPolicyDirectives,
+    producer: T,
+    next: T & {
+        provenance: {
+            alwaysEligible: string;
+            repeatableInSession: string;
+            availability: string;
+            repeatCooldown: string;
+            intensity: string;
+            weight: string;
+            socialSensitivity: string;
+            playerCount: string;
+        };
+        policyAvailable: boolean;
+    },
+    source: string,
+) {
     const playerCount = directives.playerCount;
     if (playerCount && playerCount.mode !== "INHERIT") {
         const range = applyScalar(
@@ -220,7 +227,6 @@ function applyDirectives<T extends Card>(
         next.maximumPlayerCount = range.maximum;
         next.provenance.playerCount = playerCount.mode === "CATALOG" ? "Catalog" : source;
     }
-    return next;
 }
 
 function applyScope<T extends Card>(
@@ -339,3 +345,7 @@ export function emptySessionCardPolicy() {
 }
 
 export type SessionCardPolicyInput = ReturnType<typeof emptySessionCardPolicy>;
+
+function isAvailabilityOverride(directive: CardPolicyDirectives["availability"]): boolean {
+    return directive !== undefined && directive !== "INHERIT";
+}

@@ -2,7 +2,10 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { AppDataSource, initDataSource } from "../../apps/server/src/modules/database/dataSource";
+import {
+    getAppDataSource,
+    initDataSource,
+} from "../../apps/server/src/modules/database/dataSource";
 import { DataSpace } from "../../packages/persistence/entities/user/DataSpace";
 import { findOrCreateUserFromOidc } from "../../apps/server/src/modules/database/services/UserService";
 import settings from "../../apps/server/src/modules/settings";
@@ -24,7 +27,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-    if (AppDataSource.isInitialized) await AppDataSource.destroy();
+    if (getAppDataSource().isInitialized) await getAppDataSource().destroy();
     fs.rmSync(directory, { recursive: true, force: true });
 });
 
@@ -42,9 +45,11 @@ describe("OIDC user persistence", () => {
 
         expect(repeated.id).toBe(created.id);
         expect(created.email).toMatch(/^[a-f0-9]{64}@no-email\.invalid$/);
-        const spaces = await AppDataSource.getRepository(DataSpace).findBy({
-            user: { id: created.id },
-        });
+        const spaces = await getAppDataSource()
+            .getRepository(DataSpace)
+            .findBy({
+                user: { id: created.id },
+            });
         expect(spaces).toHaveLength(1);
         expect(spaces[0]).toMatchObject({ name: "New User", defaultForOwner: true });
     });

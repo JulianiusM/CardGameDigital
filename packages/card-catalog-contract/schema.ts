@@ -147,9 +147,9 @@ function primaryTaxonomy(
 
 export function resolveProducerCardMetadata(catalog: CardCatalog, card: CardCatalogCard) {
     const taxonomy = primaryTaxonomy(catalog, card);
-    const cardHasMaximum = Object.prototype.hasOwnProperty.call(card, "maximumPlayerCount");
+    const cardHasMaximum = Object.hasOwn(card, "maximumPlayerCount");
     const taxonomyHasMaximum = Boolean(
-        taxonomy && Object.prototype.hasOwnProperty.call(taxonomy, "defaultMaximumPlayerCount"),
+        taxonomy && Object.hasOwn(taxonomy, "defaultMaximumPlayerCount"),
     );
     let maximumPlayerCount: number | null = catalog.cardDefaults.maximumPlayerCount;
     if (taxonomyHasMaximum) maximumPlayerCount = taxonomy?.defaultMaximumPlayerCount ?? null;

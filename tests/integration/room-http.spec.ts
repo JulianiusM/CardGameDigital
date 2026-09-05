@@ -4,7 +4,10 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { AppDataSource, initDataSource } from "../../apps/server/src/modules/database/dataSource";
+import {
+    getAppDataSource,
+    initDataSource,
+} from "../../apps/server/src/modules/database/dataSource";
 import { RoomParticipantEntity } from "../../packages/persistence/entities/game/RoomParticipantEntity";
 import { RoomEntity } from "../../packages/persistence/entities/game/RoomEntity";
 import { RoomCreateIdempotencyEntity } from "../../packages/persistence/entities/game/RoomCreateIdempotencyEntity";
@@ -33,7 +36,7 @@ beforeAll(async () => {
     app = (await import("../../apps/server/src/app")).default;
 }, HTTP_SUITE_SETUP_TIMEOUT_MS);
 afterAll(async () => {
-    if (AppDataSource.isInitialized) await AppDataSource.destroy();
+    if (getAppDataSource().isInitialized) await getAppDataSource().destroy();
     fs.rmSync(directory, { recursive: true, force: true });
 });
 
@@ -485,7 +488,7 @@ describe("Room HTTP API", () => {
             .expect(201);
         expect(host.body.participantCredential).toHaveLength(43);
         expect(player.body.roomId).toBe(host.body.roomId);
-        const stored = await AppDataSource.getRepository(RoomParticipantEntity).find();
+        const stored = await getAppDataSource().getRepository(RoomParticipantEntity).find();
         expect(stored.every((participant) => participant.credentialHash.length === 64)).toBe(true);
         expect(stored.map((participant) => participant.credentialHash)).not.toContain(
             host.body.participantCredential,
@@ -522,15 +525,15 @@ describe("Room HTTP API", () => {
             },
         });
         expect(
-            await AppDataSource.getRepository(RoomEntity).countBy({ id: created.body.roomId }),
+            await getAppDataSource().getRepository(RoomEntity).countBy({ id: created.body.roomId }),
         ).toBe(1);
         expect(
-            await AppDataSource.getRepository(RoomCreateIdempotencyEntity).countBy({
+            await getAppDataSource().getRepository(RoomCreateIdempotencyEntity).countBy({
                 resourceId: created.body.roomId,
             }),
         ).toBe(1);
         expect(
-            await AppDataSource.getRepository(RoomParticipantEntity).countBy({
+            await getAppDataSource().getRepository(RoomParticipantEntity).countBy({
                 roomId: created.body.roomId,
             }),
         ).toBe(1);
@@ -614,9 +617,9 @@ describe("Room HTTP API", () => {
             .expect(({ body: responseBody }) => {
                 expect(responseBody.error.code).toBe("IDEMPOTENCY_RESULT_GONE");
             });
-        const record = await AppDataSource.getRepository(
-            RoomCreateIdempotencyEntity,
-        ).findOneByOrFail({ resourceId: created.body.roomId });
+        const record = await getAppDataSource()
+            .getRepository(RoomCreateIdempotencyEntity)
+            .findOneByOrFail({ resourceId: created.body.roomId });
         expect(record).toMatchObject({
             state: "RESOURCE_GONE",
             responseCiphertext: null,

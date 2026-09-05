@@ -391,20 +391,24 @@ def _draw_codewords(
         if right == 6:
             right = 5
         upward = ((right + 1) & 2) == 0
-        for vertical in range(size):
-            y = size - 1 - vertical if upward else vertical
-            for column in range(2):
-                x = right - column
-                if function[y][x]:
-                    continue
-                if bit_index < len(codewords) * 8:
-                    modules[y][x] = bool(
-                        (codewords[bit_index >> 3] >> (7 - (bit_index & 7))) & 1
-                    )
-                bit_index += 1
+        bit_index = _draw_codeword_pair(size, upward, right, function, bit_index, codewords, modules)
         right -= 2
     if bit_index < len(codewords) * 8:
         raise AssertionError("QR matrix did not fit all codewords")
+
+def _draw_codeword_pair(size, upward, right, function, bit_index, codewords, modules):
+    for vertical in range(size):
+        y = size - 1 - vertical if upward else vertical
+        for column in range(2):
+            x = right - column
+            if function[y][x]:
+                continue
+            if bit_index < len(codewords) * 8:
+                modules[y][x] = bool(
+                    (codewords[bit_index >> 3] >> (7 - (bit_index & 7))) & 1
+                )
+            bit_index += 1
+    return bit_index
 
 
 def _trial_penalty(
@@ -444,20 +448,7 @@ def _penalty(modules: list[list[bool]]) -> int:
     result = 0
     for rows in (modules, [list(column) for column in zip(*modules)]):
         for row in rows:
-            run_color = row[0]
-            run_length = 1
-            for color in row[1:]:
-                if color == run_color:
-                    run_length += 1
-                    if run_length == 5:
-                        result += 3
-                    elif run_length > 5:
-                        result += 1
-                else:
-                    run_color = color
-                    run_length = 1
-            pattern = "".join("1" if value else "0" for value in row)
-            result += 40 * (pattern.count("10111010000") + pattern.count("00001011101"))
+            result = _row_penalty(result, row)
     for y in range(size - 1):
         for x in range(size - 1):
             value = modules[y][x]
@@ -469,5 +460,22 @@ def _penalty(modules: list[list[bool]]) -> int:
                 result += 3
     dark = sum(value for row in modules for value in row)
     result += abs(dark * 20 - size * size * 10) // (size * size) * 10
+    return result
+
+def _row_penalty(result, row):
+    run_color = row[0]
+    run_length = 1
+    for color in row[1:]:
+        if color == run_color:
+            run_length += 1
+            if run_length == 5:
+                result += 3
+            elif run_length > 5:
+                result += 1
+        else:
+            run_color = color
+            run_length = 1
+    pattern = "".join("1" if value else "0" for value in row)
+    result += 40 * (pattern.count("10111010000") + pattern.count("00001011101"))
     return result
 

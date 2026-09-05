@@ -3,7 +3,10 @@ import os from "node:os";
 import path from "node:path";
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { AppDataSource, initDataSource } from "../../apps/server/src/modules/database/dataSource";
+import {
+    getAppDataSource,
+    initDataSource,
+} from "../../apps/server/src/modules/database/dataSource";
 import { RoomEntity } from "../../packages/persistence/entities/game/RoomEntity";
 import { GroupEntity } from "../../packages/persistence/entities/game/GroupEntity";
 import { DataSpaceGameSettingsEntity } from "../../packages/persistence/entities/game/DataSpaceGameSettingsEntity";
@@ -38,7 +41,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-    if (AppDataSource.isInitialized) await AppDataSource.destroy();
+    if (getAppDataSource().isInitialized) await getAppDataSource().destroy();
     fs.rmSync(directory, { recursive: true, force: true });
 });
 
@@ -264,33 +267,35 @@ describe("DataSpace-owned game data", () => {
             })
             .expect(200);
         const roomSettings = { ...defaultRoomGameSettings(), groupId: created.body.id };
-        const ownedGroup = await AppDataSource.getRepository(GroupEntity).findOneByOrFail({
+        const ownedGroup = await getAppDataSource().getRepository(GroupEntity).findOneByOrFail({
             id: created.body.id,
         });
         const roomId = "4fdca0db-3322-4a16-b839-a9d7af0c07cb";
-        await AppDataSource.getRepository(RoomEntity).insert({
-            id: roomId,
-            code: "DEL234",
-            dataSpaceId: ownedGroup.dataSpaceId,
-            groupId: created.body.id,
-            settingsRevision: 0,
-            gameSettingsJson: JSON.stringify(roomSettings),
-            settingsUpdatedByParticipantId: null,
-            currentSessionId: null,
-            createdAt: new Date(),
-            expiresAt: new Date(Date.now() + 60_000),
-            closedAt: null,
-        });
+        await getAppDataSource()
+            .getRepository(RoomEntity)
+            .insert({
+                id: roomId,
+                code: "DEL234",
+                dataSpaceId: ownedGroup.dataSpaceId,
+                groupId: created.body.id,
+                settingsRevision: 0,
+                gameSettingsJson: JSON.stringify(roomSettings),
+                settingsUpdatedByParticipantId: null,
+                currentSessionId: null,
+                createdAt: new Date(),
+                expiresAt: new Date(Date.now() + 60_000),
+                closedAt: null,
+            });
 
         await request(app).delete(`/api/v1/groups/${created.body.id}`).expect(204);
 
         await expect(
-            AppDataSource.getRepository(GroupEntity).findOneBy({ id: created.body.id }),
+            getAppDataSource().getRepository(GroupEntity).findOneBy({ id: created.body.id }),
         ).resolves.toBeNull();
         await expect(
-            AppDataSource.getRepository(DataSpaceGameSettingsEntity).findOneByOrFail({}),
+            getAppDataSource().getRepository(DataSpaceGameSettingsEntity).findOneByOrFail({}),
         ).resolves.toMatchObject({ defaultGroupId: null });
-        const room = await AppDataSource.getRepository(RoomEntity).findOneByOrFail({
+        const room = await getAppDataSource().getRepository(RoomEntity).findOneByOrFail({
             id: roomId,
         });
         expect(room.groupId).toBeNull();
@@ -303,10 +308,10 @@ describe("DataSpace-owned game data", () => {
             .post("/api/v1/groups")
             .send({ name: "Reload survivors", members: ["Ada", "Lin"] })
             .expect(201);
-        await AppDataSource.destroy();
+        await getAppDataSource().destroy();
         await initDataSource();
         await expect(
-            AppDataSource.getRepository(GroupEntity).findOneByOrFail({ id: created.body.id }),
+            getAppDataSource().getRepository(GroupEntity).findOneByOrFail({ id: created.body.id }),
         ).resolves.toMatchObject({ name: "Reload survivors", membersJson: '["Ada","Lin"]' });
     });
 
@@ -315,7 +320,7 @@ describe("DataSpace-owned game data", () => {
             .post("/api/v1/rooms")
             .send({ displayName: "Host", persistence: "DATASPACE" })
             .expect(201);
-        const room = await AppDataSource.getRepository(RoomEntity).findOneByOrFail({
+        const room = await getAppDataSource().getRepository(RoomEntity).findOneByOrFail({
             id: response.body.roomId,
         });
         expect(room.dataSpaceId).toMatch(/^[0-9a-f-]{36}$/);
@@ -346,7 +351,7 @@ describe("DataSpace-owned game data", () => {
         const originalMode = settings.value.deploymentMode;
         settings.value.deploymentMode = "public";
         try {
-            await request(app)
+            const quickRoom = await request(app)
                 .post("/api/v1/rooms")
                 .set("origin", settings.value.publicUrl)
                 .send({ displayName: "Anonymous", persistence: "EPHEMERAL" })
@@ -356,6 +361,7 @@ describe("DataSpace-owned game data", () => {
                 .set("origin", settings.value.publicUrl)
                 .send({ displayName: "Anonymous", persistence: "DATASPACE" })
                 .expect(401);
+            expect(quickRoom.body).toMatchObject({ role: "HOST", roomCode: expect.any(String) });
         } finally {
             settings.value.deploymentMode = originalMode;
         }

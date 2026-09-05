@@ -284,7 +284,7 @@ describe("Kodi generated client contracts", () => {
         const runtime = fs.readFileSync("apps/kodi/resources/lib/kodi_runtime.py", "utf8");
         expect(runtime.indexOf("window.show()")).toBeGreaterThan(-1);
         expect(runtime.indexOf("window.show()")).toBeLessThan(
-            runtime.indexOf("Application = _load_with_abort"),
+            runtime.indexOf("application_class = _load_with_abort"),
         );
     });
 

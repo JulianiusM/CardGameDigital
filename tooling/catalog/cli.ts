@@ -40,9 +40,10 @@ for (const { metadata } of resolved) {
         (sensitivityDistribution.get(metadata.socialSensitivity) ?? 0) + 1,
     );
 }
-console.log(
-    `Sensitivity: ${[...sensitivityDistribution].map(([value, count]) => `${value}=${count}`).join(", ")}`,
-);
+const sensitivitySummary = [...sensitivityDistribution]
+    .map(([value, count]) => `${value}=${count}`)
+    .join(", ");
+console.log(`Sensitivity: ${sensitivitySummary}`);
 console.log(
     `Sensitivity inheritance: ${
         artifact.catalog.cards.filter((card) => {

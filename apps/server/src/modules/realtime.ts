@@ -1,4 +1,4 @@
-import { AppDataSource } from "./database/dataSource";
+import { getAppDataSource } from "./database/dataSource";
 import { RoomService } from "../../../../packages/application/roomService";
 import { CryptoRandomSource } from "../../../../packages/application/cryptoRandomSource";
 import {
@@ -17,14 +17,14 @@ import { roomLifecycleObservability } from "./roomObservability";
 
 let instance: RoomService | undefined;
 export function getRoomService(): RoomService {
-    if (!AppDataSource?.isInitialized)
+    if (!getAppDataSource()?.isInitialized)
         throw new Error("Database must be initialized before realtime services");
-    return (instance ??= new RoomService(
+    instance ??= new RoomService(
         new TypeOrmRealtimeRoomRepository(
-            AppDataSource,
+            getAppDataSource(),
             settings.value.roomCreateIdempotencyTombstoneSeconds,
         ),
-        new TypeOrmCardRepository(AppDataSource.getRepository(CardEntity)),
+        new TypeOrmCardRepository(getAppDataSource().getRepository(CardEntity)),
         new CryptoRandomSource(),
         {
             missingTranslation: settings.value.cardMissingTranslation,
@@ -34,7 +34,7 @@ export function getRoomService(): RoomService {
             maximumParticipants: settings.value.roomMaximumParticipants,
             maximumPlayers: settings.value.roomMaximumPlayers,
         },
-        new CardPolicyService(new TypeOrmCardPolicyRepository(AppDataSource)),
+        new CardPolicyService(new TypeOrmCardPolicyRepository(getAppDataSource())),
         {
             displayBootstrapEnabled: roomDisplayBootstrapCapability(),
             initialActivationMs: settings.value.roomInitialActivationSeconds * 1_000,
@@ -43,5 +43,6 @@ export function getRoomService(): RoomService {
             idempotencyProtection: initializeRoomCreateProtection().protection,
             observability: roomLifecycleObservability,
         },
-    ));
+    );
+    return instance;
 }

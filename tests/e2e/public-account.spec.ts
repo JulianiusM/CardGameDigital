@@ -1,11 +1,11 @@
 import { expect, test, type Locator, type Page, type TestInfo } from "@playwright/test";
-import { captureVisualAudit } from "./visual-audit-helpers";
+import { captureVisualAudit, waitForPaint } from "./visual-audit-helpers";
 
 const username = process.env.E2E_ADMIN_USERNAME ?? "tester";
 const password = process.env.E2E_ADMIN_PASSWORD ?? "passw0rd!";
 
 async function auditAccountSurface(page: Page, testInfo: TestInfo, name: string): Promise<void> {
-    await page.waitForTimeout(250);
+    await waitForPaint(page);
     const report = await captureVisualAudit(page, name, { fullPage: true });
     await testInfo.attach(`${name}-geometry`, {
         body: Buffer.from(JSON.stringify(report, null, 2)),
@@ -227,6 +227,7 @@ async function expectResponsiveTabsContained(page: Page): Promise<void> {
 
 test.beforeEach(async ({ request }) => {
     const serverInfo = await (await request.get("/api/v1/server-info")).json();
+    // Local deployments have a separate browser suite; these assertions require public accounts.
     test.skip(
         serverInfo.deploymentMode !== "public",
         "Public account browser coverage requires a public server",

@@ -12,7 +12,7 @@ import { CardAppearanceEntity } from "../../../../packages/persistence/entities/
 import { CardPolicyScopeDefaultEntity } from "../../../../packages/persistence/entities/game/CardPolicyScopeDefaultEntity";
 import { CardPolicyConditionalRuleEntity } from "../../../../packages/persistence/entities/game/CardPolicyConditionalRuleEntity";
 import { CardPolicyExactCardEntity } from "../../../../packages/persistence/entities/game/CardPolicyExactCardEntity";
-import { AppDataSource } from "../modules/database/dataSource";
+import { getAppDataSource } from "../modules/database/dataSource";
 import * as users from "../modules/database/services/UserService";
 import * as accountSessions from "../modules/database/services/AccountSessionService";
 import mailer from "../modules/email";
@@ -150,7 +150,7 @@ export async function deleteAccount(
 export async function selectDataSpace(session: Request["session"], id: string): Promise<void> {
     const user = await requireUser(session);
     const dataSpace = await users.getDataSpaceById(id);
-    if (!dataSpace || dataSpace.userId !== user.id) {
+    if (dataSpace?.userId !== user.id) {
         throw new ExpectedError(MESSAGE_KEYS.ACCOUNT_DATA_SPACE_NOT_FOUND, "error", 404);
     }
     session.account = { userId: user.id, dataSpaceId: dataSpace.id };
@@ -312,32 +312,37 @@ export async function exportAccount(session: Request["session"]) {
     const dataSpaces = await users.getDataSpacesForUser(user.id);
     const ids = dataSpaces.map(({ id }) => id);
     const groups = ids.length
-        ? await AppDataSource.getRepository(GroupEntity)
+        ? await getAppDataSource()
+              .getRepository(GroupEntity)
               .createQueryBuilder("item")
               .where("item.dataSpaceId IN (:...ids)", { ids })
               .getMany()
         : [];
     const gameSettings = ids.length
-        ? await AppDataSource.getRepository(DataSpaceGameSettingsEntity)
+        ? await getAppDataSource()
+              .getRepository(DataSpaceGameSettingsEntity)
               .createQueryBuilder("item")
               .where("item.dataSpaceId IN (:...ids)", { ids })
               .getMany()
         : [];
     const couchSessions = ids.length
-        ? await AppDataSource.getRepository(CouchGameSessionEntity)
+        ? await getAppDataSource()
+              .getRepository(CouchGameSessionEntity)
               .createQueryBuilder("item")
               .where("item.dataSpaceId IN (:...ids)", { ids })
               .getMany()
         : [];
     const rooms = ids.length
-        ? await AppDataSource.getRepository(RoomEntity)
+        ? await getAppDataSource()
+              .getRepository(RoomEntity)
               .createQueryBuilder("item")
               .where("item.dataSpaceId IN (:...ids)", { ids })
               .getMany()
         : [];
     const roomIds = rooms.map(({ id }) => id);
     const roomSessions = roomIds.length
-        ? await AppDataSource.getRepository(GameSessionEntity)
+        ? await getAppDataSource()
+              .getRepository(GameSessionEntity)
               .createQueryBuilder("item")
               .where("item.roomId IN (:...roomIds)", { roomIds })
               .getMany()
@@ -346,31 +351,36 @@ export async function exportAccount(session: Request["session"]) {
     const roomSessionIds = roomSessions.map(({ id }) => id);
     const [policyDefaults, policyRules, exactCardPolicies] = ids.length
         ? await Promise.all([
-              AppDataSource.getRepository(CardPolicyScopeDefaultEntity)
+              getAppDataSource()
+                  .getRepository(CardPolicyScopeDefaultEntity)
                   .createQueryBuilder("item")
                   .where("item.dataSpaceId IN (:...ids)", { ids })
                   .getMany(),
-              AppDataSource.getRepository(CardPolicyConditionalRuleEntity)
+              getAppDataSource()
+                  .getRepository(CardPolicyConditionalRuleEntity)
                   .createQueryBuilder("item")
                   .where("item.dataSpaceId IN (:...ids)", { ids })
                   .orderBy("item.ownerKey", "ASC")
                   .addOrderBy("item.ruleOrder", "ASC")
                   .getMany(),
-              AppDataSource.getRepository(CardPolicyExactCardEntity)
+              getAppDataSource()
+                  .getRepository(CardPolicyExactCardEntity)
                   .createQueryBuilder("item")
                   .where("item.dataSpaceId IN (:...ids)", { ids })
                   .getMany(),
           ])
         : [[], [], []];
     const couchAppearances = couchSessionIds.length
-        ? await AppDataSource.getRepository(CouchCardAppearanceEntity)
+        ? await getAppDataSource()
+              .getRepository(CouchCardAppearanceEntity)
               .createQueryBuilder("item")
               .where("item.sessionId IN (:...sessionIds)", { sessionIds: couchSessionIds })
               .orderBy("item.sequence", "ASC")
               .getMany()
         : [];
     const roomAppearances = roomSessionIds.length
-        ? await AppDataSource.getRepository(CardAppearanceEntity)
+        ? await getAppDataSource()
+              .getRepository(CardAppearanceEntity)
               .createQueryBuilder("item")
               .where("item.sessionId IN (:...sessionIds)", { sessionIds: roomSessionIds })
               .orderBy("item.sequence", "ASC")

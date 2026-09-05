@@ -1,4 +1,5 @@
 import net from "node:net";
+import { randomInt } from "node:crypto";
 import os, { type NetworkInterfaceInfo } from "node:os";
 import { getResponder, type CiaoService, type Responder, type ServiceTxt } from "@homebridge/ciao";
 import settings, { type Settings } from "./settings";
@@ -109,19 +110,7 @@ export function eligibleNetworkBindings(
     const bindings: LocalDiscoveryBinding[] = [];
     for (const [interfaceName, addresses] of Object.entries(interfaces)) {
         if (!addresses || !localNetworkInterfaceAllowed(interfaceName, value)) continue;
-        for (const info of addresses) {
-            const address = stripIpv6Scope(info.address);
-            if (info.internal && !value.testMode) continue;
-            if (
-                typeof explicitBind === "string" &&
-                explicitBind !== "LOOPBACK_ONLY" &&
-                explicitBind !== address
-            ) {
-                continue;
-            }
-            if (!addressEligible(address, value.mdnsAllowPublicIpv4, value.testMode)) continue;
-            bindings.push({ interfaceName, address, family: info.family });
-        }
+        collectEligibleBindings(addresses, value, explicitBind, bindings, interfaceName);
     }
     return bindings.sort((left, right) => {
         const interfaceOrder = left.interfaceName.localeCompare(right.interfaceName);
@@ -129,6 +118,35 @@ export function eligibleNetworkBindings(
         if (left.family !== right.family) return left.family === "IPv4" ? -1 : 1;
         return left.address.localeCompare(right.address);
     });
+}
+
+function collectEligibleBindings(
+    addresses: readonly os.NetworkInterfaceInfo[],
+    value: Pick<
+        Settings,
+        | "mdnsInterfaceAllowlist"
+        | "mdnsInterfaceDenylist"
+        | "mdnsAllowPublicIpv4"
+        | "httpBind"
+        | "testMode"
+    >,
+    explicitBind: string | null,
+    bindings: LocalDiscoveryBinding[],
+    interfaceName: string,
+) {
+    for (const info of addresses) {
+        const address = stripIpv6Scope(info.address);
+        if (info.internal && !value.testMode) continue;
+        if (
+            typeof explicitBind === "string" &&
+            explicitBind !== "LOOPBACK_ONLY" &&
+            explicitBind !== address
+        ) {
+            continue;
+        }
+        if (!addressEligible(address, value.mdnsAllowPublicIpv4, value.testMode)) continue;
+        bindings.push({ interfaceName, address, family: info.family });
+    }
 }
 
 export function buildLocalServiceAdvertisement(
@@ -312,25 +330,7 @@ export class LocalDiscoveryController {
         try {
             const ready = await this.readiness();
             if (!ready) {
-                this.unreadySince ??= Date.now();
-                if (Date.now() - this.unreadySince >= READINESS_WITHDRAWAL_DEBOUNCE_MS) {
-                    const newlyWithdrawn = localDiscoveryStatus().reason !== "UNREADY";
-                    if (this.advertiser.status().advertising) await this.advertiser.stop();
-                    this.lastAdvertisementKey = null;
-                    setLocalDiscoveryStatus({
-                        ...localDiscoveryStatus(),
-                        advertising: false,
-                        reason: "UNREADY",
-                    });
-                    if (newlyWithdrawn) {
-                        logEvent(
-                            "warn",
-                            "local_discovery.readiness_withdrawn",
-                            { reason: "UNREADY" },
-                            settings.value.logLevel,
-                        );
-                    }
-                }
+                await this.withdrawWhenUnready();
                 return;
             }
             const readinessRecovered = this.unreadySince !== null;
@@ -349,26 +349,7 @@ export class LocalDiscoveryController {
                 this.displayBootstrapAvailable(),
             );
             if (!advertisement.bindings.length) {
-                const newlyUnavailable = localDiscoveryStatus().reason !== "NO_ELIGIBLE_INTERFACE";
-                if (this.advertiser.status().advertising) await this.advertiser.stop();
-                this.lastAdvertisementKey = null;
-                setLocalDiscoveryStatus({
-                    ...localDiscoveryStatus(),
-                    serviceType: advertisement.serviceType,
-                    advertising: false,
-                    reason: "NO_ELIGIBLE_INTERFACE",
-                    interfaceCount: 0,
-                    ipv4AddressCount: 0,
-                    ipv6AddressCount: 0,
-                });
-                if (newlyUnavailable) {
-                    logEvent(
-                        "warn",
-                        "local_discovery.no_eligible_interface",
-                        { reason: "NO_ELIGIBLE_INTERFACE" },
-                        settings.value.logLevel,
-                    );
-                }
+                await this.withdrawWithoutBindings(advertisement);
                 return;
             }
             if (Date.now() < this.nextRetryAt) return;
@@ -405,7 +386,7 @@ export class LocalDiscoveryController {
                 advertising: false,
                 reason: "RESPONDER_FAILURE",
             });
-            const jitter = Math.floor(Math.random() * Math.max(1, this.retryDelayMs / 4));
+            const jitter = randomInt(Math.max(1, Math.ceil(this.retryDelayMs / 4)));
             this.nextRetryAt = Date.now() + this.retryDelayMs + jitter;
             this.retryDelayMs = Math.min(MAX_RETRY_MS, this.retryDelayMs * 2);
             logEvent(
@@ -418,9 +399,54 @@ export class LocalDiscoveryController {
             this.running = false;
         }
     }
+
+    private async withdrawWithoutBindings(advertisement: LocalServiceAdvertisement) {
+        const newlyUnavailable = localDiscoveryStatus().reason !== "NO_ELIGIBLE_INTERFACE";
+        if (this.advertiser.status().advertising) await this.advertiser.stop();
+        this.lastAdvertisementKey = null;
+        setLocalDiscoveryStatus({
+            ...localDiscoveryStatus(),
+            serviceType: advertisement.serviceType,
+            advertising: false,
+            reason: "NO_ELIGIBLE_INTERFACE",
+            interfaceCount: 0,
+            ipv4AddressCount: 0,
+            ipv6AddressCount: 0,
+        });
+        if (newlyUnavailable) {
+            logEvent(
+                "warn",
+                "local_discovery.no_eligible_interface",
+                { reason: "NO_ELIGIBLE_INTERFACE" },
+                settings.value.logLevel,
+            );
+        }
+    }
+
+    private async withdrawWhenUnready() {
+        this.unreadySince ??= Date.now();
+        if (Date.now() - this.unreadySince >= READINESS_WITHDRAWAL_DEBOUNCE_MS) {
+            const newlyWithdrawn = localDiscoveryStatus().reason !== "UNREADY";
+            if (this.advertiser.status().advertising) await this.advertiser.stop();
+            this.lastAdvertisementKey = null;
+            setLocalDiscoveryStatus({
+                ...localDiscoveryStatus(),
+                advertising: false,
+                reason: "UNREADY",
+            });
+            if (newlyWithdrawn) {
+                logEvent(
+                    "warn",
+                    "local_discovery.readiness_withdrawn",
+                    { reason: "UNREADY" },
+                    settings.value.logLevel,
+                );
+            }
+        }
+    }
 }
 
-function normalizeBindAddress(bind: string): string | "LOOPBACK_ONLY" | "UNSUPPORTED" | null {
+function normalizeBindAddress(bind: string): string | null {
     const value = stripIpv6Scope(
         bind.startsWith("[") && bind.endsWith("]") ? bind.slice(1, -1) : bind,
     );

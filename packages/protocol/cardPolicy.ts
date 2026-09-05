@@ -99,7 +99,7 @@ export const cardPolicyPredicateSchema = z
 
 export const cardPolicyRuleSchema = z
     .object({
-        id: z.string().uuid(),
+        id: z.uuid(),
         name: z.string().trim().min(1).max(100),
         order: z.number().int().nonnegative(),
         enabled: z.boolean(),
@@ -125,11 +125,7 @@ export const portableCardPolicyScopeSchema = z
             )
             .max(250),
         exactCards: z
-            .array(
-                z
-                    .object({ cardId: z.string().uuid(), directives: cardPolicyDirectivesSchema })
-                    .strict(),
-            )
+            .array(z.object({ cardId: z.uuid(), directives: cardPolicyDirectivesSchema }).strict())
             .max(50_000)
             .refine(
                 (entries) => new Set(entries.map(({ cardId }) => cardId)).size === entries.length,
@@ -143,11 +139,7 @@ export const sessionCardPolicySchema = z
         scopeDefault: cardPolicyDirectivesSchema.default({}),
         conditionalRules: z.array(cardPolicyRuleSchema).max(250).default([]),
         exactCards: z
-            .array(
-                z
-                    .object({ cardId: z.string().uuid(), directives: cardPolicyDirectivesSchema })
-                    .strict(),
-            )
+            .array(z.object({ cardId: z.uuid(), directives: cardPolicyDirectivesSchema }).strict())
             .max(1000)
             .refine(
                 (entries) => new Set(entries.map(({ cardId }) => cardId)).size === entries.length,
@@ -158,13 +150,10 @@ export const sessionCardPolicySchema = z
     .strict()
     .default({ scopeDefault: {}, conditionalRules: [], exactCards: [] });
 
-export type CardPolicyDirectivesPayload = z.infer<typeof cardPolicyDirectivesSchema>;
-export type CardPolicyPredicatePayload = z.infer<typeof cardPolicyPredicateSchema>;
-export type SessionCardPolicyPayload = z.infer<typeof sessionCardPolicySchema>;
-export type CardPolicyDirectives = CardPolicyDirectivesPayload;
+export type CardPolicyDirectives = z.infer<typeof cardPolicyDirectivesSchema>;
+export type CardPolicyPredicate = z.infer<typeof cardPolicyPredicateSchema>;
+export type SessionCardPolicy = z.infer<typeof sessionCardPolicySchema>;
 export type AvailabilityDirective = NonNullable<CardPolicyDirectives["availability"]>;
 export type BooleanDirective = NonNullable<CardPolicyDirectives["alwaysEligible"]>;
-export type CardPolicyPredicate = CardPolicyPredicatePayload;
 export type CardPolicyRule = z.infer<typeof cardPolicyRuleSchema>;
-export type SessionCardPolicy = SessionCardPolicyPayload;
 export type PortableCardPolicy = z.infer<typeof portableCardPolicyScopeSchema>;

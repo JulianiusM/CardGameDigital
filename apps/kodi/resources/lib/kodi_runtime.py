@@ -111,9 +111,9 @@ def run() -> None:
         ) = _load_with_abort(monitor, _native_preference_functions)
         _log(addon, f"native preferences loaded after {time.monotonic() - started_at:.2f}s")
         native_settings = _read_native_settings(addon, setting_ids)
-        Application = _load_with_abort(monitor, _application_class)
+        application_class = _load_with_abort(monitor, _application_class)
         _log(addon, f"application modules loaded after {time.monotonic() - started_at:.2f}s")
-        application = Application(
+        application = application_class(
             profile_path,
             locale,
             native_preferences=native_settings,
@@ -130,11 +130,7 @@ def run() -> None:
         application.start()
         _log(addon, "application initialized")
         _log(addon, "main window ready")
-        while not monitor.abortRequested() and application.state.lifecycle != "STOPPING":
-            application.tick()
-            window.render_if_changed()
-            if monitor.waitForAbort(0.05):
-                break
+        _run_application_loop(monitor, application, window)
         if application.state.lifecycle == "STOPPING":
             exit_reason = "user left the add-on"
             return_to_kodi_home = True
@@ -163,3 +159,10 @@ def run() -> None:
             xbmc.executebuiltin("ActivateWindow(Home)")
         elapsed = time.monotonic() - started_at
         _log(addon, f"stopped after {elapsed:.2f}s ({exit_reason})")
+
+def _run_application_loop(monitor, application, window):
+    while not monitor.abortRequested() and application.state.lifecycle != "STOPPING":
+        application.tick()
+        window.render_if_changed()
+        if monitor.waitForAbort(0.05):
+            break

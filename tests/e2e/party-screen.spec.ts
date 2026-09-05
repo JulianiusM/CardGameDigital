@@ -295,6 +295,7 @@ test("a plain-HTTP LAN origin sends client.hello and joins the Room", async ({
     test.setTimeout(60_000);
     if (!baseURL) throw new Error("Playwright baseURL is required");
     const address = physicalLanIpv4Address();
+    // Multicast join URLs require an actual LAN interface, which some CI workers lack.
     test.skip(!address, "No physical IPv4 interface is available");
     const configuredUrl = new URL(baseURL);
     const port = configuredUrl.port ? `:${configuredUrl.port}` : "";

@@ -22,7 +22,7 @@ import session from "express-session";
 import path from "node:path";
 import { validateSession } from "./application/accountService";
 import { handleGenericError } from "./middleware/genericErrorHandler";
-import { AppDataSource } from "./modules/database/dataSource";
+import { getAppDataSource } from "./modules/database/dataSource";
 import { AccountSession } from "../../../packages/persistence/entities/session/AccountSession";
 import { asyncHandler } from "./modules/lib/asyncHandler";
 import { ExpectedError } from "./modules/lib/errors";
@@ -85,7 +85,7 @@ app.get("/play", (_req, res) => res.sendFile(path.join(webDirectory, "index.html
 app.get("/play/*splat", (_req, res) => res.sendFile(path.join(webDirectory, "index.html")));
 
 // ensure dataSource is initialized before this
-const sessionRepository = AppDataSource.getRepository(AccountSession);
+const sessionRepository = getAppDataSource().getRepository(AccountSession);
 
 // If behind a proxy (Heroku/NGINX), enable this so secure cookies work:
 app.set("trust proxy", settings.value.trustProxy);
@@ -209,7 +209,7 @@ app.get("/healthz", (_req, res) => res.status(200).send("ok"));
 app.get(
     "/readyz",
     asyncHandler(async (_req, res) => {
-        await AppDataSource.query("SELECT 1");
+        await getAppDataSource().query("SELECT 1");
         res.status(200).send("ready");
     }),
 );

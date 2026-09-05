@@ -542,35 +542,7 @@ def validate_server_info(value: Any) -> dict[str, Any]:
     capacity = _mapping(info.get("roomCapacity"), "roomCapacity")
     _integer(capacity.get("maximumParticipants"), "maximumParticipants", 2)
     _integer(capacity.get("maximumPlayers"), "maximumPlayers", 2)
-    capabilities = _mapping(info.get("capabilities"), "capabilities")
-    for name in ("localNetworkDiscovery", "displayBootstrapRoomCreation"):
-        if not isinstance(capabilities.get(name), bool):
-            raise ProtocolViolation(f"capability {name} must be boolean")
-    native_authorization = capabilities.get("nativeDeviceAuthorization", False)
-    if not isinstance(native_authorization, bool):
-        raise ProtocolViolation("capability nativeDeviceAuthorization must be boolean")
-    endpoints = _mapping(info.get("endpoints"), "endpoints")
-    _relative_endpoint(endpoints.get("apiBasePath"), "apiBasePath")
-    _relative_endpoint(endpoints.get("webSocketPath"), "webSocketPath")
-    join_path = _relative_endpoint(endpoints.get("roomJoinPathTemplate"), "roomJoinPathTemplate")
-    if "{roomCode}" not in join_path:
-        raise ProtocolViolation("roomJoinPathTemplate must include {roomCode}")
-    if native_authorization:
-        for name in ("deviceAuthorizationPath", "deviceTokenPath"):
-            _relative_endpoint(endpoints.get(name), name)
-        if endpoints.get("deviceRevocationPath") is not None:
-            _relative_endpoint(endpoints.get("deviceRevocationPath"), "deviceRevocationPath")
-        native = _mapping(info.get("nativeDeviceAuthorization"), "nativeDeviceAuthorization")
-        _string(native.get("clientId"), "nativeDeviceAuthorization.clientId", 1, 100)
-        scopes = native.get("scopes")
-        if (
-            not isinstance(scopes, list)
-            or not 1 <= len(scopes) <= 20
-            or not all(isinstance(scope, str) and 1 <= len(scope) <= 100 for scope in scopes)
-        ):
-            raise ProtocolViolation("native device scopes must be a bounded string list")
-    elif info.get("nativeDeviceAuthorization") is not None:
-        raise ProtocolViolation("disabled native device authorization must have no descriptor")
+    _validate_server_capabilities(info)
     discovery = _mapping(info.get("localNetworkDiscovery"), "localNetworkDiscovery")
     if not isinstance(discovery.get("advertising"), bool):
         raise ProtocolViolation("discovery advertising must be boolean")
@@ -586,6 +558,40 @@ def validate_server_info(value: Any) -> dict[str, Any]:
     for index, origin in enumerate(available_urls):
         _http_origin(origin, f"availableBaseUrls[{index}]")
     return info
+
+def _validate_server_capabilities(info):
+    capabilities = _mapping(info.get("capabilities"), "capabilities")
+    for name in ("localNetworkDiscovery", "displayBootstrapRoomCreation"):
+        if not isinstance(capabilities.get(name), bool):
+            raise ProtocolViolation(f"capability {name} must be boolean")
+    native_authorization = capabilities.get("nativeDeviceAuthorization", False)
+    if not isinstance(native_authorization, bool):
+        raise ProtocolViolation("capability nativeDeviceAuthorization must be boolean")
+    endpoints = _mapping(info.get("endpoints"), "endpoints")
+    _relative_endpoint(endpoints.get("apiBasePath"), "apiBasePath")
+    _relative_endpoint(endpoints.get("webSocketPath"), "webSocketPath")
+    join_path = _relative_endpoint(endpoints.get("roomJoinPathTemplate"), "roomJoinPathTemplate")
+    if "{roomCode}" not in join_path:
+        raise ProtocolViolation("roomJoinPathTemplate must include {roomCode}")
+    if native_authorization:
+        _validate_server_info_native_authorization(endpoints, info)
+    elif info.get("nativeDeviceAuthorization") is not None:
+        raise ProtocolViolation("disabled native device authorization must have no descriptor")
+
+def _validate_server_info_native_authorization(endpoints, info):
+    for name in ("deviceAuthorizationPath", "deviceTokenPath"):
+        _relative_endpoint(endpoints.get(name), name)
+    if endpoints.get("deviceRevocationPath") is not None:
+        _relative_endpoint(endpoints.get("deviceRevocationPath"), "deviceRevocationPath")
+    native = _mapping(info.get("nativeDeviceAuthorization"), "nativeDeviceAuthorization")
+    _string(native.get("clientId"), "nativeDeviceAuthorization.clientId", 1, 100)
+    scopes = native.get("scopes")
+    if (
+        not isinstance(scopes, list)
+        or not 1 <= len(scopes) <= 20
+        or not all(isinstance(scope, str) and 1 <= len(scope) <= 100 for scope in scopes)
+    ):
+        raise ProtocolViolation("native device scopes must be a bounded string list")
 
 
 def validate_room_join(value: Any, required_role: str = "DISPLAY") -> dict[str, Any]:
@@ -629,10 +635,7 @@ def validate_couch_snapshot(value: Any) -> dict[str, Any]:
         player_ids.add(player_id)
     active_player = snapshot.get("activePlayer")
     if active_player is not None:
-        current = _mapping(active_player, "Couch active player")
-        if _uuid(current.get("id"), "Couch active player ID") not in player_ids:
-            raise ProtocolViolation("Couch active player is not in the roster")
-        _string(current.get("name"), "Couch active player name", 1, 40)
+        _validate_couch_active_player(active_player, player_ids)
     card = snapshot.get("currentCard")
     if card is not None:
         _validate_current_card(card, "Couch current Card")
@@ -652,6 +655,19 @@ def validate_couch_snapshot(value: Any) -> dict[str, Any]:
     _validate_couch_voting(snapshot.get("neverHaveIEverVoting"), player_ids)
     if snapshot.get("persistence") not in SESSION_PERSISTENCE_MODES:
         raise ProtocolViolation("Couch persistence is invalid")
+    _validate_couch_settings(snapshot)
+    snapshot["id"] = session_id
+    return snapshot
+
+
+def _validate_couch_active_player(active_player, player_ids):
+    current = _mapping(active_player, "Couch active player")
+    if _uuid(current.get("id"), "Couch active player ID") not in player_ids:
+        raise ProtocolViolation("Couch active player is not in the roster")
+    _string(current.get("name"), "Couch active player name", 1, 40)
+
+
+def _validate_couch_settings(snapshot):
     settings = _mapping(snapshot.get("settings"), "Couch settings")
     if settings.get("mode") != snapshot.get("mode"):
         raise ProtocolViolation("Couch settings mode differs from the snapshot")
@@ -667,8 +683,6 @@ def validate_couch_snapshot(value: Any) -> dict[str, Any]:
         raise ProtocolViolation("Couch Never Have I Ever reveal mode is invalid")
     _validate_configuration(settings.get("configuration"), "Couch configuration")
     _mapping(settings.get("cardPolicy"), "Couch Card policy")
-    snapshot["id"] = session_id
-    return snapshot
 
 
 def _validate_couch_voting(value: Any, player_ids: set[str]) -> None:
@@ -681,15 +695,7 @@ def _validate_couch_voting(value: Any, player_ids: set[str]) -> None:
     if not isinstance(progress, list) or len(progress) > len(player_ids):
         raise ProtocolViolation("Couch voting progress is invalid")
     progress_ids: set[str] = set()
-    for entry in progress:
-        current = _mapping(entry, "Couch voting progress")
-        player_id = _uuid(current.get("playerId"), "Couch voting player ID")
-        if player_id not in player_ids or player_id in progress_ids:
-            raise ProtocolViolation("Couch voting player is invalid")
-        progress_ids.add(player_id)
-        _string(current.get("displayName"), "Couch voting display name", 1, 40)
-        if current.get("status") not in NEVER_HAVE_I_EVER_VOTE_STATUSES:
-            raise ProtocolViolation("Couch voting status is invalid")
+    _validate_vote_progress(progress, player_ids, progress_ids)
     result = voting.get("result")
     if result is None:
         return
@@ -705,14 +711,30 @@ def _validate_couch_voting(value: Any, player_ids: set[str]) -> None:
         raise ProtocolViolation("Couch named answers exceed the roster")
     named_ids: set[str] = set()
     for entry in named:
-        current = _mapping(entry, "Couch named answer")
-        player_id = _uuid(current.get("playerId"), "Couch named answer player ID")
-        if player_id not in player_ids or player_id in named_ids:
-            raise ProtocolViolation("Couch named answer player is invalid")
-        named_ids.add(player_id)
-        _string(current.get("displayName"), "Couch named answer display name", 1, 40)
-        if current.get("vote") not in NEVER_HAVE_I_EVER_VOTE_VALUES:
-            raise ProtocolViolation("Couch named answer vote is invalid")
+        _validate_named_vote(entry, named_ids, player_ids)
+
+
+def _validate_named_vote(entry, named_ids, player_ids):
+    current = _mapping(entry, "Couch named answer")
+    player_id = _uuid(current.get("playerId"), "Couch named answer player ID")
+    if player_id not in player_ids or player_id in named_ids:
+        raise ProtocolViolation("Couch named answer player is invalid")
+    named_ids.add(player_id)
+    _string(current.get("displayName"), "Couch named answer display name", 1, 40)
+    if current.get("vote") not in NEVER_HAVE_I_EVER_VOTE_VALUES:
+        raise ProtocolViolation("Couch named answer vote is invalid")
+
+
+def _validate_vote_progress(progress, player_ids, progress_ids):
+    for entry in progress:
+        current = _mapping(entry, "Couch voting progress")
+        player_id = _uuid(current.get("playerId"), "Couch voting player ID")
+        if player_id not in player_ids or player_id in progress_ids:
+            raise ProtocolViolation("Couch voting player is invalid")
+        progress_ids.add(player_id)
+        _string(current.get("displayName"), "Couch voting display name", 1, 40)
+        if current.get("status") not in NEVER_HAVE_I_EVER_VOTE_STATUSES:
+            raise ProtocolViolation("Couch voting status is invalid")
 
 
 def decode_envelope(raw: str | bytes) -> dict[str, Any]:
@@ -749,12 +771,12 @@ def validate_server_envelope(value: Any) -> dict[str, Any]:
     }
     if event_type in null_revision_events and revision is not None:
         raise ProtocolViolation(f"{event_type} must not carry a revision")
+    _validate_server_event(event_type, payload, request_id, revision)
+    return envelope
+
+def _validate_server_event(event_type, payload, request_id, revision):
     if event_type == "server.hello":
-        if payload.get("protocolVersion") != PROTOCOL_VERSION:
-            raise ProtocolViolation("Server selected an unsupported protocol")
-        _uuid(payload.get("participantId"), "participantId")
-        if payload.get("role") != "DISPLAY":
-            raise ProtocolViolation("Kodi Room participant must remain DISPLAY")
+        _validate_server_hello(payload)
     elif event_type == "server.pong":
         if request_id is None or revision is not None:
             raise ProtocolViolation("server.pong correlation fields are invalid")
@@ -762,41 +784,65 @@ def validate_server_envelope(value: Any) -> dict[str, Any]:
     elif event_type == "room.snapshot":
         _validate_snapshot(payload)
     elif event_type == "room.roleChanged":
-        if payload.get("role") != "DISPLAY":
-            raise ProtocolViolation("Server attempted to elevate the TV role")
-        if payload.get("previousRole") not in ROOM_ROLES:
-            raise ProtocolViolation("Room role change previousRole is invalid")
-        if payload.get("reason") not in ROLE_CHANGE_REASONS:
-            raise ProtocolViolation("Room role change reason is invalid")
+        _validate_display_role_change(payload)
     elif event_type == "room.presence":
-        connected = _list(payload.get("connected"), "Room presence", 500)
-        participant_ids: set[str] = set()
-        for entry in connected:
-            participant = _mapping(entry, "Room presence participant")
-            participant_id = _uuid(
-                participant.get("participantId"), "Room presence participant ID"
-            )
-            if participant_id in participant_ids:
-                raise ProtocolViolation("Room presence participant IDs must be unique")
-            participant_ids.add(participant_id)
-            _string(participant.get("displayName"), "Room presence display name", 1, 40)
-            if participant.get("role") not in ROOM_ROLES:
-                raise ProtocolViolation("Room presence role is invalid")
+        _validate_server_envelope_room_presence(payload)
     elif event_type == "room.participantLeft":
-        _uuid(payload.get("participantId"), "departed participant ID")
-        _string(payload.get("displayName"), "departed participant display name", 1, 80)
-        if payload.get("reason") not in PARTICIPANT_LEFT_REASONS:
-            raise ProtocolViolation("participant departure reason is invalid")
+        _validate_participant_departure(payload)
     elif event_type == "session.cardReplaced":
         if payload.get("reason") not in CARD_REPLACEMENT_REASONS:
             raise ProtocolViolation("Card replacement reason is invalid")
     elif event_type == "error":
-        if payload.get("code") not in PROTOCOL_ERROR_CODES:
-            raise ProtocolViolation("error code is invalid")
-        _string(payload.get("message"), "error message", 1, 500)
+        _validate_server_error(payload)
     else:
         raise ProtocolViolation("WebSocket event type is unsupported")
-    return envelope
+
+
+def _validate_server_error(payload):
+    if payload.get("code") not in PROTOCOL_ERROR_CODES:
+        raise ProtocolViolation("error code is invalid")
+    _string(payload.get("message"), "error message", 1, 500)
+
+
+
+def _validate_participant_departure(payload):
+    _uuid(payload.get("participantId"), "departed participant ID")
+    _string(payload.get("displayName"), "departed participant display name", 1, 80)
+    if payload.get("reason") not in PARTICIPANT_LEFT_REASONS:
+        raise ProtocolViolation("participant departure reason is invalid")
+
+
+def _validate_display_role_change(payload):
+    if payload.get("role") != "DISPLAY":
+        raise ProtocolViolation("Server attempted to elevate the TV role")
+    if payload.get("previousRole") not in ROOM_ROLES:
+        raise ProtocolViolation("Room role change previousRole is invalid")
+    if payload.get("reason") not in ROLE_CHANGE_REASONS:
+        raise ProtocolViolation("Room role change reason is invalid")
+
+
+def _validate_server_hello(payload):
+    if payload.get("protocolVersion") != PROTOCOL_VERSION:
+        raise ProtocolViolation("Server selected an unsupported protocol")
+    _uuid(payload.get("participantId"), "participantId")
+    if payload.get("role") != "DISPLAY":
+        raise ProtocolViolation("Kodi Room participant must remain DISPLAY")
+
+
+def _validate_server_envelope_room_presence(payload):
+    connected = _list(payload.get("connected"), "Room presence", 500)
+    participant_ids: set[str] = set()
+    for entry in connected:
+        participant = _mapping(entry, "Room presence participant")
+        participant_id = _uuid(
+            participant.get("participantId"), "Room presence participant ID"
+        )
+        if participant_id in participant_ids:
+            raise ProtocolViolation("Room presence participant IDs must be unique")
+        participant_ids.add(participant_id)
+        _string(participant.get("displayName"), "Room presence display name", 1, 40)
+        if participant.get("role") not in ROOM_ROLES:
+            raise ProtocolViolation("Room presence role is invalid")
 
 
 def _validate_snapshot(value: Mapping[str, Any]) -> None:
@@ -819,51 +865,15 @@ def _validate_snapshot(value: Mapping[str, Any]) -> None:
     ):
         raise ProtocolViolation("participants must be a bounded list")
     participant_ids: set[str] = set()
-    for participant in participants:
-        current = _mapping(participant, "participant")
-        participant_id = _uuid(current.get("id"), "participant.id")
-        if participant_id in participant_ids:
-            raise ProtocolViolation("participant IDs must be unique")
-        participant_ids.add(participant_id)
-        if _uuid(current.get("roomId"), "participant.roomId") != room_id:
-            raise ProtocolViolation("participant belongs to another Room")
-        if current.get("role") not in ROOM_ROLES:
-            raise ProtocolViolation("participant.role is invalid")
-        _string(current.get("displayName"), "participant.displayName", 1, 40)
-        if current.get("connectionStatus") not in PARTICIPANT_CONNECTION_STATUSES:
-            raise ProtocolViolation("participant.connectionStatus is invalid")
-        device_players = _list(current.get("devicePlayers"), "participant.devicePlayers", 19)
-        for player in device_players:
-            current_player = _mapping(player, "participant device player")
-            _uuid(current_player.get("id"), "participant device player ID")
-            _string(current_player.get("name"), "participant device player name", 1, 40)
+    _validate_room_participants(participants, participant_ids, room_id)
     _boolean(value.get("boundaryConfigured"), "boundaryConfigured")
-    settings = _mapping(value.get("settings"), "settings")
-    if settings.get("mode") not in GAME_MODES:
-        raise ProtocolViolation("settings.mode is invalid")
-    _integer(settings.get("revision"), "settings.revision")
-    _string(settings.get("profileId"), "settings.profileId", 1, 100)
-    group_id = settings.get("groupId")
-    if group_id is not None:
-        _uuid(group_id, "settings.groupId")
-    _boolean(settings.get("adultContentConfirmed"), "settings.adultContentConfirmed")
-    primary_locale = _string(settings.get("cardLocale"), "settings.cardLocale", 2, 35)
-    _boolean(settings.get("cardFallbackEnabled"), "settings.cardFallbackEnabled")
-    fallbacks = _string_list(
-        settings.get("cardFallbackLocales"), "settings.cardFallbackLocales", 100, 35
-    )
-    if primary_locale.casefold() in {locale.casefold() for locale in fallbacks}:
-        raise ProtocolViolation("settings fallback locales include the primary locale")
-    if settings.get("neverHaveIEverRevealMode") not in NEVER_HAVE_I_EVER_REVEAL_MODES:
-        raise ProtocolViolation("settings Never Have I Ever reveal mode is invalid")
-    _validate_configuration(settings.get("configuration"), "settings.configuration")
-    _mapping(settings.get("cardPolicy"), "settings.cardPolicy")
-    updated_by = settings.get("updatedByParticipantId")
-    if updated_by is not None:
-        _uuid(updated_by, "settings.updatedByParticipantId")
+    settings = _validate_room_settings(value)
     session = value.get("session")
     if session is None:
         return
+    _validate_display_session(session, settings, maximum_players, participant_ids)
+
+def _validate_display_session(session, settings, maximum_players, participant_ids):
     current_session = _mapping(session, "session")
     actions = _string_list(
         current_session.get("availableActions"), "session.availableActions", 20
@@ -891,10 +901,7 @@ def _validate_snapshot(value: Mapping[str, Any]) -> None:
         _string(current_player.get("name"), "session player name", 1, 40)
     active_player = current_session.get("activePlayer")
     if active_player is not None:
-        current_player = _mapping(active_player, "session active player")
-        if _uuid(current_player.get("id"), "session active player ID") not in player_ids:
-            raise ProtocolViolation("session active player is not in the roster")
-        _string(current_player.get("name"), "session active player name", 1, 40)
+        _validate_display_active_player(active_player, player_ids)
     viewer = _mapping(current_session.get("viewer"), "session.viewer")
     if viewer.get("role") != "DISPLAY":
         raise ProtocolViolation("Display snapshot has a non-display viewer")
@@ -916,6 +923,60 @@ def _validate_snapshot(value: Mapping[str, Any]) -> None:
     for name in ("yes", "no", "total"):
         _integer(vote_result.get(name), f"session.voteResult.{name}")
     _validate_couch_voting(current_session.get("neverHaveIEverVoting"), player_ids)
+
+
+def _validate_display_active_player(active_player, player_ids):
+    current_player = _mapping(active_player, "session active player")
+    if _uuid(current_player.get("id"), "session active player ID") not in player_ids:
+        raise ProtocolViolation("session active player is not in the roster")
+    _string(current_player.get("name"), "session active player name", 1, 40)
+
+
+def _validate_room_settings(value):
+    settings = _mapping(value.get("settings"), "settings")
+    if settings.get("mode") not in GAME_MODES:
+        raise ProtocolViolation("settings.mode is invalid")
+    _integer(settings.get("revision"), "settings.revision")
+    _string(settings.get("profileId"), "settings.profileId", 1, 100)
+    group_id = settings.get("groupId")
+    if group_id is not None:
+        _uuid(group_id, "settings.groupId")
+    _boolean(settings.get("adultContentConfirmed"), "settings.adultContentConfirmed")
+    primary_locale = _string(settings.get("cardLocale"), "settings.cardLocale", 2, 35)
+    _boolean(settings.get("cardFallbackEnabled"), "settings.cardFallbackEnabled")
+    fallbacks = _string_list(
+        settings.get("cardFallbackLocales"), "settings.cardFallbackLocales", 100, 35
+    )
+    if primary_locale.casefold() in {locale.casefold() for locale in fallbacks}:
+        raise ProtocolViolation("settings fallback locales include the primary locale")
+    if settings.get("neverHaveIEverRevealMode") not in NEVER_HAVE_I_EVER_REVEAL_MODES:
+        raise ProtocolViolation("settings Never Have I Ever reveal mode is invalid")
+    _validate_configuration(settings.get("configuration"), "settings.configuration")
+    _mapping(settings.get("cardPolicy"), "settings.cardPolicy")
+    updated_by = settings.get("updatedByParticipantId")
+    if updated_by is not None:
+        _uuid(updated_by, "settings.updatedByParticipantId")
+    return settings
+
+def _validate_room_participants(participants, participant_ids, room_id):
+    for participant in participants:
+        current = _mapping(participant, "participant")
+        participant_id = _uuid(current.get("id"), "participant.id")
+        if participant_id in participant_ids:
+            raise ProtocolViolation("participant IDs must be unique")
+        participant_ids.add(participant_id)
+        if _uuid(current.get("roomId"), "participant.roomId") != room_id:
+            raise ProtocolViolation("participant belongs to another Room")
+        if current.get("role") not in ROOM_ROLES:
+            raise ProtocolViolation("participant.role is invalid")
+        _string(current.get("displayName"), "participant.displayName", 1, 40)
+        if current.get("connectionStatus") not in PARTICIPANT_CONNECTION_STATUSES:
+            raise ProtocolViolation("participant.connectionStatus is invalid")
+        device_players = _list(current.get("devicePlayers"), "participant.devicePlayers", 19)
+        for player in device_players:
+            current_player = _mapping(player, "participant device player")
+            _uuid(current_player.get("id"), "participant device player ID")
+            _string(current_player.get("name"), "participant device player name", 1, 40)
 
 
 def _validate_host_status(value: Any) -> None:

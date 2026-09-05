@@ -34,73 +34,15 @@ export function applyMemoryLifecycleTransition(
         participant.leftAt = transition.at;
     };
 
-    for (const participant of roomParticipants) {
-        if (participant.connectionStatus === "LEFT" || participant.leftAt !== null) continue;
-        const activationExpired =
-            participant.firstConnectedAt === null &&
-            participant.activationExpiresAt <= transition.at;
-        const reconnectExpired =
-            participant.firstConnectedAt !== null &&
-            participant.connectionStatus === "TEMPORARILY_DISCONNECTED" &&
-            participant.reconnectDeadline !== null &&
-            participant.reconnectDeadline <= transition.at;
-        if (!activationExpired && !reconnectExpired) continue;
-        if (participant.role === "HOST") {
-            hostLossReason = activationExpired
-                ? "HOST_ACTIVATION_EXPIRED"
-                : "HOST_DISCONNECT_EXPIRED";
-        }
-        markTerminal(participant);
-        expiredParticipants.push({ ...participant });
-    }
+    expireParticipants();
 
     let activationRejected = false;
-    if (transition.type === "ACTIVATE") {
-        if (
-            !transitioned ||
-            transitioned.credentialHash !== transition.credentialHash ||
-            transitioned.connectionStatus === "LEFT" ||
-            transitioned.revokedAt !== null ||
-            room.expiresAt <= transition.at
-        ) {
-            transitioned = undefined;
-            activationRejected = true;
-        } else {
-            participantFirstActivated = transitioned.firstConnectedAt === null;
-            transitioned.firstConnectedAt ??= transition.at;
-            transitioned.lastConnectedAt = transition.at;
-            transitioned.connectionStatus = "CONNECTED";
-            transitioned.reconnectDeadline = null;
-            room.activatedAt ??= transition.at;
-        }
-    } else if (transition.type === "DISCONNECT") {
-        if (transitioned?.connectionStatus === "CONNECTED") {
-            transitioned.connectionStatus = "TEMPORARILY_DISCONNECTED";
-            transitioned.reconnectDeadline = transition.reconnectDeadline;
-        }
-    } else if (transition.type === "LEAVE") {
-        if (transitioned && transitioned.connectionStatus !== "LEFT") {
-            if (transitioned.role === "HOST") hostLossReason = "HOST_LEFT";
-            markTerminal(transitioned);
-        }
-    }
+    applyParticipantTransition();
 
     const roomExpired = room.expiresAt <= transition.at;
 
     let trigger: HostSelectionTrigger = { type: "RECONCILE" };
-    if (transition.type === "ACTIVATE" && !activationRejected) {
-        trigger = { type: "ACTIVATE", participantId: transition.participantId };
-    } else if (transition.type === "TRANSFER_HOST") {
-        trigger = {
-            type: "TRANSFER",
-            participantId: transition.participantId,
-            targetParticipantId: transition.targetParticipantId,
-        };
-    } else if (transition.type === "CLOSE") {
-        trigger = { type: "CLOSE", participantId: transition.participantId };
-    } else if (hostLossReason) {
-        trigger = { type: "HOST_LOST", reason: hostLossReason };
-    }
+    selectHostTrigger();
 
     const decision = decideRoomHost({
         room,
@@ -109,18 +51,7 @@ export function applyMemoryLifecycleTransition(
         now: transition.at,
     });
     const roleChanges: RoomRoleChange[] = [];
-    for (const demoteParticipantId of decision.demoteParticipantIds) {
-        const demoted = roomParticipants.find(({ id }) => id === demoteParticipantId);
-        if (demoted && demoted.role === "HOST") {
-            demoted.role = "PLAYER";
-            roleChanges.push({
-                participantId: demoted.id,
-                previousRole: "HOST",
-                role: "PLAYER",
-                reason: decision.reason ?? "HOST_DISCONNECT_EXPIRED",
-            });
-        }
-    }
+    applyHostDemotions();
     if (decision.promoteParticipantId) {
         const promoted = roomParticipants.find(({ id }) => id === decision.promoteParticipantId)!;
         const previousRole = promoted.role;
@@ -133,12 +64,7 @@ export function applyMemoryLifecycleTransition(
             reason: decision.reason ?? "INITIAL_HOST_ASSIGNED",
         });
     }
-    if (decision.closeRoom) {
-        room.closedAt = transition.at;
-        for (const participant of roomParticipants) {
-            if (participant.connectionStatus !== "LEFT") markTerminal(participant);
-        }
-    }
+    closeRoomParticipants();
     const current = transitioned?.connectionStatus === "LEFT" ? null : transitioned;
     let closeReason: RoomLifecycleTransitionResult["closeReason"] = null;
     if (decision.closeRoom) {
@@ -160,6 +86,99 @@ export function applyMemoryLifecycleTransition(
         closeReason,
         invariantRepair: decision.invariantRepair,
     };
+
+    function closeRoomParticipants() {
+        if (decision.closeRoom) {
+            room.closedAt = transition.at;
+            for (const participant of roomParticipants) {
+                if (participant.connectionStatus !== "LEFT") markTerminal(participant);
+            }
+        }
+    }
+
+    function applyHostDemotions() {
+        for (const demoteParticipantId of decision.demoteParticipantIds) {
+            const demoted = roomParticipants.find(({ id }) => id === demoteParticipantId);
+            if (demoted?.role === "HOST") {
+                demoted.role = "PLAYER";
+                roleChanges.push({
+                    participantId: demoted.id,
+                    previousRole: "HOST",
+                    role: "PLAYER",
+                    reason: decision.reason ?? "HOST_DISCONNECT_EXPIRED",
+                });
+            }
+        }
+    }
+
+    function selectHostTrigger() {
+        if (transition.type === "ACTIVATE" && !activationRejected) {
+            trigger = { type: "ACTIVATE", participantId: transition.participantId };
+        } else if (transition.type === "TRANSFER_HOST") {
+            trigger = {
+                type: "TRANSFER",
+                participantId: transition.participantId,
+                targetParticipantId: transition.targetParticipantId,
+            };
+        } else if (transition.type === "CLOSE") {
+            trigger = { type: "CLOSE", participantId: transition.participantId };
+        } else if (hostLossReason) {
+            trigger = { type: "HOST_LOST", reason: hostLossReason };
+        }
+    }
+
+    function applyParticipantTransition() {
+        if (transition.type === "ACTIVATE") {
+            if (
+                transitioned?.credentialHash !== transition.credentialHash ||
+                transitioned.connectionStatus === "LEFT" ||
+                transitioned.revokedAt !== null ||
+                room.expiresAt <= transition.at
+            ) {
+                transitioned = undefined;
+                activationRejected = true;
+            } else {
+                participantFirstActivated = transitioned.firstConnectedAt === null;
+                transitioned.firstConnectedAt ??= transition.at;
+                transitioned.lastConnectedAt = transition.at;
+                transitioned.connectionStatus = "CONNECTED";
+                transitioned.reconnectDeadline = null;
+                room.activatedAt ??= transition.at;
+            }
+        } else if (transition.type === "DISCONNECT") {
+            if (transitioned?.connectionStatus === "CONNECTED") {
+                transitioned.connectionStatus = "TEMPORARILY_DISCONNECTED";
+                transitioned.reconnectDeadline = transition.reconnectDeadline;
+            }
+        } else if (transition.type === "LEAVE") {
+            if (transitioned && transitioned.connectionStatus !== "LEFT") {
+                if (transitioned.role === "HOST") hostLossReason = "HOST_LEFT";
+                markTerminal(transitioned);
+            }
+        }
+    }
+
+    function expireParticipants() {
+        for (const participant of roomParticipants) {
+            if (participant.connectionStatus === "LEFT" || participant.leftAt !== null) continue;
+            const activationExpired =
+                participant.firstConnectedAt === null &&
+                participant.activationExpiresAt <= transition.at;
+            const reconnectExpired =
+                participant.firstConnectedAt !== null &&
+                participant.connectionStatus === "TEMPORARILY_DISCONNECTED" &&
+                participant.reconnectDeadline !== null &&
+                participant.reconnectDeadline <= transition.at;
+            if (!activationExpired && !reconnectExpired) continue;
+            if (participant.role === "HOST") {
+                hostLossReason = activationExpired
+                    ? "HOST_ACTIVATION_EXPIRED"
+                    : "HOST_DISCONNECT_EXPIRED";
+            }
+            markTerminal(participant);
+            expiredParticipants.push({ ...participant });
+        }
+    }
 }
 
 function emptyResult(roomClosed: boolean): RoomLifecycleTransitionResult {

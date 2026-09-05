@@ -8,7 +8,7 @@ import time
 import unicodedata
 import uuid
 from dataclasses import replace
-from typing import Callable, Mapping, Optional, Protocol
+from typing import cast, Callable, Mapping, Optional, Protocol
 
 from .actions import Action, action
 from .effects import EffectRunner
@@ -306,38 +306,41 @@ class Application:
 
     def _auto_page_needed(self) -> bool:
         if self.state.route == Route.COUCH_GAME:
-            snapshot = self.state.couch_snapshot or {}
-            voting = snapshot.get("neverHaveIEverVoting") or {}
-            result = voting.get("result") or {}
-            named = result.get("namedAnswers") or ()
-            return _named_result_needs_auto_page(voting, named)
+            return self._auto_page_needed_route()
         if self.state.route not in {Route.ROOM_LOBBY_DISPLAY, Route.ROOM_GAME_DISPLAY}:
             return False
-        if self.state.route == Route.ROOM_LOBBY_DISPLAY:
-            page_size = LOBBY_ROSTER_PAGE_SIZE
-        else:
-            page_size = GAME_ROSTER_PAGE_SIZE
+        lobby = self.state.route == Route.ROOM_LOBBY_DISPLAY
+        page_size = LOBBY_ROSTER_PAGE_SIZE if lobby else GAME_ROSTER_PAGE_SIZE
         snapshot = self.state.room_snapshot or {}
         session = snapshot.get("session") or {}
         players = session.get("players")
         if isinstance(players, list) and len(players) > page_size:
             return True
-        represented = 0
-        for participant in snapshot.get("participants", ()):
-            if participant.get("role") == "DISPLAY":
-                continue
-            represented += 1 + len(participant.get("devicePlayers", ()))
+        represented = sum(
+            1 + len(participant.get("devicePlayers", ()))
+            for participant in snapshot.get("participants", ())
+            if participant.get("role") != "DISPLAY"
+        )
         if represented > page_size:
             return True
-        if self.state.route == Route.ROOM_LOBBY_DISPLAY:
-            room_access = (self.state.server_info or {}).get("roomAccess", {})
-            bases = list(room_access.get("availableBaseUrls", ()))
-            configured = room_access.get("configuredBaseUrl")
-            if configured and configured not in bases:
-                bases.insert(0, configured)
-            if len(bases) > 1:
-                return True
+        if lobby and self._room_join_urls_need_auto_page():
+            return True
         voting = session.get("neverHaveIEverVoting") or {}
+        result = voting.get("result") or {}
+        named = result.get("namedAnswers") or ()
+        return _named_result_needs_auto_page(voting, named)
+
+    def _room_join_urls_need_auto_page(self) -> bool:
+        room_access = (self.state.server_info or {}).get("roomAccess", {})
+        bases = list(room_access.get("availableBaseUrls", ()))
+        configured = room_access.get("configuredBaseUrl")
+        if configured and configured not in bases:
+            bases.insert(0, configured)
+        return len(bases) > 1
+
+    def _auto_page_needed_route(self):
+        snapshot = self.state.couch_snapshot or {}
+        voting = snapshot.get("neverHaveIEverVoting") or {}
         result = voting.get("result") or {}
         named = result.get("namedAnswers") or ()
         return _named_result_needs_auto_page(voting, named)
@@ -509,22 +512,46 @@ class Application:
     def _activate_server(self, key: str) -> None:
         parts = key.split(":")
         command = parts[1]
-        if command in {"page-previous", "page-next"}:
+        handlers = {
+            'page-previous': self._activate_server_action_page_previous,
+            'page-next': self._activate_server_action_page_previous,
+            'select': self._activate_server_action_select,
+            'manual': self._activate_server_action_manual,
+            'manual-input': self._activate_server_action_manual_input,
+            'refresh': self._activate_server_action_refresh,
+            'use': self._activate_server_action_use,
+            'forget': self._activate_server_action_forget,
+        }
+        handler = handlers.get(command)
+        if handler is not None:
+            handler(command, key, parts)
+
+    def _activate_server_action_page_previous(self, command, _key, _parts) -> None:
+        if command in {'page-previous', 'page-next'}:
             self._change_collection_page(
                 len(self.state.servers),
                 COLLECTION_PAGE_SIZE,
                 -1 if command == "page-previous" else 1,
             )
-        elif command == "select" and len(parts) == 3:
+
+
+    def _activate_server_action_select(self, command, _key, parts) -> None:
+        if command == 'select' and len(parts) == 3:
             server = next(
                 (entry for entry in self.state.servers if entry.server_id == parts[2]),
                 None,
             )
             if server:
                 self.dispatch(action("SERVER_DETAILS_OPENED", server_id=server.server_id))
-        elif command == "manual":
+
+
+    def _activate_server_action_manual(self, command, _key, _parts) -> None:
+        if command == 'manual':
             self.dispatch(action("NAVIGATE", route=Route.MANUAL_SERVER))
-        elif command == "manual-input":
+
+
+    def _activate_server_action_manual_input(self, command, _key, _parts) -> None:
+        if command == 'manual-input':
             address = self._text(strings.SERVER_ADDRESS)
             if address:
                 self.dispatch(
@@ -536,9 +563,15 @@ class Application:
                         source="manual",
                     )
                 )
-        elif command == "refresh":
+
+
+    def _activate_server_action_refresh(self, command, _key, _parts) -> None:
+        if command == 'refresh':
             self.dispatch(action("DISCOVERY_REQUESTED"))
-        elif command == "use":
+
+
+    def _activate_server_action_use(self, command, _key, _parts) -> None:
+        if command == 'use':
             server = self._details_server()
             if server:
                 self.dispatch(
@@ -550,7 +583,10 @@ class Application:
                         source=server.source,
                     )
                 )
-        elif command == "forget":
+
+
+    def _activate_server_action_forget(self, command, _key, _parts) -> None:
+        if command == 'forget':
             server = self._details_server()
             if server:
                 self.dispatch(
@@ -563,97 +599,185 @@ class Application:
                     )
                 )
 
+
     def _activate_setup(self, key: str) -> None:
         setup = self.state.setup
         if not setup:
             return
         parts = key.split(":")
         section = parts[1]
-        if section == "group":
+        handlers = {
+            'group': self._activate_setup_action_group,
+            'mode': self._activate_setup_action_mode,
+            'profile': self._activate_setup_action_profile,
+            'player': self._activate_setup_action_player,
+            'custom': self._activate_setup_action_custom,
+            'question': self._activate_setup_action_question,
+            'dare': self._activate_setup_action_question,
+            'flag': self._activate_setup_action_flag,
+            'value': self._activate_setup_action_value,
+            'option': self._activate_setup_action_option,
+            'language': self._activate_setup_action_language,
+            'policy': self._activate_setup_action_policy,
+            'rule': self._activate_setup_action_rule,
+            'facet': self._activate_setup_action_facet,
+            'predicate': self._activate_setup_action_predicate,
+            'directive': self._activate_setup_action_directive,
+            'cards': self._activate_setup_action_cards,
+            'card': self._activate_setup_action_card,
+            'adult': self._activate_setup_action_adult,
+            'start': self._activate_setup_action_start,
+        }
+        handler = handlers.get(section)
+        if handler is not None:
+            handler(key, parts, section, setup)
+
+    def _activate_setup_action_group(self, _key, parts, section, _setup) -> None:
+        if section == 'group':
             self._setup_group(parts)
-        elif section == "mode" and len(parts) == 3:
-            # A pending game is not valid for eligibility preview until the
-            # next screen supplies its required profile ID.
-            self._replace_setup(replace(setup, mode=parts[2]), preview=False)
+
+
+    def _activate_setup_action_mode(self, _key, parts, section, setup) -> None:
+        if section == 'mode' and len(parts) == 3:
+            self._replace_setup(_updated_setup(setup, mode=parts[2]), preview=False)
             self._navigate(Route.SETUP_PROFILE)
-        elif section == "profile" and len(parts) == 3:
-            if parts[2] in {"page-previous", "page-next"}:
-                self._change_collection_page(
-                    len(self.state.profiles),
-                    COLLECTION_PAGE_SIZE,
-                    -1 if parts[2] == "page-previous" else 1,
-                )
-                return
-            profile = next(
-                (entry for entry in self.state.profiles if entry.get("id") == parts[2]),
-                None,
-            )
-            if profile:
-                updated = replace(
-                    setup,
-                    profile_id=parts[2],
-                    configuration=configuration_from_profile(profile),
-                    adult_content_confirmed=(
-                        setup.adult_content_confirmed
-                        if setup.profile_id == parts[2]
-                        else False
-                    ),
-                )
-                requires_confirmation = bool(
-                    profile.get("requiresAdultConfirmation")
-                    and not updated.adult_content_confirmed
-                )
-                # Adult profiles are incomplete until the explicit consent
-                # action; sending them to eligibility preview early produces
-                # a misleading INVALID_INPUT response on the profile screen.
-                self._replace_setup(updated, preview=not requires_confirmation)
-                if not requires_confirmation:
-                    self._navigate(self._route_after_profile(updated))
-        elif section == "player":
+
+
+    def _activate_setup_action_profile(self, _key, parts, section, setup) -> None:
+        if section == 'profile' and len(parts) == 3:
+            return self._activate_setup_profile(parts, setup)
+
+
+    def _activate_setup_action_player(self, _key, parts, section, _setup) -> None:
+        if section == 'player':
             self._setup_player(parts)
-        elif section == "custom":
+
+
+    def _activate_setup_action_custom(self, _key, parts, section, _setup) -> None:
+        if section == 'custom':
             self._setup_custom(parts)
-        elif section in {"question", "dare"}:
+
+
+    def _activate_setup_action_question(self, _key, parts, section, _setup) -> None:
+        if section in {'question', 'dare'}:
             self._setup_taxonomy(section, parts)
-        elif section == "flag":
+
+
+    def _activate_setup_action_flag(self, _key, parts, section, _setup) -> None:
+        if section == 'flag':
             self._setup_flag(parts)
-        elif section == "value":
+
+
+    def _activate_setup_action_value(self, _key, parts, section, _setup) -> None:
+        if section == 'value':
             self._setup_value(parts[2])
-        elif section == "option":
+
+
+    def _activate_setup_action_option(self, _key, parts, section, _setup) -> None:
+        if section == 'option':
             self._setup_option(parts)
-        elif section == "language":
+
+
+    def _activate_setup_action_language(self, _key, parts, section, _setup) -> None:
+        if section == 'language':
             self._setup_language(parts)
-        elif section == "policy":
+
+
+    def _activate_setup_action_policy(self, _key, parts, section, _setup) -> None:
+        if section == 'policy':
             self._setup_policy(parts)
-        elif section == "rule":
+
+
+    def _activate_setup_action_rule(self, _key, parts, section, _setup) -> None:
+        if section == 'rule':
             self._setup_rule(parts)
-        elif section == "facet":
+
+
+    def _activate_setup_action_facet(self, _key, parts, section, _setup) -> None:
+        if section == 'facet':
             self._setup_policy_facet(parts)
-        elif section == "predicate":
+
+
+    def _activate_setup_action_predicate(self, _key, parts, section, _setup) -> None:
+        if section == 'predicate':
             self._setup_predicate(parts)
-        elif section == "directive":
+
+
+    def _activate_setup_action_directive(self, _key, parts, section, _setup) -> None:
+        if section == 'directive':
             self._setup_directive(parts)
-        elif section == "cards":
+
+
+    def _activate_setup_action_cards(self, _key, parts, section, _setup) -> None:
+        if section == 'cards':
             self._setup_card_search(parts)
-        elif section == "card" and len(parts) == 4 and parts[2] == "edit":
+
+
+    def _activate_setup_action_card(self, _key, parts, section, _setup) -> None:
+        if section == 'card' and len(parts) == 4 and (parts[2] == 'edit'):
             self._open_exact_card(parts[3])
-        elif section == "card" and len(parts) == 3 and parts[2] == "configure":
+        elif section == 'card' and len(parts) == 3 and (parts[2] == 'configure'):
             self._navigate(Route.SETUP_EXACT_CARD)
-        elif section == "adult" and len(parts) == 3 and parts[2] == "confirm":
-            updated = replace(setup, adult_content_confirmed=True)
+
+
+    def _activate_setup_action_adult(self, _key, parts, section, setup) -> None:
+        if section == 'adult' and len(parts) == 3 and (parts[2] == 'confirm'):
+            updated = _updated_setup(setup, adult_content_confirmed=True)
             self._replace_setup(updated)
             self._navigate(self._route_after_profile(updated))
-        elif section == "start":
-            if setup.topology == "COUCH":
-                normalized_names = [name.strip().casefold() for name in setup.players]
-                if len(setup.players) < 2 or any(not name for name in normalized_names):
-                    self.dispatch(action("NOTIFY", message_id=strings.AT_LEAST_TWO))
-                elif len(set(normalized_names)) != len(normalized_names):
-                    self.dispatch(action("NOTIFY", message_id=strings.DUPLICATE_PLAYERS))
-                else:
-                    self.dispatch(action("CREATE_COUCH_REQUESTED"))
+
+
+    def _activate_setup_action_start(self, _key, _parts, section, setup) -> None:
+        if section == 'start':
+            self._activate_setup_start(setup)
+
+
+    def _activate_setup_profile(self, parts, setup) -> None:
+        if parts[2] in {"page-previous", "page-next"}:
+            self._change_collection_page(
+                len(self.state.profiles),
+                COLLECTION_PAGE_SIZE,
+                -1 if parts[2] == "page-previous" else 1,
+            )
+            return
+        profile = next(
+            (entry for entry in self.state.profiles if entry.get("id") == parts[2]),
+            None,
+        )
+        if profile:
+            updated = _updated_setup(
+                setup,
+                profile_id=parts[2],
+                configuration=configuration_from_profile(profile),
+                adult_content_confirmed=(
+                    setup.adult_content_confirmed
+                    if setup.profile_id == parts[2]
+                    else False
+                ),
+            )
+            requires_confirmation = bool(
+                profile.get("requiresAdultConfirmation")
+                and not updated.adult_content_confirmed
+            )
+            # Adult profiles are incomplete until the explicit consent
+            # action; sending them to eligibility preview early produces
+            # a misleading INVALID_INPUT response on the profile screen.
+            self._replace_setup(updated, preview=not requires_confirmation)
+            if not requires_confirmation:
+                self._navigate(self._route_after_profile(updated))
+
+
+    def _activate_setup_start(self, setup):
+        if setup.topology == "COUCH":
+            normalized_names = [name.strip().casefold() for name in setup.players]
+            if len(setup.players) < 2 or any(not name for name in normalized_names):
+                self.dispatch(action("NOTIFY", message_id=strings.AT_LEAST_TWO))
+            elif len(set(normalized_names)) != len(normalized_names):
+                self.dispatch(action("NOTIFY", message_id=strings.DUPLICATE_PLAYERS))
             else:
-                self.dispatch(action("CREATE_ROOM_REQUESTED"))
+                self.dispatch(action("CREATE_COUCH_REQUESTED"))
+        else:
+            self.dispatch(action("CREATE_ROOM_REQUESTED"))
 
     def _setup_group(self, parts: list[str]) -> None:
         setup = self.state.setup
@@ -669,7 +793,7 @@ class Application:
                 else EPHEMERAL_SESSION_PERSISTENCE
             )
             self._replace_setup(
-                replace(
+                _updated_setup(
                     setup,
                     group_choice="QUICK",
                     group_id=None,
@@ -687,42 +811,45 @@ class Application:
             self.dispatch(action("GROUP_DRAFT_STARTED"))
             self.dispatch(action("NAVIGATE", route=Route.GROUP_CREATE))
         elif command == "select" and len(parts) == 4:
-            group_id = parts[3]
-            group = next((entry for entry in self.state.groups if entry.get("id") == group_id), None)
-            if group:
-                updated = replace(
-                    setup,
-                    group_choice="SAVED",
-                    group_id=group_id,
-                    persistence=DATASPACE_SESSION_PERSISTENCE,
-                    players=tuple(group.get("members", ())),
-                    profile_id="",
-                    adult_content_confirmed=False,
+            self._setup_group_select(parts, setup)
+
+    def _setup_group_select(self, parts, setup):
+        group_id = parts[3]
+        group = next((entry for entry in self.state.groups if entry.get("id") == group_id), None)
+        if group:
+            updated = _updated_setup(
+                setup,
+                group_choice="SAVED",
+                group_id=group_id,
+                persistence=DATASPACE_SESSION_PERSISTENCE,
+                players=tuple(group.get("members", ())),
+                profile_id="",
+                adult_content_confirmed=False,
+            )
+            profile_id = group.get("preferredProfileId")
+            if profile_id:
+                profile = next(
+                    (entry for entry in self.state.profiles if entry.get("id") == profile_id),
+                    None,
                 )
-                profile_id = group.get("preferredProfileId")
-                if profile_id:
-                    profile = next(
-                        (entry for entry in self.state.profiles if entry.get("id") == profile_id),
-                        None,
-                    )
-                    configuration = group.get("customConfiguration") or (
-                        configuration_from_profile(profile) if profile else updated.configuration
-                    )
-                    updated = replace(updated, configuration=configuration)
-                language = group.get("cardLanguageSettings")
-                if language:
-                    fallback_locales = tuple(language["cardFallbackLocales"])
-                    updated = replace(
-                        updated,
-                        card_locale=language["cardLocale"],
-                        card_fallback_enabled=(
-                            bool(language["cardFallbackEnabled"])
-                            and bool(fallback_locales)
-                        ),
-                        card_fallback_locales=fallback_locales,
-                    )
-                self._replace_setup(updated, preview=False)
-                self._navigate(Route.SETUP_MODE)
+                configuration = group.get("customConfiguration") or (
+                    configuration_from_profile(profile) if profile else updated.configuration
+                )
+                updated = _updated_setup(updated, configuration=configuration)
+            language = group.get("cardLanguageSettings")
+            if language:
+                fallback_locales = tuple(language["cardFallbackLocales"])
+                updated = _updated_setup(
+                    updated,
+                    card_locale=language["cardLocale"],
+                    card_fallback_enabled=(
+                        bool(language["cardFallbackEnabled"])
+                        and bool(fallback_locales)
+                    ),
+                    card_fallback_locales=fallback_locales,
+                )
+            self._replace_setup(updated, preview=False)
+            self._navigate(Route.SETUP_MODE)
 
     def _setup_player(self, parts: list[str]) -> None:
         setup = self.state.setup
@@ -737,39 +864,20 @@ class Application:
                 -1 if command == "page-previous" else 1,
             )
             return
-        if command == "add":
-            name = self._text(strings.ADD_PLAYER)
-            if name and len(players) < 20:
-                candidate = name.strip()[:40]
-                if not candidate:
-                    return
-                if any(candidate.casefold() == current.strip().casefold() for current in players):
-                    self.dispatch(action("NOTIFY", message_id=strings.PLAYER_NAMES_UNIQUE_ALERT))
-                    return
-                players.append(candidate)
-        elif command == "open" and len(parts) == 4:
-            index = int(parts[3])
-            if 0 <= index < len(players):
-                self._replace_setup(
-                    replace(setup, selected_player_index=index),
-                    preview=False,
-                )
-                self._navigate(Route.SETUP_PLAYER)
+        if not self._update_setup_players(command, parts, players, setup):
             return
+        self._replace_setup(_updated_setup(setup, players=tuple(players)))
+
+
+    def _update_setup_players(self, command, parts, players, setup) -> bool:
+        if command == "add":
+            if not self._add_setup_player(players):
+                return False
+        elif command == "open" and len(parts) == 4:
+            return self._open_setup_player(parts, players, setup)
         elif command == "edit" and len(parts) == 4:
-            index = int(parts[3])
-            name = self._text(strings.EDIT, players[index])
-            if name:
-                candidate = name.strip()[:40]
-                duplicate = any(
-                    candidate.casefold() == current.strip().casefold()
-                    for current_index, current in enumerate(players)
-                    if current_index != index
-                )
-                if not candidate or duplicate:
-                    self.dispatch(action("NOTIFY", message_id=strings.PLAYER_NAMES_UNIQUE_ALERT))
-                    return
-                players[index] = candidate
+            if not self._edit_setup_player(players, parts):
+                return False
         elif command == "remove" and len(parts) == 4:
             index = int(parts[3])
             if 0 <= index < len(players):
@@ -782,20 +890,65 @@ class Application:
                         confirm_action=f"remove-setup-player:{index}",
                     )
                 )
-                return
+                return False
         elif command == "continue":
-            normalized = [name.strip().casefold() for name in players]
-            if len(players) >= 2 and all(normalized) and len(set(normalized)) == len(normalized):
-                self._navigate(Route.SETUP_CUSTOMIZE)
-            else:
-                message_id = (
-                    strings.PLAYER_NAMES_UNIQUE_ALERT
-                    if len(set(normalized)) < len(normalized)
-                    else strings.PLAYER_MINIMUM_ALERT
-                )
-                self.dispatch(action("NOTIFY", message_id=message_id))
-            return
-        self._replace_setup(replace(setup, players=tuple(players)))
+            self._setup_player_continue(players)
+            return False
+        return True
+
+
+    def _open_setup_player(self, parts, players, setup):
+        index = int(parts[3])
+        if 0 <= index < len(players):
+            self._replace_setup(
+                _updated_setup(setup, selected_player_index=index),
+                preview=False,
+            )
+            self._navigate(Route.SETUP_PLAYER)
+        return False
+
+
+    def _edit_setup_player(self, players, parts) -> bool:
+        index = int(parts[3])
+        name = self._text(strings.EDIT, players[index])
+        if name:
+            candidate = name.strip()[:40]
+            duplicate = any(
+                candidate.casefold() == current.strip().casefold()
+                for current_index, current in enumerate(players)
+                if current_index != index
+            )
+            if not candidate or duplicate:
+                self.dispatch(action("NOTIFY", message_id=strings.PLAYER_NAMES_UNIQUE_ALERT))
+                return False
+            players[index] = candidate
+        return True
+
+
+    def _add_setup_player(self, players) -> bool:
+        name = self._text(strings.ADD_PLAYER)
+        if name and len(players) < 20:
+            candidate = name.strip()[:40]
+            if not candidate:
+                return False
+            if any(candidate.casefold() == current.strip().casefold() for current in players):
+                self.dispatch(action("NOTIFY", message_id=strings.PLAYER_NAMES_UNIQUE_ALERT))
+                return False
+            players.append(candidate)
+        return True
+
+
+    def _setup_player_continue(self, players):
+        normalized = [name.strip().casefold() for name in players]
+        if len(players) >= 2 and all(normalized) and len(set(normalized)) == len(normalized):
+            self._navigate(Route.SETUP_CUSTOMIZE)
+        else:
+            message_id = (
+                strings.PLAYER_NAMES_UNIQUE_ALERT
+                if len(set(normalized)) < len(normalized)
+                else strings.PLAYER_MINIMUM_ALERT
+            )
+            self.dispatch(action("NOTIFY", message_id=message_id))
 
     def _setup_custom(self, parts: list[str]) -> None:
         routes = {
@@ -819,7 +972,7 @@ class Application:
         players = list(setup.players)
         players.pop(index)
         self._replace_setup(
-            replace(
+            _updated_setup(
                 setup,
                 players=tuple(players),
                 selected_player_index=None,
@@ -881,7 +1034,7 @@ class Application:
         if value is None:
             return
         config[name] = value
-        self._replace_setup(replace(setup, configuration=config))
+        self._replace_setup(_updated_setup(setup, configuration=config))
 
     def _setup_option(self, parts: list[str]) -> None:
         setup = self.state.setup
@@ -890,7 +1043,7 @@ class Application:
         command = parts[2]
         if command == "open":
             context = ":".join(parts[3:])
-            self._replace_setup(replace(setup, option_editor=context), preview=False)
+            self._replace_setup(_updated_setup(setup, option_editor=context), preview=False)
             self._navigate(Route.SETUP_OPTIONS)
             return
         if command != "set" or not setup.option_editor:
@@ -898,30 +1051,12 @@ class Application:
         context = setup.option_editor
         token = parts[3]
         if context.startswith("config:"):
-            field = context.split(":", maxsplit=1)[1]
-            choices = tuple(CONFIGURATION_CHOICES.get(field, ()))
-            value = self._decoded_choice(token, choices)
-            if value is None and token != "none":
-                return
-            config = copy.deepcopy(dict(setup.configuration))
-            if field == "startingIntensity" and int(value) > int(
-                config.get("maximumIntensity", 1)
-            ):
-                self.dispatch(action("NOTIFY", message_id=strings.START_NOT_ABOVE_MAXIMUM))
-                return
-            if field == "maximumIntensity" and int(value) < int(
-                config.get("startingIntensity", 1)
-            ):
-                self.dispatch(action("NOTIFY", message_id=strings.MAXIMUM_NOT_BELOW_START))
-                return
-            config[field] = value
-            self._finish_option(replace(setup, configuration=config))
-            return
+            return self._set_configuration_option(setup, context, token)
         if context == "setup:neverRevealMode":
             choices = NEVER_HAVE_I_EVER_REVEAL_MODE_ORDER
             value = self._decoded_choice(token, choices)
             if value is not None:
-                self._finish_option(replace(setup, never_reveal_mode=str(value)))
+                self._finish_option(_updated_setup(setup, never_reveal_mode=str(value)))
             return
         if context.startswith("predicate"):
             self._set_predicate_option(setup, context, token)
@@ -929,47 +1064,106 @@ class Application:
         if context.startswith("directive"):
             self._set_directive_option(setup, context, token)
 
+
+    def _set_configuration_option(self, setup, context, token):
+        field = context.split(":", maxsplit=1)[1]
+        choices = tuple(CONFIGURATION_CHOICES.get(field, ()))
+        value = self._decoded_choice(token, choices)
+        if value is None and token != "none":
+            return
+        config = copy.deepcopy(dict(setup.configuration))
+        if field == "startingIntensity" and int(value) > int(
+            config.get("maximumIntensity", 1)
+        ):
+            self.dispatch(action("NOTIFY", message_id=strings.START_NOT_ABOVE_MAXIMUM))
+            return
+        if field == "maximumIntensity" and int(value) < int(
+            config.get("startingIntensity", 1)
+        ):
+            self.dispatch(action("NOTIFY", message_id=strings.MAXIMUM_NOT_BELOW_START))
+            return
+        config[field] = value
+        self._finish_option(_updated_setup(setup, configuration=config))
+
+
     def _setup_language(self, parts: list[str]) -> None:
         setup = self.state.setup
         if not setup or len(parts) < 3:
             return
         command = parts[2]
-        if command == "primary" and len(parts) == 3:
+        handlers = {
+            'primary': self._setup_language_action_primary,
+            'primary-set': self._setup_language_action_primary_set,
+            'fallback-off': self._setup_language_action_fallback_off,
+            'fallback-on': self._setup_language_action_fallback_on,
+            'fallbacks': self._setup_language_action_fallbacks,
+            'fallback': self._setup_language_action_fallback,
+            'fallback-add': self._setup_language_action_fallback_add,
+            'fallback-add-set': self._setup_language_action_fallback_add_set,
+            'fallback-open': self._setup_language_action_fallback_open,
+            'fallback-up': self._setup_language_action_fallback_up,
+            'fallback-down': self._setup_language_action_fallback_up,
+            'fallback-remove': self._setup_language_action_fallback_up,
+        }
+        handler = handlers.get(command)
+        if handler is not None:
+            handler(command, parts, setup)
+
+    def _setup_language_action_primary(self, command, parts, _setup) -> None:
+        if command == 'primary' and len(parts) == 3:
             self._navigate(Route.SETUP_CARD_LANGUAGE_PRIMARY)
-        elif command == "primary" and len(parts) == 4:
+        elif command == 'primary' and len(parts) == 4:
             self._change_collection_page(
                 len(self.state.locales),
                 COLLECTION_PAGE_SIZE,
                 -1 if parts[3] == "page-previous" else 1,
             )
-        elif command == "primary-set" and len(parts) == 4:
+
+
+    def _setup_language_action_primary_set(self, command, parts, setup) -> None:
+        if command == 'primary-set' and len(parts) == 4:
             locale = parts[3]
             if not any(entry.get("id") == locale for entry in self.state.locales):
                 return
             fallback = tuple(value for value in setup.card_fallback_locales if value != locale)
             self._replace_setup(
-                replace(setup, card_locale=locale, card_fallback_locales=fallback)
+                _updated_setup(setup, card_locale=locale, card_fallback_locales=fallback)
             )
             self.dispatch(action("TAXONOMY_REQUESTED", locale=locale))
             self.back()
-        elif command == "fallback-off":
-            self._replace_setup(replace(setup, card_fallback_enabled=False))
-        elif command == "fallback-on":
+
+
+    def _setup_language_action_fallback_off(self, command, _parts, setup) -> None:
+        if command == 'fallback-off':
+            self._replace_setup(_updated_setup(setup, card_fallback_enabled=False))
+
+
+    def _setup_language_action_fallback_on(self, command, _parts, setup) -> None:
+        if command == 'fallback-on':
             if setup.card_fallback_locales:
-                self._replace_setup(replace(setup, card_fallback_enabled=True))
+                self._replace_setup(_updated_setup(setup, card_fallback_enabled=True))
             else:
                 self._navigate(Route.SETUP_CARD_LANGUAGE_FALLBACK_ADD)
-        elif command == "fallbacks":
+
+
+    def _setup_language_action_fallbacks(self, command, _parts, _setup) -> None:
+        if command == 'fallbacks':
             self._navigate(Route.SETUP_CARD_LANGUAGE_FALLBACKS)
-        elif command == "fallback" and len(parts) == 4:
+
+
+    def _setup_language_action_fallback(self, command, parts, setup) -> None:
+        if command == 'fallback' and len(parts) == 4:
             self._change_collection_page(
                 len(setup.card_fallback_locales),
                 COLLECTION_PAGE_SIZE,
                 -1 if parts[3] == "page-previous" else 1,
             )
-        elif command == "fallback-add" and len(parts) == 3:
+
+
+    def _setup_language_action_fallback_add(self, command, parts, setup) -> None:
+        if command == 'fallback-add' and len(parts) == 3:
             self._navigate(Route.SETUP_CARD_LANGUAGE_FALLBACK_ADD)
-        elif command == "fallback-add" and len(parts) == 4:
+        elif command == 'fallback-add' and len(parts) == 4:
             available = tuple(
                 locale
                 for locale in self.state.locales
@@ -981,49 +1175,67 @@ class Application:
                 COLLECTION_PAGE_SIZE,
                 -1 if parts[3] == "page-previous" else 1,
             )
-        elif command == "fallback-add-set" and len(parts) == 4:
-            locale = parts[3]
-            if locale == setup.card_locale or locale in setup.card_fallback_locales:
-                return
-            if not any(entry.get("id") == locale for entry in self.state.locales):
-                return
-            self._replace_setup(
-                replace(
-                    setup,
-                    card_fallback_enabled=True,
-                    card_fallback_locales=(*setup.card_fallback_locales, locale),
-                )
-            )
-            self.back()
-        elif command == "fallback-open" and len(parts) == 4:
+
+
+    def _setup_language_action_fallback_add_set(self, command, parts, setup) -> None:
+        if command == 'fallback-add-set' and len(parts) == 4:
+            return self._setup_language_fallback_add_set(parts, setup)
+
+
+    def _setup_language_action_fallback_open(self, command, parts, setup) -> None:
+        if command == 'fallback-open' and len(parts) == 4:
             locale = parts[3]
             if locale in setup.card_fallback_locales:
                 self._replace_setup(
-                    replace(setup, selected_fallback_locale=locale),
+                    _updated_setup(setup, selected_fallback_locale=locale),
                     preview=False,
                 )
                 self._navigate(Route.SETUP_CARD_LANGUAGE_FALLBACK)
-        elif command in {"fallback-up", "fallback-down", "fallback-remove"} and len(parts) == 4:
-            locale = parts[3]
-            values = list(setup.card_fallback_locales)
-            if locale not in values:
-                return
-            index = values.index(locale)
-            if command == "fallback-remove":
-                self.dispatch(
-                    action(
-                        "CONFIRM",
-                        title_id=strings.REMOVE_FALLBACK_TITLE,
-                        body_id=strings.REMOVE_FALLBACK_BODY,
-                        action_id=strings.REMOVE_FALLBACK,
-                        confirm_action=f"remove-fallback:{locale}",
-                    )
+
+
+    def _setup_language_action_fallback_up(self, command, parts, setup) -> None:
+        if command in {'fallback-up', 'fallback-down', 'fallback-remove'} and len(parts) == 4:
+            return self._setup_language_fallback_up_fallback_down(command, parts, setup)
+
+
+    def _setup_language_fallback_up_fallback_down(self, command, parts, setup) -> None:
+        locale = parts[3]
+        values = list(setup.card_fallback_locales)
+        if locale not in values:
+            return
+        index = values.index(locale)
+        if command == "fallback-remove":
+            self.dispatch(
+                action(
+                    "CONFIRM",
+                    title_id=strings.REMOVE_FALLBACK_TITLE,
+                    body_id=strings.REMOVE_FALLBACK_BODY,
+                    action_id=strings.REMOVE_FALLBACK,
+                    confirm_action=f"remove-fallback:{locale}",
                 )
-                return
-            target = index - 1 if command == "fallback-up" else index + 1
-            if 0 <= target < len(values):
-                values[index], values[target] = values[target], values[index]
-                self._replace_setup(replace(setup, card_fallback_locales=tuple(values)))
+            )
+            return
+        target = index - 1 if command == "fallback-up" else index + 1
+        if 0 <= target < len(values):
+            values[index], values[target] = values[target], values[index]
+            self._replace_setup(_updated_setup(setup, card_fallback_locales=tuple(values)))
+
+
+    def _setup_language_fallback_add_set(self, parts, setup) -> None:
+        locale = parts[3]
+        if locale == setup.card_locale or locale in setup.card_fallback_locales:
+            return
+        if not any(entry.get("id") == locale for entry in self.state.locales):
+            return
+        self._replace_setup(
+            _updated_setup(
+                setup,
+                card_fallback_enabled=True,
+                card_fallback_locales=(*setup.card_fallback_locales, locale),
+            )
+        )
+        self.back()
+
 
     @staticmethod
     def _decoded_choice(token: str, choices: tuple[object, ...]) -> Optional[object]:
@@ -1033,7 +1245,7 @@ class Application:
             return None
 
     def _finish_option(self, setup: SetupDraft) -> None:
-        self._replace_setup(replace(setup, option_editor=None))
+        self._replace_setup(_updated_setup(setup, option_editor=None))
         self.back()
 
     def _set_predicate_option(
@@ -1050,40 +1262,52 @@ class Application:
         if not rule:
             return
         predicate = rule.setdefault("predicate", {})
+        if not self._apply_predicate_choice(context, token, predicate):
+            return
+        self._finish_option(_updated_setup(setup, card_policy=policy))
+
+
+    def _apply_predicate_choice(self, context, token, predicate) -> bool:
         if context.startswith("predicate-number:"):
-            field = context.split(":", maxsplit=1)[1]
-            if token == "none":
-                predicate.pop(field, None)
-            elif token == "EDIT":
-                specification = PREDICATE_NUMBERS.get(field)
-                if not specification:
-                    return
-                current = str(predicate.get(field, ""))
-                value = self._number(specification, current)
-                if value is None:
-                    return
-                candidate = dict(predicate)
-                candidate[field] = value
-                if not self._valid_predicate_bounds(candidate):
-                    self.dispatch(action("NOTIFY", message_id=strings.MIN_MAX_ORDER))
-                    return
-                predicate[field] = value
-            else:
-                return
+            return self._apply_numeric_predicate(context, token, predicate)
         elif context.startswith("predicate:"):
             field = context.split(":", maxsplit=1)[1]
             choices = tuple(PREDICATE_CHOICES.get(field, ()))
             try:
                 value = decode_option(token, choices)
             except StopIteration:
-                return
+                return False
             if value is None:
                 predicate.pop(field, None)
             else:
                 predicate[field] = value
         else:
-            return
-        self._finish_option(replace(setup, card_policy=policy))
+            return False
+        return True
+
+
+    def _apply_numeric_predicate(self, context, token, predicate):
+        field = context.split(":", maxsplit=1)[1]
+        if token == "none":
+            predicate.pop(field, None)
+        elif token == "EDIT":
+            specification = PREDICATE_NUMBERS.get(field)
+            if not specification:
+                return False
+            current = str(predicate.get(field, ""))
+            value = self._number(specification, current)
+            if value is None:
+                return False
+            candidate = dict(predicate)
+            candidate[field] = value
+            if not self._valid_predicate_bounds(candidate):
+                self.dispatch(action("NOTIFY", message_id=strings.MIN_MAX_ORDER))
+                return False
+            predicate[field] = value
+        else:
+            return False
+        return True
+
 
     @staticmethod
     def _valid_predicate_bounds(predicate: Mapping[str, object]) -> bool:
@@ -1110,42 +1334,53 @@ class Application:
         directives = self._directive_target(policy, setup)
         if directives is None:
             return
-        if context == "directive-value:socialSensitivity":
-            current = directives.get("socialSensitivity")
-            if not isinstance(current, dict) or current.get("mode") != "SET":
-                return
-            try:
-                value = decode_option(token, SENSITIVITY_VALUES)
-            except StopIteration:
-                return
-            current["value"] = value
-        elif context.startswith("directive:"):
-            field = context.split(":", maxsplit=1)[1]
-            choices = tuple(DIRECTIVE_CHOICES.get(field, ()))
-            try:
-                value = decode_option(token, choices)
-            except StopIteration:
-                return
-            if value is None:
-                directives.pop(field, None)
-            elif field in {"availability", "alwaysEligible", "repeatableInSession"}:
-                directives[field] = value
-            elif value == "CATALOG":
-                directives[field] = {"mode": "CATALOG"}
-            elif value == "SET":
-                current = directives.get(field)
-                if not isinstance(current, dict) or current.get("mode") != "SET":
-                    directives[field] = {
-                        "mode": "SET",
-                        "value": copy.deepcopy(DIRECTIVE_DEFAULTS[field]),
-                    }
-            else:
-                return
-        else:
+        if not self._apply_directive_choice(context, token, directives):
             return
-        updated = replace(setup, option_editor=None)
+        updated = _updated_setup(setup, option_editor=None)
         self._commit_directive_target(policy, updated, directives)
         self.back()
+
+
+    def _apply_directive_choice(self, context, token, directives) -> bool:
+        if context == "directive-value:socialSensitivity":
+            return self._apply_sensitivity_directive(token, directives)
+        if not context.startswith("directive:"):
+            return False
+        field = context.split(":", maxsplit=1)[1]
+        choices = tuple(DIRECTIVE_CHOICES.get(field, ()))
+        try:
+            value = decode_option(token, choices)
+        except StopIteration:
+            return False
+        if value is None:
+            directives.pop(field, None)
+        elif field in {"availability", "alwaysEligible", "repeatableInSession"}:
+            directives[field] = value
+        elif value == "CATALOG":
+            directives[field] = {"mode": "CATALOG"}
+        elif value == "SET":
+            current = directives.get(field)
+            if not isinstance(current, dict) or current.get("mode") != "SET":
+                directives[field] = {
+                    "mode": "SET",
+                    "value": copy.deepcopy(DIRECTIVE_DEFAULTS[field]),
+                }
+        else:
+            return False
+        return True
+
+
+    def _apply_sensitivity_directive(self, token, directives):
+        current = directives.get("socialSensitivity")
+        if not isinstance(current, dict) or current.get("mode") != "SET":
+            return False
+        try:
+            value = decode_option(token, SENSITIVITY_VALUES)
+        except StopIteration:
+            return False
+        current["value"] = value
+        return True
+
 
     def _setup_policy(self, parts: list[str]) -> None:
         setup = self.state.setup
@@ -1175,7 +1410,7 @@ class Application:
             current for current in setup.card_fallback_locales if current != locale
         )
         self._replace_setup(
-            replace(
+            _updated_setup(
                 setup,
                 card_fallback_enabled=(
                     setup.card_fallback_enabled and bool(values)
@@ -1202,34 +1437,23 @@ class Application:
             )
             return
         if command == "add":
-            if len(rules) >= 250:
-                self.dispatch(action("NOTIFY", message_id=strings.INVALID_CONFIGURATION))
-                return
-            name = self._text(strings.RULE_NAME)
-            if not name or not name.strip():
-                return
-            rule_id = str(uuid.uuid4())
-            rules.append(
-                {
-                    "id": rule_id,
-                    "name": name.strip()[:100],
-                    "order": len(rules),
-                    "enabled": True,
-                    "predicate": {},
-                    "directives": {"availability": "INCLUDE"},
-                }
-            )
-            self._replace_setup(replace(setup, card_policy=policy, selected_rule_id=rule_id))
-            self._navigate(Route.SETUP_POLICY_RULE)
-            return
+            return self._add_setup_rule(setup, policy, rules)
         if command == "edit":
-            self._replace_setup(replace(setup, selected_rule_id=parts[3]), preview=False)
+            self._replace_setup(_updated_setup(setup, selected_rule_id=parts[3]), preview=False)
             self._navigate(Route.SETUP_POLICY_RULE)
             return
         selected = next((rule for rule in rules if rule["id"] == setup.selected_rule_id), None)
         if not selected:
             return
         index = rules.index(selected)
+        if not self._update_setup_rule(command, selected, index, rules):
+            return
+        for order, rule in enumerate(rules):
+            rule["order"] = order
+        self._replace_setup(_updated_setup(setup, card_policy=policy))
+
+
+    def _update_setup_rule(self, command, selected, index, rules) -> bool:
         if command == "name":
             value = self._text(strings.RULE_NAME, str(selected.get("name", "")))
             if value:
@@ -1238,10 +1462,10 @@ class Application:
             selected["enabled"] = not bool(selected.get("enabled", True))
         elif command == "predicate":
             self._navigate(Route.SETUP_POLICY_PREDICATE)
-            return
+            return False
         elif command == "directive":
             self._navigate(Route.SETUP_POLICY_DIRECTIVES)
-            return
+            return False
         elif command == "up" and index > 0:
             rules[index - 1], rules[index] = rules[index], rules[index - 1]
         elif command == "down" and index + 1 < len(rules):
@@ -1256,10 +1480,31 @@ class Application:
                     confirm_action=f"delete-rule:{selected['id']}",
                 )
             )
+            return False
+        return True
+
+
+    def _add_setup_rule(self, setup, policy, rules):
+        if len(rules) >= 250:
+            self.dispatch(action("NOTIFY", message_id=strings.INVALID_CONFIGURATION))
             return
-        for order, rule in enumerate(rules):
-            rule["order"] = order
-        self._replace_setup(replace(setup, card_policy=policy))
+        name = self._text(strings.RULE_NAME)
+        if not name or not name.strip():
+            return
+        rule_id = str(uuid.uuid4())
+        rules.append(
+            {
+                "id": rule_id,
+                "name": name.strip()[:100],
+                "order": len(rules),
+                "enabled": True,
+                "predicate": {},
+                "directives": {"availability": "INCLUDE"},
+            }
+        )
+        self._replace_setup(_updated_setup(setup, card_policy=policy, selected_rule_id=rule_id))
+        self._navigate(Route.SETUP_POLICY_RULE)
+
 
     def _delete_rule(self, rule_id: str) -> None:
         setup = self.state.setup
@@ -1274,7 +1519,7 @@ class Application:
             rule["order"] = order
         policy["conditionalRules"] = retained
         self._replace_setup(
-            replace(setup, card_policy=policy, selected_rule_id=None)
+            _updated_setup(setup, card_policy=policy, selected_rule_id=None)
         )
         self.back()
 
@@ -1296,30 +1541,37 @@ class Application:
         predicate = rule.setdefault("predicate", {})
         command = parts[2]
         if setup.policy_facet:
-            field = setup.policy_facet
-            available = tuple(
-                value for value, _label in policy_facet_options(self.state, field)
-            )
-            if command == "all":
-                values = list(available)
-            elif command == "none":
-                values = []
-            elif command == "toggle" and len(parts) == 4:
-                value = parts[3]
-                if value not in available:
-                    return
-                values = list(predicate.get(field, ()))
-                if value in values:
-                    values.remove(value)
-                else:
-                    values.append(value)
-            else:
+            if not self._edit_predicate_facet(parts, setup, command, predicate):
                 return
-            if values:
-                predicate[field] = values
+        self._replace_setup(_updated_setup(setup, card_policy=policy))
+
+
+    def _edit_predicate_facet(self, parts, setup, command, predicate) -> bool:
+        field = setup.policy_facet
+        available = tuple(
+            value for value, _label in policy_facet_options(self.state, field)
+        )
+        if command == "all":
+            values = list(available)
+        elif command == "none":
+            values = []
+        elif command == "toggle" and len(parts) == 4:
+            value = parts[3]
+            if value not in available:
+                return False
+            values = list(predicate.get(field, ()))
+            if value in values:
+                values.remove(value)
             else:
-                predicate.pop(field, None)
-        self._replace_setup(replace(setup, card_policy=policy))
+                values.append(value)
+        else:
+            return False
+        if values:
+            predicate[field] = values
+        else:
+            predicate.pop(field, None)
+        return True
+
 
     def _setup_directive(self, parts: list[str]) -> None:
         setup = self.state.setup
@@ -1362,27 +1614,11 @@ class Application:
             for entry in exact
             if entry.get("cardId") != setup.selected_card_id
         ]
-        self._replace_setup(replace(setup, card_policy=policy))
+        self._replace_setup(_updated_setup(setup, card_policy=policy))
 
     def _edit_directive_value(self, directives: dict, field: str) -> None:
         if field in {"playerMinimum", "playerMaximum"}:
-            player_count = directives.get("playerCount")
-            if not isinstance(player_count, dict) or player_count.get("mode") != "SET":
-                return
-            value = player_count.setdefault("value", {"minimum": 2, "maximum": None})
-            key = "minimum" if field == "playerMinimum" else "maximum"
-            default = "" if value.get(key) is None else str(value[key])
-            specification = DIRECTIVE_NUMBERS[field]
-            parsed = self._number(specification, default)
-            if parsed is None:
-                return
-            candidate = dict(value)
-            candidate[key] = parsed
-            if candidate.get("maximum") is not None and candidate["minimum"] > candidate["maximum"]:
-                self.dispatch(action("NOTIFY", message_id=strings.MIN_MAX_ORDER))
-                return
-            value[key] = parsed
-            return
+            return self._edit_player_count_directive(field, directives)
         current = directives.get(field)
         if not isinstance(current, dict) or current.get("mode") != "SET":
             return
@@ -1395,6 +1631,26 @@ class Application:
         if value is None:
             return
         current["value"] = value
+
+
+    def _edit_player_count_directive(self, field, directives):
+        player_count = directives.get("playerCount")
+        if not isinstance(player_count, dict) or player_count.get("mode") != "SET":
+            return
+        value = player_count.setdefault("value", {"minimum": 2, "maximum": None})
+        key = "minimum" if field == "playerMinimum" else "maximum"
+        default = "" if value.get(key) is None else str(value[key])
+        specification = DIRECTIVE_NUMBERS[field]
+        parsed = self._number(specification, default)
+        if parsed is None:
+            return
+        candidate = dict(value)
+        candidate[key] = parsed
+        if candidate.get("maximum") is not None and candidate["minimum"] > candidate["maximum"]:
+            self.dispatch(action("NOTIFY", message_id=strings.MIN_MAX_ORDER))
+            return
+        value[key] = parsed
+
 
     @staticmethod
     def _directive_target(policy: dict, setup: SetupDraft) -> Optional[dict]:
@@ -1424,7 +1680,7 @@ class Application:
         if setup.selected_card_id and not directives:
             exact = policy.setdefault("exactCards", [])
             exact[:] = [entry for entry in exact if entry["cardId"] != setup.selected_card_id]
-        self._replace_setup(replace(setup, card_policy=policy))
+        self._replace_setup(_updated_setup(setup, card_policy=policy))
 
     def _open_exact_card(self, card_id: str) -> None:
         setup = self.state.setup
@@ -1449,7 +1705,7 @@ class Application:
             query = self._text(strings.SEARCH_CARDS, setup.card_search_query)
             if query is None:
                 return
-            updated = replace(
+            updated = _updated_setup(
                 setup,
                 card_search_query=query,
                 card_search_results=(),
@@ -1459,7 +1715,7 @@ class Application:
                 card_search_total=0,
             )
         elif command == "page-next" and setup.card_search_next_cursor:
-            updated = replace(
+            updated = _updated_setup(
                 setup,
                 card_search_results=(),
                 card_search_cursor=setup.card_search_next_cursor,
@@ -1470,7 +1726,7 @@ class Application:
                 ),
             )
         elif command == "page-previous" and setup.card_search_cursor_history:
-            updated = replace(
+            updated = _updated_setup(
                 setup,
                 card_search_results=(),
                 card_search_cursor=setup.card_search_cursor_history[-1],
@@ -1515,7 +1771,7 @@ class Application:
         if command == "auto-page":
             value = self._auto_page_choice(preferences.auto_page_seconds)
             if value is not None:
-                self._preferences(replace(preferences, auto_page_seconds=value))
+                self._preferences(_updated_preferences(preferences, auto_page_seconds=value))
         elif command == "diagnostics":
             self._navigate(Route.DIAGNOSTICS)
         elif command == "leave":
@@ -1532,23 +1788,67 @@ class Application:
     def _activate_couch(self, key: str) -> None:
         parts = key.split(":")
         command = parts[1]
-        if command == "resume":
+        handlers = {
+            'resume': self._activate_couch_action_resume,
+            'menu-help': self._activate_couch_action_menu_help,
+            'start': self._activate_couch_action_start,
+            'choose': self._activate_couch_action_choose,
+            'skip': self._activate_couch_action_skip,
+            'advance': self._activate_couch_action_advance,
+            'vote': self._activate_couch_action_vote,
+            'vote-player': self._activate_couch_action_vote_player,
+            'voters': self._activate_couch_action_voters,
+            'vote-cancel': self._activate_couch_action_vote_cancel,
+            'resync': self._activate_couch_action_resync,
+            'adjust': self._activate_couch_action_adjust,
+            'end': self._activate_couch_action_end,
+        }
+        handler = handlers.get(command)
+        if handler is not None:
+            handler(command, key, parts)
+
+    def _activate_couch_action_resume(self, command, _key, _parts) -> None:
+        if command == 'resume':
             self.dispatch(action("BACK"))
-        elif command == "menu-help":
+
+
+    def _activate_couch_action_menu_help(self, command, _key, _parts) -> None:
+        if command == 'menu-help':
             self._navigate(Route.HELP)
-        elif command == "start":
+
+
+    def _activate_couch_action_start(self, command, _key, _parts) -> None:
+        if command == 'start':
             self._couch_command("start")
-        elif command == "choose":
+
+
+    def _activate_couch_action_choose(self, command, _key, parts) -> None:
+        if command == 'choose':
             self._couch_command("choose", {"cardType": parts[2]})
-        elif command == "skip":
+
+
+    def _activate_couch_action_skip(self, command, _key, _parts) -> None:
+        if command == 'skip':
             self._couch_command("skip")
-        elif command == "advance":
+
+
+    def _activate_couch_action_advance(self, command, _key, _parts) -> None:
+        if command == 'advance':
             self._couch_command("advance")
-        elif command == "vote":
+
+
+    def _activate_couch_action_vote(self, command, _key, parts) -> None:
+        if command == 'vote':
             self._couch_command("vote", {"playerId": parts[2], "vote": parts[3]})
-        elif command == "vote-player":
+
+
+    def _activate_couch_action_vote_player(self, command, _key, parts) -> None:
+        if command == 'vote-player':
             self.dispatch(action("COUCH_VOTE_PLAYER_SELECTED", player_id=parts[2]))
-        elif command == "voters" and len(parts) == 3:
+
+
+    def _activate_couch_action_voters(self, command, _key, parts) -> None:
+        if command == 'voters' and len(parts) == 3:
             delta = -1 if parts[2] == "page-previous" else 1
             self.dispatch(
                 action(
@@ -1556,11 +1856,20 @@ class Application:
                     page=max(0, self.state.collection_page + delta),
                 )
             )
-        elif command == "vote-cancel":
+
+
+    def _activate_couch_action_vote_cancel(self, command, _key, _parts) -> None:
+        if command == 'vote-cancel':
             self.dispatch(action("COUCH_VOTE_CANCELLED"))
-        elif command == "resync":
+
+
+    def _activate_couch_action_resync(self, command, _key, _parts) -> None:
+        if command == 'resync':
             self.dispatch(action("COUCH_RESYNC_REQUESTED"))
-        elif command == "adjust":
+
+
+    def _activate_couch_action_adjust(self, command, _key, _parts) -> None:
+        if command == 'adjust':
             self.dispatch(
                 action(
                     "CONFIRM",
@@ -1570,7 +1879,10 @@ class Application:
                     confirm_action="adjust-couch",
                 )
             )
-        elif command == "end":
+
+
+    def _activate_couch_action_end(self, command, _key, _parts) -> None:
+        if command == 'end':
             self.dispatch(
                 action(
                     "CONFIRM",
@@ -1580,6 +1892,7 @@ class Application:
                     confirm_action="leave-active",
                 )
             )
+
 
     def _activate_summary(self, key: str) -> None:
         command = key.split(":")[1]
@@ -1604,7 +1917,23 @@ class Application:
     def _activate_prefs(self, key: str) -> None:
         command = key.split(":")[1]
         preferences = self.state.preferences
-        if command in {"page-previous", "page-next"}:
+        handlers = {
+            'page-previous': self._activate_prefs_action_page_previous,
+            'page-next': self._activate_prefs_action_page_previous,
+            'locale': self._activate_prefs_action_locale,
+            'auto-page': self._activate_prefs_action_auto_page,
+            'name': self._activate_prefs_action_name,
+            'diagnostics': self._activate_prefs_action_diagnostics,
+            'help': self._activate_prefs_action_help,
+            'link': self._activate_prefs_action_link,
+            'clear-servers': self._activate_prefs_action_clear_servers,
+        }
+        handler = handlers.get(command)
+        if handler is not None:
+            handler(command, key, preferences)
+
+    def _activate_prefs_action_page_previous(self, command, _key, _preferences) -> None:
+        if command in {'page-previous', 'page-next'}:
             delta = -1 if command == "page-previous" else 1
             self.dispatch(
                 action(
@@ -1612,7 +1941,10 @@ class Application:
                     page=max(0, self.state.collection_page + delta),
                 )
             )
-        elif command == "locale":
+
+
+    def _activate_prefs_action_locale(self, command, _key, preferences) -> None:
+        if command == 'locale':
             locales = LOCALE_VALUES
             current = (
                 preferences.locale
@@ -1628,29 +1960,47 @@ class Application:
                 locales.index(current),
             )
             if selected is not None:
-                self._preferences(replace(preferences, locale=locales[selected]))
-        elif command == "auto-page":
+                self._preferences(_updated_preferences(preferences, locale=locales[selected]))
+
+
+    def _activate_prefs_action_auto_page(self, command, _key, preferences) -> None:
+        if command == 'auto-page':
             value = self._auto_page_choice(preferences.auto_page_seconds)
             if value is not None:
-                self._preferences(replace(preferences, auto_page_seconds=value))
-        elif command == "name":
+                self._preferences(_updated_preferences(preferences, auto_page_seconds=value))
+
+
+    def _activate_prefs_action_name(self, command, _key, preferences) -> None:
+        if command == 'name':
             name = self._text(strings.DISPLAY_NAME, preferences.display_name)
             if name:
                 self._preferences(
-                    replace(
+                    _updated_preferences(
                         preferences,
                         display_name=name.strip()[
                             : SETTING_MAXIMUM_LENGTHS[DISPLAY_NAME]
                         ],
                     )
                 )
-        elif command == "diagnostics":
+
+
+    def _activate_prefs_action_diagnostics(self, command, _key, _preferences) -> None:
+        if command == 'diagnostics':
             self._navigate(Route.DIAGNOSTICS)
-        elif command == "help":
+
+
+    def _activate_prefs_action_help(self, command, _key, _preferences) -> None:
+        if command == 'help':
             self._navigate(Route.HELP)
-        elif command == "link":
+
+
+    def _activate_prefs_action_link(self, command, _key, _preferences) -> None:
+        if command == 'link':
             self._navigate(Route.DEVICE_LINK)
-        elif command == "clear-servers":
+
+
+    def _activate_prefs_action_clear_servers(self, command, _key, _preferences) -> None:
+        if command == 'clear-servers':
             self.dispatch(
                 action(
                     "CONFIRM",
@@ -1660,6 +2010,7 @@ class Application:
                     confirm_action="clear-servers",
                 )
             )
+
 
     def _activate_diagnostics(self, key: str) -> None:
         command = key.split(":")[1]
@@ -1709,25 +2060,50 @@ class Application:
     def _activate_group(self, key: str) -> None:
         parts = key.split(":")
         command = parts[1]
-        if command in {"page-previous", "page-next"}:
+        handlers = {
+            'page-previous': self._activate_group_action_page_previous,
+            'page-next': self._activate_group_action_page_previous,
+            'member': self._activate_group_action_member,
+            'create': self._activate_group_action_create,
+            'edit': self._activate_group_action_edit,
+            'name': self._activate_group_action_name,
+            'add-member': self._activate_group_action_add_member,
+            'member-open': self._activate_group_action_member_open,
+            'edit-member': self._activate_group_action_edit_member,
+            'remove-member': self._activate_group_action_remove_member,
+            'save': self._activate_group_action_save,
+            'continue': self._activate_group_action_continue,
+        }
+        handler = handlers.get(command)
+        if handler is not None:
+            handler(command, key, parts)
+
+    def _activate_group_action_page_previous(self, command, _key, _parts) -> None:
+        if command in {'page-previous', 'page-next'}:
             self._change_collection_page(
                 len(self.state.groups),
                 COLLECTION_PAGE_SIZE,
                 -1 if command == "page-previous" else 1,
             )
-        elif command == "member" and len(parts) == 3 and parts[2] in {
-            "page-previous",
-            "page-next",
-        }:
+
+
+    def _activate_group_action_member(self, command, _key, parts) -> None:
+        if command == 'member' and len(parts) == 3 and (parts[2] in {'page-previous', 'page-next'}):
             self._change_collection_page(
                 len(self.state.group_draft_members),
                 COLLECTION_PAGE_SIZE - 1,
                 -1 if parts[2] == "page-previous" else 1,
             )
-        elif command == "create":
+
+
+    def _activate_group_action_create(self, command, _key, _parts) -> None:
+        if command == 'create':
             self.dispatch(action("GROUP_DRAFT_STARTED"))
             self._navigate(Route.GROUP_CREATE)
-        elif command == "edit" and len(parts) == 3:
+
+
+    def _activate_group_action_edit(self, command, _key, parts) -> None:
+        if command == 'edit' and len(parts) == 3:
             group = next(
                 (entry for entry in self.state.groups if entry.get("id") == parts[2]),
                 None,
@@ -1735,11 +2111,17 @@ class Application:
             if group:
                 self.dispatch(action("GROUP_DRAFT_STARTED", group=group))
                 self._navigate(Route.GROUP_CREATE)
-        elif command == "name":
+
+
+    def _activate_group_action_name(self, command, _key, _parts) -> None:
+        if command == 'name':
             name = self._text(strings.GROUP_NAME, self.state.group_draft_name)
             if name is not None:
                 self.dispatch(action("GROUP_DRAFT_UPDATED", name=name[:80]))
-        elif command == "add-member":
+
+
+    def _activate_group_action_add_member(self, command, _key, _parts) -> None:
+        if command == 'add-member':
             name = self._text(strings.ADD_PLAYER)
             if name and len(self.state.group_draft_members) < 50:
                 self.dispatch(
@@ -1748,20 +2130,23 @@ class Application:
                         members=(*self.state.group_draft_members, name.strip()[:40]),
                     )
                 )
-        elif command == "member-open" and len(parts) == 3:
+
+
+    def _activate_group_action_member_open(self, command, _key, parts) -> None:
+        if command == 'member-open' and len(parts) == 3:
             index = int(parts[2])
             if 0 <= index < len(self.state.group_draft_members):
                 self.dispatch(action("GROUP_DRAFT_UPDATED", member_index=index))
                 self._navigate(Route.GROUP_MEMBER)
-        elif command == "edit-member" and len(parts) == 3:
-            index = int(parts[2])
-            if 0 <= index < len(self.state.group_draft_members):
-                name = self._text(strings.EDIT_PLAYER, self.state.group_draft_members[index])
-                if name:
-                    members = list(self.state.group_draft_members)
-                    members[index] = name.strip()[:40]
-                    self.dispatch(action("GROUP_DRAFT_UPDATED", members=tuple(members)))
-        elif command == "remove-member" and len(parts) == 3:
+
+
+    def _activate_group_action_edit_member(self, command, _key, parts) -> None:
+        if command == 'edit-member' and len(parts) == 3:
+            return self._activate_group_edit_member(parts)
+
+
+    def _activate_group_action_remove_member(self, command, _key, parts) -> None:
+        if command == 'remove-member' and len(parts) == 3:
             index = int(parts[2])
             if 0 <= index < len(self.state.group_draft_members):
                 self.dispatch(
@@ -1773,7 +2158,10 @@ class Application:
                         confirm_action=f"remove-group-member:{index}",
                     )
                 )
-        elif command == "save" and self.state.group_draft_name.strip():
+
+
+    def _activate_group_action_save(self, command, _key, _parts) -> None:
+        if command == 'save' and self.state.group_draft_name.strip():
             request_kind = (
                 "UPDATE_GROUP_REQUESTED"
                 if self.state.group_draft_id
@@ -1787,11 +2175,25 @@ class Application:
                     members=self.state.group_draft_members,
                 )
             )
-        elif command == "continue" and len(parts) == 3:
+
+
+    def _activate_group_action_continue(self, command, _key, parts) -> None:
+        if command == 'continue' and len(parts) == 3:
             self.dispatch(action("BEGIN_SETUP", topology="COUCH"))
             setup = self.state.setup
             if setup:
                 self._setup_group(["setup", "group", "select", parts[2]])
+
+
+    def _activate_group_edit_member(self, parts) -> None:
+        index = int(parts[2])
+        if 0 <= index < len(self.state.group_draft_members):
+            name = self._text(strings.EDIT_PLAYER, self.state.group_draft_members[index])
+            if name:
+                members = list(self.state.group_draft_members)
+                members[index] = name.strip()[:40]
+                self.dispatch(action("GROUP_DRAFT_UPDATED", members=tuple(members)))
+
 
     def _remove_group_member(self, index: int) -> None:
         if not 0 <= index < len(self.state.group_draft_members):
@@ -1879,7 +2281,7 @@ class Application:
             return
         configuration = copy.deepcopy(dict(setup.configuration))
         configuration[name] = value
-        self._replace_setup(replace(setup, configuration=configuration))
+        self._replace_setup(_updated_setup(setup, configuration=configuration))
 
     def _couch_command(self, command: str, extra: Optional[dict] = None) -> None:
         self.dispatch(action("COUCH_COMMAND_REQUESTED", command=command, extra=extra or {}))
@@ -1951,3 +2353,11 @@ class Application:
             (entry for entry in self.state.servers if entry.server_id == details_id),
             None,
         )
+
+
+def _updated_setup(setup: SetupDraft, **changes: object) -> SetupDraft:
+    return cast(SetupDraft, replace(setup, **changes))
+
+
+def _updated_preferences(preferences: Preferences, **changes: object) -> Preferences:
+    return cast(Preferences, replace(preferences, **changes))

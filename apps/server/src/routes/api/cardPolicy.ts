@@ -1,6 +1,6 @@
 import express, { type Request } from "express";
 import { z } from "zod";
-import { AppDataSource } from "../../modules/database/dataSource";
+import { getAppDataSource } from "../../modules/database/dataSource";
 import { GroupEntity } from "../../../../../packages/persistence/entities/game/GroupEntity";
 import { CardEntity } from "../../../../../packages/persistence/entities/card/CardEntity";
 import { asyncHandler } from "../../modules/lib/asyncHandler";
@@ -42,16 +42,16 @@ import {
 import { requireCurrentDataSpace } from "./dataSpaceAccess";
 
 const router = express.Router();
-const repository = new TypeOrmCardPolicyRepository(AppDataSource);
+const repository = new TypeOrmCardPolicyRepository(getAppDataSource());
 const service = new CardPolicyService(repository);
-const cards = new TypeOrmCardRepository(AppDataSource.getRepository(CardEntity));
-const sessions = new TypeOrmCouchSessionRepository(AppDataSource);
-const groupQuerySchema = z.object({ groupId: z.string().uuid().optional() }).passthrough();
+const cards = new TypeOrmCardRepository(getAppDataSource().getRepository(CardEntity));
+const sessions = new TypeOrmCouchSessionRepository(getAppDataSource());
+const groupQuerySchema = z.object({ groupId: z.uuid().optional() }).loose();
 const revisionQuerySchema = z
     .string()
     .regex(/^(0|[1-9]\d*)$/)
     .transform(Number);
-const uuidSchema = z.string().uuid();
+const uuidSchema = z.uuid();
 
 async function ownerFor(request: Request): Promise<CardPolicyOwner> {
     const space = await requireCurrentDataSpace(request);
@@ -65,7 +65,7 @@ async function ownerFor(request: Request): Promise<CardPolicyOwner> {
         };
     }
     if (
-        !(await AppDataSource.getRepository(GroupEntity).existsBy({
+        !(await getAppDataSource().getRepository(GroupEntity).existsBy({
             id: groupId,
             dataSpaceId: space.id,
         }))
@@ -306,7 +306,7 @@ router.get(
     "/cards",
     asyncHandler(async (request, response) => {
         const { groupId: _groupId, ...input } = cardPolicySearchSchema
-            .extend({ groupId: z.string().uuid().optional() })
+            .extend({ groupId: z.uuid().optional() })
             .parse(request.query);
         response.json(
             managedCardSearchResponseSchema.parse(

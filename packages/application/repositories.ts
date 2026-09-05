@@ -62,8 +62,8 @@ export interface CardHistoryRepository {
     cardIdsForSession(id: GameSessionId): Promise<readonly CardId[]>;
 }
 export interface DataSpaceRepository {
-    get(id: DataSpaceId): Promise<unknown | null>;
+    get(id: DataSpaceId): Promise<unknown>;
 }
 export interface AccountRepository {
-    getById(id: number): Promise<unknown | null>;
+    getById(id: number): Promise<unknown>;
 }

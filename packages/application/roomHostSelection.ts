@@ -159,19 +159,7 @@ export function decideRoomHost(input: {
     const repairDemotions = currentHosts.slice(1).map(({ id }) => id);
 
     if (trigger.type === "CLOSE") {
-        if (!currentHosts.some(({ id }) => id === trigger.participantId)) {
-            throw Object.assign(new Error("Only the current Host can close the Room"), {
-                code: "NOT_AUTHORIZED",
-            });
-        }
-        return {
-            demoteParticipantIds: [],
-            promoteParticipantId: null,
-            reason: null,
-            closeRoom: true,
-            hostStatus: emptyStatus(room),
-            invariantRepair,
-        };
+        return closeRoomDecision(currentHosts, trigger, room, invariantRepair);
     }
 
     if (room.expiresAt <= now) {
@@ -186,28 +174,40 @@ export function decideRoomHost(input: {
     }
 
     if (trigger.type === "TRANSFER") {
-        const target = participants.find(({ id }) => id === trigger.targetParticipantId);
-        if (
-            !currentHost ||
-            currentHost.id !== trigger.participantId ||
-            !target ||
-            !isConnectedPlayer(target)
-        ) {
-            throw Object.assign(new Error("Host transfer participants are invalid"), {
-                code: "NOT_AUTHORIZED",
-            });
-        }
+        return transferHostDecision(
+            participants,
+            trigger,
+            currentHost,
+            currentHosts,
+            invariantRepair,
+        );
+    }
+
+    const retained = retainCurrentHost();
+    if (retained) return retained;
+
+    const candidates = orderedCandidates(participants);
+    let selected: RoomParticipant | undefined;
+    if (trigger.type === "ACTIVATE") {
+        selected = candidates.find(({ id }) => id === trigger.participantId);
+    }
+    selected ??= candidates[0];
+    if (selected) {
+        const reason = replacementReason(room, trigger, currentHost);
         return {
             demoteParticipantIds: currentHosts.map(({ id }) => id),
-            promoteParticipantId: target.id,
-            reason: "HOST_TRANSFERRED",
+            promoteParticipantId: selected.id,
+            reason,
             closeRoom: false,
-            hostStatus: participantStatus("CONNECTED", target, null),
+            hostStatus: participantStatus("CONNECTED", selected, null),
             invariantRepair,
         };
     }
 
-    if (currentHost) {
+    return decideHostlessRoom();
+
+    function retainCurrentHost(): HostSelectionDecision | undefined {
+        if (!currentHost) return undefined;
         if (currentHost.connectionStatus === "CONNECTED") {
             return noChange(
                 participantStatus("CONNECTED", currentHost, null),
@@ -232,66 +232,96 @@ export function decideRoomHost(input: {
                 invariantRepair,
             );
         }
+
+        return undefined;
     }
 
-    const candidates = orderedCandidates(participants);
-    let selected: RoomParticipant | undefined;
-    if (trigger.type === "ACTIVATE") {
-        selected = candidates.find(({ id }) => id === trigger.participantId);
-    }
-    selected ??= candidates[0];
-    if (selected) {
-        const reason = replacementReason(room, trigger, currentHost);
+    function decideHostlessRoom(): HostSelectionDecision {
+        const demotionReason = hostDemotionReason(trigger, currentHost, invariantRepair);
+
+        const reconnectablePlayer = participants.some(
+            (participant) => participant.role === "PLAYER" && isReconnectable(participant, now),
+        );
+        if (reconnectablePlayer) {
+            return noChange(
+                emptyStatus(room),
+                currentHosts.map(({ id }) => id),
+                demotionReason,
+                invariantRepair,
+            );
+        }
+        const liveDisplay = participants.some(
+            (participant) =>
+                participant.role === "DISPLAY" &&
+                isCurrent(participant) &&
+                (participant.connectionStatus === "CONNECTED" || isReconnectable(participant, now)),
+        );
+        if (liveDisplay)
+            return noChange(
+                emptyStatus(room),
+                currentHosts.map(({ id }) => id),
+                demotionReason,
+                invariantRepair,
+            );
+        if (room.activatedAt === null && room.activationDeadline > now) {
+            return noChange(
+                emptyStatus(room),
+                currentHosts.map(({ id }) => id),
+                demotionReason,
+                invariantRepair,
+            );
+        }
         return {
             demoteParticipantIds: currentHosts.map(({ id }) => id),
-            promoteParticipantId: selected.id,
-            reason,
-            closeRoom: false,
-            hostStatus: participantStatus("CONNECTED", selected, null),
+            promoteParticipantId: null,
+            reason: demotionReason,
+            closeRoom: true,
+            hostStatus: emptyStatus(room),
             invariantRepair,
         };
     }
+}
 
-    const demotionReason = hostDemotionReason(trigger, currentHost, invariantRepair);
-
-    const reconnectablePlayer = participants.some(
-        (participant) => participant.role === "PLAYER" && isReconnectable(participant, now),
-    );
-    if (reconnectablePlayer) {
-        return noChange(
-            emptyStatus(room),
-            currentHosts.map(({ id }) => id),
-            demotionReason,
-            invariantRepair,
-        );
+function closeRoomDecision(
+    currentHosts: RoomParticipant[],
+    trigger: { type: "CLOSE"; participantId: string },
+    room: RoomState,
+    invariantRepair: boolean,
+): HostSelectionDecision {
+    if (!currentHosts.some(({ id }) => id === trigger.participantId)) {
+        throw Object.assign(new Error("Only the current Host can close the Room"), {
+            code: "NOT_AUTHORIZED",
+        });
     }
-    const liveDisplay = participants.some(
-        (participant) =>
-            participant.role === "DISPLAY" &&
-            isCurrent(participant) &&
-            (participant.connectionStatus === "CONNECTED" || isReconnectable(participant, now)),
-    );
-    if (liveDisplay)
-        return noChange(
-            emptyStatus(room),
-            currentHosts.map(({ id }) => id),
-            demotionReason,
-            invariantRepair,
-        );
-    if (room.activatedAt === null && room.activationDeadline > now) {
-        return noChange(
-            emptyStatus(room),
-            currentHosts.map(({ id }) => id),
-            demotionReason,
-            invariantRepair,
-        );
+    return {
+        demoteParticipantIds: [],
+        promoteParticipantId: null,
+        reason: null,
+        closeRoom: true,
+        hostStatus: emptyStatus(room),
+        invariantRepair,
+    };
+}
+
+function transferHostDecision(
+    participants: readonly RoomParticipant[],
+    trigger: { type: "TRANSFER"; participantId: string; targetParticipantId: string },
+    currentHost: RoomParticipant,
+    currentHosts: RoomParticipant[],
+    invariantRepair: boolean,
+): HostSelectionDecision {
+    const target = participants.find(({ id }) => id === trigger.targetParticipantId);
+    if (currentHost?.id !== trigger.participantId || !target || !isConnectedPlayer(target)) {
+        throw Object.assign(new Error("Host transfer participants are invalid"), {
+            code: "NOT_AUTHORIZED",
+        });
     }
     return {
         demoteParticipantIds: currentHosts.map(({ id }) => id),
-        promoteParticipantId: null,
-        reason: demotionReason,
-        closeRoom: true,
-        hostStatus: emptyStatus(room),
+        promoteParticipantId: target.id,
+        reason: "HOST_TRANSFERRED",
+        closeRoom: false,
+        hostStatus: participantStatus("CONNECTED", target, null),
         invariantRepair,
     };
 }

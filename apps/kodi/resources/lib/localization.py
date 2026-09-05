@@ -46,12 +46,15 @@ def load_po_catalog(path: str | Path) -> dict[int, str]:
             except ValueError:
                 context = None
         elif context is not None and line.startswith("msgstr "):
-            try:
-                translated = json.loads(line[7:])
-            except json.JSONDecodeError:
-                context = None
-                continue
+            translated = _po_translation(line)
             if translated:
                 result[context] = translated
             context = None
     return result
+
+
+def _po_translation(line: str):
+    try:
+        return json.loads(line[7:])
+    except json.JSONDecodeError:
+        return None

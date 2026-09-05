@@ -8,6 +8,6 @@ export class CryptoRandomSource implements RandomSource {
         return randomInt(maxExclusive);
     }
     nextFloat(): number {
-        return this.nextInt(0x1_0000_0000) / 0x1_0000_0000;
+        return this.nextInt(2 ** 32) / 2 ** 32;
     }
 }

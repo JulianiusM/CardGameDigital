@@ -40,14 +40,19 @@ export function dataSourceOptions(config: Settings): DataSourceOptions {
     };
 }
 
-export let AppDataSource: DataSource;
+let appDataSource: DataSource | undefined;
+
+export function getAppDataSource(): DataSource {
+    if (!appDataSource) throw new Error("Database must be initialized before use");
+    return appDataSource;
+}
 
 async function backupSqliteBeforeUpgrade(config: Settings, catalogSequence: number): Promise<void> {
     if (config.dbType !== "sqlite" || config.dbFile === ":memory:") return;
     const database = path.resolve(config.dbFile);
     if (!fs.existsSync(database) || fs.statSync(database).size === 0) return;
     const migrationName = migrations.at(-1)?.name ?? "schema";
-    const schemaVersion = migrationName.match(/\d{13}$/)?.[0] ?? "unknown";
+    const schemaVersion = /\d{13}$/.exec(migrationName)?.[0] ?? "unknown";
     const backup = `${database}.pre-schema-${schemaVersion}-catalog-${catalogSequence}.bak`;
     if (fs.existsSync(backup)) return;
     const connection = new Database(database, { readonly: true });
@@ -59,23 +64,23 @@ async function backupSqliteBeforeUpgrade(config: Settings, catalogSequence: numb
 }
 
 export async function initDataSource(): Promise<DataSource> {
-    if (AppDataSource?.isInitialized) return AppDataSource;
+    if (appDataSource?.isInitialized) return appDataSource;
     if (!settings.value.initialized) await settings.read();
     const catalogArtifact = bundledCardCatalogArtifact(
         settings.value.deploymentMode,
         settings.value.testMode || !isPublicRuntimeSecurityEnforced(settings.value),
     );
     await backupSqliteBeforeUpgrade(settings.value, catalogArtifact.catalog.sequence);
-    AppDataSource = new DataSource(dataSourceOptions(settings.value));
-    await AppDataSource.initialize();
+    appDataSource = new DataSource(dataSourceOptions(settings.value));
+    await appDataSource.initialize();
     if (settings.value.dbType === "sqlite") {
-        await AppDataSource.query("PRAGMA foreign_keys = ON");
+        await appDataSource.query("PRAGMA foreign_keys = ON");
     }
-    await AppDataSource.runMigrations({ transaction: "all" });
-    await ensureInstallationIdentity(AppDataSource);
-    await validateRetainedRoomCreateProtection(AppDataSource);
-    const catalogResult = await applyBundledCardCatalog(AppDataSource, catalogArtifact);
-    const installedCatalog = await AppDataSource.getRepository(CardCatalogVersionEntity).findOne({
+    await appDataSource.runMigrations({ transaction: "all" });
+    await ensureInstallationIdentity(appDataSource);
+    await validateRetainedRoomCreateProtection(appDataSource);
+    const catalogResult = await applyBundledCardCatalog(appDataSource, catalogArtifact);
+    const installedCatalog = await appDataSource.getRepository(CardCatalogVersionEntity).findOne({
         where: { catalogId: catalogArtifact.catalog.catalogId },
         order: { sequence: "DESC" },
     });
@@ -94,7 +99,7 @@ export async function initDataSource(): Promise<DataSource> {
         settings.value.logLevel,
     );
     if (settings.value.cardMissingTranslation === "FALLBACK") {
-        const fallbackAvailable = await AppDataSource.getRepository(LocaleEntity).existsBy({
+        const fallbackAvailable = await appDataSource.getRepository(LocaleEntity).existsBy({
             id: settings.value.cardFallbackLocale,
             active: true,
         });
@@ -105,10 +110,10 @@ export async function initDataSource(): Promise<DataSource> {
         }
     }
     if (settings.value.dbType === "sqlite") {
-        await AppDataSource.query("PRAGMA journal_mode = WAL");
+        await appDataSource.query("PRAGMA journal_mode = WAL");
     }
     if (settings.value.deploymentMode === "local" && settings.value.dbType === "sqlite") {
-        const repository = AppDataSource.getRepository(DataSpace);
+        const repository = appDataSource.getRepository(DataSpace);
         const count = await repository.count();
         if (count === 0) {
             await repository.save(repository.create({ name: "Local", defaultForOwner: true }));
@@ -116,5 +121,5 @@ export async function initDataSource(): Promise<DataSource> {
             throw new Error(`Local deployment requires exactly one DataSpace; found ${count}`);
         }
     }
-    return AppDataSource;
+    return appDataSource;
 }

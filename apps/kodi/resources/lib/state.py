@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import copy
 from dataclasses import dataclass, field, replace
-from typing import Any, Mapping, Optional
+from typing import cast, Any, Mapping, Optional
 
 from .native_settings_metadata import (
     AUTO_PAGE_SECONDS,
@@ -230,7 +230,6 @@ def configuration_from_profile(profile: Mapping[str, Any]) -> dict[str, Any]:
 
 def initial_setup(
     topology: str,
-    profiles: tuple[JsonObject, ...],
     default_locale: str,
     persistent_access: bool,
 ) -> SetupDraft:
@@ -276,4 +275,4 @@ def initial_setup(
 
 
 def bump(state: AppState, **changes: Any) -> AppState:
-    return replace(state, revision=state.revision + 1, **changes)
+    return cast(AppState, replace(state, revision=state.revision + 1, **changes))

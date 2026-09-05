@@ -136,7 +136,11 @@ def focus_graph(
     content = _content_control(view_mode, has_items)
     action_control = _action_control(view_mode, has_actions)
     pagination = _pagination_controls(previous_enabled, next_enabled)
-    header = BACK_BUTTON if can_go_back else HELP_BUTTON if help_visible else None
+    header = None
+    if can_go_back:
+        header = BACK_BUTTON
+    elif help_visible:
+        header = HELP_BUTTON
     sections = tuple(
         control
         for control in (header, content, _primary_pagination(pagination), action_control)
@@ -247,13 +251,12 @@ def _help_graph(
             header,
             header,
         )
+    _link_help_controls(topics, header, previous_enabled, next_enabled, graph)
+    return graph
+
+def _link_help_controls(topics, header, previous_enabled, next_enabled, graph):
     if topics is not None:
-        graph[topics] = Neighbors(
-            header or topics,
-            topics,
-            PAGE_PREVIOUS if previous_enabled else header or topics,
-            PAGE_NEXT if next_enabled else header or topics,
-        )
+        _link_help_topics(topics, header, previous_enabled, next_enabled, graph)
     if previous_enabled:
         graph[PAGE_PREVIOUS] = Neighbors(
             topics or header or PAGE_PREVIOUS,
@@ -268,7 +271,15 @@ def _help_graph(
             topics or PAGE_NEXT,
             PAGE_NEXT,
         )
-    return graph
+
+
+def _link_help_topics(topics, header, previous_enabled, next_enabled, graph):
+    graph[topics] = Neighbors(
+        header or topics,
+        topics,
+        PAGE_PREVIOUS if previous_enabled else header or topics,
+        PAGE_NEXT if next_enabled else header or topics,
+    )
 
 
 def _content_control(view_mode: str, has_items: bool) -> Optional[int]:

@@ -53,29 +53,7 @@ export function eligibilityReasons(
         reasons.push("QUESTION_CATEGORY");
     if (card.dareTypeId && !request.profile.enabledDareTypeIds.has(card.dareTypeId))
         reasons.push("DARE_TYPE");
-    if (
-        card.questionCategoryId &&
-        anyBoundaryHas(
-            request.boundaries,
-            (boundary) => boundary.disabledQuestionCategoryIds,
-            card.questionCategoryId as QuestionCategoryId,
-        )
-    )
-        reasons.push("QUESTION_BOUNDARY");
-    if (
-        card.dareTypeId &&
-        anyBoundaryHas(
-            request.boundaries,
-            (boundary) => boundary.disabledDareTypeIds,
-            card.dareTypeId as DareTypeId,
-        )
-    )
-        reasons.push("DARE_BOUNDARY");
-    const blockedFlags = new Set<OperationalFlag>(request.profile.blockedOperationalFlags);
-    for (const boundary of request.boundaries)
-        for (const flag of boundary.blockedOperationalFlags) blockedFlags.add(flag);
-    if (card.operationalFlags.some((flag) => blockedFlags.has(flag)))
-        reasons.push("OPERATIONAL_FLAG");
+    addBoundaryReasons(card, request, reasons);
     if (
         compareSocialSensitivity(card.socialSensitivity, request.profile.maximumSocialSensitivity) >
         0
@@ -99,6 +77,32 @@ export function eligibilityReasons(
     if (!isAllowedByHistory(card, request.sessionHistory, request.groupHistoryCardIds))
         reasons.push("HISTORY");
     return reasons;
+}
+
+function addBoundaryReasons(card: Card, request: EligibilityRequest, reasons: EligibilityReason[]) {
+    if (
+        card.questionCategoryId &&
+        anyBoundaryHas(
+            request.boundaries,
+            (boundary) => boundary.disabledQuestionCategoryIds,
+            card.questionCategoryId as QuestionCategoryId,
+        )
+    )
+        reasons.push("QUESTION_BOUNDARY");
+    if (
+        card.dareTypeId &&
+        anyBoundaryHas(
+            request.boundaries,
+            (boundary) => boundary.disabledDareTypeIds,
+            card.dareTypeId as DareTypeId,
+        )
+    )
+        reasons.push("DARE_BOUNDARY");
+    const blockedFlags = new Set<OperationalFlag>(request.profile.blockedOperationalFlags);
+    for (const boundary of request.boundaries)
+        for (const flag of boundary.blockedOperationalFlags) blockedFlags.add(flag);
+    if (card.operationalFlags.some((flag) => blockedFlags.has(flag)))
+        reasons.push("OPERATIONAL_FLAG");
 }
 
 export function eligibleCards<T extends Card>(

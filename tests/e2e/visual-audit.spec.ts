@@ -10,6 +10,7 @@ import { WebSocket } from "ws";
 import { PROTOCOL_VERSION, type RoomJoinResponse } from "../../packages/protocol";
 import {
     captureVisualAudit,
+    waitForPaint,
     type VisualAuditOptions,
     type VisualAuditReport,
 } from "./visual-audit-helpers";
@@ -28,7 +29,7 @@ async function audit(
     name: string,
     options: VisualAuditOptions = {},
 ): Promise<VisualAuditReport> {
-    await page.waitForTimeout(250);
+    await waitForPaint(page);
     const report = await captureVisualAudit(page, name, options);
     await testInfo.attach(`${name}-geometry`, {
         body: Buffer.from(JSON.stringify(report, null, 2)),
@@ -272,17 +273,7 @@ async function expectPaintedAutoPageItem(page: Page, selector: string): Promise<
                 const range = document.createRange();
                 range.selectNodeContents(textNode);
                 const scroller = textNode.parentElement?.closest<HTMLElement>(".scroll-text");
-                for (const rect of range.getClientRects()) {
-                    if (!scroller) {
-                        textRects.push(rect);
-                        continue;
-                    }
-                    const slot = scroller.getBoundingClientRect();
-                    const left = Math.max(rect.left, slot.left);
-                    const right = Math.min(rect.right, slot.right);
-                    if (right > left)
-                        textRects.push(new DOMRect(left, rect.top, right - left, rect.height));
-                }
+                collectPaintedText(range, scroller);
             }
             textNode = walker.nextNode();
         }
@@ -313,6 +304,20 @@ async function expectPaintedAutoPageItem(page: Page, selector: string): Promise<
                         rect.bottom <= bounds.bottom + 0.5,
                 ),
         };
+
+        function collectPaintedText(range: Range, scroller: HTMLElement | null | undefined) {
+            for (const rect of range.getClientRects()) {
+                if (!scroller) {
+                    textRects.push(rect);
+                    continue;
+                }
+                const slot = scroller.getBoundingClientRect();
+                const left = Math.max(rect.left, slot.left);
+                const right = Math.min(rect.right, slot.right);
+                if (right > left)
+                    textRects.push(new DOMRect(left, rect.top, right - left, rect.height));
+            }
+        }
     });
     expect(paint.text.trim()).not.toBe("");
     expect(paint.textRectCount).toBeGreaterThan(0);
@@ -418,19 +423,7 @@ async function expectControlTextPaintedWithin(controls: Locator): Promise<void> 
                 if (node.textContent?.trim()) {
                     const range = document.createRange();
                     range.selectNodeContents(node);
-                    for (const rect of range.getClientRects()) {
-                        if (rect.width <= 0.5 || rect.height <= 0.5) continue;
-                        const contained =
-                            rect.left >= bounds.left - 0.5 &&
-                            rect.right <= bounds.right + 0.5 &&
-                            rect.top >= bounds.top - 0.5 &&
-                            rect.bottom <= bounds.bottom + 0.5;
-                        if (!contained) {
-                            escaped.push(
-                                `${node.textContent?.trim()}: ${rect.left},${rect.top},${rect.right},${rect.bottom}`,
-                            );
-                        }
-                    }
+                    collectEscapedText(range, node);
                 }
                 node = walker.nextNode();
             }
@@ -439,6 +432,22 @@ async function expectControlTextPaintedWithin(controls: Locator): Promise<void> 
                       `${element.textContent?.replace(/\s+/g, " ").trim()}: ${escaped.join(" | ")} outside ${bounds.left},${bounds.top},${bounds.right},${bounds.bottom}`,
                   ]
                 : [];
+
+            function collectEscapedText(range: Range, textNode: Node) {
+                for (const rect of range.getClientRects()) {
+                    if (rect.width <= 0.5 || rect.height <= 0.5) continue;
+                    const contained =
+                        rect.left >= bounds.left - 0.5 &&
+                        rect.right <= bounds.right + 0.5 &&
+                        rect.top >= bounds.top - 0.5 &&
+                        rect.bottom <= bounds.bottom + 0.5;
+                    if (!contained) {
+                        escaped.push(
+                            `${textNode.textContent?.trim()}: ${rect.left},${rect.top},${rect.right},${rect.bottom}`,
+                        );
+                    }
+                }
+            }
         }),
     );
     expect(failures).toEqual([]);
@@ -604,16 +613,10 @@ async function auditFirstMiddleLastPages(
             let selected = false;
             for (let attempt = 0; attempt < 6 && !selected; attempt += 1) {
                 const pageCount = await expectMeasuredPages(pager);
-                let requestedPage = 0;
-                if (capture === "middle") requestedPage = Math.floor((pageCount - 1) / 2);
-                if (capture === "last") requestedPage = pageCount - 1;
+                const requestedPage = capturedPageIndex(capture, pageCount);
                 await selectMeasuredPage(pager, requestedPage);
                 const settledPageCount = await expectMeasuredPages(pager);
-                let settledRequestedPage = 0;
-                if (capture === "middle") {
-                    settledRequestedPage = Math.floor((settledPageCount - 1) / 2);
-                }
-                if (capture === "last") settledRequestedPage = settledPageCount - 1;
+                const settledRequestedPage = capturedPageIndex(capture, settledPageCount);
                 selected =
                     settledPageCount === pageCount &&
                     (await pager.getAttribute("data-page")) === String(settledRequestedPage);
@@ -622,9 +625,7 @@ async function auditFirstMiddleLastPages(
             await expectAutoPageCopyPainted(pager);
             await audit(page, testInfo, `${namePrefix}-${capture}`, options);
             const finalPageCount = Number(await pager.getAttribute("data-page-count"));
-            let expectedPage = 0;
-            if (capture === "middle") expectedPage = Math.floor((finalPageCount - 1) / 2);
-            if (capture === "last") expectedPage = finalPageCount - 1;
+            const expectedPage = capturedPageIndex(capture, finalPageCount);
             capturedRequestedPage =
                 (await pager.getAttribute("data-page")) === String(expectedPage);
         }
@@ -695,12 +696,12 @@ async function finishHostSetup(
     hostName = "Host Anna",
 ): Promise<void> {
     await page.getByRole("button", { name: /^Weiter/ }).click();
-    const name =
-        device === "couch"
-            ? /Nur dieser Bildschirm/
-            : device === "party"
-              ? /TV \+ Smartphones/
-              : /Alle mit eigenem Gerät/;
+    const labels = {
+        couch: /Nur dieser Bildschirm/,
+        party: /TV \+ Smartphones/,
+        personal: /Alle mit eigenem Gerät/,
+    };
+    const name = labels[device];
     await page.getByRole("button", { name }).click();
     if (device === "personal") await page.getByLabel("Name des Hosts").fill(hostName);
     await page.getByRole("button", { name: /Weiter zur Lobby/ }).click();
@@ -2385,3 +2386,9 @@ test("visually audits the English interface on a narrow phone and TV viewport", 
     await audit(helpPage, testInfo, "69-en-help-tv", { fullPage: false });
     await context.close();
 });
+
+function capturedPageIndex(capture: "first" | "middle" | "last", pageCount: number): number {
+    if (capture === "middle") return Math.floor((pageCount - 1) / 2);
+    if (capture === "last") return pageCount - 1;
+    return 0;
+}

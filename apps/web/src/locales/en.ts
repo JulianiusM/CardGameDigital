@@ -619,7 +619,7 @@ export const en = {
         disabled: "Disabled",
         conditions: (count: number) => (count === 1 ? "1 condition" : `${count} conditions`),
         when: "WHEN",
-        then: "THEN",
+        ruleOutcome: "THEN",
         matchPreview: "Check matches",
         checkMatches: "Preview matches",
         matchPreviewHint: "The server counts the complete catalog and returns only a few examples.",

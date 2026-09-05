@@ -98,7 +98,6 @@ def read_name(packet: bytes, offset: int) -> tuple[str, int]:
     cursor = offset
     result_offset: int | None = None
     visited: set[int] = set()
-    jumps = 0
     wire_length = 1
     while True:
         if cursor >= len(packet):
@@ -106,33 +105,14 @@ def read_name(packet: bytes, offset: int) -> tuple[str, int]:
         length = packet[cursor]
         if length == 0:
             cursor += 1
-            if result_offset is None:
-                result_offset = cursor
+            result_offset = result_offset or cursor
             break
         if length & 0xC0 == 0xC0:
-            if cursor + 1 >= len(packet):
-                raise DnsFormatError("DNS compression pointer is truncated")
-            pointer = ((length & 0x3F) << 8) | packet[cursor + 1]
-            if pointer >= len(packet) or pointer in visited:
-                raise DnsFormatError("DNS compression pointer is invalid or cyclic")
-            visited.add(pointer)
-            jumps += 1
-            if jumps > MAX_POINTER_JUMPS:
-                raise DnsFormatError("DNS compression chain is too deep")
-            if result_offset is None:
-                result_offset = cursor + 2
+            pointer = _compression_pointer(packet, cursor, visited)
+            result_offset = result_offset or (cursor + 2)
             cursor = pointer
             continue
-        if length & 0xC0:
-            raise DnsFormatError("DNS label uses a reserved length prefix")
-        cursor += 1
-        end = cursor + length
-        if end > len(packet):
-            raise DnsFormatError("DNS label is truncated")
-        try:
-            label = packet[cursor:end].decode("utf-8", errors="strict")
-        except UnicodeDecodeError as error:
-            raise DnsFormatError("DNS label is not valid UTF-8") from error
+        label, end = _read_label(packet, cursor, length)
         labels.append(label)
         wire_length += length + 1
         if wire_length > 255 or len(labels) > 127:
@@ -155,13 +135,7 @@ def _read_record(packet: bytes, offset: int) -> tuple[DnsRecord, int]:
         if consumed != data_end:
             raise DnsFormatError("PTR name does not exactly fill its record")
     elif record_type == TYPE_SRV:
-        if data_length < 7:
-            raise DnsFormatError("SRV record is too short")
-        priority, weight, port = struct.unpack_from("!HHH", packet, data_start)
-        target, consumed = read_name(packet, data_start + 6)
-        if consumed != data_end:
-            raise DnsFormatError("SRV target does not exactly fill its record")
-        value = {"priority": priority, "weight": weight, "port": port, "target": target}
+        value = _read_srv_record(packet, data_start, data_end, data_length)
     elif record_type == TYPE_TXT:
         value = _parse_txt(packet[data_start:data_end])
     elif record_type == TYPE_A:
@@ -175,6 +149,17 @@ def _read_record(packet: bytes, offset: int) -> tuple[DnsRecord, int]:
     else:
         value = packet[data_start:data_end]
     return DnsRecord(name, record_type, record_class & 0x7FFF, ttl, value), data_end
+
+
+def _read_srv_record(packet, data_start, data_end, data_length):
+    if data_length < 7:
+        raise DnsFormatError("SRV record is too short")
+    priority, weight, port = struct.unpack_from("!HHH", packet, data_start)
+    target, consumed = read_name(packet, data_start + 6)
+    if consumed != data_end:
+        raise DnsFormatError("SRV target does not exactly fill its record")
+    value = {"priority": priority, "weight": weight, "port": port, "target": target}
+    return value
 
 
 def _parse_txt(data: bytes) -> dict[str, str]:
@@ -204,3 +189,29 @@ def _require(packet: bytes, offset: int, size: int) -> int:
     if offset < 0 or result > len(packet):
         raise DnsFormatError("DNS field is truncated")
     return result
+
+
+def _compression_pointer(packet: bytes, cursor: int, visited: set[int]) -> int:
+    if cursor + 1 >= len(packet):
+        raise DnsFormatError("DNS compression pointer is truncated")
+    pointer = ((packet[cursor] & 0x3F) << 8) | packet[cursor + 1]
+    if pointer >= len(packet) or pointer in visited:
+        raise DnsFormatError("DNS compression pointer is invalid or cyclic")
+    visited.add(pointer)
+    if len(visited) > MAX_POINTER_JUMPS:
+        raise DnsFormatError("DNS compression chain is too deep")
+    return pointer
+
+
+def _read_label(packet: bytes, cursor: int, length: int) -> tuple[str, int]:
+    if length & 0xC0:
+        raise DnsFormatError("DNS label uses a reserved length prefix")
+    cursor += 1
+    end = cursor + length
+    if end > len(packet):
+        raise DnsFormatError("DNS label is truncated")
+    try:
+        label = packet[cursor:end].decode("utf-8", errors="strict")
+    except UnicodeDecodeError as error:
+        raise DnsFormatError("DNS label is not valid UTF-8") from error
+    return label, end

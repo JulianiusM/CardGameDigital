@@ -9,7 +9,6 @@ import {
 } from "./common";
 export * from "./cardPolicy";
 export * from "./common";
-import { PROTOCOL_VERSION } from "./version";
 import { ROOM_CODE_PATTERN_SOURCE } from "./limits";
 
 export { PROTOCOL_VERSION } from "./version";
@@ -51,9 +50,7 @@ export const roomCommandEnvelopeSchema = z.union([
     revisionedCommand("command.advanceSession", emptyPayloadSchema),
     revisionedCommand(
         "command.submitVote",
-        z
-            .object({ vote: neverHaveIEverVoteValueSchema, playerId: z.string().uuid().optional() })
-            .strict(),
+        z.object({ vote: neverHaveIEverVoteValueSchema, playerId: z.uuid().optional() }).strict(),
     ),
     revisionedCommand("command.vetoCard", emptyPayloadSchema),
     envelopeSchema.extend({
@@ -84,7 +81,7 @@ export const roomCommandEnvelopeSchema = z.union([
     }),
     envelopeSchema.extend({
         type: z.literal("command.transferHost"),
-        payload: z.object({ participantId: z.string().uuid() }).strict(),
+        payload: z.object({ participantId: z.uuid() }).strict(),
     }),
     revisionedCommand("command.endSession", emptyPayloadSchema),
     revisionedCommand("command.resetSession", emptyPayloadSchema),

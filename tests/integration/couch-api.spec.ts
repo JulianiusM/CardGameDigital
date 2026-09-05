@@ -4,7 +4,10 @@ import path from "node:path";
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { GAME_MODES } from "../../packages/game-core";
-import { AppDataSource, initDataSource } from "../../apps/server/src/modules/database/dataSource";
+import {
+    getAppDataSource,
+    initDataSource,
+} from "../../apps/server/src/modules/database/dataSource";
 import settings from "../../apps/server/src/modules/settings";
 import { CouchGameSessionEntity } from "../../packages/persistence/entities/game/CouchGameSessionEntity";
 import { CouchCardAppearanceEntity } from "../../packages/persistence/entities/game/CouchCardAppearanceEntity";
@@ -36,7 +39,7 @@ beforeAll(async () => {
     app = (await import("../../apps/server/src/app")).default;
 }, 120_000);
 afterAll(async () => {
-    if (AppDataSource.isInitialized) await AppDataSource.destroy();
+    if (getAppDataSource().isInitialized) await getAppDataSource().destroy();
     fs.rmSync(directory, { recursive: true, force: true });
 });
 
@@ -70,26 +73,28 @@ describe("Couch HTTP application adapter", () => {
                 ...canonicalSettings,
             })
             .expect(201);
-        const stored = await AppDataSource.getRepository(CouchGameSessionEntity).findOneByOrFail({
-            id: created.body.id,
-        });
+        const stored = await getAppDataSource()
+            .getRepository(CouchGameSessionEntity)
+            .findOneByOrFail({
+                id: created.body.id,
+            });
         expect(stored.runtimeStateVersion).toBe(5);
         expect(JSON.parse(stored.runtimeStateJson).compiledCardPolicy).toBeNull();
         expect(stored.compiledCardPolicyDigest).toMatch(/^[a-f0-9]{64}$/);
-        const snapshot = await AppDataSource.getRepository(
-            SessionImmutablePayloadEntity,
-        ).findOneByOrFail({
-            digest: stored.compiledCardPolicyDigest!,
-            payloadKind: "COMPILED_CARD_POLICY",
-        });
-        const chunks = await AppDataSource.getRepository(SessionImmutablePayloadChunkEntity).findBy(
-            { payloadDigest: snapshot.digest },
-        );
+        const snapshot = await getAppDataSource()
+            .getRepository(SessionImmutablePayloadEntity)
+            .findOneByOrFail({
+                digest: stored.compiledCardPolicyDigest!,
+                payloadKind: "COMPILED_CARD_POLICY",
+            });
+        const chunks = await getAppDataSource()
+            .getRepository(SessionImmutablePayloadChunkEntity)
+            .findBy({ payloadDigest: snapshot.digest });
         expect(chunks).toHaveLength(snapshot.chunkCount);
         expect(
             chunks.every(({ payloadBase64 }) => Buffer.byteLength(payloadBase64, "utf8") <= 32_768),
         ).toBe(true);
-        const hydrated = await new TypeOrmCouchSessionRepository(AppDataSource).load(
+        const hydrated = await new TypeOrmCouchSessionRepository(getAppDataSource()).load(
             created.body.id,
         );
         expect(hydrated?.compiledCardPolicy).toMatchObject({
@@ -102,11 +107,11 @@ describe("Couch HTTP application adapter", () => {
             .post(`/api/v1/couch/sessions/${created.body.id}/choose`)
             .send({ revision: 0, cardType: "QUESTION" })
             .expect(200);
-        const storedAfterCard = await AppDataSource.getRepository(
-            CouchGameSessionEntity,
-        ).findOneByOrFail({ id: created.body.id });
+        const storedAfterCard = await getAppDataSource()
+            .getRepository(CouchGameSessionEntity)
+            .findOneByOrFail({ id: created.body.id });
         expect(JSON.parse(storedAfterCard.runtimeStateJson).sessionHistory).toEqual([]);
-        const hydratedAfterCard = await new TypeOrmCouchSessionRepository(AppDataSource).load(
+        const hydratedAfterCard = await new TypeOrmCouchSessionRepository(getAppDataSource()).load(
             created.body.id,
         );
         expect(hydratedAfterCard?.sessionHistory).toHaveLength(1);
@@ -121,17 +126,21 @@ describe("Couch HTTP application adapter", () => {
                 ...canonicalSettings,
             })
             .expect(201);
-        const secondStored = await AppDataSource.getRepository(
-            CouchGameSessionEntity,
-        ).findOneByOrFail({ id: second.body.id });
+        const secondStored = await getAppDataSource()
+            .getRepository(CouchGameSessionEntity)
+            .findOneByOrFail({ id: second.body.id });
         expect(secondStored.compiledCardPolicyDigest).toBe(stored.compiledCardPolicyDigest);
         expect(
-            await AppDataSource.getRepository(SessionImmutablePayloadEntity).countBy({
+            await getAppDataSource().getRepository(SessionImmutablePayloadEntity).countBy({
                 digest: stored.compiledCardPolicyDigest!,
             }),
         ).toBe(1);
-        await AppDataSource.getRepository(CouchGameSessionEntity).delete({ id: created.body.id });
-        await AppDataSource.getRepository(CouchGameSessionEntity).delete({ id: second.body.id });
+        await getAppDataSource()
+            .getRepository(CouchGameSessionEntity)
+            .delete({ id: created.body.id });
+        await getAppDataSource()
+            .getRepository(CouchGameSessionEntity)
+            .delete({ id: second.body.id });
     });
 
     it("runs every mode without making the client authoritative", async () => {
@@ -162,7 +171,7 @@ describe("Couch HTTP application adapter", () => {
                 intensity: expect.any(Number),
             });
         }
-        expect(await AppDataSource.getRepository(CouchGameSessionEntity).count()).toBe(0);
+        expect(await getAppDataSource().getRepository(CouchGameSessionEntity).count()).toBe(0);
     });
 
     it("validates payloads and rejects stale commands with stable errors", async () => {
@@ -229,13 +238,15 @@ describe("Couch HTTP application adapter", () => {
             .expect(200)
             .expect(({ body }) => expect(body.state).toBe("ENDED"));
         await expect(
-            AppDataSource.getRepository(CouchGameSessionEntity).findOneByOrFail({
+            getAppDataSource().getRepository(CouchGameSessionEntity).findOneByOrFail({
                 id: created.body.id,
             }),
         ).resolves.toMatchObject({ endedAt: expect.any(Date), revision: 3 });
-        const appearances = await AppDataSource.getRepository(CouchCardAppearanceEntity).findBy({
-            sessionId: created.body.id,
-        });
+        const appearances = await getAppDataSource()
+            .getRepository(CouchCardAppearanceEntity)
+            .findBy({
+                sessionId: created.body.id,
+            });
         expect(appearances).toHaveLength(1);
         expect(appearances[0]).toMatchObject({
             skipped: false,

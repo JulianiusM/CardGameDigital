@@ -27,6 +27,6 @@ export function cardEntityToDomain(
         active: entity.active,
         operationalFlags: (entity.flags ?? [])
             .map((entry) => entry.flag as PlayableCard["operationalFlags"][number])
-            .sort(),
+            .sort((left, right) => left.localeCompare(right)),
     };
 }
