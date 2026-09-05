@@ -466,6 +466,16 @@ find without competing with the active game outside settings.
 become cramped. The settings tabs may scroll horizontally; essential
 labels remain readable.
 
+**Overflowing game text.** Player names, Card classifications, and Room-status copy
+scroll inside their text slots without enlarging the surrounding surfaces. Interactive
+devices support native touch scrolling and keyboard access; hover or focus pauses
+automatic label movement. Reduced motion leaves interactive labels under manual control
+and advances passive-display labels in discrete steps. Public roster pages wait until
+their labels have had time to reveal the complete name. Card-body pages retain complete
+graphemes, including combining accents and joined emoji.
+Notifications likewise reveal long copy within two lines, pause for focus/hover, and
+remain available until the text has had time to finish scrolling.
+
 # 15. Canonical do / do not
 
 | **DO**                                                                        | **DON’T**                                                                     |
@@ -577,8 +587,11 @@ as Help and Account. Scope actions share motion, shape, touch size, and no-wrap 
 while scope option names and descriptions wrap rather than truncate. In a wide standalone
 master/detail view, expanding Card-search Conditions uses normal document flow; the
 master pane itself must not gain a competing vertical scrollbar while page space is
-available. Only the bounded result list may scroll independently when its own result
-height requires it.
+available. The bounded result list may scroll independently when its own result height
+requires it. Exceptionally long Card wording uses a native text scrollbar inside the
+preview (up to three lines) or selected Card heading (up to four lines), preserving the
+complete copy while keeping the existing management surfaces usable. Keyboard scrolling
+works from the containing result button and from the selected Card heading.
 Every Card-management button family—including scope rows, segmented decisions, value
 chips, rules, and Card results—uses the standard tactile hover lift and press compression.
 Scale thumbs and selected ticks respond smoothly. Expanded filters and policy content

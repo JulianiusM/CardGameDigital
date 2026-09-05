@@ -1,4 +1,5 @@
 <script lang="ts">
+    import { scrollText } from "./scrollText";
     import AutoPageRegion from "./AutoPageRegion.svelte";
     import { messages } from "./i18n";
     import type { Participant, Presence } from "./multiplayer";
@@ -53,7 +54,7 @@
                 {#each rows.slice(start, end) as row}
                     <div class="stage-player" title={row.name}>
                         <i class:online={row.online} aria-hidden="true"></i><strong
-                            >{row.name}</strong
+                            use:scrollText={true}>{row.name}</strong
                         >
                     </div>
                 {/each}
@@ -66,9 +67,8 @@
         <div class="participant-list">
             {#each rows as row}
                 <div class:device-player={row.device} class="participant">
-                    <span class:online={row.online}></span><strong>{row.name}</strong><small
-                        >{row.meta}</small
-                    >
+                    <span class:online={row.online}></span><strong use:scrollText>{row.name}</strong
+                    ><small use:scrollText>{row.meta}</small>
                 </div>
             {/each}
         </div>
@@ -80,9 +80,8 @@
         <div class="participant-list">
             {#each rows as row}
                 <div class:device-player={row.device} class="participant">
-                    <span class:online={row.online}></span><strong>{row.name}</strong><small
-                        >{row.meta}</small
-                    >
+                    <span class:online={row.online}></span><strong use:scrollText>{row.name}</strong
+                    ><small use:scrollText>{row.meta}</small>
                 </div>
             {/each}
         </div>

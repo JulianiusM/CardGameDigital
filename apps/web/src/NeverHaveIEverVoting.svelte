@@ -1,4 +1,5 @@
 <script lang="ts">
+    import { scrollText } from "./scrollText";
     import AutoPageRegion from "./AutoPageRegion.svelte";
     import { messages } from "./i18n";
     import type { NeverHaveIEverVotingView } from "../../../packages/protocol";
@@ -81,13 +82,15 @@
                         >
                             <div class="answer-name-list">
                                 {#each yesNames.slice(start, end) as name}<div class="answer-name">
-                                        {name}
+                                        <span use:scrollText={stage}>{name}</span>
                                     </div>{/each}
                             </div>
                         </AutoPageRegion>
                     {:else if yesNames?.length}
                         <div class="answer-name-list">
-                            {#each yesNames as name}<div class="answer-name">{name}</div>{/each}
+                            {#each yesNames as name}<div class="answer-name">
+                                    <span use:scrollText={stage}>{name}</span>
+                                </div>{/each}
                         </div>
                     {:else if voting.result.yes === 0}<small
                             >{messages.neverHaveIEver.noAnswers}</small
@@ -108,13 +111,15 @@
                         >
                             <div class="answer-name-list">
                                 {#each noNames.slice(start, end) as name}<div class="answer-name">
-                                        {name}
+                                        <span use:scrollText={stage}>{name}</span>
                                     </div>{/each}
                             </div>
                         </AutoPageRegion>
                     {:else if noNames?.length}
                         <div class="answer-name-list">
-                            {#each noNames as name}<div class="answer-name">{name}</div>{/each}
+                            {#each noNames as name}<div class="answer-name">
+                                    <span use:scrollText={stage}>{name}</span>
+                                </div>{/each}
                         </div>
                     {:else if voting.result.no === 0}<small
                             >{messages.neverHaveIEver.noAnswers}</small
@@ -140,7 +145,7 @@
                             class="vote-progress-row"
                             role="listitem"
                         >
-                            <strong>{player.displayName}</strong>
+                            <strong use:scrollText={stage}>{player.displayName}</strong>
                             <span>
                                 <i aria-hidden="true">{player.status === "VOTED" ? "✓" : "•"}</i>
                                 {player.status === "VOTED"
@@ -159,7 +164,7 @@
                         class="vote-progress-row"
                         role="listitem"
                     >
-                        <strong>{player.displayName}</strong>
+                        <strong use:scrollText={stage}>{player.displayName}</strong>
                         <span>
                             <i aria-hidden="true">{player.status === "VOTED" ? "✓" : "•"}</i>
                             {player.status === "VOTED"
@@ -175,7 +180,7 @@
                 <h3>{messages.neverHaveIEver.yourAnswers}</h3>
                 {#each controllable as player}
                     <div class="never-vote-row">
-                        <strong>{player.displayName}</strong>
+                        <strong use:scrollText={stage}>{player.displayName}</strong>
                         <div>
                             <button
                                 class="secondary vote-choice"

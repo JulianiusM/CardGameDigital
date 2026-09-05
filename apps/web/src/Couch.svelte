@@ -1,4 +1,5 @@
 <script lang="ts">
+    import { scrollText } from "./scrollText";
     import { onMount } from "svelte";
     import { ApiError, couchApi, type Snapshot } from "./api";
     import SettingsModal from "./SettingsModal.svelte";
@@ -290,7 +291,9 @@
                 >
             </div>
             {#if session.activePlayer}<p class="active-player" data-adaptive-contrast>
-                    <span>{messages.common.nowPlaying}</span>{session.activePlayer.name}
+                    <span>{messages.common.nowPlaying}</span><strong use:scrollText
+                        >{session.activePlayer.name}</strong
+                    >
                 </p>{/if}
             {#if exhausted}
                 <div class="card-panel exhausted-state game-phase" role="status">

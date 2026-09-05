@@ -61,7 +61,7 @@ async function auditViewportSegment(
     return audit(page, testInfo, name, { fullPage: false });
 }
 
-async function auditTallElementSegment(
+async function auditTextScrollSegment(
     page: Page,
     testInfo: TestInfo,
     element: Locator,
@@ -69,10 +69,8 @@ async function auditTallElementSegment(
     fraction: number,
 ): Promise<VisualAuditReport> {
     await element.evaluate((node, requestedFraction) => {
-        const rect = node.getBoundingClientRect();
-        const absoluteTop = window.scrollY + rect.top;
-        const target = absoluteTop + rect.height * requestedFraction - window.innerHeight / 2;
-        window.scrollTo({ top: Math.max(0, target), behavior: "auto" });
+        node.scrollIntoView({ block: "center" });
+        node.scrollTop = (node.scrollHeight - node.clientHeight) * requestedFraction;
     }, fraction);
     await expect(element).toBeInViewport({ ratio: 0.001 });
     return audit(page, testInfo, name, { fullPage: false });
@@ -107,9 +105,9 @@ async function expectRenderedRosterItemsContained(page: Page): Promise<void> {
 }
 
 function maximumName(index: number): string {
-    return `Person-${String(index).padStart(2, "0")}-mit-einem-sehr-langen-Namen`
-        .padEnd(40, "X")
-        .slice(0, 40);
+    // Character limits alone do not bound painted width: wide glyphs must fit too.
+    const glyph = index % 2 === 0 ? "界" : "W";
+    return `${String(index).padStart(2, "0")}-`.padEnd(40, glyph).slice(0, 40);
 }
 
 const cardEndMarker = "_CARD_END";
@@ -266,11 +264,28 @@ async function expectPaintedAutoPageItem(page: Page, selector: string): Promise<
     await expect(item).toBeVisible({ timeout: 20_000 });
     const paint = await item.evaluate((element) => {
         const content = element.closest<HTMLElement>(".auto-page-content");
-        const range = document.createRange();
-        range.selectNodeContents(element);
-        const textRects = Array.from(range.getClientRects()).filter(
-            ({ width, height }) => width > 0.5 && height > 0.5,
-        );
+        const textRects: DOMRect[] = [];
+        const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+        let textNode = walker.nextNode();
+        while (textNode) {
+            if (textNode.textContent?.trim()) {
+                const range = document.createRange();
+                range.selectNodeContents(textNode);
+                const scroller = textNode.parentElement?.closest<HTMLElement>(".scroll-text");
+                for (const rect of range.getClientRects()) {
+                    if (!scroller) {
+                        textRects.push(rect);
+                        continue;
+                    }
+                    const slot = scroller.getBoundingClientRect();
+                    const left = Math.max(rect.left, slot.left);
+                    const right = Math.min(rect.right, slot.right);
+                    if (right > left)
+                        textRects.push(new DOMRect(left, rect.top, right - left, rect.height));
+                }
+            }
+            textNode = walker.nextNode();
+        }
         const bounds = content?.getBoundingClientRect();
         return {
             contentBounds: bounds
@@ -631,6 +646,12 @@ async function expectCompleteTextPages(
     const copy = pager.locator(visibleAutoPageCopy);
     let collected = "";
     const pageTexts: string[] = [];
+    const graphemeBoundaries = new Set([0, expectedSource.length]);
+    for (const { index } of new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(
+        expectedSource,
+    )) {
+        graphemeBoundaries.add(index);
+    }
     for (let page = 0; page < pageCount; page += 1) {
         await selectMeasuredPage(pager, page);
         await expectAutoPageCopyPainted(pager);
@@ -638,6 +659,9 @@ async function expectCompleteTextPages(
         expect(pageText.trim(), `measured page ${page + 1} must paint visible text`).not.toBe("");
         pageTexts.push(pageText);
         collected += pageText;
+        expect(graphemeBoundaries.has(collected.length), `page ${page + 1} splits a grapheme`).toBe(
+            true,
+        );
     }
     expect(await copy.getAttribute("aria-label")).toBe(expectedSource);
     expect(collected).toBe(expectedSource);
@@ -807,6 +831,7 @@ async function populateMaximumCouchRoster(page: Page): Promise<void> {
 async function hostPartyWithMaximumRoster(
     browser: Browser,
     playerCount = 20,
+    wideTaxonomy = false,
 ): Promise<{
     display: Page;
     displayContext: Awaited<ReturnType<Browser["newContext"]>>;
@@ -822,6 +847,32 @@ async function hostPartyWithMaximumRoster(
         viewport: { width: 800, height: 600 },
     });
     for (const context of [hostContext, displayContext]) {
+        if (wideTaxonomy) {
+            await context.routeWebSocket(
+                () => true,
+                (socket) => {
+                    const server = socket.connectToServer();
+                    server.onMessage((message) => {
+                        const envelope = JSON.parse(message.toString());
+                        if (
+                            envelope.type === "room.snapshot" &&
+                            envelope.payload.session?.currentCard
+                        ) {
+                            envelope.payload.session.currentCard.cardText = maximumCardText();
+                        }
+                        socket.send(JSON.stringify(envelope));
+                    });
+                },
+            );
+            await context.route("**/api/v1/catalog/taxonomies?*", async (route) => {
+                const response = await route.fetch();
+                const taxonomy = await response.json();
+                for (const entry of [...taxonomy.questionCategories, ...taxonomy.dareTypes]) {
+                    entry.label = "W".repeat(73) + "CAT_END";
+                }
+                await route.fulfill({ response, json: taxonomy });
+            });
+        }
         await context.addInitScript(() => {
             localStorage.setItem("party-game.locale", "de");
             localStorage.setItem("party-game.reduced-motion", "true");
@@ -1095,21 +1146,21 @@ test("visually audits Help and Card management with hostile collection names", a
     await audit(page, testInfo, "22-card-results-desktop", { fullPage: true });
     await page.setViewportSize({ width: 320, height: 568 });
     await audit(page, testInfo, "23-card-results-phone", { fullPage: true });
-    await auditTallElementSegment(
+    await auditTextScrollSegment(
         page,
         testInfo,
         selectedManagedCardTitle,
         "23-card-text-10000-phone-first",
         0,
     );
-    await auditTallElementSegment(
+    await auditTextScrollSegment(
         page,
         testInfo,
         selectedManagedCardTitle,
         "23-card-text-10000-phone-middle",
         0.5,
     );
-    await auditTallElementSegment(
+    await auditTextScrollSegment(
         page,
         testInfo,
         selectedManagedCardTitle,
@@ -1117,6 +1168,14 @@ test("visually audits Help and Card management with hostile collection names", a
         1,
     );
     await expect(selectedManagedCardTitle).toContainText(cardEndMarker);
+    await expectMarkerPaintedWithin(selectedManagedCardTitle, cardEndMarker, ".scroll-copy");
+    await selectedManagedCardTitle.focus();
+    await page.keyboard.press("Home");
+    expect(await selectedManagedCardTitle.evaluate((node) => node.scrollTop)).toBe(0);
+    const firstCardRow = page.locator(".managed-card-list > button").first();
+    await firstCardRow.focus();
+    await page.keyboard.press("End");
+    await expectMarkerPaintedWithin(firstCardRow.locator("strong"), cardEndMarker, ".scroll-copy");
     await page.emulateMedia({ forcedColors: "active", reducedMotion: "reduce" });
     await page.locator(".managed-card-list > button").first().focus();
     await audit(page, testInfo, "23-card-row-phone-forced-colors-focus", { fullPage: true });
@@ -1256,10 +1315,17 @@ test("visually audits join failure and a 500-character notification", async ({
     const notificationLane = page.locator(".notification-lane");
     const appLocation = page.locator(".app-location");
     await expect(toastCopy).toHaveText(longError);
+    await toastCopy.focus();
+    await page.waitForTimeout(5500);
+    await expect(toastCopy).toBeVisible();
     await expectElementTopmost(page.locator(".notification-toast"));
     await expectElementsDoNotIntersect(notificationLane, appLocation);
     await audit(page, testInfo, "23c-toast-500-characters-phone", { fullPage: false });
     await toastCopy.evaluate((element) => element.scrollTo({ top: element.scrollHeight }));
+    await expectMarkerPaintedWithin(toastCopy, errorEndMarker, ".notification-toast");
+    await page.keyboard.press("Home");
+    expect(await toastCopy.evaluate((element) => element.scrollTop)).toBe(0);
+    await page.keyboard.press("End");
     await expectMarkerPaintedWithin(toastCopy, errorEndMarker, ".notification-toast");
     await audit(page, testInfo, "23c1-toast-500-characters-phone-endpoint", {
         fullPage: false,
@@ -1422,6 +1488,26 @@ test("visually audits a maximum-name Party Screen roster, voting, and results", 
     ).toContain(roomUrlEndMarker);
     await expectCompleteTextPages(urlPager, maximumRoomUrl());
     const lobbyRosterPager = display.locator(".stage-player-roster .auto-page-region");
+    await selectMeasuredPage(lobbyRosterPager, 0);
+    const firstName = display.locator(".stage-player strong[data-text-overflow]").first();
+    await expect(firstName).toBeVisible();
+    const firstNameSource = await firstName.textContent();
+    const readingTime = Number(await firstName.getAttribute("data-text-scroll-duration"));
+    await expect
+        .poll(
+            () =>
+                firstName.evaluate(
+                    (label) => label.scrollWidth - label.clientWidth - label.scrollLeft,
+                ),
+            { timeout: readingTime + 7000 },
+        )
+        .toBeLessThanOrEqual(1);
+    await expect(lobbyRosterPager).toHaveAttribute("data-page", "0");
+    await expect(firstName).toHaveText(firstNameSource!);
+    await audit(display, testInfo, "25a-party-roster-full-name-endpoint", { fullPage: false });
+    await expect
+        .poll(() => lobbyRosterPager.getAttribute("data-page"), { timeout: 12000 })
+        .not.toBe("0");
     await auditFirstMiddleLastPages(
         display,
         testInfo,
@@ -1520,6 +1606,134 @@ test("visually audits a maximum-name Party Screen roster, voting, and results", 
 
     await hostContext.close();
     await displayContext.close();
+});
+
+test("visually audits text overflow with wide names and taxonomy in fixed game surfaces", async ({
+    browser,
+}, testInfo) => {
+    const { display, displayContext, host, hostContext } = await hostPartyWithMaximumRoster(
+        browser,
+        2,
+        true,
+    );
+    await host.getByRole("button", { name: "Spiel starten" }).click();
+    await host.getByRole("button", { name: "Karte aufdecken" }).click();
+    await expect(display.locator(".game-card")).toBeVisible();
+    for (const target of [host, display]) {
+        await expect(target.locator(".game-card .auto-page-text")).toHaveAttribute(
+            "data-source-length",
+            "10000",
+        );
+    }
+    for (const viewport of [
+        { width: 320, height: 568 },
+        { width: 844, height: 390 },
+        { width: 800, height: 600 },
+        { width: 1440, height: 900 },
+        { width: 1920, height: 1080 },
+    ]) {
+        for (const [role, target] of [
+            ["personal", host],
+            ["display", display],
+        ] as const) {
+            // Existing layout-only limits are documented in the overflow audit.
+            if (role === "personal" && viewport.height < 400) continue;
+            if (role === "display" && viewport.width < 620) continue;
+            await target.setViewportSize(viewport);
+            await audit(target, testInfo, `overflow-${role}-${viewport.width}x${viewport.height}`, {
+                fullPage: role === "personal",
+            });
+            await expectAutoPageCopyPainted(target.locator(".game-card .auto-page-text"));
+        }
+    }
+    await host.setViewportSize({ width: 320, height: 568 });
+    const categoryCopy = host.locator(".card-type .scroll-text");
+    await audit(host, testInfo, "overflow-category-keyboard-phone", { fullPage: true });
+    await categoryCopy.focus();
+    await host.keyboard.press("End");
+    await expectMarkerPaintedWithin(categoryCopy, "CAT_END", ".scroll-text");
+    for (let remaining = 2; remaining > 0; remaining -= 1) {
+        await host
+            .locator(".never-vote-row")
+            .first()
+            .getByRole("button", { name: "Trifft zu", exact: true })
+            .click();
+        await expect(host.locator(".never-vote-row")).toHaveCount(remaining - 1);
+    }
+    for (const [role, target, viewport] of [
+        ["personal", host, { width: 320, height: 568 }],
+        ["display", display, { width: 800, height: 600 }],
+        ["display", display, { width: 844, height: 390 }],
+        ["display", display, { width: 1920, height: 1080 }],
+    ] as const) {
+        await target.setViewportSize(viewport);
+        await expect(target.locator(".never-result-columns")).toBeVisible();
+        await audit(
+            target,
+            testInfo,
+            `overflow-results-${role}-${viewport.width}x${viewport.height}`,
+            { fullPage: role === "personal" },
+        );
+        await expectAutoPageCopyPainted(target.locator(".game-card .auto-page-text"));
+    }
+    await hostContext.close();
+    await displayContext.close();
+});
+
+test("text overflow remains readable with keyboard, touch, motion preferences, and Unicode", async ({
+    page,
+}, testInfo) => {
+    await page.setViewportSize({ width: 320, height: 568 });
+    await chooseStandardHostSetup(page, /Wahrheit oder Pflicht/);
+    await finishHostSetup(page, "couch");
+    const names = page.locator(".player-name-row input");
+    const maximum = "W".repeat(32) + "NAME_END";
+    await names.nth(0).fill(maximum);
+    await names.nth(1).fill("M" + maximum.slice(1));
+    await page.getByRole("button", { name: /Spiel starten/ }).click();
+    await page.getByRole("button", { name: "Wahrheit", exact: true }).click();
+    const name = page.locator(".active-player .scroll-text");
+    await expect(name).toHaveAttribute("data-text-overflow", "");
+    await name.focus();
+    await page.keyboard.press("End");
+    await expect
+        .poll(() => name.evaluate((node) => node.scrollWidth - node.clientWidth - node.scrollLeft))
+        .toBeLessThanOrEqual(1);
+    await audit(page, testInfo, "overflow-name-keyboard-end-phone", { fullPage: true });
+    await page.keyboard.press("Home");
+    await expect.poll(() => name.evaluate((node) => node.scrollLeft)).toBe(0);
+
+    // Native horizontal scrolling is also the touch path; no text is removed from the DOM.
+    await name.evaluate((node) => node.scrollBy({ left: 100, behavior: "instant" }));
+    await expect.poll(() => name.evaluate((node) => node.scrollLeft)).toBeGreaterThan(0);
+    await name.evaluate((node) => node.blur());
+    await page.mouse.move(0, 0);
+    const reducedPosition = await name.evaluate((node) => node.scrollLeft);
+    await page.waitForTimeout(2000);
+    expect(await name.evaluate((node) => node.scrollLeft)).toBe(reducedPosition);
+
+    await page.emulateMedia({ reducedMotion: "no-preference" });
+    await page.evaluate(() => (document.documentElement.dataset.reducedMotion = "false"));
+    await expect
+        .poll(() => name.evaluate((node) => node.scrollLeft), { timeout: 7000 })
+        .toBeGreaterThan(reducedPosition + 5);
+    await name.focus();
+    const pausedPosition = await name.evaluate((node) => node.scrollLeft);
+    await page.waitForTimeout(350);
+    expect(await name.evaluate((node) => node.scrollLeft)).toBe(pausedPosition);
+    await page.evaluate(() => (document.documentElement.dataset.reducedMotion = "true"));
+
+    const card = page.locator(".game-card .auto-page-text");
+    const unicode = "👩🏽‍🚀🇩🇪e\u0301".repeat(180) + "UNICODE_END";
+    await injectAutoPageSource(page.locator(`.game-card ${visibleAutoPageCopy}`), unicode);
+    await expectCompleteTextPages(card, unicode);
+    await audit(page, testInfo, "overflow-unicode-card-phone-last", { fullPage: true });
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await expectCompleteTextPages(card, unicode);
+    await audit(page, testInfo, "overflow-unicode-card-desktop-last", { fullPage: false });
+    await injectAutoPageSource(page.locator(`.game-card ${visibleAutoPageCopy}`), ordinaryCardText);
+    await expect(card).toHaveAttribute("data-page", "0");
+    await expect(card).toHaveAttribute("data-page-count", "1");
 });
 
 test("keeps an underfilled final measured roster page stable", async ({ browser }, testInfo) => {

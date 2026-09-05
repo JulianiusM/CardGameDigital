@@ -75,8 +75,16 @@
         if (remaining <= 0) return 0;
 
         let lower = 1;
-        let upper = remaining;
+        let upper = Math.min(32, remaining);
         let best = 0;
+        // Locate a nearby upper bound before binary search. Measuring half of a
+        // 10,000-character source for every tiny page otherwise blocks the UI.
+        while (candidateFits(characters.slice(offset, offset + upper).join(""))) {
+            best = upper;
+            if (upper === remaining) return upper;
+            lower = upper + 1;
+            upper = Math.min(upper * 2, remaining);
+        }
         while (lower <= upper) {
             const middle = Math.floor((lower + upper) / 2);
             const candidate = characters.slice(offset, offset + middle).join("");
@@ -140,7 +148,11 @@
         ].join(":");
         if (measurementKey === lastMeasurementKey) return;
 
-        const characters = Array.from(sourceText);
+        // Keep combining marks and joined emoji intact at every page boundary.
+        const characters = Array.from(
+            new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(sourceText),
+            ({ segment }) => segment,
+        );
         const nextPages: string[] = [];
         let offset = 0;
         while (offset < characters.length) {

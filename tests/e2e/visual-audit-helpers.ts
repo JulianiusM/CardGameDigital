@@ -165,35 +165,63 @@ export async function captureVisualAudit(
                 if (node.textContent?.trim() && parent && isVisible(parent)) {
                     const range = document.createRange();
                     range.selectNodeContents(node);
-                    rects.push(
-                        ...[...range.getClientRects()].filter(
-                            ({ width, height }) => width > 0.5 && height > 0.5,
-                        ),
-                    );
+                    for (const rect of range.getClientRects()) {
+                        let left = rect.left;
+                        let right = rect.right;
+                        let top = rect.top;
+                        let bottom = rect.bottom;
+                        let ancestor: HTMLElement | null = parent;
+                        // Text scrolled inside a control is intentionally outside the
+                        // reading window; its painted portion must still fit the control.
+                        while (ancestor && ancestor !== element) {
+                            const style = getComputedStyle(ancestor);
+                            const bounds = ancestor.getBoundingClientRect();
+                            if (/auto|scroll/.test(style.overflowX)) {
+                                left = Math.max(left, bounds.left);
+                                right = Math.min(right, bounds.right);
+                            }
+                            if (/auto|scroll/.test(style.overflowY)) {
+                                top = Math.max(top, bounds.top);
+                                bottom = Math.min(bottom, bounds.bottom);
+                            }
+                            ancestor = ancestor.parentElement;
+                        }
+                        if (right > left && bottom > top)
+                            rects.push(new DOMRect(left, top, right - left, bottom - top));
+                    }
                 }
                 node = walker.nextNode();
             }
             return rects;
         };
         const paintedTextRects = (element: HTMLElement): DOMRect[] =>
-            textRects(element).filter((rect) => {
+            textRects(element).flatMap((rect) => {
+                let left = rect.left;
+                let right = rect.right;
+                let top = rect.top;
+                let bottom = rect.bottom;
                 let current: HTMLElement | null = element;
                 while (current && current !== document.body) {
                     const style = getComputedStyle(current);
                     const bounds = current.getBoundingClientRect();
-                    if (
-                        /auto|scroll|hidden|clip/.test(style.overflowX) &&
-                        (rect.right <= bounds.left || rect.left >= bounds.right)
-                    )
-                        return false;
-                    if (
-                        /auto|scroll|hidden|clip/.test(style.overflowY) &&
-                        (rect.bottom <= bounds.top || rect.top >= bounds.bottom)
-                    )
-                        return false;
+                    if (/auto|scroll|hidden|clip/.test(style.overflowX)) {
+                        left = Math.max(left, bounds.left + current.clientLeft);
+                        right = Math.min(
+                            right,
+                            bounds.left + current.clientLeft + current.clientWidth,
+                        );
+                    }
+                    if (/auto|scroll|hidden|clip/.test(style.overflowY)) {
+                        top = Math.max(top, bounds.top + current.clientTop);
+                        bottom = Math.min(
+                            bottom,
+                            bounds.top + current.clientTop + current.clientHeight,
+                        );
+                    }
                     current = current.parentElement;
                 }
-                return true;
+                if (right <= left || bottom <= top) return [];
+                return [new DOMRect(left, top, right - left, bottom - top)];
             });
         const clips = (overflow: string): boolean => /hidden|clip/.test(overflow);
         const clippingAncestors = (element: HTMLElement): HTMLElement[] => {

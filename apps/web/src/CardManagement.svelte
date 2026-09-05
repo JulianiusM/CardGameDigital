@@ -1,4 +1,5 @@
 <script lang="ts">
+    import { scrollCopy } from "./scrollCopy";
     import { onMount } from "svelte";
     import CardPolicyDirectiveEditor from "./CardPolicyDirectiveEditor.svelte";
     import ResponsiveTabs, { type ResponsiveTab } from "./ResponsiveTabs.svelte";
@@ -1581,7 +1582,7 @@
                                                                 card.cardType ?? "",
                                                             )}</span
                                                         >
-                                                        <strong>{card.text}</strong>
+                                                        <strong use:scrollCopy>{card.text}</strong>
                                                     </li>
                                                 {/each}
                                             </ul>
@@ -1870,7 +1871,7 @@
                                         />
                                     </span>
                                     <span class="managed-card-copy">
-                                        <strong>{card.text}</strong>
+                                        <strong use:scrollCopy>{card.text}</strong>
                                         <small
                                             >{cardTypeName(card.cardType)}{#if card.taxonomyLabel}
                                                 · {card.taxonomyLabel}{/if}</small
@@ -1926,7 +1927,7 @@
                                         >
                                     {/if}
                                 </div>
-                                <h2>{selectedCard.text}</h2>
+                                <h2 use:scrollCopy={4}>{selectedCard.text}</h2>
                                 <p class="managed-card-meta">
                                     <span class="managed-card-taxonomy">
                                         {selectedCard.taxonomyLabel ??

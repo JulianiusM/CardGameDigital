@@ -1,4 +1,5 @@
 <script lang="ts">
+    import { scrollText } from "./scrollText";
     import BoundarySetup, { type BoundarySelection } from "./BoundarySetup.svelte";
     import { messages } from "./i18n";
     import ParticipantRoster from "./ParticipantRoster.svelte";
@@ -96,19 +97,19 @@
             >
                 <span class="host-status-orb" aria-hidden="true"></span>
                 <div>
-                    <strong>{hostStatusText.title}</strong>
-                    <p>{hostStatusText.detail}</p>
+                    <strong use:scrollText={true}>{hostStatusText.title}</strong>
+                    <p use:scrollText={true}>{hostStatusText.detail}</p>
                 </div>
             </section>{/if}
 
         <section class="room-settings-summary" aria-labelledby="room-settings-heading">
             <div>
                 <h3 id="room-settings-heading">{messages.room.currentSettings}</h3>
-                <p>
+                <p use:scrollText={effectiveRole === "DISPLAY"}>
                     <strong>{selectedMode?.[1] ?? settings.mode}</strong> · {selectedProfile?.name ??
                         settings.profileId}
                 </p>
-                <small
+                <small use:scrollText={effectiveRole === "DISPLAY"}
                     >{selectedLocale?.nativeName ?? settings.cardLocale} · {messages.room
                         .startingIntensity}: {settings.configuration.startingIntensity} → {messages
                         .room.endingIntensity}: {settings.configuration.maximumIntensity} · {messages

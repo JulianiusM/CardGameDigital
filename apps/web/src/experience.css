@@ -900,6 +900,7 @@ a.active-dataspace-indicator:focus-visible {
 }
 .card-type i {
     opacity: 0.5;
+    margin-inline: 0.55rem;
 }
 .game-card .auto-page-copy {
     position: relative;
@@ -4034,6 +4035,58 @@ main.display-role:not(.playing) > .ended-stage {
 .active-player {
     max-width: 100%;
     overflow-wrap: anywhere;
+}
+.active-player > strong {
+    font-weight: inherit;
+}
+
+/* Scroll only the label's copy; surrounding surfaces keep their existing geometry. */
+.scroll-text.scroll-text {
+    display: block;
+    min-width: 0;
+    max-width: 100%;
+    overflow-x: auto;
+    overflow-y: hidden;
+    overflow-wrap: normal;
+    white-space: nowrap;
+    scrollbar-width: none;
+    overscroll-behavior-inline: contain;
+}
+.scroll-text::-webkit-scrollbar {
+    display: none;
+}
+.scroll-text.scroll-text.scroll-notice {
+    max-block-size: 2lh;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overflow-wrap: anywhere;
+    white-space: normal;
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-golden-orange) transparent;
+}
+.scroll-notice::-webkit-scrollbar {
+    display: block;
+}
+.scroll-text[data-text-overflow] {
+    text-align: start;
+}
+.scroll-text:focus-visible {
+    outline: 3px solid var(--color-focus);
+    outline-offset: -3px;
+}
+.scroll-copy {
+    display: block;
+    max-block-size: calc(var(--copy-lines, 3) * 1lh);
+    overflow-y: auto;
+    overflow-x: hidden;
+    overflow-wrap: anywhere;
+    overscroll-behavior-block: contain;
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-golden-orange) transparent;
+}
+.scroll-copy:focus-visible {
+    outline: 3px solid var(--color-focus);
+    outline-offset: -3px;
 }
 .room-size {
     max-width: calc(100% - 7rem);

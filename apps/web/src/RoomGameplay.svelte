@@ -1,4 +1,5 @@
 <script lang="ts">
+    import { scrollText } from "./scrollText";
     import GameCard from "./GameCard.svelte";
     import NeverHaveIEverVoting from "./NeverHaveIEverVoting.svelte";
     import ParticipantRoster from "./ParticipantRoster.svelte";
@@ -61,7 +62,7 @@
         {#if session.activePlayer}
             <p class="active-player" data-adaptive-contrast>
                 <span>{messages.common.nowPlaying}</span>
-                {session.activePlayer.name}
+                <strong use:scrollText={role === "DISPLAY"}>{session.activePlayer.name}</strong>
             </p>
         {/if}
     {/if}

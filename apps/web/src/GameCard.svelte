@@ -2,6 +2,7 @@
     import { messages } from "./i18n";
     import { motifSymbolFor, type PresentedCard } from "./presentationMapping";
     import AutoPageText from "./AutoPageText.svelte";
+    import { scrollText } from "./scrollText";
     import UiIcon from "./UiIcon.svelte";
     import { cardTaxonomies, requestCardTaxonomy, taxonomyLabel } from "./cardTaxonomy";
 
@@ -29,8 +30,10 @@
         <use href={`/play/motifs/motif-symbols.svg#${motifSymbol}`}></use>
     </svg>
     <span class="card-type">
-        {messages.cardTypes[card.cardType]}
-        {#if classification}<i>·</i>{classification}{/if}
+        <span use:scrollText={!interactiveTextPages}>
+            {messages.cardTypes[card.cardType]}
+            {#if classification}<i>·</i>{classification}{/if}
+        </span>
     </span>
     <AutoPageText text={card.cardText} variant="card" interactive={interactiveTextPages} />
     {#if showIntensity}

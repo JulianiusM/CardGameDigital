@@ -19,6 +19,8 @@
     let fitQueued = false;
     let fitFrame = 0;
     let requestedPageHoldUntil = 0;
+    let shownPage = -1;
+    let pageShownAt = 0;
 
     $: pageCount = Math.max(1, Math.ceil(itemCount / pageSize));
     $: layoutKey = `${itemCount}:${pageSize}`;
@@ -29,6 +31,10 @@
     $: if (page >= pageCount) page = 0;
     $: start = page * pageSize;
     $: end = Math.min(itemCount, start + pageSize);
+    $: if (shownPage !== page) {
+        shownPage = page;
+        pageShownAt = performance.now();
+    }
 
     function measure(): void {
         if (!viewport) return;
@@ -106,7 +112,8 @@
             const rect = element.getBoundingClientRect();
             if (rect.width < 0.5 || rect.height < 0.5) return false;
             const clipsOwnContent =
-                element.scrollWidth > element.clientWidth + 2 ||
+                (element.scrollWidth > element.clientWidth + 2 &&
+                    !/auto|scroll/.test(style.overflowX)) ||
                 element.scrollHeight > element.clientHeight + 2;
             return (
                 clipsOwnContent ||
@@ -140,7 +147,21 @@
         observer.observe(viewport);
         measure();
         const timer = window.setInterval(() => {
-            if (!document.hidden && pageCount > 1 && performance.now() >= requestedPageHoldUntil) {
+            const labelsReadyAt = Math.max(
+                0,
+                ...Array.from(
+                    content.querySelectorAll<HTMLElement>("[data-text-scroll-ready-at]"),
+                    (label) => Number(label.dataset.textScrollReadyAt),
+                ),
+            );
+            if (
+                !document.hidden &&
+                pageCount > 1 &&
+                performance.now() >= requestedPageHoldUntil &&
+                performance.now() >= labelsReadyAt &&
+                !content.querySelector("[data-text-scroll-paused]") &&
+                performance.now() - pageShownAt >= intervalMs
+            ) {
                 page = (page + 1) % pageCount;
             }
         }, intervalMs);
