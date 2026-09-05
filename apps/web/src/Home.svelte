@@ -4,6 +4,7 @@
     import UiIcon from "./UiIcon.svelte";
     import LegalLinks from "./LegalLinks.svelte";
     import GroupBrowser from "./GroupBrowser.svelte";
+    import { scrollText } from "./scrollText";
     import { gameModes, locale, messages } from "./i18n";
     import {
         createGroup,
@@ -569,13 +570,13 @@
                     >
                         <span aria-hidden="true"><UiIcon name="group" /></span>
                         <small>{messages.menu.activeDataSpace}</small>
-                        <strong>{activeDataSpace.name}</strong>
+                        <strong use:scrollText>{activeDataSpace.name}</strong>
                     </a>
                 {:else}
                     <div class="active-dataspace-indicator" role="status">
                         <span aria-hidden="true"><UiIcon name="group" /></span>
                         <small>{messages.menu.activeDataSpace}</small>
-                        <strong>{activeDataSpace.name}</strong>
+                        <strong use:scrollText>{activeDataSpace.name}</strong>
                     </div>
                 {/if}
             {/if}

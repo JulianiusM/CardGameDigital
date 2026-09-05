@@ -1,4 +1,4 @@
-import { expect, test, type Page, type TestInfo } from "@playwright/test";
+import { expect, test, type Locator, type Page, type TestInfo } from "@playwright/test";
 import { captureVisualAudit } from "./visual-audit-helpers";
 
 const username = process.env.E2E_ADMIN_USERNAME ?? "tester";
@@ -95,13 +95,52 @@ async function auditDesktopAndPhone(page: Page, testInfo: TestInfo, name: string
     await page.setViewportSize({ width: 1440, height: 900 });
     await expectSelectedResponsiveTabsPainted(page);
     await auditAccountSurface(page, testInfo, `${name}-desktop`);
+    await expectActiveDataSpaceReadable(page);
     await page.setViewportSize({ width: 320, height: 568 });
     await expectSelectedResponsiveTabsPainted(page);
     await auditAccountSurface(page, testInfo, `${name}-phone`);
+    await expectActiveDataSpaceReadable(page);
 }
 
-async function expectSavedGroupSearchPlaceholderPainted(page: Page): Promise<void> {
-    const search = page.getByLabel("Gruppen durchsuchen");
+async function expectActiveDataSpaceReadable(page: Page): Promise<void> {
+    const indicator = page.locator(".active-dataspace-indicator");
+    if (!(await indicator.count())) return;
+    const name = indicator.locator("strong");
+    await expect
+        .poll(() =>
+            name.evaluate((element) => {
+                const style = getComputedStyle(element);
+                return element.clientHeight <= Number.parseFloat(style.lineHeight) + 1;
+            }),
+        )
+        .toBe(true);
+    if (!(await name.evaluate((element) => element.scrollWidth > element.clientWidth + 1))) return;
+    await expect(name).toHaveAttribute("data-text-overflow", "");
+    await expect(name).not.toHaveAttribute("tabindex", "0");
+    await indicator.focus();
+    await expect(name).toHaveAttribute("data-text-scroll-paused", "");
+    for (const key of ["End", "Home"] as const) {
+        await indicator.press(key);
+        await expect
+            .poll(() =>
+                name.evaluate((element, endpoint) => {
+                    const text = element.firstChild;
+                    if (!text?.textContent) return false;
+                    const offset = endpoint === "End" ? text.textContent.length - 1 : 0;
+                    const range = document.createRange();
+                    range.setStart(text, offset);
+                    range.setEnd(text, offset + 1);
+                    const ink = range.getBoundingClientRect();
+                    const bounds = element.getBoundingClientRect();
+                    return ink.left >= bounds.left - 1 && ink.right <= bounds.right + 1;
+                }, key),
+            )
+            .toBe(true);
+    }
+    await indicator.evaluate((element) => (element as HTMLElement).blur());
+}
+
+async function expectInputPlaceholderPainted(search: Locator, expectedText: string): Promise<void> {
     await expect(search).toBeVisible();
     await expect(search).toHaveValue("");
     const measurement = await search.evaluate((element) => {
@@ -132,7 +171,7 @@ async function expectSavedGroupSearchPlaceholderPainted(page: Page): Promise<voi
     });
 
     expect(measurement.viewportWidth).toBe(320);
-    expect(measurement.placeholder).toBe("Gruppe/Person");
+    expect(measurement.placeholder).toBe(expectedText);
     expect(measurement.left).toBeGreaterThanOrEqual(-1);
     expect(measurement.right).toBeLessThanOrEqual(measurement.viewportWidth + 1);
     expect(measurement.paintedWidth).toBeLessThanOrEqual(measurement.availableWidth + 1);
@@ -391,7 +430,7 @@ test("an account joins the themed SPA and unlocks MariaDB-backed saved play", as
         .poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
         .toBe(true);
     await page.getByRole("tab", { name: "DataSpaces" }).click();
-    await page.getByPlaceholder("Zum Beispiel: Freundeskreis").fill("UX Bereich");
+    await page.getByPlaceholder("z. B. Freundeskreis").fill("UX Bereich");
     await page.getByRole("button", { name: "Erstellen", exact: true }).click();
     await expect(page.locator(".data-space-card.active", { hasText: "UX Bereich" })).toBeVisible();
     await page.getByRole("button", { name: "DataSpace UX Bereich löschen" }).click();
@@ -463,6 +502,10 @@ test("maximum-length account data stays complete and contained", async ({ page }
     await expect(page.locator(".account-active-space strong")).toHaveText(maximumDataSpaceName);
     await dismissVisibleNotification(page);
     await auditDesktopAndPhone(page, testInfo, "76-account-dashboard-dataspaces-max");
+    await expectInputPlaceholderPainted(
+        createDataSpaceForm.getByLabel("Name des DataSpace"),
+        "z. B. Freundeskreis",
+    );
 
     await page.getByRole("button", { name: `DataSpace ${maximumDataSpaceName} löschen` }).click();
     const dataSpaceConfirmation = page.locator(".data-space-delete-confirmation");
@@ -536,7 +579,7 @@ test("maximum-length account data stays complete and contained", async ({ page }
         await toastClose.click();
     }
     await auditDesktopAndPhone(page, testInfo, "78-account-groups-max-50-members");
-    await expectSavedGroupSearchPlaceholderPainted(page);
+    await expectInputPlaceholderPainted(page.getByLabel("Gruppen durchsuchen"), "Gruppe/Person");
 
     const groupMaintenance = page.locator(".group-maintenance-actions");
     await groupMaintenance
@@ -604,4 +647,7 @@ test("maximum-length account data stays complete and contained", async ({ page }
     await expect(maximumGroupRow).toHaveClass(/selected/);
     await auditDesktopAndPhone(page, testInfo, "88-home-authenticated-continued-group-max");
     await expectWizardProgressLabelsOnOneLine(page);
+    await page.locator(".active-dataspace-indicator").press("Enter");
+    await expect(page).toHaveURL(/\/play\/account\?returnTo=/);
+    await expect(page.locator(".account-active-space strong")).toHaveText(maximumDataSpaceName);
 });

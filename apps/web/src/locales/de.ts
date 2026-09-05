@@ -251,7 +251,7 @@ export const de = {
         newDataSpace: "Neuer DataSpace",
         newDataSpaceHint:
             "Erstelle einen getrennten Bereich für eine andere Gruppe oder Situation.",
-        dataSpacePlaceholder: "Zum Beispiel: Freundeskreis",
+        dataSpacePlaceholder: "z. B. Freundeskreis",
         create: "Erstellen",
         dataSpaceCreated: "DataSpace erstellt und ausgewählt.",
         dataSpaceDeleted: "DataSpace und seine gespeicherten Daten wurden gelöscht.",

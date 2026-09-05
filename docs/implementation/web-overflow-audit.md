@@ -78,6 +78,32 @@ are recorded separately and are not claimed as fixes or passing coverage.
 
 ## Reproduction
 
+### CI follow-up
+
+The Linux CI account audit subsequently exposed two cases missed by the Windows run:
+the German DataSpace example needed 230.4px in a 202.2px phone input, and a wrapped
+50-character active DataSpace name overlapped the desktop heading by 8.1px.
+
+The German placeholder is now `z. B. Freundeskreis`. Active DataSpace names use the
+existing single-line text scroller, retaining the badge's position and styling. The
+containing link handles scrolling keys and focus pauses, with no nested tab stop;
+Enter still opens Account. No layout dimensions or typography changed.
+
+The account regression now checks the placeholder's painted width and both endpoints
+of the DataSpace name by keyboard at desktop and phone widths. Geometry assertions
+remain unchanged.
+
+Follow-up validation on Windows:
+
+- `npm run e2e -- --output=.tmp/ci-overflow-account-results`: all three public-account
+  tests passed, including the reported maximum-length case.
+- `npm run e2e:visual -- --grep 'text overflow remains|500-character' --output=.tmp/ci-overflow-visual-results`:
+  both shared-scroller regression cases passed.
+- `npm run build`, `npm run typecheck:test`, `npm run format:check`, and
+  `git diff --check` passed. Desktop and phone screenshots were inspected.
+
+### Commands
+
 Use `npm run build` before browser tests. The visual suite writes PNGs and geometry JSON
 to `.tmp/visual-audit/`. These artifacts and disposable databases are ignored by Git.
 

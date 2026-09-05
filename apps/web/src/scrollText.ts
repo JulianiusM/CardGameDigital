@@ -12,6 +12,7 @@ export function scrollNotice(node: HTMLElement) {
 
 function createTextScroller(node: HTMLElement, passive: boolean, vertical: boolean) {
     const originalTabIndex = node.getAttribute("tabindex");
+    const control = node.closest<HTMLElement>("button, a, summary") ?? node;
     let frame = 0;
     let measureFrame = 0;
     let visible = false;
@@ -93,8 +94,7 @@ function createTextScroller(node: HTMLElement, passive: boolean, vertical: boole
         // Start alignment makes the entire line reachable, including text that
         // initially overflowed both sides of a centered label.
         distance = scrollDistance();
-        if (distance > 1 && (!passive || vertical) && !node.closest("button, a, summary"))
-            node.tabIndex = 0;
+        if (distance > 1 && (!passive || vertical) && control === node) node.tabIndex = 0;
         else restoreTabIndex();
         position = 0;
         direction = 1;
@@ -134,6 +134,7 @@ function createTextScroller(node: HTMLElement, passive: boolean, vertical: boole
     }
     function keydown(event: KeyboardEvent): void {
         if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+        if (distance <= 1) return;
         let next = currentPosition();
         switch (event.key) {
             case "ArrowRight":
@@ -185,14 +186,14 @@ function createTextScroller(node: HTMLElement, passive: boolean, vertical: boole
     const listeners: [string, EventListener][] = [
         ["pointerenter", pointerEnter],
         ["pointerleave", pointerLeave],
-        ["focusin", focusIn],
-        ["focusout", focusOut],
         ["pointerdown", manualScroll],
         ["wheel", manualScroll],
         ["scroll", scrolled],
-        ["keydown", keydown as EventListener],
     ];
     for (const [event, listener] of listeners) node.addEventListener(event, listener);
+    control.addEventListener("focusin", focusIn);
+    control.addEventListener("focusout", focusOut);
+    control.addEventListener("keydown", keydown);
     document.addEventListener("visibilitychange", restart);
     motionPreference.addEventListener("change", restart);
     void document.fonts.ready.then(() => {
@@ -214,6 +215,9 @@ function createTextScroller(node: HTMLElement, passive: boolean, vertical: boole
             preferenceObserver.disconnect();
             intersectionObserver.disconnect();
             for (const [event, listener] of listeners) node.removeEventListener(event, listener);
+            control.removeEventListener("focusin", focusIn);
+            control.removeEventListener("focusout", focusOut);
+            control.removeEventListener("keydown", keydown);
             document.removeEventListener("visibilitychange", restart);
             motionPreference.removeEventListener("change", restart);
             node.classList.remove("scroll-text");
