@@ -8,6 +8,7 @@ import { InstallationMetadataEntity } from "../../../../packages/persistence/ent
 import { replaceLoadedInstallationIdentity } from "./installationIdentity";
 import { logEvent } from "./structuredLogger";
 import settings from "./settings";
+import { scrubRoomPrivateBoundaries } from "../../../../packages/persistence/privateBoundaryRetention";
 
 export type InstallationIdentityResetResult = {
     invalidatedRoomCount: number;
@@ -69,6 +70,13 @@ export async function resetInstallationIdentity(
                 }
                 invalidatedParticipantCount = participants.length;
                 await rooms.update({ id: In(roomIds) }, { closedAt: at });
+                for (const roomId of roomIds) {
+                    const room = await rooms.findOneByOrFail({ id: roomId });
+                    const roomParticipants = await manager
+                        .getRepository(RoomParticipantEntity)
+                        .findBy({ roomId });
+                    await scrubRoomPrivateBoundaries(manager, room, roomParticipants, at.getTime());
+                }
             }
             await idempotency.update(
                 { state: "REPLAYABLE" },

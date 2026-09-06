@@ -724,7 +724,8 @@ class Application:
         if section == 'adult' and len(parts) == 3 and (parts[2] == 'confirm'):
             updated = _updated_setup(setup, adult_content_confirmed=True)
             self._replace_setup(updated)
-            self._navigate(self._route_after_profile(updated))
+            if self.state.route == Route.SETUP_PROFILE:
+                self._navigate(self._route_after_profile(updated))
 
 
     def _activate_setup_action_start(self, _key, _parts, section, setup) -> None:
@@ -755,16 +756,8 @@ class Application:
                     else False
                 ),
             )
-            requires_confirmation = bool(
-                profile.get("requiresAdultConfirmation")
-                and not updated.adult_content_confirmed
-            )
-            # Adult profiles are incomplete until the explicit consent
-            # action; sending them to eligibility preview early produces
-            # a misleading INVALID_INPUT response on the profile screen.
-            self._replace_setup(updated, preview=not requires_confirmation)
-            if not requires_confirmation:
-                self._navigate(self._route_after_profile(updated))
+            self._replace_setup(updated)
+            self._navigate(self._route_after_profile(updated))
 
 
     def _activate_setup_start(self, setup):

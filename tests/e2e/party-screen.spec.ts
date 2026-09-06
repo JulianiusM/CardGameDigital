@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import os from "node:os";
+import { captureVisualAudit } from "./visual-audit-helpers";
 import { localNetworkInterfaceAllowed } from "../../apps/server/src/modules/localNetworkInterfaces";
 
 test.beforeEach(async ({ context }) => {
@@ -561,7 +562,7 @@ test("players can inspect complete public settings without private boundaries", 
 
 test("a player joining during active play enters the authoritative Session roster", async ({
     browser,
-}) => {
+}, testInfo) => {
     const hostContext = await browser.newContext({ locale: "de-DE" });
     const firstContext = await browser.newContext({ locale: "de-DE" });
     const lateContext = await browser.newContext({ locale: "de-DE" });
@@ -579,6 +580,25 @@ test("a player joining during active play enters the authoritative Session roste
     await late.getByLabel("Raumcode").fill(code);
     await late.getByRole("button", { name: "Raum beitreten" }).click();
 
+    await expect(late.getByRole("heading", { name: "In dieses Spiel einsteigen" })).toBeVisible();
+    await expect(late.getByText("Runde 1")).toHaveCount(0);
+    for (const width of [1280, 320]) {
+        await late.setViewportSize({ width, height: width === 320 ? 568 : 800 });
+        const report = await captureVisualAudit(late, `phase-2-enrollment-${width}`, {
+            fullPage: true,
+        });
+        await testInfo.attach(`enrollment-${width}`, {
+            path: report.screenshotPath,
+            contentType: "image/png",
+        });
+        expect(report.horizontalOverflow).toBe(0);
+        expect(report.outOfBounds).toEqual([]);
+        expect(report.smallTargets).toEqual([]);
+        expect(report.overlaps).toEqual([]);
+        expect(report.truncations).toEqual([]);
+    }
+    await late.locator(".boundary-panel fieldset").nth(1).getByRole("checkbox").first().check();
+    await late.locator(".boundary-panel > button").click();
     await expect(late.getByText("Runde 1")).toBeVisible();
     for (const page of [host, first]) {
         await expect(page.locator(".notification-toast")).toContainText(

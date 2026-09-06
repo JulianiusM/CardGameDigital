@@ -2,6 +2,7 @@ import type { NetworkInterfaceInfo } from "node:os";
 import { describe, expect, it, vi } from "vitest";
 import {
     buildDiscoveryTxt,
+    buildLocalServiceAdvertisement,
     eligibleNetworkBindings,
     LocalDiscoveryController,
     sanitizeDiscoveryInstanceName,
@@ -10,6 +11,8 @@ import {
 } from "../../apps/server/src/modules/localDiscovery";
 import type { LocalDiscoveryStatus } from "../../apps/server/src/modules/localDiscoveryState";
 import { localDiscoveryMetrics } from "../../apps/server/src/modules/localDiscoveryState";
+import settings from "../../apps/server/src/modules/settings";
+import { PROTOCOL_VERSION } from "../../packages/protocol/version";
 
 function address(value: string, family: "IPv4" | "IPv6", internal = false): NetworkInterfaceInfo {
     const common = {
@@ -40,17 +43,17 @@ describe("local DNS-SD profile", () => {
         expect(sanitizeDiscoveryInstanceName("\n\t")).toBe("Party Game");
     });
 
-    it("builds the exact compact version-1 TXT profile in stable order", () => {
-        const txt = buildDiscoveryTxt({
-            apiVersionHints: [1],
-            webSocketVersionHints: [2],
-            tlsRequired: false,
-            capabilityHints: ["rooms", "display-bootstrap"],
-        });
+    it("advertises the current WebSocket contract in the compact version-1 TXT profile", () => {
+        const advertisement = buildLocalServiceAdvertisement(
+            { ...settings.value, mdnsAdvertisedTls: false },
+            {},
+            true,
+        );
+        const txt = buildDiscoveryTxt(advertisement);
         expect(Object.entries(txt)).toEqual([
             ["txtvers", "1"],
             ["api", "1"],
-            ["ws", "2"],
+            ["ws", String(PROTOCOL_VERSION)],
             ["tls", "0"],
             ["path", "/api/v1"],
             ["cap", "rooms,display-bootstrap"],

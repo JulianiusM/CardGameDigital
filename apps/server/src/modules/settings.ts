@@ -4,6 +4,13 @@ import * as dotenv from "dotenv";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import { z } from "zod";
+import { MAX_ROOM_PARTICIPANTS, MAX_ROOM_PLAYERS } from "../../../../packages/protocol/limits";
+import {
+    operationalSettingsDefaults,
+    operationalSettingsShape,
+    operationalSettingsKeys,
+    validateOperationalSettings,
+} from "./operationalSettings";
 
 const envPath =
     process.env.E2E_DOTENV_FILE ?? (process.env.NODE_ENV === "e2e" ? ".env.e2e" : ".env");
@@ -65,13 +72,16 @@ const optionalPublicUrl = z.string().refine((value) => {
 
 export const settingsSchema = z
     .object({
+        ...operationalSettingsShape,
         deploymentMode: z.enum(["local", "public"]),
         publicRuntimeSecurity: z.enum(["enforced", "development"]),
         authMode: z.enum(["none", "account"]),
         httpBind: z.string().min(1),
         httpPort: numberValue.pipe(z.number().int().min(1).max(65_535)),
-        roomMaximumParticipants: numberValue.pipe(z.number().int().min(2).max(1_000)),
-        roomMaximumPlayers: numberValue.pipe(z.number().int().min(2).max(1_000)),
+        roomMaximumParticipants: numberValue.pipe(
+            z.number().int().min(2).max(MAX_ROOM_PARTICIPANTS),
+        ),
+        roomMaximumPlayers: numberValue.pipe(z.number().int().min(2).max(MAX_ROOM_PLAYERS)),
         roomReconnectGraceSeconds: numberValue.pipe(z.number().int().min(120).max(3_600)),
         roomDisplayBootstrapEnabled: booleanValue,
         roomDisplayBootstrapConfigured: z.boolean(),
@@ -132,6 +142,7 @@ export const settingsSchema = z
         file: z.string(),
         testMode: z.boolean(),
     })
+    .superRefine(validateOperationalSettings)
     .superRefine(function validateDeploymentOrigin(value, context) {
         if (value.deploymentMode === "public" && !value.publicUrlConfigured) {
             context.addIssue({
@@ -348,6 +359,7 @@ export function isPublicRuntimeSecurityEnforced(
 }
 
 const defaults = {
+    ...operationalSettingsDefaults,
     deploymentMode: "local",
     publicRuntimeSecurity: "enforced",
     authMode: "none",
@@ -411,6 +423,7 @@ const defaults = {
 } satisfies z.input<typeof settingsSchema>;
 
 const keyMap: Record<string, keyof typeof defaults> = {
+    ...operationalSettingsKeys,
     DEPLOYMENT_MODE: "deploymentMode",
     PUBLIC_RUNTIME_SECURITY: "publicRuntimeSecurity",
     AUTH_MODE: "authMode",

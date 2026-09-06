@@ -1,7 +1,7 @@
 {
     "schemaVersion": 1,
     "apiVersion": 1,
-    "protocolVersion": 2,
+    "protocolVersion": 4,
     "schemas": [
         "card-replaced.schema.json",
         "client-hello.schema.json",

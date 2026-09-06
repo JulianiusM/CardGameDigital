@@ -8,7 +8,7 @@ export type ValidatedCardCatalogArtifact = {
     bytes: Buffer;
 };
 
-class JsonObjectKeyScanner {
+export class JsonObjectKeyScanner {
     private offset = 0;
 
     constructor(private readonly source: string) {}
@@ -113,8 +113,8 @@ export function validateCardCatalogArtifact(bytes: Buffer): ValidatedCardCatalog
     let input: unknown;
     try {
         const source = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
-        new JsonObjectKeyScanner(source).scan();
         input = JSON.parse(source);
+        new JsonObjectKeyScanner(source).scan();
     } catch (error) {
         throw new Error(`Card catalog is not strict JSON: ${(error as Error).message}`);
     }

@@ -774,17 +774,6 @@
                                     ></button
                                 >{/each}
                         </div>
-                        {#if profiles.find(({ id }) => id === setup.profileId)?.requiresAdultConfirmation}<label
-                                class="adult-confirmation wizard-confirmation"
-                                ><input
-                                    type="checkbox"
-                                    checked={setup.adultContentConfirmed}
-                                    on:change={(event) =>
-                                        persist({
-                                            adultContentConfirmed: event.currentTarget.checked,
-                                        })}
-                                />{messages.room.adultConfirmation}</label
-                            >{/if}
                     {:else if setup.step === "customize"}
                         <div class="wizard-title-row">
                             <h2 id="wizard-title">{messages.setup.customizeExperience}</h2>
@@ -852,6 +841,8 @@
                             <EligibleCardPreview
                                 settings={editorSettings}
                                 playerCount={eligiblePreviewPlayerCount}
+                                onConfirmAdult={(adultContentConfirmed) =>
+                                    persist({ adultContentConfirmed })}
                                 compact
                             />
                             <button
@@ -866,11 +857,7 @@
                                         !setup.hostName.trim()) ||
                                     (setup.step === "screen" &&
                                         setup.deviceMode === "party" &&
-                                        displayBootstrapAvailable === false) ||
-                                    (setup.step === "profile" &&
-                                        profiles.find(({ id }) => id === setup.profileId)
-                                            ?.requiresAdultConfirmation &&
-                                        !setup.adultContentConfirmed)}
+                                        displayBootstrapAvailable === false)}
                                 on:click={next}
                                 >{setup.step === "screen"
                                     ? messages.setup.continue

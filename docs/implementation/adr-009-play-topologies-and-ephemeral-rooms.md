@@ -47,11 +47,14 @@ host. Participant records persist their server-generated device-player IDs so
 reconnect, voting authority, boundaries, and host transfer do not require a
 mode-specific or UI-only ownership rule.
 
-When a PLAYER device joins during active play, Room authentication serializes an
-idempotent Session-roster expansion with ordinary Room commands. The participant
-and its device-local players become eligible from the next authoritative turn;
+When a PLAYER device joins during active play, it first privately enrolls through
+`command.setBoundaries`. Authentication alone does not enter it into the Session.
+Enrollment serializes with ordinary Room commands and transactionally saves the
+private choices with the roster expansion. The participant
+and its device-local players become eligible from the next authoritative Card;
 reconnecting an existing participant does not duplicate people or reset the
 current card. DISPLAY devices remain presentation-only and never enter the roster.
+This mandatory client step is negotiated as WebSocket protocol v3.
 
 Session start time is authoritative Session runtime state. It is persisted and
 projected as an epoch-millisecond `startedAt` value so summaries remain correct

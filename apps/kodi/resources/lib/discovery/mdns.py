@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from typing import Callable, Iterable, Optional
 
 from .dns import CLASS_IN, DnsFormatError, TYPE_A, TYPE_AAAA, TYPE_PTR, TYPE_SRV, TYPE_TXT, build_query, parse_message
+from ..protocol.validation import PROTOCOL_VERSION
 
 
 SERVICE_TYPE = "_partycard._tcp.local."
@@ -219,7 +220,7 @@ def valid_partycard_txt(value: dict[str, str]) -> bool:
     required = {"txtvers", "api", "ws", "tls", "path", "cap"}
     if not required.issubset(value):
         return False
-    if value["txtvers"] != "1" or value["api"] != "1" or value["ws"] != "2":
+    if value["txtvers"] != "1" or value["api"] != "1" or value["ws"] != str(PROTOCOL_VERSION):
         return False
     if value["tls"] not in {"0", "1"} or value["path"] != "/api/v1":
         return False

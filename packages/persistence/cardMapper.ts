@@ -1,4 +1,4 @@
-import type { PlayableCard } from "../game-core";
+import type { Card, PlayableCard } from "../game-core";
 import type { CardEntity } from "./entities/card/CardEntity";
 import type { CardLocalizationEntity } from "./entities/card/CardLocalizationEntity";
 
@@ -7,9 +7,15 @@ export function cardEntityToDomain(
     localization: CardLocalizationEntity,
 ): PlayableCard {
     return {
-        id: entity.id as PlayableCard["id"],
+        ...cardMetadataToDomain(entity),
         cardText: localization.text,
         locale: localization.locale,
+    };
+}
+
+export function cardMetadataToDomain(entity: CardEntity): Card {
+    return {
+        id: entity.id as PlayableCard["id"],
         cardType: entity.cardType as PlayableCard["cardType"],
         yesNoAnswerPossible: entity.yesNoAnswerPossible,
         questionCategoryId: entity.questionCategoryId as PlayableCard["questionCategoryId"],

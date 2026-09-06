@@ -27,6 +27,28 @@ unexpected failures return `INTERNAL_ERROR` without serializing internal error d
 Account-sensitive endpoints are rate-limited under enforced public security. Every API
 response uses `Cache-Control: no-store` and includes a server-generated `X-Request-ID`.
 
+The operational counts and durations below are configurable deployment defaults;
+see [operational settings](operational-settings.md). Wire byte limits remain fixed.
+Enforced public game quotas return localized `429 RATE_LIMITED` and `Retry-After`:
+creation allows 60 requests per account/anonymous address per 15 minutes and 120
+process-wide; Card-policy endpoints allow 60 per account/anonymous address per minute,
+600 per address and 240 process-wide. Existing Couch requests allow 120 per game per
+minute, with ending exempt. Room joins permit 2,000 per address per 15 minutes for
+shared-LAN play. Public development disables these rate windows. Resource admission
+remains enabled in all modes and returns `429 SESSION_CAPACITY_EXCEEDED`; see the
+[retention and admission contract](infrastructure.md#game-retention-and-resource-admission).
+Ordinary Couch, Room and Card-policy requests also share eight process-wide slots,
+reserved before body parsing and retained until async work settles after disconnect.
+Couch end requests have two additional slots. This admission rejection includes
+`Retry-After: 1`. Authenticated imports use their separate single work slot.
+No existing HTTP field shapes or error codes change.
+
+An unsaved Couch end summary is cached for up to 15 minutes, subject to capacity eviction; thereafter GET returns
+`404 SESSION_NOT_FOUND`. Unsaved games expire after 24 idle hours or server restart. Saved Couch games
+end after 24 hours without a committed command, preserving their owned history.
+Clients retain the existing recovery rules: fetch authoritative state after ambiguity
+and clear their pointer automatically only on definitive Session not-found.
+
 ## Discovery and operations
 
 | Method | Path                           | Result                                                                                                                    |
@@ -43,7 +65,9 @@ response uses `Cache-Control: no-store` and includes a server-generated `X-Reque
 `GET /game-profiles` returns the five immutable built-ins
 `PROFILE_CHILD_FRIENDLY`, `PROFILE_ACQUAINTANCES`, `PROFILE_FRIENDS`,
 `PROFILE_CLOSE_FRIENDS`, and `PROFILE_SPICY`, followed by editable `PROFILE_CUSTOM`.
-`PROFILE_SPICY` requires adult confirmation. The unreleased
+The preset's `requiresAdultConfirmation` describes its default intent; Session start
+derives consent from effective settings and policy, independently of the preset ID.
+Use `eligibility-preview.adultConfirmationRequired` to present confirmation. The unreleased
 `PROFILE_COLLEAGUES`, `PROFILE_BEST_FRIENDS`, `PROFILE_COUPLES`, and
 `PROFILE_COUPLES_SPICY` identifiers are removed rather than aliased; this is an
 intentional pre-release compatibility break. The schema migration converts persisted
@@ -276,6 +300,22 @@ Endpoints use a
 session UUID and optimistic `revision`. Every read and command for a DataSpace Couch
 session is authorized against the current account-owned DataSpace.
 
+The browser validates successful Couch snapshots against `couchSessionSnapshotSchema`
+before using their revision. A failed, timed-out or malformed command response is
+ambiguous: the command may already have committed. Recover with an uncached
+`GET /couch/sessions/:id`; never automatically replay the command. The same applies to
+`409 STALE_SESSION_REVISION`. During recovery the browser disables game actions and
+retains the Session reference. Reads and existing-Session commands have a 10-second
+browser deadline; recovery tries at most three reads with 2- and 4-second delays, then
+offers explicit retry. An online event also restarts read recovery.
+
+Only `404 SESSION_NOT_FOUND` definitively clears the recovery reference automatically.
+Network errors, other 404s, invalid snapshots and 5xx responses retain it. A 401/403
+retains it and asks the user to check the account/current DataSpace before retrying.
+This recovers an available authoritative Session within the existing catalog/lifetime
+rules; it does not introduce save-and-quit or recovery across incompatible catalogs.
+The HTTP wire shape, public voting projection and WebSocket v4 remain unchanged.
+
 | Method | Path                          | Body                                                                                                                           |
 | ------ | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
 | POST   | `/couch/sessions`             | Persistence, mode, 2–20 player names, canonical configuration, profile/group/adult confirmation, Card locale, and reveal mode. |
@@ -295,6 +335,11 @@ contains reveal mode and ordered `PENDING`/`VOTED` progress while collecting. `r
 is null until completion. Anonymous results contain counts only; named results then add
 ordered `{playerId,displayName,vote}` entries. Individual values are never copied into
 CardAppearance or Group history.
+
+The retained `voteResult` field contains `{yes:0,no:0,total:0}` before reveal and
+after advance/end. At reveal it mirrors only the canonical result's aggregate counts.
+`votedPlayerIds` reports submission progress, never answer values. This corrects the
+privacy leak without changing the HTTP v1 response shape or the documented reveal rule.
 
 Every Couch snapshot also includes additive `remainingCardCount`, calculated by the
 authoritative engine after the current profile, boundaries, progression, policies, and
@@ -421,6 +466,7 @@ DataSpace; an absent `groupId` selects the DataSpace scope.
 
 | Method | Path                                       | Purpose                                                 |
 | ------ | ------------------------------------------ | ------------------------------------------------------- |
+| GET    | `/card-policy/scope`                       | Read scope revision, default and at most 250 rules.     |
 | GET    | `/card-policy/export`                      | Download one portable selected-scope policy package.    |
 | POST   | `/card-policy/import`                      | Atomically replace one scope from a validated package.  |
 | GET    | `/card-policy/default`                     | Read the selected sparse scope default.                 |
@@ -440,7 +486,44 @@ DataSpace; an absent `groupId` selects the DataSpace scope.
 | PUT    | `/card-policy/cards/:cardId`               | Replace one exact-Card override.                        |
 | DELETE | `/card-policy/cards/:cardId`               | Delete one exact-Card override.                         |
 
-Policy writes use optimistic `expectedRevision`; stale writes return `409`. Directives
+Row updates/deletes require `expectedRevision`; stale or removed rows return
+`409 POLICY_REVISION_CONFLICT`. Each scope has a monotonic revision advanced once by
+every successful mutation, including creation/deletion, reorder, import and bulk writes.
+Row revisions come from this clock and never reset during replacement or recreation.
+`GET /card-policy/scope` returns `{scope,scopeRevision,scopeDefault,rules}` from one
+transaction, excluding exact overrides; Cards remain paged separately.
+
+Policy errors keep their stable codes and carry localized `error.message` text in
+English or German. Removed rules still return `409 POLICY_REVISION_CONFLICT`, with a
+specific message explaining that the rule is unavailable; stale existing rules use the
+general conflict message. Neither failure advances the scope clock. An invalid rule
+order returns `400 VALIDATION_ERROR` with instructions to reload before reordering.
+Changed bulk-match counts retain `409 POLICY_RESULT_SET_CHANGED` and ask the user to
+reload, review the Card list and explicitly confirm again.
+Missing or inaccessible Groups both return `404 GROUP_NOT_FOUND` without distinguishing
+ownership or exposing Group details. Missing Cards return `404 CARD_NOT_FOUND`.
+
+Management clients retain the failed edit and offer an explicit policy reload, which
+replaces unsaved edits with current server state. Missing Groups offer scope selection;
+authorization errors offer Account in a separate tab and a retry. No mutation is
+automatically replayed. Reloading or selecting a policy scope never mutates an active
+game's captured policy. Compatibility: codes/statuses and payload fields are unchanged
+by these error-message and recovery improvements; clients should branch on codes,
+not translated messages.
+
+Import requires `{policy,expectedScopeRevision}`, where `policy` is the portable v2
+package. A successful import returns **204 with no body**. Reorder requires
+`{orderedIds,expectedScopeRevision}`. Bulk requires `expectedScopeRevision` alongside
+`filters`, `directives` and `confirmedCount`. These revisions must identify the scope
+the user reviewed. Stale aggregate writes return `409 POLICY_REVISION_CONFLICT` without
+changing any row; clients must reload before deliberately retrying.
+
+Compatibility: older management clients must send these new concurrency fields and
+accept the empty import response. The portable file format remains v2; WebSocket
+compatibility is specified separately in the [v4 contract](websocket-v4.md). The native
+Kodi client does not call these persistent management endpoints.
+
+Directives
 are sparse and use `INHERIT` to restore the lower scope. Availability is
 `INHERIT | INCLUDE | EXCLUDE`; boolean values are
 `INHERIT | ENABLE | DISABLE`; scalar/range values are objects with mode
@@ -482,7 +565,7 @@ activates or saves a rule.
 `{settings:<canonical RoomGameSettings>,playerCount}` for pending setup changes or
 `{roomCode,participantCredential}` for the authoritative settings and connected roster
 of an existing Room. It returns
-`{total,availableAtStart,byType,atStartByType,playerCount}`. `total` is the
+`{total,availableAtStart,byType,atStartByType,playerCount,adultConfirmationRequired}`. `total` is the
 mode-relevant pool at the configured maximum global intensity; `availableAtStart` uses
 the configured starting intensity. The server applies Card localization/fallback,
 profile taxonomy and maximum social sensitivity, DataSpace/Group/Session policy, Card
@@ -494,14 +577,28 @@ authenticated ownership of the selected DataSpace and Group. The Room form inste
 requires a valid participant credential, resolves the policy owner on the server, never
 changes presence, and does not expose DataSpace policy details or the credential in a URL.
 
+`adultConfirmationRequired` is an additive response boolean. It uses the complete configured
+intensity progression and effective policy, without history, private boundaries or current
+roster size substituting for consent. Catalog or effective EXPLICIT Cards and the explicit
+SEX/BORDERLINE_SEX DareTypes require confirmation when the remaining stable eligibility
+rules permit them. A policy sensitivity downgrade cannot erase a catalog adult classification.
+Both Couch and Room start enforce this decision; unconfirmed adult configurations fail
+before a Session is persisted. Non-adult configurations remain editable under every preset ID.
+
+Successful Couch skip now persists refusal even if its replacement pool is empty. It returns
+the next revision with `currentCard:null`, no votes, and `CHOOSING_CARD_TYPE` (Classic) or
+`WAITING_FOR_PLAYER` (other modes). The appearance stays seen/skipped. No settings are relaxed;
+another type or next draw remains available when eligible, and end is always available.
+This corrects behavior within HTTP v1 without changing response field types.
+
 The server resolves Catalog metadata, then DataSpace scope default, ordered DataSpace
 rules, DataSpace exact Card, Group scope default, ordered Group rules, Group exact Card,
 Session property directives, and finally Session availability. A deliberate one-Session
 `INCLUDE` can reverse persistent availability. Lifecycle, localization, profile
 taxonomy/sensitivity, adult confirmation, and player-count validity remain
-non-overridable engine gates. Session start compiles the effective policy and Catalog
-provenance into an immutable runtime snapshot. Card draw additionally checks the
-authoritative current player count.
+non-overridable engine gates. Session start captures sparse policy inputs and catalog provenance. Every draw
+streams the complete current candidate pool and reevaluates current player count,
+progression, boundaries and cooldown. No per-Session catalog is stored or transmitted.
 
 The optional `settings.cardPolicy` object on Room and Couch creation contains only
 Session-scope `scopeDefault`, ordered `conditionalRules`, and `exactCards`. Omission means
@@ -509,3 +606,30 @@ all Session directives inherit. `PROFILE_CHILD_FRIENDLY` supplies the child-safe
 quick-start content combination as ordinary editable profile settings. Extra preset
 fields and endpoints from the earlier unreleased shape are not part of this contract. The
 portable policy format changes from v1 to v2 for the same reason.
+
+### Runtime content and body budgets (2026-09-06)
+
+Ordinary JSON bodies allow 4 MiB. `POST /card-policy/import` authenticates its DataSpace
+owner before admitting one import at a time and parsing a body of at most 64 MiB. This
+supports the existing 250-rule/50,000-Exact-Card schema without returning the imported
+policy as a response. Excess work receives `SESSION_CAPACITY_EXCEEDED` (429); oversize
+bodies receive `PAYLOAD_TOO_LARGE` (413), with localized recovery guidance and
+`error.data.maximumBytes`. Malformed JSON and invalid schemas return `VALIDATION_ERROR`
+(400); unsupported policy packages explain the required v2 format and 250-rule /
+50,000-override limits. Unknown Card references return localized `CARD_NOT_FOUND` (400).
+Rejected imports leave the existing scope and revision unchanged. Kodi's HTTP response
+allowance is also 4 MiB. The larger import allowance is restricted to this authenticated
+route, including Express's case-insensitive spelling and optional trailing slash.
+
+The browser checks file size before reading it, then validates the package before
+offering replacement confirmation. Pending-Session drafts are validated before saving,
+with at most 250 rules and 1,000 exact overrides. Rule previews remain optional, as
+specified by the phase 3 rework. Export responses use the same portable policy schema as
+imports. The 64 MiB allowance includes the `{policy,expectedScopeRevision}` wrapper;
+maximum compact schema documents fit with space for this wrapper. Extra whitespace or
+alternate JSON escaping still counts toward the encoded byte limit.
+
+Current Card text comes from the installed catalog and is at most 4,000 Unicode
+characters / 8,192 UTF-8 bytes. Catalog replacement ends incompatible games; saved Group
+history does not pin the release. These are deployment and capacity corrections within
+HTTP v1; request and response field types remain unchanged.

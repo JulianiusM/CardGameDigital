@@ -1,8 +1,21 @@
+import { prepareEligibility, eligibilityReasons } from "../eligibility/cardEligibility";
+import {
+    WeightedCardReservoir,
+    type CardStream,
+    type CardCandidate,
+    type CardHistoryContext,
+    type SessionHistoryIndex,
+} from "../selection/cardStream";
+import {
+    sessionPolicyResolver,
+    type SessionPolicySnapshot,
+    type CatalogProvenance,
+} from "../policies/sessionPolicy";
 import { MESSAGE_KEYS } from "../../localization/keys";
-import type { Card, PlayableCard } from "../cards/card";
+import type { Card } from "../cards/card";
 import { CARD_TYPES, type CardType } from "../cards/taxonomy";
 import { intensityMaximumScoreForProgress, type Intensity } from "../cards/intensity";
-import { eligibleCards, type EligibilityRequest } from "../eligibility/cardEligibility";
+import { type EligibilityRequest } from "../eligibility/cardEligibility";
 import type { CardAppearance } from "../history/history";
 import type { GameProfile, PlayerBoundaries } from "../profiles/gameProfile";
 import {
@@ -12,7 +25,7 @@ import {
 } from "../cards/socialSensitivity";
 import { emptySessionCardPolicy, type SessionCardPolicyInput } from "../policies/cardPolicy";
 import type { RandomSource } from "../random/randomSource";
-import { CardPoolExhaustedError, selectWeighted } from "../selection/weightedSelection";
+import { CardPoolExhaustedError } from "../selection/weightedSelection";
 
 export const GAME_MODES = {
     CLASSIC: "CLASSIC_TRUTH_OR_DARE",
@@ -57,64 +70,13 @@ export type GameSessionOptions = {
     cardFallbackEnabled?: boolean;
     cardFallbackLocales?: readonly string[];
     neverHaveIEverRevealMode?: NeverHaveIEverRevealMode;
-    compiledCardPolicy?: CompiledCardPolicySnapshot | null;
+    catalog?: CatalogProvenance | null;
+    policySnapshot?: SessionPolicySnapshot | null;
+    historyContext?: CardHistoryContext | null;
     sessionCardPolicy?: SessionCardPolicyInput;
 };
-const COMPILED_POLICY_AVAILABLE = 1;
-const COMPILED_POLICY_ALWAYS_ELIGIBLE = 2;
-const COMPILED_POLICY_REPEATABLE = 4;
-
-/**
- * Positional, versioned Card-policy data kept inside Session runtime v5. Catalog and
- * policy provenance live once on the snapshot; repeating property names and provenance
- * strings for every production Card made a new Session exceed MariaDB packet limits.
- */
-export type CompiledCardPolicyEntry = [
-    cardId: PlayableCard["id"],
-    flags: number,
-    repeatCooldown: number,
-    intensity: Intensity,
-    weight: number,
-    socialSensitivityIndex: number,
-    minimumPlayerCount: number,
-    maximumPlayerCount: number | null,
-];
-export type CompiledCardPolicySnapshot = {
-    catalog: {
-        catalogId: string;
-        sequence: number;
-        catalogVersion: string;
-        contract: string;
-        artifactDigest: string;
-    };
-    policyRevisions: { dataSpace: number | null; group: number | null };
-    cards: CompiledCardPolicyEntry[];
-};
-
-export function compactCompiledCardPolicyEntry(
-    card: PlayableCard & { policyAvailable: boolean },
-): CompiledCardPolicyEntry {
-    let flags = card.policyAvailable ? COMPILED_POLICY_AVAILABLE : 0;
-    if (card.alwaysEligible) flags |= COMPILED_POLICY_ALWAYS_ELIGIBLE;
-    if (card.repeatableInSession) flags |= COMPILED_POLICY_REPEATABLE;
-    const sensitivityIndex = SOCIAL_SENSITIVITY_ORDER.indexOf(card.socialSensitivity);
-    if (sensitivityIndex < 0) {
-        throw new Error(`Unsupported social sensitivity ${card.socialSensitivity}`);
-    }
-    return [
-        card.id,
-        flags,
-        card.repeatCooldown,
-        card.intensity,
-        card.weight,
-        sensitivityIndex,
-        card.minimumPlayerCount,
-        card.maximumPlayerCount,
-    ];
-}
-
 export type GameSessionRuntimeState = {
-    version: 5;
+    version: 7;
     id: string;
     startedAt: number;
     mode: GameMode;
@@ -139,7 +101,7 @@ export type GameSessionRuntimeState = {
     state: SessionState;
     roundNumber: number;
     activePlayerIndex: number;
-    currentCard: PlayableCard | null;
+    currentCard: Card | null;
     sessionHistory: CardAppearance[];
     votes: [string, Vote][];
     voterIds?: string[];
@@ -161,7 +123,12 @@ export type GameSessionRuntimeState = {
     cardFallbackEnabled?: boolean;
     cardFallbackLocales?: string[];
     neverHaveIEverRevealMode?: NeverHaveIEverRevealMode;
-    compiledCardPolicy: CompiledCardPolicySnapshot | null;
+    catalog: CatalogProvenance | null;
+    policySnapshot: SessionPolicySnapshot | null;
+    historyContext: CardHistoryContext | null;
+    cardsShown: number;
+    poolRevision: number;
+    historyIndex: SessionHistoryIndex;
     sessionCardPolicy: SessionCardPolicyInput;
 };
 
@@ -202,7 +169,13 @@ export class GameSession {
     readonly cardFallbackEnabled: boolean;
     readonly cardFallbackLocales: readonly string[];
     readonly neverHaveIEverRevealMode: NeverHaveIEverRevealMode;
-    readonly compiledCardPolicy: CompiledCardPolicySnapshot | null;
+    readonly catalog: CatalogProvenance | null;
+    policySnapshot: SessionPolicySnapshot | null;
+    readonly historyContext: CardHistoryContext | null;
+    cardsShown = 0;
+    private poolRevision = 0;
+    private readonly historyIndex = new Map<Card["id"], number>();
+    private resolvePolicy: <T extends Card>(card: T) => T;
     readonly sessionCardPolicy: SessionCardPolicyInput;
     readonly votes = new Map<string, Vote>();
     readonly shownTypeCounts = { [CARD_TYPES.QUESTION]: 0, [CARD_TYPES.DARE]: 0 };
@@ -211,15 +184,19 @@ export class GameSession {
     state: SessionState;
     roundNumber = 1;
     activePlayerIndex: number;
-    currentCard: PlayableCard | null = null;
+    currentCard: Card | null = null;
     questionsSinceMeta = 0;
     private turnsCompletedInRound = 0;
     private lastCardTypes: CardType[] = [];
     private readonly groupHistoryCardIds: ReadonlySet<Card["id"]>;
-    private readonly boundariesByPlayer: ReadonlyMap<string, PlayerBoundaries>;
-    private readonly compiledCardPolicyById: ReadonlyMap<string, CompiledCardPolicyEntry>;
+    private readonly boundariesByPlayer: Map<string, PlayerBoundaries>;
     private pendingCardType: CardType | null = null;
     private voterIds: string[] = [];
+    private pendingCount?: { revision: number; value: Promise<number> };
+    private remainingCount: {
+        revision: number;
+        value: number;
+    } | null = null;
 
     constructor(
         options: GameSessionOptions,
@@ -240,17 +217,24 @@ export class GameSession {
         this.cardFallbackLocales = [...(options.cardFallbackLocales ?? [])];
         this.neverHaveIEverRevealMode =
             options.neverHaveIEverRevealMode ?? NEVER_HAVE_I_EVER_REVEAL_MODES.ANONYMOUS_AGGREGATE;
-        this.compiledCardPolicy = options.compiledCardPolicy ?? null;
-        this.compiledCardPolicyById = new Map(
-            this.compiledCardPolicy?.cards.map((entry) => [entry[0], entry]) ?? [],
+        this.catalog = options.catalog ?? null;
+        this.policySnapshot = options.policySnapshot ?? null;
+        this.historyContext = options.historyContext ?? null;
+        this.resolvePolicy = sessionPolicyResolver(
+            this.policySnapshot,
+            options.sessionCardPolicy ?? emptySessionCardPolicy(),
         );
         this.sessionCardPolicy = options.sessionCardPolicy ?? emptySessionCardPolicy();
         this.groupHistoryCardIds = options.groupHistoryCardIds ?? new Set();
-        this.boundariesByPlayer = options.boundariesByPlayer ?? new Map();
+        const playerIds = new Set(this.players.map(({ id }) => id));
+        this.boundariesByPlayer = new Map(
+            [...(options.boundariesByPlayer ?? [])].filter(([id]) => playerIds.has(id)),
+        );
         // A restored, ended Session can legitimately have no players after the
         // final participant leaves. New Sessions are still rejected above unless
         // they have at least two players.
-        this.activePlayerIndex = this.players.length ? random.nextInt(this.players.length) : 0;
+        this.activePlayerIndex =
+            !restoring && this.players.length ? random.nextInt(this.players.length) : 0;
         this.state =
             options.mode === GAME_MODES.CLASSIC
                 ? SESSION_STATES.CHOOSING_CARD_TYPE
@@ -258,7 +242,7 @@ export class GameSession {
     }
 
     static restore(runtime: GameSessionRuntimeState, random: RandomSource): GameSession {
-        if (runtime.version !== 5)
+        if (runtime.version !== 7)
             throw new Error(`Unsupported GameSession runtime version ${runtime.version}`);
         // JSON cannot represent Set and Map. Rehydrate those domain collections
         // explicitly so persistence remains an adapter concern, not a domain dependency.
@@ -293,7 +277,9 @@ export class GameSession {
                 cardFallbackEnabled: runtime.cardFallbackEnabled,
                 cardFallbackLocales: runtime.cardFallbackLocales,
                 neverHaveIEverRevealMode: runtime.neverHaveIEverRevealMode,
-                compiledCardPolicy: runtime.compiledCardPolicy,
+                catalog: runtime.catalog,
+                policySnapshot: runtime.policySnapshot,
+                historyContext: runtime.historyContext,
                 sessionCardPolicy: runtime.sessionCardPolicy,
             },
             random,
@@ -301,10 +287,17 @@ export class GameSession {
         );
         session.revision = runtime.revision;
         session.state = runtime.state;
+        if (session.state === SESSION_STATES.ENDED) session.boundariesByPlayer.clear();
         session.roundNumber = runtime.roundNumber;
         session.activePlayerIndex = runtime.activePlayerIndex;
         session.currentCard = runtime.currentCard;
-        session.sessionHistory.push(...runtime.sessionHistory);
+        session.sessionHistory.push(...runtime.sessionHistory.slice(-2));
+        session.cardsShown = runtime.cardsShown;
+        session.poolRevision = runtime.poolRevision;
+        for (const [id, sequence] of runtime.historyIndex) session.historyIndex.set(id, sequence);
+        if (session.historyContext)
+            for (const appearance of session.sessionHistory)
+                session.historyIndex.set(appearance.cardId, appearance.sequence);
         session.votes.clear();
         for (const [id, vote] of runtime.votes) session.votes.set(id, vote);
         session.shownTypeCounts.QUESTION = runtime.shownTypeCounts.QUESTION;
@@ -325,7 +318,7 @@ export class GameSession {
     toRuntimeState(): GameSessionRuntimeState {
         // Keep this representation versioned and JSON-safe for restart/reconnect recovery.
         return {
-            version: 5,
+            version: 7,
             id: this.id,
             startedAt: this.startedAt,
             mode: this.mode,
@@ -362,9 +355,24 @@ export class GameSession {
             cardFallbackEnabled: this.cardFallbackEnabled,
             cardFallbackLocales: [...this.cardFallbackLocales],
             neverHaveIEverRevealMode: this.neverHaveIEverRevealMode,
-            compiledCardPolicy: this.compiledCardPolicy,
+            catalog: this.catalog,
+            policySnapshot: this.policySnapshot,
+            historyContext: this.historyContext,
+            cardsShown: this.cardsShown,
+            poolRevision: this.poolRevision,
+            historyIndex: [...this.historyIndex],
             sessionCardPolicy: this.sessionCardPolicy,
         };
+    }
+
+    fork(random: RandomSource): GameSession {
+        const proposed = GameSession.restore(this.toRuntimeState(), random);
+        proposed.remainingCount = this.remainingCount;
+        return proposed;
+    }
+
+    get historyIndexSize(): number {
+        return this.historyIndex.size;
     }
 
     get activePlayer(): Player | null {
@@ -376,7 +384,7 @@ export class GameSession {
     get currentMaximumIntensityScore(): number {
         return intensityMaximumScoreForProgress(this.profile, {
             roundNumber: this.roundNumber,
-            cardsShown: this.sessionHistory.length,
+            cardsShown: this.cardsShown,
         });
     }
 
@@ -392,35 +400,34 @@ export class GameSession {
         return this.voterIds.includes(playerId);
     }
 
-    /** Checks the initial authoritative pool without selecting or relaxing any rule. */
-    hasEligibleCards(cards: readonly PlayableCard[]): boolean {
-        if (this.mode === GAME_MODES.NEVER_HAVE_I_EVER)
-            return this.pool(cards, CARD_TYPES.QUESTION, true).length > 0;
-        if (this.mode === GAME_MODES.LETS_TALK)
-            return this.pool(cards, CARD_TYPES.QUESTION, false).length > 0;
-        return (
-            this.pool(cards, CARD_TYPES.QUESTION, false).length > 0 ||
-            this.pool(cards, CARD_TYPES.DARE, false).length > 0
-        );
+    /** Every count consumes the complete metadata stream, without choosing a Card. */
+    async hasEligibleCards(cards: CardStream): Promise<boolean> {
+        const pools = await this.scanPools(cards, false);
+        this.remainingCount = {
+            revision: this.poolRevision,
+            value: pools.QUESTION.count + pools.DARE.count + pools.CONVERSATION_META.count,
+        };
+        if (this.mode === GAME_MODES.NEVER_HAVE_I_EVER || this.mode === GAME_MODES.LETS_TALK)
+            return pools.QUESTION.count > 0;
+        return pools.QUESTION.count + pools.DARE.count > 0;
     }
 
-    /** Counts distinct Cards that the authoritative Session could draw at this point. */
-    remainingEligibleCardCount(cards: readonly PlayableCard[]): number {
-        let pools: readonly (readonly PlayableCard[])[];
-        if (this.mode === GAME_MODES.NEVER_HAVE_I_EVER) {
-            pools = [this.pool(cards, CARD_TYPES.QUESTION, true)];
-        } else if (this.mode === GAME_MODES.LETS_TALK) {
-            pools = [
-                this.pool(cards, CARD_TYPES.QUESTION, false),
-                this.pool(cards, CARD_TYPES.CONVERSATION_META, false),
-            ];
-        } else {
-            pools = [
-                this.pool(cards, CARD_TYPES.QUESTION, false),
-                this.pool(cards, CARD_TYPES.DARE, false),
-            ];
+    async remainingEligibleCardCount(cards: CardStream): Promise<number> {
+        if (this.state === SESSION_STATES.ENDED) return 0;
+        if (this.remainingCount?.revision === this.poolRevision) return this.remainingCount.value;
+        const revision = this.poolRevision;
+        if (this.pendingCount?.revision === revision) return this.pendingCount.value;
+        const value = this.scanPools(cards, false).then((pools) => {
+            const count = pools.QUESTION.count + pools.DARE.count + pools.CONVERSATION_META.count;
+            if (this.poolRevision === revision) this.remainingCount = { revision, value: count };
+            return count;
+        });
+        this.pendingCount = { revision, value };
+        try {
+            return await value;
+        } finally {
+            if (this.pendingCount?.value === value) this.pendingCount = undefined;
         }
-        return new Set(pools.flatMap((pool) => pool.map(({ id }) => id))).size;
     }
 
     /** Removes players after an intentional leave or an expired reconnect grace period. */
@@ -432,11 +439,16 @@ export class GameSession {
         const activePlayerWasRemoved = previousActiveId ? playerIds.has(previousActiveId) : false;
         this.players = this.players.filter(({ id }) => !playerIds.has(id));
         if (this.players.length === previousPlayers.length) return;
-        for (const playerId of playerIds) this.votes.delete(playerId);
+        for (const playerId of playerIds) {
+            this.votes.delete(playerId);
+            this.boundariesByPlayer.delete(playerId);
+        }
         this.voterIds = this.voterIds.filter((id) => !playerIds.has(id));
         if (!this.players.length) {
             this.state = SESSION_STATES.ENDED;
             this.currentCard = null;
+            this.pendingCardType = null;
+            this.poolRevision++;
             this.revision++;
             return;
         }
@@ -479,11 +491,16 @@ export class GameSession {
                     ? SESSION_STATES.CHOOSING_CARD_TYPE
                     : SESSION_STATES.WAITING_FOR_PLAYER;
         }
+        this.poolRevision++;
         this.revision++;
     }
 
     /** Adds newly connected Room players without restarting or recreating the Session. */
-    addPlayers(expectedRevision: number, players: readonly Player[]): void {
+    addPlayers(
+        expectedRevision: number,
+        players: readonly Player[],
+        boundariesByPlayer: ReadonlyMap<string, PlayerBoundaries>,
+    ): void {
         this.assertRevision(expectedRevision);
         if (this.state === SESSION_STATES.ENDED) return;
         const existing = new Set(this.players.map(({ id }) => id));
@@ -491,91 +508,98 @@ export class GameSession {
         if (!added.length) return;
         if (new Set(added.map(({ id }) => id)).size !== added.length)
             throw new Error(MESSAGE_KEYS.GAME_PLAYER_IDS_UNIQUE);
+        for (const player of added) {
+            const boundaries = boundariesByPlayer.get(player.id);
+            if (!boundaries) throw new Error(MESSAGE_KEYS.ROOM_ENROLLMENT_REQUIRED);
+        }
+        for (const player of added) {
+            const boundaries = boundariesByPlayer.get(player.id)!;
+            this.boundariesByPlayer.set(player.id, {
+                disabledQuestionCategoryIds: new Set(boundaries.disabledQuestionCategoryIds),
+                disabledDareTypeIds: new Set(boundaries.disabledDareTypeIds),
+                blockedOperationalFlags: new Set(boundaries.blockedOperationalFlags),
+            });
+        }
         this.players = [...this.players, ...added.map((player) => ({ ...player }))];
+        this.poolRevision++;
         this.revision++;
     }
 
-    chooseCardType(
+    async chooseCardType(
         expectedRevision: number,
         cardType: typeof CARD_TYPES.QUESTION | typeof CARD_TYPES.DARE,
-        cards: readonly PlayableCard[],
-    ): Card {
+        cards: CardStream,
+    ): Promise<Card> {
         this.assertRevision(expectedRevision);
         this.assertState("chooseCardType", SESSION_STATES.CHOOSING_CARD_TYPE);
         if (this.mode !== GAME_MODES.CLASSIC)
             throw new InvalidGameStateError(this.state, "chooseCardType");
-        const selected = selectWeighted(this.pool(cards, cardType, false), this.random);
-        this.pendingCardType = cardType;
-        return this.commitShown(selected);
+        const pools = await this.scanPools(cards, true, cardType);
+        return this.showSelection(pools[cardType].selected, cardType);
     }
 
-    startTurn(expectedRevision: number, cards: readonly PlayableCard[]): Card {
+    async startTurn(expectedRevision: number, cards: CardStream): Promise<Card> {
         this.assertRevision(expectedRevision);
         this.assertState("startTurn", SESSION_STATES.WAITING_FOR_PLAYER);
         if (this.mode === GAME_MODES.CLASSIC)
             throw new InvalidGameStateError(this.state, "startTurn");
+        const pools = await this.scanPools(cards, true);
+        let type: CardType = CARD_TYPES.QUESTION;
         if (this.mode === GAME_MODES.RANDOM) {
-            const questionPool = this.pool(cards, CARD_TYPES.QUESTION, false);
-            const darePool = this.pool(cards, CARD_TYPES.DARE, false);
-            const type = this.balancedRandomType(questionPool.length > 0, darePool.length > 0);
-            const selected = selectWeighted(
-                type === CARD_TYPES.QUESTION ? questionPool : darePool,
-                this.random,
-            );
-            this.pendingCardType = type;
-            return this.commitShown(selected);
+            type = this.balancedRandomType(pools.QUESTION.count > 0, pools.DARE.count > 0);
+        } else if (
+            this.mode === GAME_MODES.LETS_TALK &&
+            this.questionsSinceMeta >= this.profile.letsTalkMetaInterval &&
+            pools.CONVERSATION_META.count > 0
+        ) {
+            type = CARD_TYPES.CONVERSATION_META;
         }
-        if (this.mode === GAME_MODES.NEVER_HAVE_I_EVER) {
-            const selected = selectWeighted(
-                this.pool(cards, CARD_TYPES.QUESTION, true),
-                this.random,
-            );
-            this.pendingCardType = CARD_TYPES.QUESTION;
-            return this.commitShown(selected);
-        }
-        const metaDue = this.questionsSinceMeta >= this.profile.letsTalkMetaInterval;
-        if (metaDue) {
-            const metaPool = this.pool(cards, CARD_TYPES.CONVERSATION_META, false);
-            if (metaPool.length) {
-                const selected = selectWeighted(metaPool, this.random);
-                this.pendingCardType = CARD_TYPES.CONVERSATION_META;
-                return this.commitShown(selected);
-            }
-        }
-        const selected = selectWeighted(this.pool(cards, CARD_TYPES.QUESTION, false), this.random);
-        this.pendingCardType = CARD_TYPES.QUESTION;
-        return this.commitShown(selected);
+        return this.showSelection(pools[type].selected, type);
     }
 
-    skipCard(expectedRevision: number, cards: readonly PlayableCard[]): Card {
+    async skipCard(expectedRevision: number, cards: CardStream): Promise<Card | null> {
         return this.replaceCard(expectedRevision, cards, "skipCard", "SKIPPED");
     }
 
-    vetoCard(expectedRevision: number, cards: readonly PlayableCard[]): Card {
+    async vetoCard(expectedRevision: number, cards: CardStream): Promise<Card | null> {
         return this.replaceCard(expectedRevision, cards, "vetoCard", "VETOED");
     }
 
-    private replaceCard(
+    private async replaceCard(
         expectedRevision: number,
-        cards: readonly PlayableCard[],
+        cards: CardStream,
         command: "skipCard" | "vetoCard",
         reason: "SKIPPED" | "VETOED",
-    ): Card {
+    ): Promise<Card | null> {
         this.assertRevision(expectedRevision);
         this.assertState(command, SESSION_STATES.SHOWING_CARD, SESSION_STATES.COLLECTING_ANSWERS);
         if (!this.pendingCardType) throw new InvalidGameStateError(this.state, command);
-        const requireYesNo = this.mode === GAME_MODES.NEVER_HAVE_I_EVER;
-        const selected = selectWeighted(
-            this.pool(cards, this.pendingCardType, requireYesNo),
-            this.random,
-        );
-        const appearance = this.sessionHistory.at(-1)!;
+        // Finish the scan before mutating state: a failed read cannot lose the current Card.
+        const pools = await this.scanPools(cards, true, this.pendingCardType);
+        const appearance = this.sessionHistory.at(-1);
         if (appearance) {
             appearance.skipped = reason === "SKIPPED";
             appearance.vetoed = reason === "VETOED";
         }
         this.votes.clear();
-        return this.commitShown(selected);
+        this.voterIds = [];
+        this.currentCard = null;
+        const selected = pools[this.pendingCardType].selected;
+        if (selected) return this.commitShown(selected);
+        this.pendingCardType = null;
+        this.state =
+            this.mode === GAME_MODES.CLASSIC
+                ? SESSION_STATES.CHOOSING_CARD_TYPE
+                : SESSION_STATES.WAITING_FOR_PLAYER;
+        this.poolRevision++;
+        this.revision++;
+        return null;
+    }
+
+    private showSelection(card: Card | null, type: CardType): Card {
+        if (!card) throw new CardPoolExhaustedError();
+        this.pendingCardType = type;
+        return this.commitShown(card);
     }
 
     submitVote(expectedRevision: number, playerId: string, vote: Vote): void {
@@ -612,6 +636,7 @@ export class GameSession {
             this.mode === GAME_MODES.CLASSIC
                 ? SESSION_STATES.CHOOSING_CARD_TYPE
                 : SESSION_STATES.WAITING_FOR_PLAYER;
+        this.poolRevision++;
         this.revision++;
     }
 
@@ -620,82 +645,103 @@ export class GameSession {
         if (this.state === SESSION_STATES.ENDED) throw new InvalidGameStateError(this.state, "end");
         this.state = SESSION_STATES.ENDED;
         this.currentCard = null;
+        this.pendingCardType = null;
         this.votes.clear();
         this.voterIds = [];
+        this.boundariesByPlayer.clear();
+        this.historyIndex.clear();
+        this.policySnapshot = null;
+        this.resolvePolicy = (card) => card;
+        this.poolRevision++;
         this.revision++;
     }
 
-    private pool(
-        cards: readonly PlayableCard[],
-        cardType: CardType,
-        requireYesNo: boolean,
-    ): readonly PlayableCard[] {
-        const boundaries =
-            cardType === CARD_TYPES.DARE ||
-            cardType === CARD_TYPES.CONVERSATION_META ||
-            this.mode === GAME_MODES.NEVER_HAVE_I_EVER
-                ? this.players.map(
-                      (player) => this.boundariesByPlayer.get(player.id) ?? EMPTY_BOUNDARIES,
-                  )
-                : [this.boundariesByPlayer.get(this.activePlayer?.id ?? "") ?? EMPTY_BOUNDARIES];
-        const request: EligibilityRequest = {
-            cardType,
-            requireYesNoAnswer: requireYesNo,
-            profile: this.profile,
-            boundaries,
-            maximumIntensityScore: this.currentMaximumIntensityScore,
-            sessionHistory: this.sessionHistory,
-            groupHistoryCardIds: this.groupHistoryCardIds,
-            playerCount: this.players.length,
+    private async scanPools(cards: CardStream, draw: boolean, onlyType?: CardType) {
+        const pools = {
+            QUESTION: new WeightedCardReservoir(),
+            DARE: new WeightedCardReservoir(),
+            CONVERSATION_META: new WeightedCardReservoir(),
         };
-        return eligibleCards(
-            cards.map((card) => this.applyCompiledPolicy(card)),
-            request,
-        );
-    }
-
-    private applyCompiledPolicy(card: PlayableCard): PlayableCard {
-        const compiled = this.compiledCardPolicyById.get(card.id);
-        if (!compiled) return card;
-        const [
-            _cardId,
-            flags,
-            repeatCooldown,
-            intensity,
-            weight,
-            socialSensitivityIndex,
-            minimumPlayerCount,
-            maximumPlayerCount,
-        ] = compiled;
-        const socialSensitivity = SOCIAL_SENSITIVITY_ORDER[socialSensitivityIndex];
-        if (!socialSensitivity) {
-            throw new Error(`Invalid compiled social sensitivity index ${socialSensitivityIndex}`);
+        const requests = new Map<CardType, EligibilityRequest>();
+        for (const type of Object.values(CARD_TYPES)) {
+            if (onlyType && type !== onlyType) continue;
+            if (this.mode === GAME_MODES.NEVER_HAVE_I_EVER && type !== CARD_TYPES.QUESTION)
+                continue;
+            if (this.mode === GAME_MODES.LETS_TALK && type === CARD_TYPES.DARE) continue;
+            if (
+                (this.mode === GAME_MODES.CLASSIC || this.mode === GAME_MODES.RANDOM) &&
+                type === CARD_TYPES.CONVERSATION_META
+            )
+                continue;
+            const boundaries =
+                type === CARD_TYPES.DARE ||
+                type === CARD_TYPES.CONVERSATION_META ||
+                this.mode === GAME_MODES.NEVER_HAVE_I_EVER
+                    ? this.players.map(
+                          (player) => this.boundariesByPlayer.get(player.id) ?? EMPTY_BOUNDARIES,
+                      )
+                    : [
+                          this.boundariesByPlayer.get(this.activePlayer?.id ?? "") ??
+                              EMPTY_BOUNDARIES,
+                      ];
+            requests.set(
+                type,
+                prepareEligibility({
+                    cardType: type,
+                    requireYesNoAnswer: this.mode === GAME_MODES.NEVER_HAVE_I_EVER,
+                    profile: this.profile,
+                    boundaries,
+                    maximumIntensityScore: this.currentMaximumIntensityScore,
+                    sessionHistory: this.sessionHistory,
+                    cardsShown: this.cardsShown,
+                    lastSequenceByCardId: this.historyIndex,
+                    groupHistoryCardIds: this.groupHistoryCardIds,
+                    playerCount: this.players.length,
+                }),
+            );
         }
-        return {
-            ...card,
-            policyAvailable: Boolean(flags & COMPILED_POLICY_AVAILABLE),
-            alwaysEligible: Boolean(flags & COMPILED_POLICY_ALWAYS_ELIGIBLE),
-            repeatableInSession: Boolean(flags & COMPILED_POLICY_REPEATABLE),
-            repeatCooldown,
-            intensity,
-            weight,
-            socialSensitivity,
-            minimumPlayerCount,
-            maximumPlayerCount,
-        };
+        for await (const candidate of cards) {
+            const request = requests.get(candidate.cardType);
+            if (!request) continue;
+            const card = this.resolvePolicy(candidate);
+            const indexed = { ...request };
+            if (candidate.lastShownSequence !== undefined) {
+                indexed.lastSequenceByCardId = new Map();
+                if (candidate.lastShownSequence !== null)
+                    (indexed.lastSequenceByCardId as Map<Card["id"], number>).set(
+                        card.id,
+                        candidate.lastShownSequence,
+                    );
+            }
+            if (candidate.seenInGroup !== undefined)
+                indexed.groupHistoryCardIds = candidate.seenInGroup
+                    ? new Set([card.id])
+                    : new Set();
+            if (eligibilityReasons(card, indexed).length === 0)
+                pools[card.cardType].add(card, draw ? this.random : undefined);
+        }
+        return pools;
     }
 
-    private commitShown(card: PlayableCard): PlayableCard {
+    private commitShown(card: Card): Card {
         this.currentCard = card;
+        this.cardsShown++;
+        if (!this.historyContext) this.historyIndex.set(card.id, this.cardsShown);
+        if (this.sessionHistory.length >= 2) this.sessionHistory.shift();
         this.sessionHistory.push({
             cardId: card.id,
-            sequence: this.sessionHistory.length + 1,
+            sequence: this.cardsShown,
             roundNumber: this.roundNumber,
             playerId: this.activePlayer?.id ?? null,
             skipped: false,
             completed: false,
             vetoed: false,
         });
+        if (this.historyContext) {
+            this.historyIndex.clear();
+            for (const appearance of this.sessionHistory)
+                this.historyIndex.set(appearance.cardId, appearance.sequence);
+        }
         if (card.cardType === CARD_TYPES.QUESTION || card.cardType === CARD_TYPES.DARE) {
             this.shownTypeCounts[card.cardType]++;
             this.lastCardTypes.push(card.cardType);
@@ -711,6 +757,7 @@ export class GameSession {
                 : SESSION_STATES.SHOWING_CARD;
         this.voterIds =
             this.mode === GAME_MODES.NEVER_HAVE_I_EVER ? this.players.map(({ id }) => id) : [];
+        this.poolRevision++;
         this.revision++;
         return card;
     }
@@ -757,4 +804,29 @@ export class GameSession {
     private assertState(command: string, ...allowed: SessionState[]): void {
         if (!allowed.includes(this.state)) throw new InvalidGameStateError(this.state, command);
     }
+}
+
+/** Membership transitions need only the hot runtime fields. They neither select a
+ * Card nor inspect appearance history, so persistence need not hydrate immutable
+ * catalogs, policy or history just to close a Room or remove a participant. */
+export function reconcileSessionMembership(
+    runtime: GameSessionRuntimeState,
+    remainingPlayerIds: ReadonlySet<string>,
+    roomClosed: boolean,
+): GameSessionRuntimeState {
+    if (runtime.state === SESSION_STATES.ENDED) return runtime;
+    const removed = new Set(
+        runtime.players.filter(({ id }) => !remainingPlayerIds.has(id)).map(({ id }) => id),
+    );
+    if (!roomClosed && !removed.size) return runtime;
+    const unexpectedRandom = (): never => {
+        throw new Error("Membership changes cannot draw random values");
+    };
+    const proposed = GameSession.restore(runtime, {
+        nextFloat: unexpectedRandom,
+        nextInt: unexpectedRandom,
+    });
+    proposed.removePlayers(runtime.revision, removed);
+    if (roomClosed && proposed.state !== SESSION_STATES.ENDED) proposed.end(proposed.revision);
+    return proposed.toRuntimeState();
 }

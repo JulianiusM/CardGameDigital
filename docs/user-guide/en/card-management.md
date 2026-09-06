@@ -91,3 +91,12 @@ override returns the Card to normal inheritance.
 validates a package and asks for confirmation before replacing that scope. Import does
 not change the producer catalog or copy ownership IDs. Keep exported policy files as
 configuration data and inspect their origin before importing them.
+
+## Changes made elsewhere
+
+If a policy changed or a rule was removed while you were editing, the error explains
+what happened. Your unsaved edit stays visible until you choose **Reload policy**;
+reloading replaces it with the latest saved version. Review that version before making
+another change. If a Group is unavailable, choose another scope or check **Account**
+in the separate tab. A loading failure offers **Try loading again**. These actions
+leave any active game's captured policy unchanged.

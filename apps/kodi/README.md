@@ -1,7 +1,7 @@
 # Party Game TV for Kodi
 
 This directory contains the native Kodi 21/Omega script add-on. It is a thin client for
-the server-authoritative HTTP API v1 and WebSocket protocol v2; it does not bundle Cards
+the server-authoritative HTTP API v1 and WebSocket protocol v4; it does not bundle Cards
 or gameplay rules.
 
 ## Developer checks

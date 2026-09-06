@@ -49,7 +49,7 @@ Every server-web edition contains:
 - the matching Node runtime and platform-native production dependency graph;
 - a platform launcher and non-secret edition settings template;
 - the exact validated Card catalog and bundled help/media assets;
-- protocol-v2 JSON schemas and manifest;
+- protocol-v4 JSON schemas and manifest;
 - `LICENSE.md`, lockfile, CycloneDX SBOM, and `release-manifest.json`.
 
 The launcher uses only files inside the extracted archive. Settings from the operator's
@@ -121,9 +121,12 @@ WebSocket wire contracts are unchanged.
 
 Adding the concrete Kodi artifact is additive to that release-unit contract. The Kodi
 version is independent and compatibility is negotiated through HTTP API v1,
-WebSocket protocol v2, and advertised server capabilities. The additive native-device
+WebSocket protocol v4, and advertised server capabilities. The additive native-device
 authorization fields in server information default to disabled/null, so existing
 clients and deployments retain their prior behavior.
 
 Restoring the empirically verified dual Kodi entry changes only native add-on launch and
-packaging behavior. HTTP API v1 and WebSocket protocol v2 are unchanged.
+packaging behavior; it does not change HTTP or WebSocket wire semantics. Corrective
+Phase 2 separately advanced WebSocket to v3 for mandatory late-join enrollment. Phase 4
+advances it to v4 for the shared 4 MiB and 1,000-participant receive guarantee. Current
+server-web and Kodi 0.4.0 packages advertise v4 and must be upgraded together.

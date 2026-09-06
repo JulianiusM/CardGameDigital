@@ -1,3 +1,5 @@
+import { coordinateSqliteConnection } from "../../../../../packages/persistence/transaction";
+import { configurePersistenceWorkLimits } from "../../../../../packages/persistence/persistenceWorkLimits";
 /* Copyright 2026 Julian Malovanij, Apache-2.0 */
 
 import fs from "node:fs";
@@ -66,12 +68,14 @@ async function backupSqliteBeforeUpgrade(config: Settings, catalogSequence: numb
 export async function initDataSource(): Promise<DataSource> {
     if (appDataSource?.isInitialized) return appDataSource;
     if (!settings.value.initialized) await settings.read();
-    const catalogArtifact = bundledCardCatalogArtifact(
+    configurePersistenceWorkLimits(settings.value);
+    const catalogArtifact = await bundledCardCatalogArtifact(
         settings.value.deploymentMode,
         settings.value.testMode || !isPublicRuntimeSecurityEnforced(settings.value),
     );
     await backupSqliteBeforeUpgrade(settings.value, catalogArtifact.catalog.sequence);
     appDataSource = new DataSource(dataSourceOptions(settings.value));
+    coordinateSqliteConnection(appDataSource);
     await appDataSource.initialize();
     if (settings.value.dbType === "sqlite") {
         await appDataSource.query("PRAGMA foreign_keys = ON");
@@ -92,7 +96,7 @@ export async function initDataSource(): Promise<DataSource> {
             catalogId: catalogArtifact.catalog.catalogId,
             catalogVersion: catalogArtifact.catalog.catalogVersion,
             sequence: catalogArtifact.catalog.sequence,
-            cardCount: catalogArtifact.catalog.cards.length,
+            cardCount: catalogArtifact.cardCount,
             installedCatalogVersion: installedCatalog?.catalogVersion,
             installedSequence: installedCatalog?.sequence,
         },

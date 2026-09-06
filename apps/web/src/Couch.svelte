@@ -1,7 +1,8 @@
 <script lang="ts">
     import { scrollText } from "./scrollText";
-    import { onMount } from "svelte";
-    import { ApiError, couchApi, type Snapshot } from "./api";
+    import { onMount, tick } from "svelte";
+    import { couchApi, COUCH_SESSION_STORAGE_KEY as sessionStorageKey, type Snapshot } from "./api";
+    import { ApiError } from "./http";
     import SettingsModal from "./SettingsModal.svelte";
     import SettingsTrigger from "./SettingsTrigger.svelte";
     import GameCard from "./GameCard.svelte";
@@ -21,8 +22,16 @@
     import { authentication, refreshAuthentication } from "./authentication";
     import EligibleCardPreview from "./EligibleCardPreview.svelte";
 
-    const setup = loadSetup();
-    const sessionStorageKey = "party-game:couch-session";
+    let setup = loadSetup();
+    let recoveryId = sessionStorage.getItem(sessionStorageKey);
+    let recovering = Boolean(recoveryId);
+    let recoveryFailed = false;
+    let recoveryNeedsAccount = false;
+    let recoveryAttempt = 0;
+    let recoveryPanel: HTMLElement | undefined;
+    let recoveryAbort: AbortController | undefined;
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
+    let disposed = false;
     let mode = (gameModes.find((item) => item[0] === setup.mode) ?? gameModes[0])[0];
     let playerNames =
         setup.groupMembers.length >= 2
@@ -42,6 +51,7 @@
     $: pendingPlayerCount = Math.max(2, playerNames.filter((name) => name.trim()).length);
     $: cardAtmosphere = atmosphereFor(session?.currentCard);
     $: gameInProgress = Boolean(session && session.state !== "ENDED");
+    $: recoveryStatus = recoveryMessage(recoveryNeedsAccount, recoveryFailed);
     $: if (cardAtmosphere) lastGameAtmosphere = cardAtmosphere;
     $: if (!gameInProgress && !cardAtmosphere) lastGameAtmosphere = null;
     $: {
@@ -54,16 +64,29 @@
         );
     }
 
-    onMount(async () => {
+    onMount(() => {
+        void initialize();
+        if (recoveryId) void recoverSession();
+        const online = () => {
+            if (recoveryId) void recoverSession(true);
+        };
+        window.addEventListener("online", online);
+        return () => {
+            disposed = true;
+            recoveryAbort?.abort();
+            clearTimeout(retryTimer);
+            window.removeEventListener("online", online);
+        };
+    });
+
+    async function initialize(): Promise<void> {
         try {
-            const storedSessionId = sessionStorage.getItem(sessionStorageKey);
-            const [loadedLocales, loadedProfiles, restoredSession, authenticationStatus] =
-                await Promise.all([
-                    loadCardLocales(),
-                    loadGameProfiles(),
-                    storedSessionId ? couchApi.get(storedSessionId).catch(() => null) : null,
-                    refreshAuthentication(),
-                ]);
+            const [loadedLocales, loadedProfiles, authenticationStatus] = await Promise.all([
+                loadCardLocales(),
+                loadGameProfiles(),
+                refreshAuthentication(),
+            ]);
+            if (disposed) return;
             cardLocales = loadedLocales.locales;
             profiles = loadedProfiles;
             if (authenticationStatus.deploymentMode === "local") {
@@ -74,16 +97,68 @@
                         ({ id }) => id === authenticationStatus.account?.activeDataSpaceId,
                     ) ?? null;
             }
-            if (restoredSession) session = restoredSession;
-            else if (storedSessionId) sessionStorage.removeItem(sessionStorageKey);
             prefillAccountPlayer(authenticationStatus.account?.user.name ?? "");
         } catch (cause) {
+            if (disposed) return;
             showNotification(
                 cause instanceof Error ? cause.message : messages.common.connectionFailed,
                 "error",
             );
         }
-    });
+    }
+
+    function recoveryMessage(needsAccount: boolean, failed: boolean): string {
+        if (needsAccount) return messages.couch.recoveryAccount;
+        if (failed) return messages.couch.recoveryFailed;
+        return messages.common.reconnecting;
+    }
+
+    async function recoverSession(resetAttempts = false): Promise<void> {
+        if (!recoveryId || recoveryAbort || disposed) return;
+        if (resetAttempts) recoveryAttempt = 0;
+        clearTimeout(retryTimer);
+        const id = recoveryId;
+        const controller = new AbortController();
+        recoveryAbort = controller;
+        const timeout = setTimeout(() => controller.abort(), 10_000);
+        recovering = true;
+        recoveryFailed = false;
+        recoveryAttempt++;
+        try {
+            const restored = await couchApi.get(id, controller.signal);
+            if (disposed || recoveryId !== id) return;
+            // An unexpected successful body is still an uncertain read, never a new game.
+            if (restored.id !== id) throw new Error(messages.common.requestFailed);
+            session = restored;
+            recoveryId = null;
+            recoveryNeedsAccount = false;
+        } catch (cause) {
+            if (disposed || recoveryId !== id) return;
+            if (
+                cause instanceof ApiError &&
+                cause.status === 404 &&
+                cause.code === "SESSION_NOT_FOUND"
+            ) {
+                clearSession();
+                recoveryId = null;
+                showNotification(messages.couch.gameUnavailable, "error");
+            } else {
+                recoveryFailed = true;
+                recoveryNeedsAccount =
+                    cause instanceof ApiError && (cause.status === 401 || cause.status === 403);
+                await tick();
+                if (disposed || recoveryId !== id) return;
+                recoveryPanel?.focus();
+                // Only reads are retried. Never repeat a possibly committed command.
+                if (!recoveryNeedsAccount && recoveryAttempt < 3)
+                    retryTimer = setTimeout(() => void recoverSession(), 2000 * recoveryAttempt);
+            }
+        } finally {
+            clearTimeout(timeout);
+            recoveryAbort = undefined;
+            recovering = false;
+        }
+    }
 
     function setPlayer(index: number, value: string): void {
         playerNames[index] = value;
@@ -97,24 +172,32 @@
             playerNames = playerNames.filter((_, current) => current !== index);
     }
     async function run(action: () => Promise<Snapshot>): Promise<void> {
+        if (busy || recoveryId) return;
         busy = true;
         dismissNotification();
         exhausted = false;
         try {
             const snapshot = await action();
+            if (disposed) return;
             session = snapshot;
             sessionStorage.setItem(sessionStorageKey, snapshot.id);
         } catch (cause) {
+            if (disposed) return;
             if (cause instanceof ApiError && cause.code === "CARD_POOL_EXHAUSTED") {
                 if (session) exhausted = true;
                 else showNotification(messages.couch.noCardsForSettings, "error");
-            } else if (cause instanceof ApiError && cause.code === "STALE_SESSION_REVISION")
-                showNotification(messages.couch.stale, "error");
-            else
+            } else if (
+                !session ||
+                (cause instanceof ApiError && cause.code !== "STALE_SESSION_REVISION")
+            )
                 showNotification(
                     cause instanceof Error ? cause.message : messages.couch.genericError,
                     "error",
                 );
+            if (session) {
+                recoveryId = session.id;
+                await recoverSession(true);
+            }
         } finally {
             busy = false;
         }
@@ -201,8 +284,8 @@
     }
 </script>
 
-<main class:playing={session} class="couch-shell">
-    {#if !session && activeDataSpace}
+<main class:playing={session && !recoveryId} class="couch-shell">
+    {#if !session && !recoveryId && activeDataSpace}
         <div class="home-context-status">
             {#if $authentication.authenticationAvailable && $authentication.authenticated}
                 <a class="active-dataspace-indicator" href="/play/account?returnTo=%2Fplay%2Fcouch">
@@ -220,14 +303,43 @@
         </div>
     {/if}
     <SettingsTrigger onOpen={() => (settingsOpen = true)} />
-    {#if !session}
+    {#if !session && !recoveryId}
         <header>
             <span class="eyebrow">{messages.couch.singleDevice}</span>
             <h1>{messages.couch.players}</h1>
             <p>{messages.couch.passDevice}</p>
         </header>
     {/if}
-    {#if !session}
+    {#if recoveryId}
+        <section
+            class="card-panel reconnect-panel couch-recovery"
+            tabindex="-1"
+            bind:this={recoveryPanel}
+            aria-labelledby="couch-recovery-title"
+        >
+            <span class="orbit-symbol" aria-hidden="true"><UiIcon name="session" /></span>
+            <div class="reconnect-copy" aria-live="polite">
+                <h1 id="couch-recovery-title">{messages.couch.recoveryTitle}</h1>
+                <p>{messages.couch.recoveryHint}</p>
+                <p class="reconnect-status">{recoveryStatus}</p>
+            </div>
+            <div class="reconnect-actions">
+                <button
+                    class="primary"
+                    disabled={recovering}
+                    on:click={() => void recoverSession(true)}
+                    >{messages.couch.recoveryRetry}</button
+                >
+                {#if recoveryNeedsAccount}<a
+                        class="secondary"
+                        href="/play/account"
+                        target="_blank"
+                        rel="noopener noreferrer">{messages.menu.account}</a
+                    >{/if}
+                <a class="secondary" href="/play/">{messages.common.backToMain}</a>
+            </div>
+        </section>
+    {:else if !session}
         <button class="text-action back-link couch-back" on:click={backToMain}
             >← {messages.common.backToMain}</button
         >
@@ -258,6 +370,8 @@
             <EligibleCardPreview
                 settings={pendingGameSettings}
                 playerCount={pendingPlayerCount}
+                onConfirmAdult={(adultContentConfirmed) =>
+                    (setup = { ...setup, adultContentConfirmed })}
                 compact
             />
             <button
@@ -295,7 +409,7 @@
                         >{session.activePlayer.name}</strong
                     >
                 </p>{/if}
-            {#if exhausted}
+            {#if !session.currentCard && (session.remainingCardCount === 0 || (exhausted && session.state !== "CHOOSING_CARD_TYPE"))}
                 <div class="card-panel exhausted-state game-phase" role="status">
                     <h2>{messages.couch.exhausted}</h2>
                     <button class="danger" on:click={() => command("end")}
@@ -304,6 +418,7 @@
                 </div>
             {:else if session.state === "CHOOSING_CARD_TYPE"}
                 <div class="choice card-panel game-phase">
+                    {#if exhausted}<p role="status">{messages.couch.chooseAnotherType}</p>{/if}
                     <span class="choice-symbol"><UiIcon name="dare" /></span>
                     <h2>{messages.common.truthOrDare}</h2>
                     <div>
@@ -354,11 +469,13 @@
     {/if}
     <SettingsModal
         bind:open={settingsOpen}
-        onEnd={session && session.state !== "ENDED" ? () => command("end") : undefined}
+        onEnd={session && !recoveryId && session.state !== "ENDED"
+            ? () => command("end")
+            : undefined}
         {currentGameSettings}
         gameProfiles={profiles}
         {cardLocales}
-        currentGamePlayerCount={pendingPlayerCount}
+        currentGamePlayerCount={session?.players.length ?? pendingPlayerCount}
         defaultTab={session && session.state !== "ENDED" ? "session" : "audio"}
     />
 </main>

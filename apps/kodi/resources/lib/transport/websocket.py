@@ -141,7 +141,7 @@ class WebSocketConnection:
     def send_json(self, value: dict) -> None:
         encoded = json.dumps(value, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
         if len(encoded) > MAX_MESSAGE_BYTES:
-            raise WebSocketFailure("Outgoing WebSocket message exceeds 64 KiB")
+            raise WebSocketFailure(f"Outgoing WebSocket message exceeds {MAX_MESSAGE_BYTES} bytes")
         self._send_frame(0x1, encoded)
 
     def receive_json(self) -> dict:
@@ -191,7 +191,7 @@ class WebSocketConnection:
             raise WebSocketFailure("Unexpected continuation frame")
         self._fragments.extend(payload)
         if len(self._fragments) > MAX_MESSAGE_BYTES:
-            raise WebSocketFailure("Fragmented message exceeds 64 KiB")
+            raise WebSocketFailure(f"Fragmented message exceeds {MAX_MESSAGE_BYTES} bytes")
         if not final:
             return None
         original_opcode = self._fragment_opcode
@@ -257,7 +257,9 @@ class WebSocketConnection:
         if opcode >= 0x8 and (not final or length > 125):
             raise WebSocketFailure("Invalid WebSocket control frame")
         if length > MAX_MESSAGE_BYTES:
-            raise WebSocketFailure("WebSocket frame exceeds 64 KiB")
+            raise WebSocketFailure(f"WebSocket frame exceeds {MAX_MESSAGE_BYTES} bytes")
+        if opcode == 0x0 and len(self._fragments) + length > MAX_MESSAGE_BYTES:
+            raise WebSocketFailure(f"Fragmented message exceeds {MAX_MESSAGE_BYTES} bytes")
         return opcode, final, self._read_exact(length)
 
     def _read_exact(self, length: int) -> bytes:

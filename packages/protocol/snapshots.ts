@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { PROTOCOL_VERSION } from "./version";
+import { MAX_ROOM_PARTICIPANTS, MAX_ROOM_PLAYERS } from "./limits";
 import {
     cardReplacedEventPayloadSchema,
     clientCapabilitySchema,
@@ -15,6 +16,7 @@ import {
     roomGameSettingsSchema,
     roomHostStatusSchema,
     roomRoleChangedPayloadSchema,
+    requestIdSchema,
 } from "./common";
 
 const playerSchema = z.object({ id: z.uuid(), name: z.string().min(1).max(40) }).strict();
@@ -78,7 +80,7 @@ export const sessionViewSchema = z
         ]),
         roundNumber: z.number().int().nonnegative(),
         activePlayer: playerSchema.nullable(),
-        players: z.array(playerSchema),
+        players: z.array(playerSchema).max(MAX_ROOM_PLAYERS),
         currentCard: z
             .object({
                 id: z.uuid(),
@@ -93,6 +95,7 @@ export const sessionViewSchema = z
             .nullable(),
         cardsShown: z.number().int().nonnegative(),
         remainingCardCount: z.number().int().nonnegative(),
+        // Zero totals until reveal; mirrors only the canonical voting result's counts.
         voteResult: voteResultSchema,
         neverHaveIEverVoting: neverHaveIEverVotingViewSchema.nullable(),
         hasVoted: z.boolean(),
@@ -135,11 +138,11 @@ export const roomSnapshotSchema = z
         roomId: z.uuid(),
         capacity: z
             .object({
-                maximumParticipants: z.number().int().min(2),
-                maximumPlayers: z.number().int().min(2),
+                maximumParticipants: z.number().int().min(2).max(MAX_ROOM_PARTICIPANTS),
+                maximumPlayers: z.number().int().min(2).max(MAX_ROOM_PLAYERS),
             })
             .strict(),
-        participants: z.array(publicRoomParticipantSchema),
+        participants: z.array(publicRoomParticipantSchema).max(MAX_ROOM_PARTICIPANTS),
         bootstrapMode: roomBootstrapModeSchema,
         hostStatus: roomHostStatusSchema,
         boundaryConfigured: z.boolean(),
@@ -163,7 +166,7 @@ export const serverHelloEnvelopeSchema = envelopeSchema.extend({
 
 export const serverPongEnvelopeSchema = envelopeSchema.extend({
     type: z.literal("server.pong"),
-    requestId: z.string().min(1),
+    requestId: requestIdSchema,
     revision: z.null(),
     payload: z.object({ serverTime: z.number().int().nonnegative() }).strict(),
 });
@@ -178,15 +181,17 @@ export const roomPresenceEnvelopeSchema = envelopeSchema.extend({
     revision: z.null(),
     payload: z
         .object({
-            connected: z.array(
-                z
-                    .object({
-                        participantId: z.uuid(),
-                        displayName: z.string().min(1).max(40),
-                        role: clientRoleSchema,
-                    })
-                    .strict(),
-            ),
+            connected: z
+                .array(
+                    z
+                        .object({
+                            participantId: z.uuid(),
+                            displayName: z.string().min(1).max(40),
+                            role: clientRoleSchema,
+                        })
+                        .strict(),
+                )
+                .max(MAX_ROOM_PARTICIPANTS),
         })
         .strict(),
 });

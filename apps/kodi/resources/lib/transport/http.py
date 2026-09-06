@@ -14,6 +14,7 @@ from urllib.request import HTTPRedirectHandler, HTTPSHandler, Request, build_ope
 from ..discovery.address_policy import relative_url, validate_transport
 from ..native_settings_metadata import SOURCE_LOCALE
 from ..protocol.validation import (
+    MAX_MESSAGE_BYTES,
     validate_card_search,
     validate_couch_snapshot,
     validate_eligibility_preview,
@@ -34,7 +35,7 @@ from ..version import APPLICATION_VERSION
 JSON_CONTENT_TYPE = 'application/json'
 
 
-MAX_RESPONSE_BYTES = 1024 * 1024
+MAX_RESPONSE_BYTES = MAX_MESSAGE_BYTES
 
 
 def _group_scope_query(group_id: object) -> str:

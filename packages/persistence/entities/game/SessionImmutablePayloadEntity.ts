@@ -5,8 +5,7 @@ import { SessionImmutablePayloadChunkEntity } from "./SessionImmutablePayloadChu
 @Entity("session_immutable_payloads")
 export class SessionImmutablePayloadEntity {
     @PrimaryColumn("varchar", { length: 64 }) digest!: string;
-    @Column("varchar", { name: "payload_kind", length: 24 }) payloadKind!:
-        "COMPILED_CARD_POLICY" | "GROUP_HISTORY";
+    @Column("varchar", { name: "payload_kind", length: 24 }) payloadKind!: "POLICY_INPUT";
     @Column("varchar", { length: 16 }) compression!: "brotli";
     @Column("int", { name: "chunk_count" }) chunkCount!: number;
     @Column("int", { name: "uncompressed_byte_length" }) uncompressedByteLength!: number;

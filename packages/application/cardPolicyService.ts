@@ -1,9 +1,17 @@
+import { MESSAGE_KEYS } from "../localization/keys";
+import {
+    sessionPolicyResolver,
+    prepareEligibility,
+    eligibilityReasons,
+    type CardStream,
+    type SessionPolicySnapshot,
+    type Card,
+} from "../game-core";
 import {
     CARD_TYPES,
     GAME_MODES,
     cardPolicyScopeFromJson,
     eligibleCards,
-    compactCompiledCardPolicyEntry,
     matchesCardPolicyPredicate,
     maximumGlobalIntensityScore,
     resolveCardPolicy,
@@ -20,6 +28,7 @@ import {
     type ManagedCardSearch,
     type StoredCardPolicyScope,
 } from "./cardPolicyRepository";
+import { requiresAdultConfirmation } from "./adultConfirmation";
 
 export class CardPolicyService {
     constructor(private readonly repository: CardPolicyRepository) {}
@@ -29,90 +38,115 @@ export class CardPolicyService {
     }
 
     async hierarchy(dataSpaceId: string, groupId: string | null) {
-        const dataSpace = await this.repository.load({
-            dataSpaceId,
-            groupId: null,
-            ownerKey: `DATASPACE:${dataSpaceId}`,
-            name: "DataSpace",
-        });
-        const group = groupId
-            ? await this.repository.load({
-                  dataSpaceId,
-                  groupId,
-                  ownerKey: `GROUP:${groupId}`,
-                  name: "Group",
-              })
-            : null;
+        const owners: CardPolicyOwner[] = [
+            { dataSpaceId, groupId: null, ownerKey: `DATASPACE:${dataSpaceId}`, name: "DataSpace" },
+        ];
+        if (groupId)
+            owners.push({ dataSpaceId, groupId, ownerKey: `GROUP:${groupId}`, name: "Group" });
+        const [dataSpace, group = null] = await this.repository.loadScopes(owners);
         return { dataSpace, group };
     }
 
-    async compileSessionCards(input: {
-        cards: readonly PlayableCard[];
+    async captureSessionPolicy(input: {
         dataSpaceId?: string;
         groupId?: string | null;
-        profile: GameProfile;
-        sessionPolicy: SessionCardPolicyInput;
-    }) {
+    }): Promise<SessionPolicySnapshot> {
         const hierarchy = input.dataSpaceId
             ? await this.hierarchy(input.dataSpaceId, input.groupId ?? null)
             : null;
-        const sessionScope = cardPolicyScopeFromJson({
-            name: "Session",
-            ...input.sessionPolicy,
-        });
-        const dataSpace = hierarchy ? toDomainPolicyScope(hierarchy.dataSpace) : undefined;
-        const group = hierarchy?.group ? toDomainPolicyScope(hierarchy.group) : undefined;
-        const cards = input.cards.map((card) =>
-            resolveCardPolicy({ card, dataSpace, group, session: sessionScope }),
-        );
-        const catalog = await this.repository.catalogProvenance();
-        const policyRevisions = {
-            dataSpace: hierarchy ? this.maximumRevision(hierarchy.dataSpace) : null,
-            group: hierarchy?.group ? this.maximumRevision(hierarchy.group) : null,
+        const capture = (
+            scope: StoredCardPolicyScope | null | undefined,
+        ): SessionCardPolicyInput | null => {
+            if (!scope) return null;
+            return {
+                scopeDefault: scope.scopeDefault.directives,
+                conditionalRules: scope.rules
+                    .filter((rule) => rule.enabled)
+                    .map(({ id, name, order, enabled, predicate, directives }) => ({
+                        id,
+                        name,
+                        order,
+                        enabled,
+                        predicate,
+                        directives,
+                    })),
+                exactCards: scope.exactCards.map(({ cardId, directives }) => ({
+                    cardId,
+                    directives,
+                })),
+            };
         };
-        return {
-            cards,
-            catalog,
-            policyRevisions,
-            snapshot: {
-                catalog,
-                policyRevisions,
-                cards: cards.map(compactCompiledCardPolicyEntry),
-            },
-        };
+        return { dataSpace: capture(hierarchy?.dataSpace), group: capture(hierarchy?.group) };
     }
 
-    /**
-     * Count the server-authoritative Card pool for a pending game. Private participant
-     * boundaries are intentionally unavailable here and can only narrow the pool later.
-     */
     async eligibilityPreview(input: {
-        cards: readonly PlayableCard[];
+        cards: CardStream;
         dataSpaceId?: string;
         groupId?: string | null;
         profile: GameProfile;
         sessionPolicy: SessionCardPolicyInput;
         mode: GameMode;
         playerCount: number;
-        groupHistoryCardIds: ReadonlySet<PlayableCard["id"]>;
+        groupHistoryCardIds?: ReadonlySet<Card["id"]>;
     }) {
-        const compiled = await this.compileSessionCards(input);
-        const atMaximum = this.countEligibleCards({
-            ...input,
-            cards: compiled.cards,
-            maximumIntensityScore: maximumGlobalIntensityScore(input.profile.maximumIntensity),
-        });
-        const atStart = this.countEligibleCards({
-            ...input,
-            cards: compiled.cards,
-            maximumIntensityScore: maximumGlobalIntensityScore(input.profile.startingIntensity),
-        });
+        const resolve = sessionPolicyResolver(
+            await this.captureSessionPolicy(input),
+            input.sessionPolicy,
+        );
+        const byType = { QUESTION: 0, DARE: 0, CONVERSATION_META: 0 };
+        const atStartByType = { ...byType };
+        const requests = new Map<CardType, ReturnType<typeof prepareEligibility>>();
+        for (const type of Object.values(CARD_TYPES))
+            requests.set(
+                type,
+                prepareEligibility({
+                    cardType: type,
+                    requireYesNoAnswer: input.mode === GAME_MODES.NEVER_HAVE_I_EVER,
+                    profile: input.profile,
+                    boundaries: [],
+                    maximumIntensityScore: maximumGlobalIntensityScore(
+                        input.profile.maximumIntensity,
+                    ),
+                    sessionHistory: [],
+                    groupHistoryCardIds: input.groupHistoryCardIds ?? new Set(),
+                    playerCount: input.playerCount,
+                }),
+            );
+        let adultConfirmationRequired = false;
+        for await (const original of input.cards) {
+            const card = resolve(original);
+            adultConfirmationRequired ||= requiresAdultConfirmation({
+                ...input,
+                cards: [original],
+                effectiveCards: [card],
+            });
+            if (
+                input.mode === GAME_MODES.NEVER_HAVE_I_EVER &&
+                card.cardType !== CARD_TYPES.QUESTION
+            )
+                continue;
+            if (input.mode === GAME_MODES.LETS_TALK && card.cardType === CARD_TYPES.DARE) continue;
+            if (
+                (input.mode === GAME_MODES.CLASSIC || input.mode === GAME_MODES.RANDOM) &&
+                card.cardType === CARD_TYPES.CONVERSATION_META
+            )
+                continue;
+            const request = { ...requests.get(card.cardType)! };
+            if (original.seenInGroup !== undefined)
+                request.groupHistoryCardIds = original.seenInGroup ? new Set([card.id]) : new Set();
+            if (eligibilityReasons(card, request).length === 0) byType[card.cardType]++;
+            request.maximumIntensityScore = maximumGlobalIntensityScore(
+                input.profile.startingIntensity,
+            );
+            if (eligibilityReasons(card, request).length === 0) atStartByType[card.cardType]++;
+        }
         return {
-            total: atMaximum.total,
-            availableAtStart: atStart.total,
-            byType: atMaximum.byType,
-            atStartByType: atStart.byType,
+            total: Object.values(byType).reduce((sum, count) => sum + count, 0),
+            availableAtStart: Object.values(atStartByType).reduce((sum, count) => sum + count, 0),
+            byType,
+            atStartByType,
             playerCount: input.playerCount,
+            adultConfirmationRequired,
         };
     }
 
@@ -204,17 +238,8 @@ export class CardPolicyService {
         predicate: Parameters<typeof matchesCardPolicyPredicate>[1],
         locale: string,
     ) {
-        const cards = (await this.repository.listPolicyCards(locale)).filter((card) =>
-            matchesCardPolicyPredicate(card, predicate),
-        );
         return {
-            matchCount: cards.length,
-            cards: cards.slice(0, 20).map(({ id, cardText, cardType, taxonomyLabel }) => ({
-                id,
-                text: cardText,
-                cardType,
-                taxonomyLabel,
-            })),
+            ...(await this.previewMatches(predicate, locale)),
             scope: owner.groupId ? "GROUP" : "DATASPACE",
         };
     }
@@ -223,18 +248,29 @@ export class CardPolicyService {
         predicate: Parameters<typeof matchesCardPolicyPredicate>[1],
         locale: string,
     ) {
-        const cards = (await this.repository.listPolicyCards(locale)).filter((card) =>
-            matchesCardPolicyPredicate(card, predicate),
-        );
+        return { ...(await this.previewMatches(predicate, locale)), scope: "SESSION" as const };
+    }
+
+    private async previewMatches(
+        predicate: Parameters<typeof matchesCardPolicyPredicate>[1],
+        locale: string,
+    ) {
+        let matchCount = 0;
+        const ids: string[] = [];
+        for await (const card of this.repository.scanPolicyCards(locale)) {
+            if (!matchesCardPolicyPredicate(card, predicate)) continue;
+            matchCount++;
+            if (ids.length < 20) ids.push(card.id);
+        }
+        const samples = await this.repository.policyPreviewSamples(ids, locale);
         return {
-            matchCount: cards.length,
-            cards: cards.slice(0, 20).map(({ id, cardText, cardType, taxonomyLabel }) => ({
+            matchCount,
+            cards: samples.map(({ id, cardText, cardType, taxonomyLabel }) => ({
                 id,
                 text: cardText,
                 cardType,
                 taxonomyLabel,
             })),
-            scope: "SESSION" as const,
         };
     }
 
@@ -243,15 +279,23 @@ export class CardPolicyService {
         search: Omit<ManagedCardSearch, "cursor" | "limit">,
         directives: Parameters<CardPolicyRepository["putExactCards"]>[2],
         confirmedCount: number,
+        expectedScopeRevision: number,
     ) {
         const cardIds = await this.repository.listMatchingCardIds(search);
         if (cardIds.length !== confirmedCount) {
-            throw Object.assign(new Error("The matching Card result changed before confirmation"), {
+            throw Object.assign(new Error(MESSAGE_KEYS.CARD_POLICY_RESULT_SET_CHANGED), {
                 code: "POLICY_RESULT_SET_CHANGED",
                 status: 409,
             });
         }
-        return { appliedCount: await this.repository.putExactCards(owner, cardIds, directives) };
+        return {
+            appliedCount: await this.repository.putExactCards(
+                owner,
+                cardIds,
+                directives,
+                expectedScopeRevision,
+            ),
+        };
     }
 
     private properties(card: PlayableCard, available: boolean) {
@@ -267,37 +311,6 @@ export class CardPolicyService {
                 minimum: card.minimumPlayerCount,
                 maximum: card.maximumPlayerCount,
             },
-        };
-    }
-
-    private countEligibleCards(input: {
-        cards: readonly PlayableCard[];
-        profile: GameProfile;
-        mode: GameMode;
-        playerCount: number;
-        groupHistoryCardIds: ReadonlySet<PlayableCard["id"]>;
-        maximumIntensityScore: number;
-    }) {
-        const byType: Record<CardType, number> = {
-            [CARD_TYPES.QUESTION]: 0,
-            [CARD_TYPES.DARE]: 0,
-            [CARD_TYPES.CONVERSATION_META]: 0,
-        };
-        for (const request of this.cardTypeRequests(input.mode)) {
-            byType[request.cardType] = eligibleCards(input.cards, {
-                cardType: request.cardType,
-                requireYesNoAnswer: request.requireYesNoAnswer,
-                profile: input.profile,
-                boundaries: [],
-                maximumIntensityScore: input.maximumIntensityScore,
-                sessionHistory: [],
-                groupHistoryCardIds: input.groupHistoryCardIds,
-                playerCount: input.playerCount,
-            }).length;
-        }
-        return {
-            total: Object.values(byType).reduce((total, count) => total + count, 0),
-            byType,
         };
     }
 
@@ -317,13 +330,5 @@ export class CardPolicyService {
             { cardType: CARD_TYPES.QUESTION, requireYesNoAnswer: false },
             { cardType: CARD_TYPES.DARE, requireYesNoAnswer: false },
         ];
-    }
-
-    private maximumRevision(scope: StoredCardPolicyScope): number {
-        return Math.max(
-            scope.scopeDefault.revision,
-            ...scope.rules.map(({ revision }) => revision),
-            ...scope.exactCards.map(({ revision }) => revision),
-        );
     }
 }

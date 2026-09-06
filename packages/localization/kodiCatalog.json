@@ -1466,9 +1466,9 @@
         {
             "constant": "SERVER_SECURITY",
             "id": 32186,
-            "source": "%s transport · API 1 · WebSocket 2",
+            "source": "%s transport · API 1 · WebSocket %s",
             "translations": {
-                "de-DE": "%s-Transport · API 1 · WebSocket 2"
+                "de-DE": "%s-Transport · API 1 · WebSocket %s"
             }
         },
         {
@@ -3011,9 +3011,9 @@
         {
             "constant": "CONFIRM_ADULT_BODY",
             "id": 32416,
-            "source": "This profile contains explicit adult content. Confirm that everyone playing is an adult.",
+            "source": "These settings allow explicit adult content. Confirm that everyone playing is an adult.",
             "translations": {
-                "de-DE": "Dieses Profil enthält explizite Inhalte für Erwachsene. Bestätige, dass alle Spielenden volljährig sind."
+                "de-DE": "Diese Einstellungen erlauben explizite Inhalte für Erwachsene. Bestätige, dass alle Spielenden volljährig sind."
             }
         },
         {

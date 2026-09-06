@@ -1,4 +1,5 @@
 import { MESSAGE_KEYS } from "../../../../packages/localization/keys";
+import { handleJsonBodyError } from "./jsonBodyErrorHandler";
 import type { NextFunction, Request, Response } from "express";
 import { z, ZodError } from "zod";
 import { APIError, ExpectedError, ValidationError } from "../modules/lib/errors";
@@ -29,6 +30,7 @@ export function wrapErrorApi(
     _next: NextFunction,
 ): void {
     const validation = error instanceof ZodError;
+    if (handleJsonBodyError(error, request, response)) return;
     const status = validation ? 400 : (error.status ?? 500);
     const serverFailure = status >= 500;
     const expected =

@@ -4,6 +4,11 @@ export const en = {
     messages: {
         "request.internal": "Internal server error",
         "request.invalid": "Invalid input.",
+        "request.tooLarge": "This request is too large. Reduce the file or settings and try again.",
+        "cardPolicy.invalidImport":
+            "This file is not a supported Card policy. Choose a v2 policy export with at most 250 rules and 50,000 Card overrides.",
+        "cardPolicy.unknownCard":
+            "This policy refers to Cards missing from this installation. Use a policy exported for the installed catalog.",
         "request.notFound": "Not found.",
         "account.localDisabled": "Local login is disabled.",
         "account.oidcDisabled": "OIDC is disabled.",
@@ -47,6 +52,7 @@ export const en = {
         "room.devicePlayersLocked": "Device players are locked after the game starts.",
         "room.hostOnlyTransfer": "Only the host can transfer hosting.",
         "room.boundariesLocked": "Boundaries are locked after the game starts.",
+        "room.enrollmentRequired": "Save your private boundaries before joining this game.",
         "room.settingsLocked": "Room settings are locked after the game starts.",
         "room.sessionAlreadyStarted": "The game has already started.",
         "room.unknownProfile": "Unknown game profile.",
@@ -60,6 +66,26 @@ export const en = {
         "room.notAuthorized": "Not authorized.",
         "game.staleRevision": "The game state has changed.",
         "game.invalidState": "That action is not available in the current game state.",
+        "cardPolicy.revisionConflict":
+            "This policy changed. Reload the policy and review the latest version before saving again.",
+        "cardPolicy.ruleNotFound":
+            "This rule is no longer available. Reload the policy and choose another rule.",
+        "cardPolicy.resultSetChanged":
+            "The matching Cards changed. Reload the policy, review the Card list and confirm the bulk change again.",
+        "cardPolicy.invalidRuleOrder":
+            "The order must include every rule exactly once. Reload the policy before reordering.",
+        "cardPolicy.notFound":
+            "This Card override is no longer available. Reload the policy before editing it again.",
+        "card.notFound":
+            "This Card is not available. Refresh the Card list and choose another Card.",
+        "group.notFound":
+            "This Group is no longer available in the current DataSpace. Choose another scope or check your account.",
+        "cardPolicy.capacityExceeded":
+            "A policy can contain at most 250 rules and 50,000 Card overrides.",
+        "game.catalogCapacityExceeded":
+            "This catalog is too large to start a game. Reduce the installed catalog or its text size.",
+        "game.sessionCapacityExceeded":
+            "The server has reached its game capacity. Try again shortly or end an unused game.",
         "game.cardPoolExhausted": "No card satisfies all active rules.",
         "catalog.localeUnavailable": "That Card language is not available.",
         "game.sessionNotFound": "The Couch game was not found.",

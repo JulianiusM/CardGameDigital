@@ -29,6 +29,19 @@ from lib.storage import profile_store
 
 
 class ProtocolValidationTests(unittest.TestCase):
+    def test_presence_accepts_the_shared_maximum_participant_count(self) -> None:
+        maximum = load_generated_json("enums.json")["constraints"]["maximumRoomParticipants"]
+        value = {"protocol": PROTOCOL_VERSION, "type": "room.presence", "requestId": None,
+                 "revision": None, "payload": {"connected": [
+                     {"participantId": f"00000000-0000-4000-8000-{index:012d}",
+                      "displayName": "界" * 40, "role": "PLAYER"}
+                     for index in range(maximum)
+                 ]}}
+        self.assertEqual(len(validate_server_envelope(value)["payload"]["connected"]), maximum)
+        value["payload"]["connected"].append(value["payload"]["connected"][0])
+        with self.assertRaises(ProtocolViolation):
+            validate_server_envelope(value)
+
     def test_native_consumers_reuse_generated_protocol_constants(self) -> None:
         self.assertIs(app_module.ROOM_CODE, ROOM_CODE)
         self.assertIs(profile_store.ROOM_CODE, ROOM_CODE)
@@ -104,6 +117,9 @@ class ProtocolValidationTests(unittest.TestCase):
         fixture = load_generated_json("fixtures/server-info.json")
         fixture["futureField"] = {"ignored": True}
         self.assertEqual(validate_server_info(fixture)["serverId"], fixture["serverId"])
+        fixture["protocolVersions"] = [PROTOCOL_VERSION - 1]
+        with self.assertRaisesRegex(ProtocolViolation, f"WebSocket protocol {PROTOCOL_VERSION}"):
+            validate_server_info(fixture)
 
     def test_server_info_rejects_unsafe_access_origins_and_disabled_auth_metadata(self) -> None:
         fixture = load_generated_json("fixtures/server-info.json")
@@ -255,7 +271,7 @@ class ProtocolValidationTests(unittest.TestCase):
 
     def test_every_server_event_shape_is_strict_and_bounded(self) -> None:
         display_id = "00000000-0000-4000-8000-000000000001"
-        base = {"protocol": 2, "requestId": None, "revision": None}
+        base = {"protocol": PROTOCOL_VERSION, "requestId": None, "revision": None}
         events = (
             {
                 **base,
@@ -308,12 +324,12 @@ class ProtocolValidationTests(unittest.TestCase):
         with self.assertRaisesRegex(ProtocolViolation, "expected role DISPLAY"):
             validate_room_join(join)
         hello = {
-            "protocol": 2,
+            "protocol": PROTOCOL_VERSION,
             "type": "server.hello",
             "requestId": "one",
             "revision": None,
             "payload": {
-                "protocolVersion": 2,
+                "protocolVersion": PROTOCOL_VERSION,
                 "participantId": join["participantId"],
                 "role": "HOST",
             },
@@ -392,6 +408,7 @@ class ProtocolValidationTests(unittest.TestCase):
         eligibility = {
             "total": 10,
             "availableAtStart": 4,
+            "adultConfirmationRequired": False,
             "byType": {"QUESTION": 5, "DARE": 5, "CONVERSATION_META": 0},
             "atStartByType": {"QUESTION": 2, "DARE": 2, "CONVERSATION_META": 0},
             "playerCount": 4,
@@ -430,7 +447,7 @@ class ProtocolValidationTests(unittest.TestCase):
 
     def test_generated_manifest_contains_source_owned_contracts(self) -> None:
         manifest = load_generated_json("protocol/manifest.json")
-        self.assertEqual(manifest["protocolVersion"], 2)
+        self.assertEqual(manifest["protocolVersion"], PROTOCOL_VERSION)
         self.assertIn("server-info.schema.json", manifest["schemas"])
         self.assertIn("room-snapshot.schema.json", manifest["schemas"])
         for name in manifest["schemas"]:

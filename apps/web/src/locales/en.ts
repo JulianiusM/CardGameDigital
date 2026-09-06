@@ -82,9 +82,18 @@ export const en = {
         newGame: CLIENT_VOCABULARY.NEW_GAME["en-GB"],
         noPlayers: "Add at least one person.",
         minimumPlayers: "Couch mode needs at least two people.",
-        exhausted: "No matching cards remain. Change the settings or end the game.",
+        exhausted: "No matching cards remain. End this game to choose new settings.",
+        chooseAnotherType:
+            "No matching cards of this type remain. Choose another type or end the game.",
         noCardsForSettings: "No cards are available for the current profile and settings.",
-        stale: "The game state changed. Please try again.",
+        recoveryTitle: "Reconnecting to your game",
+        recoveryHint: "We are checking the latest game state before you continue.",
+        recoveryFailed:
+            "Your game could not be reached. Its reference is kept on this device. Try reconnecting shortly.",
+        recoveryAccount:
+            "Check that you are signed in to the same account and DataSpace, then reconnect.",
+        recoveryRetry: "Reconnect",
+        gameUnavailable: "This game is no longer available. You can start a new game.",
         genericError: "Something went wrong.",
     },
     room: {
@@ -123,7 +132,7 @@ export const en = {
         localPerson: "Remove local person",
         addLocalPerson: "+ Person on this device",
         profile: "Game profile",
-        adultConfirmation: "I am an adult and want to enable explicit profiles.",
+        adultConfirmation: "I am an adult and want to enable explicit content for this game.",
         groupHistory: "Group and shared history",
         gameMode: "Game mode",
         cardLanguage: CLIENT_VOCABULARY.CARD_LANGUAGE["en-GB"],
@@ -543,7 +552,12 @@ export const en = {
         openManagement: "Open Card management",
         menuHint: "Manage defaults, rules, and individual Cards.",
         unavailable: "Card management needs a local DataSpace or a signed-in account.",
-        unavailableTitle: "Card management is not available here",
+        unavailableTitle: "Unable to load policy",
+        reloadPolicy: "Reload policy",
+        reloadHint:
+            "Reloading replaces unsaved edits with the latest policy. It does not change an active game.",
+        retryLoading: "Try loading again",
+        chooseScope: "Choose another scope",
         scope: "Scope",
         dataSpacePolicyLevel: "DATASPACE POLICY",
         groupPolicyLevel: "GROUP POLICY",
@@ -583,6 +597,13 @@ export const en = {
         importConfirm: "Replace every local policy in this scope with the imported file?",
         replaceScope: "Replace scope",
         imported: "Card policy imported.",
+        importTooLarge: "This file is too large. Choose a Card policy export smaller than 64 MiB.",
+        invalidImport:
+            "Choose a valid v2 Card policy export with at most 250 rules and 50,000 Card overrides. Your current policy has not changed.",
+        invalidSessionPolicy:
+            "Check the policy values. One game supports at most 250 rules and 1,000 Card overrides. Your saved setup has not changed.",
+        ruleLimitReached:
+            "This policy already has 250 rules. Edit or remove a rule before adding another.",
         tabsLabel: "Card management tiers",
         defaultsTab: "Scope Defaults",
         rulesTab: "Conditional Rules",
@@ -796,6 +817,9 @@ export const en = {
         } as Record<string, string>,
     },
     boundaries: {
+        enrollmentTitle: "Join this game",
+        enrollmentHint:
+            "Save your private choices before playing. They apply from the next card and stay fixed for this game. You can also continue with no exclusions.",
         heading: "Your private boundaries",
         privacy: "Your choices are never shown as belonging to you.",
         questions: "Skip these question topics",

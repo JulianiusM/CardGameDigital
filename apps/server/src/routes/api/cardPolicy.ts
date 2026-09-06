@@ -1,3 +1,4 @@
+import { MAX_POLICY_IMPORT_BYTES } from "../../../../../packages/protocol/limits";
 import express, { type Request } from "express";
 import { z } from "zod";
 import { getAppDataSource } from "../../modules/database/dataSource";
@@ -6,6 +7,7 @@ import { CardEntity } from "../../../../../packages/persistence/entities/card/Ca
 import { asyncHandler } from "../../modules/lib/asyncHandler";
 import { ExpectedError } from "../../modules/lib/errors";
 import settings from "../../modules/settings";
+import { gameResourceLimits } from "../../modules/operationalSettings";
 import { getRoomService } from "../../modules/realtime";
 import type { CardPolicyOwner } from "../../../../../packages/application/cardPolicyRepository";
 import { CardPolicyService } from "../../../../../packages/application/cardPolicyService";
@@ -37,15 +39,55 @@ import {
     eligibilityPreviewRequestSchema,
     eligibilityPreviewSchema,
     managedCardSearchResponseSchema,
+    cardPolicyImportRequestSchema,
+    cardPolicySummaryResponseSchema,
     portableCardPolicyScopeSchema,
 } from "../../../../../packages/protocol";
 import { requireCurrentDataSpace } from "./dataSpaceAccess";
+import { withPolicyWorkCapacity } from "../../modules/gameWorkLimits";
+
+function policyWorkHandler(action: Parameters<typeof asyncHandler>[0]) {
+    return asyncHandler((request, response, next) =>
+        withPolicyWorkCapacity(async () => action(request, response, next)),
+    );
+}
+
+let activePolicyImports = 0;
+const importAdmissions = new WeakMap<Request, { started: boolean; release: () => void }>();
+const admitPolicyImport: express.RequestHandler = (request, response, next) => {
+    if (activePolicyImports >= settings.value.policyConcurrentImports)
+        return next(
+            Object.assign(new Error(MESSAGE_KEYS.GAME_SESSION_CAPACITY_EXCEEDED), {
+                code: "SESSION_CAPACITY_EXCEEDED",
+                status: 429,
+            }),
+        );
+    activePolicyImports++;
+    let released = false;
+    const release = () => {
+        if (!released) {
+            released = true;
+            activePolicyImports--;
+        }
+    };
+    const admission = { started: false, release };
+    importAdmissions.set(request, admission);
+    const releaseParser = () => {
+        if (!admission.started) release();
+    };
+    response.once("finish", releaseParser);
+    response.once("close", releaseParser);
+    next();
+};
 
 const router = express.Router();
 const repository = new TypeOrmCardPolicyRepository(getAppDataSource());
 const service = new CardPolicyService(repository);
 const cards = new TypeOrmCardRepository(getAppDataSource().getRepository(CardEntity));
-const sessions = new TypeOrmCouchSessionRepository(getAppDataSource());
+const sessions = new TypeOrmCouchSessionRepository(
+    getAppDataSource(),
+    gameResourceLimits(settings.value),
+);
 const groupQuerySchema = z.object({ groupId: z.uuid().optional() }).loose();
 const revisionQuerySchema = z
     .string()
@@ -70,7 +112,7 @@ async function ownerFor(request: Request): Promise<CardPolicyOwner> {
             dataSpaceId: space.id,
         }))
     ) {
-        throw new ExpectedError("GROUP_NOT_FOUND", "error", 404);
+        throw new ExpectedError(MESSAGE_KEYS.GROUP_NOT_FOUND, "error", 404);
     }
     return {
         dataSpaceId: space.id,
@@ -95,37 +137,73 @@ router.get(
     asyncHandler(async (request, response) => {
         const scope = await service.load(await ownerFor(request));
         response.attachment("card-policy.json");
-        response.json({
-            format: "party-game-card-policy/v2",
-            scopeDefault: scope.scopeDefault.directives,
-            rules: scope.rules.map(({ name, enabled, predicate, directives }) => ({
-                name,
-                enabled,
-                predicate,
-                directives,
-            })),
-            exactCards: scope.exactCards.map(({ cardId, directives }) => ({
-                cardId,
-                directives,
-            })),
-        });
+        response.json(
+            portableCardPolicyScopeSchema.parse({
+                format: "party-game-card-policy/v2",
+                scopeDefault: scope.scopeDefault.directives,
+                rules: scope.rules.map(({ name, enabled, predicate, directives }) => ({
+                    name,
+                    enabled,
+                    predicate,
+                    directives,
+                })),
+                exactCards: scope.exactCards.map(({ cardId, directives }) => ({
+                    cardId,
+                    directives,
+                })),
+            }),
+        );
     }),
 );
 
 router.post(
     "/import",
+    asyncHandler(async (request, _response, next) => {
+        await ownerFor(request);
+        next();
+    }),
+    admitPolicyImport,
+    express.json({ limit: MAX_POLICY_IMPORT_BYTES }),
     asyncHandler(async (request, response) => {
-        const { format: _format, ...input } = portableCardPolicyScopeSchema.parse(request.body);
-        const owner = await ownerFor(request);
-        await repository.replaceScope(owner, input);
-        response.json({ scope: await service.load(owner) });
+        const admission = importAdmissions.get(request)!;
+        admission.started = true;
+        try {
+            const parsed = cardPolicyImportRequestSchema.safeParse(request.body);
+            if (!parsed.success)
+                throw Object.assign(new Error(MESSAGE_KEYS.CARD_POLICY_INVALID_IMPORT), {
+                    code: "VALIDATION_ERROR",
+                    status: 400,
+                });
+            const { policy, expectedScopeRevision } = parsed.data;
+            const { format: _format, ...input } = policy;
+            const owner = await ownerFor(request);
+            await repository.replaceScope(owner, input, expectedScopeRevision);
+            response.status(204).end();
+        } finally {
+            admission.release();
+        }
+    }),
+);
+
+router.get(
+    "/scope",
+    asyncHandler(async (request, response) => {
+        const summary = await repository.summary(await ownerFor(request));
+        response.json(
+            cardPolicySummaryResponseSchema.parse({
+                scope: summary.owner,
+                scopeRevision: summary.revision,
+                scopeDefault: summary.scopeDefault,
+                rules: summary.rules,
+            }),
+        );
     }),
 );
 
 router.get(
     "/default",
     asyncHandler(async (request, response) => {
-        const scope = await service.load(await ownerFor(request));
+        const scope = await repository.summary(await ownerFor(request));
         response.json(
             cardPolicyScopedDefaultResponseSchema.parse({
                 scope: scope.owner,
@@ -154,7 +232,7 @@ router.put(
 router.get(
     "/rules",
     asyncHandler(async (request, response) => {
-        const scope = await service.load(await ownerFor(request));
+        const scope = await repository.summary(await ownerFor(request));
         response.json(cardPolicyRulesResponseSchema.parse({ rules: scope.rules }));
     }),
 );
@@ -182,7 +260,7 @@ router.put(
             input,
             input.expectedRevision,
         );
-        if (!rule) throw new ExpectedError("CARD_POLICY_RULE_NOT_FOUND", "error", 404);
+        if (!rule) throw new ExpectedError(MESSAGE_KEYS.CARD_POLICY_RULE_NOT_FOUND, "error", 404);
         response.json(cardPolicyRuleResponseSchema.parse({ rule }));
     }),
 );
@@ -193,7 +271,7 @@ router.delete(
         const id = uuidSchema.parse(request.params.id);
         const expectedRevision = revisionQuerySchema.parse(request.query.expectedRevision);
         if (!(await repository.deleteRule(await ownerFor(request), id, expectedRevision))) {
-            throw new ExpectedError("CARD_POLICY_RULE_NOT_FOUND", "error", 404);
+            throw new ExpectedError(MESSAGE_KEYS.CARD_POLICY_RULE_NOT_FOUND, "error", 404);
         }
         response.status(204).end();
     }),
@@ -205,7 +283,11 @@ router.post(
         const input = cardPolicyRuleReorderRequestSchema.parse(request.body);
         response.json(
             cardPolicyRulesResponseSchema.parse({
-                rules: await repository.reorderRules(await ownerFor(request), input.orderedIds),
+                rules: await repository.reorderRules(
+                    await ownerFor(request),
+                    input.orderedIds,
+                    input.expectedScopeRevision,
+                ),
             }),
         );
     }),
@@ -213,7 +295,7 @@ router.post(
 
 router.post(
     "/rules/preview",
-    asyncHandler(async (request, response) => {
+    policyWorkHandler(async (request, response) => {
         const input = cardPolicyRulePreviewRequestSchema.parse(request.body);
         response.json(
             cardPolicyRulePreviewResponseSchema.parse(
@@ -225,7 +307,7 @@ router.post(
 
 router.post(
     "/session/rules/preview",
-    asyncHandler(async (request, response) => {
+    policyWorkHandler(async (request, response) => {
         const input = cardPolicyRulePreviewRequestSchema.parse(request.body);
         response.json(
             cardPolicyRulePreviewResponseSchema.parse(
@@ -237,7 +319,7 @@ router.post(
 
 router.post(
     "/session/eligibility-preview",
-    asyncHandler(async (request, response) => {
+    policyWorkHandler(async (request, response) => {
         const input = eligibilityPreviewRequestSchema.parse(request.body);
         if ("roomCode" in input) {
             const preview = await getRoomService().eligibilityPreview(
@@ -255,8 +337,11 @@ router.post(
             throw new ExpectedError(MESSAGE_KEYS.ROOM_INVALID_REQUEST, "error", 400);
         }
         const profile = roomSettingsGameProfile(input.settings);
-        const [localizedCards, groupHistoryCardIds] = await Promise.all([
-            cards.listActive({
+        const group = owner?.groupId
+            ? await cards.groupHistoryWindow(owner.dataSpaceId, owner.groupId, Date.now())
+            : null;
+        const localizedCards = cards.scan(
+            {
                 locale: input.settings.cardLocale,
                 missingTranslation: input.settings.cardFallbackEnabled
                     ? "FALLBACK"
@@ -264,11 +349,9 @@ router.post(
                 fallbackLocales: input.settings.cardFallbackEnabled
                     ? input.settings.cardFallbackLocales
                     : [settings.value.cardFallbackLocale],
-            }),
-            owner?.groupId
-                ? sessions.groupHistory(owner.dataSpaceId as DataSpaceId, owner.groupId)
-                : Promise.resolve(new Set<never>()),
-        ]);
+            },
+            { sessionId: "", topology: "COUCH", group },
+        );
         response.json(
             eligibilityPreviewSchema.parse(
                 await service.eligibilityPreview({
@@ -279,7 +362,6 @@ router.post(
                     sessionPolicy: input.settings.cardPolicy,
                     mode: input.settings.mode,
                     playerCount: input.playerCount,
-                    groupHistoryCardIds,
                 }),
             ),
         );
@@ -288,7 +370,7 @@ router.post(
 
 router.post(
     "/session/cards",
-    asyncHandler(async (request, response) => {
+    policyWorkHandler(async (request, response) => {
         const input = cardPolicySessionSearchRequestSchema.parse(request.body);
         response.json(
             managedCardSearchResponseSchema.parse(
@@ -304,7 +386,7 @@ router.post(
 
 router.get(
     "/cards",
-    asyncHandler(async (request, response) => {
+    policyWorkHandler(async (request, response) => {
         const { groupId: _groupId, ...input } = cardPolicySearchSchema
             .extend({ groupId: z.uuid().optional() })
             .parse(request.query);
@@ -318,7 +400,7 @@ router.get(
 
 router.post(
     "/cards/bulk",
-    asyncHandler(async (request, response) => {
+    policyWorkHandler(async (request, response) => {
         const input = cardPolicyBulkApplyRequestSchema.parse(request.body);
         response.json(
             cardPolicyBulkApplyResponseSchema.parse(
@@ -327,6 +409,7 @@ router.post(
                     input.filters,
                     input.directives,
                     input.confirmedCount,
+                    input.expectedScopeRevision,
                 ),
             ),
         );
@@ -359,7 +442,7 @@ router.put(
             input.directives,
             input.expectedRevision,
         );
-        if (!policy) throw new ExpectedError("CARD_NOT_FOUND", "error", 404);
+        if (!policy) throw new ExpectedError(MESSAGE_KEYS.CARD_NOT_FOUND, "error", 404);
         response.json(cardPolicyExactResponseSchema.parse({ policy }));
     }),
 );
@@ -375,7 +458,7 @@ router.delete(
                 expectedRevision,
             ))
         ) {
-            throw new ExpectedError("CARD_POLICY_NOT_FOUND", "error", 404);
+            throw new ExpectedError(MESSAGE_KEYS.CARD_POLICY_NOT_FOUND, "error", 404);
         }
         response.status(204).end();
     }),

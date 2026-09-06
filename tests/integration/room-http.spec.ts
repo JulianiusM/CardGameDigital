@@ -60,7 +60,7 @@ describe("Room HTTP API", () => {
                 directives: { availability: "INCLUDE" },
             })
             .expect(201);
-        expect(rule.body.rule).toMatchObject({ name: "Personal Cards", order: 10, revision: 1 });
+        expect(rule.body.rule).toMatchObject({ name: "Personal Cards", order: 10, revision: 2 });
 
         const preview = await request(app)
             .post("/api/v1/card-policy/rules/preview")
@@ -103,7 +103,7 @@ describe("Room HTTP API", () => {
             .put(`/api/v1/card-policy/cards/${personalCard.id}`)
             .send({ directives: { intensity: { mode: "SET", value: 4 } }, expectedRevision: 0 })
             .expect(200);
-        expect(exact.body.policy.revision).toBe(1);
+        expect(exact.body.policy.revision).toBe(3);
 
         const sessionPage = await request(app)
             .post("/api/v1/card-policy/session/cards")
@@ -168,31 +168,43 @@ describe("Room HTTP API", () => {
             exactCards: [{ cardId: personalCard.id }],
         });
         await request(app)
-            .delete(`/api/v1/card-policy/cards/${personalCard.id}?expectedRevision=1`)
+            .delete(
+                `/api/v1/card-policy/cards/${personalCard.id}?expectedRevision=${exact.body.policy.revision}`,
+            )
             .expect(204);
         await request(app)
-            .delete(`/api/v1/card-policy/rules/${rule.body.rule.id}?expectedRevision=1`)
+            .delete(
+                `/api/v1/card-policy/rules/${rule.body.rule.id}?expectedRevision=${rule.body.rule.revision}`,
+            )
             .expect(204);
-        await request(app)
-            .post("/api/v1/card-policy/import")
-            .send({ ...portable.body, scopeDefault: { availability: "INCLUDE" } })
-            .expect(200)
-            .expect(({ body }) =>
-                expect(body.scope.scopeDefault).toEqual({
-                    directives: { availability: "INCLUDE" },
-                    revision: 1,
-                }),
-            );
+        const beforeImport = await request(app).get("/api/v1/card-policy/scope").expect(200);
+        expect(beforeImport.body).not.toHaveProperty("exactCards");
         await request(app)
             .post("/api/v1/card-policy/import")
             .send({
-                ...portable.body,
-                exactCards: [
-                    {
-                        cardId: "99999999-9999-4999-8999-999999999999",
-                        directives: { availability: "EXCLUDE" },
-                    },
-                ],
+                policy: { ...portable.body, scopeDefault: { availability: "INCLUDE" } },
+                expectedScopeRevision: beforeImport.body.scopeRevision,
+            })
+            .expect(204);
+        await request(app)
+            .post("/api/v1/card-policy/import")
+            .send({ policy: portable.body, expectedScopeRevision: beforeImport.body.scopeRevision })
+            .expect(409);
+        const imported = await request(app).get("/api/v1/card-policy/scope").expect(200);
+        expect(imported.body.scopeRevision).toBeGreaterThan(beforeImport.body.scopeRevision);
+        await request(app)
+            .post("/api/v1/card-policy/import")
+            .send({
+                expectedScopeRevision: imported.body.scopeRevision,
+                policy: {
+                    ...portable.body,
+                    exactCards: [
+                        {
+                            cardId: "99999999-9999-4999-8999-999999999999",
+                            directives: { availability: "EXCLUDE" },
+                        },
+                    ],
+                },
             })
             .expect(400);
         await request(app)
@@ -208,6 +220,7 @@ describe("Room HTTP API", () => {
                 filters: { locale: "en-GB", socialSensitivity: "PERSONAL" },
                 directives: { repeatableInSession: "ENABLE" },
                 confirmedCount: 2,
+                expectedScopeRevision: imported.body.scopeRevision,
             })
             .expect(200)
             .expect(({ body }) => expect(body.appliedCount).toBe(2));
@@ -217,6 +230,7 @@ describe("Room HTTP API", () => {
                 filters: { locale: "en-GB", socialSensitivity: "PERSONAL" },
                 directives: { repeatableInSession: "DISABLE" },
                 confirmedCount: 1,
+                expectedScopeRevision: imported.body.scopeRevision + 1,
             })
             .expect(409);
 

@@ -1,5 +1,13 @@
 # Probleme lösen
 
+Wenn der Server ausgelastet ist, lass dein Spiel geöffnet und versuche es später erneut.
+Ein abgelehnter Spielzug wird nicht automatisch wiederholt; beim Wiederverbinden wird
+der aktuelle Stand vom Server geladen. Couch-Schnellrunden verfallen standardmäßig nach 24 Stunden
+ohne Nutzung oder bei einem Serverneustart. Ihre Abschlussübersicht bleibt bei freier
+Serverkapazität bis zu 15 Minuten verfügbar. Gespeicherte
+Couch-Spiele enden standardmäßig nach 24 Stunden ohne Spielaktion; der gespeicherte Gruppenverlauf
+bleibt erhalten. Die Serververwaltung kann andere Aufbewahrungszeiten einstellen.
+
 ## Raum wird nicht gefunden
 
 - Code erneut Zeichen für Zeichen prüfen; `0`, `1`, `I` und `O` werden nicht verwendet.
@@ -12,6 +20,14 @@
 Lass die Seite geöffnet und warte auf die automatische Wiederverbindung. Nach der
 Rückkehr gilt der neue Server-Snapshot; nicht mehrfach auf eine alte Aktion tippen.
 Wenn der Host länger ausfällt, übernimmt nach der Schonfrist ein Spielergerät.
+
+Im Couch-Modus bleibt der Spielverweis bei einer vorübergehenden Störung auf diesem
+Gerät gespeichert. Die Steuerung erscheint erst wieder mit dem aktuellen Spielstand.
+Wenn die automatische Wiederverbindung stoppt, wähle **Erneut verbinden**. Bei einem
+Kontohinweis öffne **Konto**, melde dich im selben Konto an und wähle denselben Datenraum.
+Kehre dann zurück und verbinde dich erneut. Das Konto öffnet sich separat, damit die
+Spielseite erhalten bleibt. Ein abgelaufenes oder nicht mehr verfügbares Spiel lässt
+sich nicht wiederherstellen; die Seite bietet dann ein neues Spiel an.
 
 ## Start ist deaktiviert
 

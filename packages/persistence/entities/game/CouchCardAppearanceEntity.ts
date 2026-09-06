@@ -1,6 +1,8 @@
 import { Column, Entity, Index, PrimaryColumn } from "typeorm";
 
 @Index("IDX_couch_card_appearance_session", ["sessionId", "sequence"], { unique: true })
+@Index("IDX_couch_card_appearances_last_seen", ["sessionId", "cardId", "sequence"])
+@Index("IDX_couch_card_appearances_group_seen", ["groupId", "cardId", "shownAt"])
 @Entity("couch_card_appearances")
 export class CouchCardAppearanceEntity {
     @PrimaryColumn("varchar", { length: 36 }) id!: string;

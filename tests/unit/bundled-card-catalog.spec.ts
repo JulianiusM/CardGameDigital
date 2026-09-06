@@ -7,13 +7,13 @@ import {
     setBundledCardCatalogPathForTests,
 } from "../../apps/server/src/modules/database/bundledCardCatalog";
 
-describe("bundled Card catalog deployment policy", () => {
-    it("accepts the producer-shaped test release in local and public modes", () => {
-        expect(bundledCardCatalogArtifact("local").catalog.catalogId).toBe("core");
-        expect(bundledCardCatalogArtifact("public").catalog.catalogId).toBe("core");
+describe("bundled Card catalog deployment policy", async () => {
+    it("accepts the producer-shaped test release in local and public modes", async () => {
+        expect((await bundledCardCatalogArtifact("local")).catalog.catalogId).toBe("core");
+        expect((await bundledCardCatalogArtifact("public")).catalog.catalogId).toBe("core");
     });
 
-    it("refuses a named development fixture publicly unless explicitly allowed", () => {
+    it("refuses a named development fixture publicly unless explicitly allowed", async () => {
         const directory = fs.mkdtempSync(path.join(os.tmpdir(), "bundled-catalog-policy-"));
         const file = path.join(directory, "card-catalog.json");
         const fixture = JSON.parse(
@@ -23,10 +23,12 @@ describe("bundled Card catalog deployment policy", () => {
         fs.writeFileSync(file, JSON.stringify(fixture));
         setBundledCardCatalogPathForTests(file);
         try {
-            expect(() => bundledCardCatalogArtifact("public")).toThrow(
+            await expect(bundledCardCatalogArtifact("public")).rejects.toThrow(
                 /refuses the bundled development Card catalog/,
             );
-            expect(bundledCardCatalogArtifact("public", true).catalog.catalogId).toBe("core");
+            expect((await bundledCardCatalogArtifact("public", true)).catalog.catalogId).toBe(
+                "core",
+            );
         } finally {
             fs.rmSync(directory, { recursive: true, force: true });
         }

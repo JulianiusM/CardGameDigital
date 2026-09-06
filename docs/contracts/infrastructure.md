@@ -2,6 +2,12 @@
 
 ## Database
 
+Operational numbers below describe the default deployment policy. Retention, caches,
+admission, work concurrency, rate windows and realtime scheduling/backpressure are
+configurable through [operational settings](operational-settings.md). Protocol and
+storage-format boundaries remain fixed. Settings are validated at startup and apply
+after restart.
+
 - **Local deployment:** SQLite via `better-sqlite3`; `DB_TYPE=sqlite` and `DB_FILE`.
   Startup enables foreign keys and WAL. A local database must contain exactly one
   DataSpace.
@@ -20,6 +26,155 @@
 Readiness is `GET /readyz`, which performs `SELECT 1`. Liveness is `GET /healthz`.
 Orchestrators should remove an instance from service when readiness fails and restart
 only when liveness fails.
+
+### Authoritative Session and policy commits
+
+Couch persistence takes an explicit expected base revision (`null` only for creation).
+Runtime and CardAppearances commit together through a conditional update. Owned caches
+check a small persisted revision before reuse. Room membership/closure transactions
+change only hot runtime fields and do not hydrate catalog payloads or appearance history.
+Authoritative Room/Couch/policy transactions and catalog reconciliation serialize on
+the shared SQLite connection, including direct repository reads and independent transaction callbacks;
+public writes use row locks/CAS and coherent reads use repeatable-read transactions.
+Policy scopes retain an independent monotonic clock, including empty scopes.
+
+Session runtime **v7** records the catalog fingerprint and captured sparse DataSpace,
+Group and Session policy inputs. It stores no catalog membership, metadata array,
+translation snapshot, compiled per-Card policy or Group-history bitset. A changed catalog
+ends incompatible active games atomically at startup. Same-fingerprint recovery remains
+available; this is not a save-and-quit feature. Saved Group history never blocks catalog
+updates and keeps its stable Card UUIDs.
+
+Each draw scans every localized candidate in 256-Card metadata pages. Indexed lookups
+supply that Card's last Session appearance and membership in the Group history window
+captured at start. The engine reevaluates current progression, roster, boundaries,
+cooldown and captured policy, then runs a weighted reservoir for each relevant Card type.
+Cooldown expiry only makes a Card eligible again; it provides no priority. Only the
+selected Card's chosen rendering is fetched. Fallback availability uses one `EXISTS`
+query per page across the ordered locale set, without joining or loading translations.
+
+Sparse policy inputs alone use content-addressed Brotli chunks (24 KiB binary / 32 KiB
+Base64), with digest lookup before compression and validated size/count metadata on
+recovery. Ended games detach them; bounded cleanup runs at end, account/DataSpace
+deletion, catalog replacement and periodically. Identical live decoded inputs share weak
+references. Runtime retains the most recent two appearances plus a total shown counter;
+persistent draws query normalized history without loading the archive. Unsaved Rooms
+retain one last-seen row per played Card and erase those rows when the game ends.
+Saved sessions retain their required appearance archive.
+
+Large hot runtime and Room-settings JSON uses `brotli-json/v1` storage envelopes above
+64 KiB. Envelopes are at most 512 KiB, decode to at most 4 MiB, and validate their byte
+length and SHA-256 digest. Small records remain plain JSON; HTTP and WebSocket objects
+are unaffected. Four concurrent codecs bound compression/decompression work. These
+records contain no catalog membership, compiled catalog policy or translations.
+
+The forward, resumable `1787362000000-UseLiveSessionCatalog` migration ends pre-v7
+runtimes, drops obsolete payload references and deletes unreferenced archives. It adds
+history lookup indexes and widens producer weights to `DOUBLE`. Historical Card IDs and
+saved appearances remain. Downgrades require a matching backup and server release.
+
+There is no gameplay Card-count/catalog-JSON admission ceiling. Startup file validation
+streams records and uses an anonymous temporary UUID-only uniqueness index, deleted on
+close, with a 2 MiB SQLite page cache. Each record and the complete header are limited to
+16 MiB. Each rendering is limited to 4,000 Unicode characters and 8,192 UTF-8 bytes.
+MariaDB/MySQL catalog writes enable strict mode and require `max_allowed_packet >= 1 MiB`;
+ordinary metadata/rendering batches stay below 256/128 KiB estimated statement content.
+A release that exceeds these deployment content limits fails before installation.
+
+A process admits at most two simultaneous Session starts, four metadata scans, two
+uncached policy decodes, and one authenticated policy import. Work exceeding those
+budgets fails with `SESSION_CAPACITY_EXCEEDED` (HTTP 429), without a large proposal queue.
+Each Room/Couch service caches at most 128 Sessions and 128 MiB of conservatively estimated
+policy/history/roster data. Recoverable games can be evicted; live unsaved games reserve
+their entries. A minute maintenance pass expires idle entries after 24 hours, even
+without another request. Ended unsaved Couch summaries expire after at most 15 minutes,
+or earlier under cache pressure,
+without extending that window on reads. Cache limits are not an
+exact heap measurement or a total process-memory guarantee.
+
+Ordinary JSON and WebSocket messages allow 4 MiB; authenticated policy import allows
+64 MiB for the existing 50,000-Exact-Card scope. WebSocket input queues allow 32 messages
+and 8 MiB per socket, within 32 MiB total queued input. Sends allow 8 MiB per socket and
+32 MiB outstanding in the process; excess/slow consumers close with code 1013. Shared
+voting progress is coalesced over 50 ms, while the submitting voter receives an immediate
+response. Full Room snapshots still incur roster/recipient-dependent traffic: this is not
+a delta protocol. Persistent history and operator backups still require retention and
+sufficient disk space. Database I/O and rule evaluation grow with catalog size even
+though draw buffers and per-game catalog storage do not.
+
+### Game retention and resource admission
+
+The `1787363000000-BoundGameRetention` migration adds an indexed Couch
+`last_active_at` timestamp and a database admission lock. A successful Couch command
+updates activity; reading a snapshot does not keep abandoned saved runtime active.
+After 24 hours without a command, maintenance ends saved Couch runtime through the
+shared engine, increments its revision, clears private state and detaches policy input.
+Owned Session/Group appearances remain durable. Existing rows use their original
+start time when migrating, rather than receiving a new lease.
+
+After 15 minutes, closed unowned Rooms and their dependent records are purged. Detached
+ended Session records in a reused unowned Room have the same retention. Existing Room
+expiry/Host lifecycle decisions run first; maintenance never purges a live Room or an
+owned Room's history. Replay tombstones retain their independent policy. Each minute
+pass processes at most 16 records per category and 16 orphan payloads, with no overlap.
+Startup runs a pass before listening and shutdown waits for active maintenance.
+
+Admission is transactional across repository instances: at most 256 retained unowned
+Rooms plus open owned Rooms, 128 active saved Couch games, and 32 retained temporary
+Sessions per Room. Ended temporary records still consume capacity until purged.
+Existing records above those limits remain readable/endable. Cache, codec, scan and
+queue limits apply independently; durable history and backups still need disk planning.
+The migration is resumable; downgrade requires restoring a matching backup.
+
+Ordinary game HTTP requests reserve one of eight process-wide slots before body
+parsing. Couch end requests can use two extra slots. Async adapters retain the slot
+until their work settles even if the client disconnects; rejected requests receive
+`429 SESSION_CAPACITY_EXCEEDED` with `Retry-After: 1`. Authenticated imports retain
+their separate parser and single import slot.
+
+Policy searches/previews/bulk operations share two additional work slots. Work and
+import slots are released when the operation settles, including after disconnected
+requests. Couch queues hold 16 commands per game / 256 per service; Room queues hold
+1,024 per Room / 2,048 per service, within transport byte limits. Terminal operations
+have two extra per-game slots and 16 extra service slots in Couch. Room terminal and
+lifecycle operations reserve 1,024 extra per Room / 2,048 per service, covering the
+maximum 2,000 simultaneous WebSocket connections. Limiters store at most 10,000
+live identities. Aggregate `games.work_rejected`, `games.retention` and
+`games.retention_failed` events omit identities and private inputs.
+
+### Private boundary retention and backups
+
+First-time enrollment during active play commits the private boundary row and the
+expanded Session roster/runtime in the same Room-locked, revision-checked transaction.
+Draws cannot observe an enrolled player without their accepted restrictions. Frozen
+choices for existing Session players remain immutable.
+
+Private boundaries may be stored for active Session recovery and for an explicitly
+continuing, unexpired Room lobby. An ended Session retains no boundary values. Removing
+a participant removes their boundary row and the runtime copies for every player their
+device represents. Room closure/expiry and installation identity invalidation erase all
+Room boundary values. Active reconnect and restart within grace preserve restrictions.
+Account/DataSpace deletion cascades through the owned Rooms, participants, Sessions,
+and boundary rows. Non-sensitive CardAppearance and Group history otherwise remain.
+
+The data-only `1787359000000-ScrubExpiredPrivateBoundaries` migration scrubs existing
+ended/detached runtimes, departed/expired participant values, and closed/expired Rooms
+in bounded pages. It preserves active recoverable restrictions, leaves runtime version
+5 and the database schema unchanged, and cannot reconstruct erased values on rollback.
+Terminal Room transactions commit presence, Host roles, Session roster, frozen voters,
+private-boundary erasure and replay-result erasure together. There is no follow-up roster
+commit. Commands also recheck their actor under the Room lock; stale proposals cannot
+restore departed players or private restrictions.
+
+Database erasure is logical deletion, not physical media sanitization. Existing SQLite
+backup files, WAL/free pages, database snapshots, and MariaDB binary/backup logs may
+still contain earlier values. The application does not rewrite or purge operator backups.
+Operators must restrict backup access and set a finite retention period appropriate to
+their deployment; delete expired copies and their encryption keys under that policy.
+The automatic pre-migration SQLite backup also contains the old data until it expires.
+Restore only into a stopped installation and apply current migrations and Room recovery
+before serving clients. Restoring an older backup must not restart the retention clock
+for expired Room or participant records.
 
 ## Reverse proxy and TLS
 
@@ -83,11 +238,15 @@ TXT profile is static, ordered, and intentionally small:
 ```text
 txtvers=1
 api=1
-ws=2
+ws=4
 tls=0|1
 path=/api/v1
 cap=rooms[,display-bootstrap]
 ```
+
+The `ws` hint uses the shared current WebSocket protocol version. Native discovery
+accepts that same version from its generated definitions, matching HTTP server
+information and the subsequent WebSocket handshake. TXT format version 1 is unchanged.
 
 The multicast records never include the stable installation ID, Room codes, accounts,
 participants, credentials, endpoint tokens, Card text, or live game state. mDNS is a
@@ -216,6 +375,22 @@ The integration uses Authorization Code flow. State/verifier data lives in the a
 session. The application trusts provider claims only after callback validation; proxy
 rewrites must not alter callback URL semantics.
 
+ID-token and UserInfo identity claims are separately schema-validated and must name the
+same subject. UserInfo may replace the email, but its `email_verified` flag applies only
+to that email. An omitted flag may inherit the ID-token value only when both sources
+contain the exact same email string. A changed address with omitted/false verification
+never auto-links an account. A UserInfo flag without an email does not change the
+ID-token email's verification. If UserInfo is unavailable, the validated ID-token pair
+is used.
+
+The issuer/subject identity takes precedence over email. Verified-email auto-linking
+atomically claims only an account with no existing OIDC issuer or subject. An account
+already linked to another identity is left intact; the new identity receives its own
+account with a stable synthetic address. Existing identity logins retain their local
+account even if provider email claims change. No HTTP fields or callback URLs change;
+providers that returned inconsistent email/verification claims will no longer link those
+unverified addresses. Provider tokens remain transient.
+
 ## Localization and content policy
 
 Ordinary server messages resolve `Accept-Language` to a supported base language and
@@ -242,7 +417,7 @@ validated at startup, and open separately so active setup or gameplay remains in
   data directory. `public` requires deployment services including MariaDB, TLS/proxy,
   stable secrets, authentication, and email, but does not require installed Node/npm or
   separately installed application packages.
-- Both editions include `LICENSE.md`, a CycloneDX JSON SBOM, protocol-v2 JSON schemas,
+- Both editions include `LICENSE.md`, a CycloneDX JSON SBOM, protocol-v4 JSON schemas,
   and a `party-game-release/v1` manifest that gives server and web the same version.
 - Kodi and Android-family applications are separate native-client release units. They
   are never added to a server-web archive and have independent versions and tags.

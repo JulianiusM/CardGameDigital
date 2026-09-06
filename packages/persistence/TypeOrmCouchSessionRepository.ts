@@ -1,12 +1,19 @@
+import { CardCatalogVersionEntity } from "./entities/card/CardCatalogVersionEntity";
+import { admitPersistentGame, lockGameCapacity } from "./gameCapacity";
+import {
+    DEFAULT_GAME_RESOURCE_LIMITS,
+    type GameResourceLimits,
+} from "../application/gameResourceLimits";
 import { v5 as uuidv5 } from "uuid";
-import { MoreThan, type DataSource } from "typeorm";
-import type { CardId, DataSpaceId, GameSessionRuntimeState } from "../game-core";
+import { type DataSource, type EntityManager } from "typeorm";
+import { MESSAGE_KEYS } from "../localization/keys";
+import { persistenceTransaction } from "./transaction";
+import type { DataSpaceId, GameSessionRuntimeState } from "../game-core";
 import type { CouchSessionRepository } from "../application/repositories";
 import { CouchGameSessionEntity } from "./entities/game/CouchGameSessionEntity";
 import { CouchCardAppearanceEntity } from "./entities/game/CouchCardAppearanceEntity";
-import { GroupEntity } from "./entities/game/GroupEntity";
-import { CardAppearanceEntity } from "./entities/game/CardAppearanceEntity";
 import {
+    collectUnusedSessionInputs,
     externalizeSessionImmutableState,
     hydrateSessionImmutableState,
 } from "./sessionImmutablePayloadStore";
@@ -14,34 +21,34 @@ import {
 const COUCH_APPEARANCE_NAMESPACE = "d7e5b926-7f9c-5ab8-a07c-cfe764d0ef72";
 
 export class TypeOrmCouchSessionRepository implements CouchSessionRepository {
-    constructor(private readonly source: DataSource) {}
+    constructor(
+        private readonly source: DataSource,
+        private readonly limits: GameResourceLimits = DEFAULT_GAME_RESOURCE_LIMITS,
+    ) {}
+
+    async revision(id: string): Promise<number | null> {
+        return persistenceTransaction(this.source, async (manager) => {
+            const record = await manager.getRepository(CouchGameSessionEntity).findOne({
+                where: { id },
+                select: { revision: true },
+            });
+            return record?.revision ?? null;
+        });
+    }
 
     async load(id: string): Promise<GameSessionRuntimeState | null> {
-        const record = await this.source.getRepository(CouchGameSessionEntity).findOneBy({ id });
+        return persistenceTransaction(this.source, (manager) => this.loadFrom(manager, id));
+    }
+
+    private async loadFrom(
+        manager: EntityManager,
+        id: string,
+    ): Promise<GameSessionRuntimeState | null> {
+        const record = await manager.getRepository(CouchGameSessionEntity).findOneBy({ id });
         if (!record) return null;
-        const appearances = await this.source.getRepository(CouchCardAppearanceEntity).find({
-            where: { sessionId: id },
-            order: { sequence: "ASC" },
+        const runtime = await hydrateSessionImmutableState(manager, record.runtimeStateJson, {
+            policyInputDigest: record.policyInputDigest,
         });
-        const runtime = await hydrateSessionImmutableState(
-            this.source.manager,
-            record.runtimeStateJson,
-            {
-                compiledCardPolicyDigest: record.compiledCardPolicyDigest,
-                groupHistoryDigest: record.groupHistoryDigest,
-            },
-            appearances.length
-                ? appearances.map((appearance) => ({
-                      cardId: appearance.cardId as CardId,
-                      playerId: appearance.playerId,
-                      roundNumber: appearance.roundNumber,
-                      sequence: appearance.sequence,
-                      skipped: appearance.skipped,
-                      completed: appearance.completed,
-                      vetoed: appearance.vetoed,
-                  }))
-                : undefined,
-        );
         if (runtime.id !== record.id || runtime.revision !== record.revision)
             throw new Error("Stored Couch Session runtime is inconsistent");
         return runtime;
@@ -55,42 +62,37 @@ export class TypeOrmCouchSessionRepository implements CouchSessionRepository {
         return (record?.dataSpaceId as DataSpaceId | null | undefined) ?? null;
     }
 
-    async groupHistory(dataSpaceId: DataSpaceId, groupId: string): Promise<ReadonlySet<CardId>> {
-        const group = await this.source.getRepository(GroupEntity).findOneBy({
-            id: groupId,
-            dataSpaceId,
-        });
-        if (!group)
-            throw Object.assign(new Error("Group is outside the active DataSpace"), {
-                code: "NOT_AUTHORIZED",
-            });
-        const after = group.historyResetAt ? MoreThan(group.historyResetAt) : undefined;
-        const where = { groupId, ...(after ? { shownAt: after } : {}) };
-        const [roomAppearances, couchAppearances] = await Promise.all([
-            this.source.getRepository(CardAppearanceEntity).find({
-                where,
-                select: { cardId: true },
-            }),
-            this.source.getRepository(CouchCardAppearanceEntity).find({
-                where,
-                select: { cardId: true },
-            }),
-        ]);
-        return new Set(
-            [...roomAppearances, ...couchAppearances].map(({ cardId }) => cardId as CardId),
-        );
-    }
-
     async save(
         runtime: GameSessionRuntimeState,
+        expectedRevision: number | null,
         ownership?: { dataSpaceId: DataSpaceId; groupId: string | null },
     ): Promise<void> {
-        await this.source.transaction(async (manager) => {
+        await persistenceTransaction(this.source, async (manager) => {
+            if (expectedRevision === null) {
+                await lockGameCapacity(manager);
+                await admitPersistentGame(manager, "COUCH", this.limits);
+            }
             const sessions = manager.getRepository(CouchGameSessionEntity);
             const existing = await sessions.findOneBy({ id: runtime.id });
+            if (
+                (existing?.revision ?? null) !== expectedRevision ||
+                (expectedRevision !== null && runtime.revision <= expectedRevision)
+            ) {
+                throw Object.assign(new Error(MESSAGE_KEYS.GAME_STALE_REVISION), {
+                    code: "STALE_SESSION_REVISION",
+                });
+            }
+            if (!existing && runtime.catalog) {
+                const catalog = await manager
+                    .getRepository(CardCatalogVersionEntity)
+                    .findOne({ where: {}, order: { appliedAt: "DESC", sequence: "DESC" } });
+                if (catalog?.artifactDigest !== runtime.catalog.artifactDigest)
+                    throw Object.assign(new Error(MESSAGE_KEYS.GAME_STALE_REVISION), {
+                        code: "STALE_SESSION_REVISION",
+                    });
+            }
             const persisted = await externalizeSessionImmutableState(manager, runtime, {
-                compiledCardPolicyDigest: existing?.compiledCardPolicyDigest ?? null,
-                groupHistoryDigest: existing?.groupHistoryDigest ?? null,
+                policyInputDigest: existing?.policyInputDigest ?? null,
             });
             if (!existing) {
                 await sessions.insert({
@@ -101,25 +103,25 @@ export class TypeOrmCouchSessionRepository implements CouchSessionRepository {
                     revision: runtime.revision,
                     runtimeStateVersion: runtime.version,
                     runtimeStateJson: persisted.runtimeStateJson,
-                    compiledCardPolicyDigest: persisted.compiledCardPolicyDigest,
-                    groupHistoryDigest: persisted.groupHistoryDigest,
+                    policyInputDigest: persisted.policyInputDigest,
                     startedAt: new Date(runtime.startedAt),
+                    lastActiveAt: new Date(),
                     endedAt: runtime.state === "ENDED" ? new Date() : null,
                 });
             } else {
                 const updated = await sessions.update(
-                    { id: runtime.id, revision: existing.revision },
+                    { id: runtime.id, revision: expectedRevision! },
                     {
                         revision: runtime.revision,
+                        lastActiveAt: new Date(),
                         runtimeStateVersion: runtime.version,
                         runtimeStateJson: persisted.runtimeStateJson,
-                        compiledCardPolicyDigest: persisted.compiledCardPolicyDigest,
-                        groupHistoryDigest: persisted.groupHistoryDigest,
+                        policyInputDigest: persisted.policyInputDigest,
                         endedAt: runtime.state === "ENDED" ? new Date() : null,
                     },
                 );
                 if (updated.affected !== 1)
-                    throw Object.assign(new Error("Stale persisted Couch Session revision"), {
+                    throw Object.assign(new Error(MESSAGE_KEYS.GAME_STALE_REVISION), {
                         code: "STALE_SESSION_REVISION",
                     });
             }
@@ -154,6 +156,7 @@ export class TypeOrmCouchSessionRepository implements CouchSessionRepository {
                     }),
                 );
             }
+            if (runtime.state === "ENDED") await collectUnusedSessionInputs(manager);
         });
     }
 }

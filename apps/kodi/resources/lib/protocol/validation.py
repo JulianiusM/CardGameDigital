@@ -467,6 +467,7 @@ def validate_eligibility_preview(value: Any) -> dict[str, Any]:
         for card_type in CARD_TYPES:
             _integer(counts.get(card_type), f"eligibility preview.{key}.{card_type}")
     _integer(result.get("playerCount"), "eligibility preview.playerCount", 2, 10_000)
+    _boolean(result.get("adultConfirmationRequired"), "eligibility preview.adultConfirmationRequired")
     return result
 
 
@@ -538,7 +539,7 @@ def validate_server_info(value: Any) -> dict[str, Any]:
         raise ProtocolViolation("authenticationAvailable must be boolean")
     versions = info.get("protocolVersions")
     if not isinstance(versions, list) or PROTOCOL_VERSION not in versions:
-        raise ProtocolViolation("WebSocket protocol 2 is not supported")
+        raise ProtocolViolation(f"WebSocket protocol {PROTOCOL_VERSION} is not supported")
     capacity = _mapping(info.get("roomCapacity"), "roomCapacity")
     _integer(capacity.get("maximumParticipants"), "maximumParticipants", 2)
     _integer(capacity.get("maximumPlayers"), "maximumPlayers", 2)
@@ -740,7 +741,7 @@ def _validate_vote_progress(progress, player_ids, progress_ids):
 def decode_envelope(raw: str | bytes) -> dict[str, Any]:
     encoded = raw if isinstance(raw, bytes) else raw.encode("utf-8")
     if len(encoded) > MAX_MESSAGE_BYTES:
-        raise ProtocolViolation("WebSocket message exceeds 64 KiB")
+        raise ProtocolViolation(f"WebSocket message exceeds {MAX_MESSAGE_BYTES} bytes")
     try:
         value = json.loads(encoded.decode("utf-8", errors="strict"))
     except (UnicodeDecodeError, json.JSONDecodeError) as error:
@@ -755,7 +756,7 @@ def validate_server_envelope(value: Any) -> dict[str, Any]:
     event_type = _string(envelope.get("type"), "type", 1, 100)
     request_id = envelope.get("requestId")
     if request_id is not None:
-        _string(request_id, "requestId", 1, 200)
+        _string(request_id, "requestId", 1, int(_CONSTRAINTS["maximumRequestIdCharacters"]))
     revision = envelope.get("revision")
     if revision is not None:
         _integer(revision, "revision")
@@ -830,7 +831,7 @@ def _validate_server_hello(payload):
 
 
 def _validate_server_envelope_room_presence(payload):
-    connected = _list(payload.get("connected"), "Room presence", 500)
+    connected = _list(payload.get("connected"), "Room presence", int(_CONSTRAINTS["maximumRoomParticipants"]))
     participant_ids: set[str] = set()
     for entry in connected:
         participant = _mapping(entry, "Room presence participant")
@@ -852,16 +853,15 @@ def _validate_snapshot(value: Mapping[str, Any]) -> None:
         raise ProtocolViolation("Room bootstrapMode is invalid")
     capacity = _mapping(value.get("capacity"), "capacity")
     maximum_participants = _integer(
-        capacity.get("maximumParticipants"), "capacity.maximumParticipants", 2, 10_000
+        capacity.get("maximumParticipants"), "capacity.maximumParticipants", 2, int(_CONSTRAINTS["maximumRoomParticipants"])
     )
     maximum_players = _integer(
-        capacity.get("maximumPlayers"), "capacity.maximumPlayers", 2, 10_000
+        capacity.get("maximumPlayers"), "capacity.maximumPlayers", 2, int(_CONSTRAINTS["maximumRoomPlayers"])
     )
     participants = value.get("participants")
     if (
         not isinstance(participants, list)
         or len(participants) > maximum_participants
-        or len(participants) > 500
     ):
         raise ProtocolViolation("participants must be a bounded list")
     participant_ids: set[str] = set()

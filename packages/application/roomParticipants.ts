@@ -32,8 +32,9 @@ export function controlledPlayerIds(
     participants: readonly RoomParticipant[],
 ): ReadonlySet<string> {
     if (viewer.role === "DISPLAY") return new Set();
-    const controller = participants.find(({ id }) => id === viewer.id);
-    return new Set([viewer.id, ...(controller?.devicePlayers.map(({ id }) => id) ?? [])]);
+    // Expiry may already have removed the participant from the live Room list.
+    const controller = participants.find(({ id }) => id === viewer.id) ?? viewer;
+    return new Set([viewer.id, ...controller.devicePlayers.map(({ id }) => id)]);
 }
 
 export function fallbackHost(

@@ -14,12 +14,10 @@ import {
     intensityMaximumScoreForProgress,
 } from "../../packages/game-core";
 import { card, profile } from "../support/game";
-
 const players = [
     { id: "a", name: "Anna" },
     { id: "b", name: "Ben" },
 ];
-
 describe("global Card intensity", () => {
     it("allows adjacent taxonomy ranges to overlap without collapsing distant content", () => {
         const strongestEveryday = card({ id: "everyday-high" as never, intensity: 5 });
@@ -45,7 +43,6 @@ describe("global Card intensity", () => {
             dareTypeId: DARE_TYPES.SEX,
             intensity: 1,
         });
-
         expect(globalCardIntensityScore(strongestEveryday)).toBeGreaterThan(
             globalCardIntensityScore(mildestPersonal),
         );
@@ -59,7 +56,6 @@ describe("global Card intensity", () => {
         expect(globalCardIntensityLevel(mildestPersonal)).toBe(1);
         expect(globalCardIntensityLevel(mildestSexualDare)).toBe(4);
     });
-
     it("applies configurable start, end, unit, interval, and smooth increment", () => {
         const base = {
             startingIntensity: 2 as const,
@@ -92,7 +88,6 @@ describe("global Card intensity", () => {
             ),
         ).toBe(20);
     });
-
     it("supports half-point progression without crossing the configured end", () => {
         const progression = {
             startingIntensity: 1 as const,
@@ -101,7 +96,6 @@ describe("global Card intensity", () => {
             intensityProgressionInterval: 2,
             intensityProgressionIncrement: 0.5,
         };
-
         expect(
             intensityMaximumScoreForProgress(progression, { roundNumber: 1, cardsShown: 1 }),
         ).toBe(4);
@@ -115,8 +109,7 @@ describe("global Card intensity", () => {
             intensityMaximumScoreForProgress(progression, { roundNumber: 1, cardsShown: 99 }),
         ).toBe(8);
     });
-
-    it("increases round-based intensity after the configured number of complete rounds", () => {
+    it("increases round-based intensity after the configured number of complete rounds", async () => {
         const mild = card({ id: "mild" as never, intensity: 4, repeatableInSession: true });
         const nextLevel = card({
             id: "next-level" as never,
@@ -137,20 +130,18 @@ describe("global Card intensity", () => {
             },
             new SequenceRandomSource([0]),
         );
-
         expect(session.currentMaximumIntensityScore).toBe(4);
-        expect(() => session.chooseCardType(0, CARD_TYPES.QUESTION, [nextLevel])).toThrow(
+        await expect(session.chooseCardType(0, CARD_TYPES.QUESTION, [nextLevel])).rejects.toThrow(
             /game.cardPoolExhausted/,
         );
-        session.chooseCardType(0, CARD_TYPES.QUESTION, [mild]);
+        await session.chooseCardType(0, CARD_TYPES.QUESTION, [mild]);
         session.advance(1);
-        session.chooseCardType(2, CARD_TYPES.QUESTION, [mild]);
+        await session.chooseCardType(2, CARD_TYPES.QUESTION, [mild]);
         session.advance(3);
-
         expect(session.roundNumber).toBe(2);
         expect(session.currentMaximumIntensityScore).toBe(5);
         expect(session.toRuntimeState()).toMatchObject({
-            version: 5,
+            version: 7,
             profile: {
                 startingIntensity: 1,
                 maximumIntensity: 2,
@@ -159,10 +150,11 @@ describe("global Card intensity", () => {
                 intensityProgressionIncrement: 1,
             },
         });
-        expect(() => session.chooseCardType(4, CARD_TYPES.QUESTION, [nextLevel])).not.toThrow();
+        expect(
+            async () => await session.chooseCardType(4, CARD_TYPES.QUESTION, [nextLevel]),
+        ).not.toThrow();
     });
-
-    it("can increase by displayed Card count before a large-player round completes", () => {
+    it("can increase by displayed Card count before a large-player round completes", async () => {
         const mild = card({ id: "card-mild" as never, intensity: 4, repeatableInSession: true });
         const nextLevel = card({
             id: "card-next-level" as never,
@@ -183,19 +175,18 @@ describe("global Card intensity", () => {
             },
             new SequenceRandomSource([0]),
         );
-
-        session.chooseCardType(0, CARD_TYPES.QUESTION, [mild]);
+        await session.chooseCardType(0, CARD_TYPES.QUESTION, [mild]);
         session.advance(1);
         expect(session.currentMaximumIntensityScore).toBe(4);
-        session.chooseCardType(2, CARD_TYPES.QUESTION, [mild]);
+        await session.chooseCardType(2, CARD_TYPES.QUESTION, [mild]);
         session.advance(3);
-
         expect(session.roundNumber).toBe(1);
         expect(session.currentMaximumIntensityScore).toBe(5);
-        expect(() => session.chooseCardType(4, CARD_TYPES.QUESTION, [nextLevel])).not.toThrow();
+        expect(
+            async () => await session.chooseCardType(4, CARD_TYPES.QUESTION, [nextLevel]),
+        ).not.toThrow();
     });
-
-    it("counts each completed Never Have I Ever Card as a round", () => {
+    it("counts each completed Never Have I Ever Card as a round", async () => {
         const session = new GameSession(
             {
                 id: "never-progression",
@@ -216,12 +207,10 @@ describe("global Card intensity", () => {
             yesNoAnswerPossible: true,
             repeatableInSession: true,
         });
-
-        session.startTurn(0, [yesNo]);
+        await session.startTurn(0, [yesNo]);
         session.submitVote(1, "a", "YES");
         session.submitVote(2, "b", "NO");
         session.advance(3);
-
         expect(session.roundNumber).toBe(2);
         expect(session.currentMaximumIntensityScore).toBe(5);
     });

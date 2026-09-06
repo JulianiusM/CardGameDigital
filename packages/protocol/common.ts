@@ -11,6 +11,21 @@ import {
 } from "../game-core";
 import { sessionCardPolicySchema } from "./cardPolicy";
 import { PROTOCOL_VERSION } from "./version";
+import { MAX_REQUEST_ID_CHARACTERS } from "./limits";
+
+export const requestIdSchema = z.string().min(1).max(MAX_REQUEST_ID_CHARACTERS);
+export const questionCategoriesSchema = z
+    .array(z.enum(QUESTION_CATEGORIES))
+    .max(Object.values(QUESTION_CATEGORIES).length)
+    .refine((values) => new Set(values).size === values.length, "Values must be unique");
+export const dareTypesSchema = z
+    .array(z.enum(DARE_TYPES))
+    .max(Object.values(DARE_TYPES).length)
+    .refine((values) => new Set(values).size === values.length, "Values must be unique");
+export const operationalFlagsSchema = z
+    .array(z.enum(OPERATIONAL_FLAGS))
+    .max(Object.values(OPERATIONAL_FLAGS).length)
+    .refine((values) => new Set(values).size === values.length, "Values must be unique");
 
 export const ROOM_GAME_SETTING_CONSTRAINTS = {
     intensityProgressionInterval: { minimum: 1, maximum: 100 },
@@ -39,6 +54,7 @@ export const protocolErrorCodeSchema = z.enum([
     "INVALID_GAME_STATE",
     "NOT_ACTIVE_PLAYER",
     "CARD_POOL_EXHAUSTED",
+    "SESSION_CAPACITY_EXCEEDED",
     "STALE_SESSION_REVISION",
     "NOT_AUTHORIZED",
     "PROTOCOL_VERSION_UNSUPPORTED",
@@ -108,7 +124,7 @@ export const envelopeSchema = z
     .object({
         protocol: z.literal(PROTOCOL_VERSION),
         type: z.string().min(1),
-        requestId: z.string().min(1).nullable(),
+        requestId: requestIdSchema.nullable(),
         revision: z.number().int().nonnegative().nullable(),
         payload: z.unknown(),
     })
@@ -131,9 +147,9 @@ export type CardReplacedEventPayload = z.infer<typeof cardReplacedEventPayloadSc
 
 export const effectiveGameSettingsSchema = z
     .object({
-        enabledQuestionCategoryIds: z.array(z.enum(QUESTION_CATEGORIES)),
-        enabledDareTypeIds: z.array(z.enum(DARE_TYPES)),
-        blockedOperationalFlags: z.array(z.enum(OPERATIONAL_FLAGS)),
+        enabledQuestionCategoryIds: questionCategoriesSchema,
+        enabledDareTypeIds: dareTypesSchema,
+        blockedOperationalFlags: operationalFlagsSchema,
         maximumSocialSensitivity: z.enum(SOCIAL_SENSITIVITIES).default("EXPLICIT"),
         startingIntensity: z
             .union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5)])

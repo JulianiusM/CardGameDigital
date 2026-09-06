@@ -1,3 +1,8 @@
+import { SessionCache } from "./sessionCache";
+import { DEFAULT_GAME_RESOURCE_LIMITS, type GameResourceLimits } from "./gameResourceLimits";
+import { CommandQueue } from "./commandQueue";
+import { withSessionCreationCapacity } from "./sessionCreationCapacity";
+import { consentCheckedCards, currentSessionCard } from "./sessionCards";
 import { MESSAGE_KEYS } from "../localization/keys";
 import { randomUUID } from "node:crypto";
 import {
@@ -16,17 +21,15 @@ import {
     type CardRepository,
     type CouchSessionRepository,
 } from "./repositories";
-import {
-    profileRequiresAdultConfirmation,
-    roomSettingsGameProfile,
-    type EffectiveGameSettings,
-} from "./roomGameSettings";
+import { roomSettingsGameProfile, type EffectiveGameSettings } from "./roomGameSettings";
 import {
     projectNeverHaveIEverVoting,
+    projectVoteResult,
     type NeverHaveIEverVotingProjection,
 } from "./neverHaveIEverVoting";
 import { projectCardIntensities } from "./cardIntensityProjection";
 import type { CardPolicyService } from "./cardPolicyService";
+import { requiresAdultConfirmation } from "./adultConfirmation";
 
 export type CreateCouchSession = {
     persistence: "EPHEMERAL" | "DATASPACE";
@@ -88,9 +91,9 @@ export class CouchSessionNotFoundError extends Error {
 }
 
 export class CouchSessionService {
-    private readonly sessions = new Map<string, GameSession>();
-    private readonly owners = new Map<string, DataSpaceId | null>();
-    private readonly queues = new Map<string, Promise<unknown>>();
+    private readonly sessions: SessionCache;
+    private readonly owners = new WeakMap<GameSession, DataSpaceId | null>();
+    private readonly queues: CommandQueue;
     constructor(
         private readonly cards: CardRepository,
         private readonly random: RandomSource,
@@ -100,13 +103,29 @@ export class CouchSessionService {
         > = DEFAULT_CARD_TRANSLATION_POLICY,
         private readonly repository?: CouchSessionRepository,
         private readonly cardPolicies?: CardPolicyService,
-    ) {}
+        private readonly limits: GameResourceLimits = DEFAULT_GAME_RESOURCE_LIMITS,
+    ) {
+        this.sessions = new SessionCache(limits);
+        this.queues = new CommandQueue(
+            limits.couchCommandQueuePerGame,
+            limits.couchCommandQueueMaximum,
+            limits.couchCommandQueueTerminalPerGame,
+            limits.couchCommandQueueTerminalMaximum,
+        );
+    }
 
     defaultCardLocale(): Promise<string> {
         return this.cards.defaultLocale();
     }
 
     async create(input: CreateCouchSession): Promise<CouchSessionSnapshot> {
+        return withSessionCreationCapacity(
+            () => this.createWithinCapacity(input),
+            this.limits.sessionConcurrentStarts,
+        );
+    }
+
+    private async createWithinCapacity(input: CreateCouchSession): Promise<CouchSessionSnapshot> {
         if (input.persistence === "DATASPACE" && (!input.dataSpaceId || !this.repository)) {
             throw Object.assign(new Error(MESSAGE_KEYS.ACCOUNT_AUTHENTICATION_REQUIRED), {
                 code: "NOT_AUTHORIZED",
@@ -118,11 +137,6 @@ export class CouchSessionService {
             });
         }
         const fallbackLocales = await this.validateCardLocales(input);
-        if (profileRequiresAdultConfirmation(input.profileId) && !input.adultContentConfirmed) {
-            throw Object.assign(new Error(MESSAGE_KEYS.GAME_ADULT_CONFIRMATION_REQUIRED), {
-                code: "VALIDATION_ERROR",
-            });
-        }
         const gameProfile = roomSettingsGameProfile({
             mode: input.mode,
             profileId: input.profileId,
@@ -141,42 +155,27 @@ export class CouchSessionService {
             },
             configuration: input.configuration,
         });
-        const groupHistoryCardIds =
-            input.groupId && input.dataSpaceId && this.repository
-                ? await this.repository.groupHistory(input.dataSpaceId, input.groupId)
-                : new Set<never>();
         const sessionId = randomUUID();
+        const startedAt = Date.now();
         const sessionPlayers = input.players.map((player) => ({
             id: randomUUID(),
             name: player.name.trim(),
         }));
-        const cards = await this.cards.listActive({
-            locale: input.cardLocale,
-            missingTranslation: input.cardFallbackEnabled
-                ? "FALLBACK"
-                : this.cardTranslationPolicy.missingTranslation,
-            fallbackLocales: input.cardFallbackEnabled
-                ? fallbackLocales
-                : this.cardTranslationPolicy.fallbackLocales,
-        });
+        const catalog = await this.cards.catalogProvenance();
+        const policySnapshot = (await this.cardPolicies?.captureSessionPolicy(input)) ?? null;
         const sessionPolicy = input.cardPolicy ?? {
             scopeDefault: {},
             conditionalRules: [],
             exactCards: [],
         };
-        const compiled = this.cardPolicies
-            ? await this.cardPolicies.compileSessionCards({
-                  cards,
-                  dataSpaceId: input.dataSpaceId,
-                  groupId: input.groupId,
-                  profile: gameProfile,
-                  sessionPolicy,
-              })
-            : null;
+        const group =
+            input.groupId && input.dataSpaceId
+                ? await this.cards.groupHistoryWindow(input.dataSpaceId, input.groupId, startedAt)
+                : null;
         const session = new GameSession(
             {
                 id: sessionId,
-                startedAt: Date.now(),
+                startedAt,
                 mode: input.mode,
                 profile: gameProfile,
                 players: sessionPlayers,
@@ -184,29 +183,48 @@ export class CouchSessionService {
                 cardFallbackEnabled: input.cardFallbackEnabled,
                 cardFallbackLocales: fallbackLocales,
                 neverHaveIEverRevealMode: input.neverHaveIEverRevealMode,
-                groupHistoryCardIds,
-                compiledCardPolicy: compiled?.snapshot,
+                catalog,
+                policySnapshot,
+                historyContext:
+                    input.persistence === "DATASPACE"
+                        ? { sessionId, topology: "COUCH", group }
+                        : null,
                 sessionCardPolicy: sessionPolicy,
             },
             this.random,
         );
-        if (!session.hasEligibleCards(cards)) {
-            throw Object.assign(new Error(MESSAGE_KEYS.GAME_CARD_POOL_EXHAUSTED), {
-                code: "CARD_POOL_EXHAUSTED",
-            });
+        // Reserve an unsaved game before the first scan. Failed creation releases it.
+        this.sessions.set(session.id, session, input.persistence === "DATASPACE");
+        try {
+            if (
+                !(await session.hasEligibleCards(
+                    consentCheckedCards(
+                        session,
+                        this.cards.scan(this.localizationPolicy(session), session.historyContext),
+                        input.adultContentConfirmed,
+                    ),
+                ))
+            ) {
+                throw Object.assign(new Error(MESSAGE_KEYS.GAME_CARD_POOL_EXHAUSTED), {
+                    code: "CARD_POOL_EXHAUSTED",
+                });
+            }
+            if (input.persistence === "DATASPACE" && input.dataSpaceId) {
+                await this.repository?.save(session.toRuntimeState(), null, {
+                    dataSpaceId: input.dataSpaceId,
+                    groupId: input.groupId ?? null,
+                });
+            }
+            this.sessions.set(session.id, session, input.persistence === "DATASPACE");
+            this.owners.set(
+                session,
+                input.persistence === "DATASPACE" ? (input.dataSpaceId ?? null) : null,
+            );
+            return this.snapshot(session);
+        } catch (error) {
+            this.sessions.delete(session.id);
+            throw error;
         }
-        if (input.persistence === "DATASPACE" && input.dataSpaceId) {
-            await this.repository?.save(session.toRuntimeState(), {
-                dataSpaceId: input.dataSpaceId,
-                groupId: input.groupId ?? null,
-            });
-        }
-        this.sessions.set(session.id, session);
-        this.owners.set(
-            session.id,
-            input.persistence === "DATASPACE" ? (input.dataSpaceId ?? null) : null,
-        );
-        return this.snapshot(session);
     }
 
     private async validateCardLocales(input: CreateCouchSession) {
@@ -241,8 +259,8 @@ export class CouchSessionService {
     }
 
     async ownerDataSpaceId(id: string): Promise<DataSpaceId | null> {
-        await this.require(id);
-        return this.owners.get(id) ?? null;
+        const session = await this.require(id);
+        return this.owners.get(session) ?? null;
     }
 
     async get(id: string): Promise<CouchSessionSnapshot> {
@@ -251,11 +269,9 @@ export class CouchSessionService {
 
     async startTurn(id: string, revision: number): Promise<CouchSessionSnapshot> {
         return this.mutate(id, async (session) => {
-            session.startTurn(
+            await session.startTurn(
                 revision,
-                await this.cards.listActive({
-                    ...this.localizationPolicy(session),
-                }),
+                this.cards.scan(this.localizationPolicy(session), session.historyContext),
             );
         });
     }
@@ -265,22 +281,18 @@ export class CouchSessionService {
         cardType: typeof CARD_TYPES.QUESTION | typeof CARD_TYPES.DARE,
     ): Promise<CouchSessionSnapshot> {
         return this.mutate(id, async (session) => {
-            session.chooseCardType(
+            await session.chooseCardType(
                 revision,
                 cardType,
-                await this.cards.listActive({
-                    ...this.localizationPolicy(session),
-                }),
+                this.cards.scan(this.localizationPolicy(session), session.historyContext),
             );
         });
     }
     async skip(id: string, revision: number): Promise<CouchSessionSnapshot> {
         return this.mutate(id, async (session) => {
-            session.skipCard(
+            await session.skipCard(
                 revision,
-                await this.cards.listActive({
-                    ...this.localizationPolicy(session),
-                }),
+                this.cards.scan(this.localizationPolicy(session), session.historyContext),
             );
         });
     }
@@ -300,52 +312,72 @@ export class CouchSessionService {
         });
     }
     async end(id: string, revision: number): Promise<CouchSessionSnapshot> {
-        return this.mutate(id, (session) => {
-            session.end(revision);
-        });
+        return this.mutate(
+            id,
+            (session) => {
+                session.end(revision);
+            },
+            true,
+        );
+    }
+
+    pruneSessions(at = Date.now()): number {
+        return this.sessions.prune(at);
     }
 
     private async require(id: string): Promise<GameSession> {
         const session = this.sessions.get(id);
-        if (session) return session;
+        if (
+            session &&
+            session.state !== "ENDED" &&
+            session.catalog?.artifactDigest !==
+                (await this.cards.catalogProvenance()).artifactDigest
+        ) {
+            session.end(session.revision);
+            this.sessions.set(id, session, Boolean(this.owners.get(session)));
+        }
+        if (session && !this.owners.get(session)) return session;
+        if (session && (await this.repository?.revision(id)) === session.revision) return session;
+        this.sessions.delete(id);
         const runtime = await this.repository?.load(id);
         if (!runtime) throw new CouchSessionNotFoundError();
         const owner = await this.repository?.ownerDataSpaceId(id);
         if (!owner) throw new CouchSessionNotFoundError();
         const restored = GameSession.restore(runtime, this.random);
         this.sessions.set(id, restored);
-        this.owners.set(id, owner);
+        this.owners.set(restored, owner);
         return restored;
     }
     private mutate(
         id: string,
         change: (session: GameSession) => void | Promise<void>,
+        terminal = false,
     ): Promise<CouchSessionSnapshot> {
-        return this.serialize(id, async () => {
-            const current = await this.require(id);
-            const proposed = GameSession.restore(current.toRuntimeState(), this.random);
-            await change(proposed);
-            await this.persist(proposed);
-            this.sessions.set(id, proposed);
-            return this.snapshot(proposed);
-        });
+        return this.queues.run(
+            id,
+            async () => {
+                const current = await this.require(id);
+                const proposed = current.fork(this.random);
+                this.owners.set(proposed, this.owners.get(current) ?? null);
+                await change(proposed);
+                await this.persist(proposed, current.revision);
+                this.sessions.set(id, proposed, Boolean(this.owners.get(proposed)));
+                return this.snapshot(proposed);
+            },
+            terminal,
+        );
     }
-    private serialize<T>(id: string, action: () => Promise<T>): Promise<T> {
-        const prior = this.queues.get(id) ?? Promise.resolve();
-        const next = prior.catch(() => undefined).then(action);
-        const tracked = next
-            .catch(() => undefined)
-            .finally(() => {
-                if (this.queues.get(id) === tracked) this.queues.delete(id);
-            });
-        this.queues.set(id, tracked);
-        return next;
-    }
-    private async persist(session: GameSession): Promise<void> {
-        if (this.owners.get(session.id)) await this.repository?.save(session.toRuntimeState());
+    private async persist(session: GameSession, expectedRevision: number): Promise<void> {
+        if (this.owners.get(session))
+            await this.repository?.save(session.toRuntimeState(), expectedRevision);
     }
     private async snapshot(session: GameSession): Promise<CouchSessionSnapshot> {
-        const cards = await this.cards.listActive(this.localizationPolicy(session));
+        const currentCard = await currentSessionCard(
+            session,
+            this.cards,
+            this.localizationPolicy(session),
+        );
+        const voting = projectNeverHaveIEverVoting(session);
         return {
             id: session.id,
             startedAt: session.startedAt,
@@ -355,22 +387,24 @@ export class CouchSessionService {
             roundNumber: session.roundNumber,
             activePlayer: session.activePlayer,
             players: session.players.map((player) => ({ ...player })),
-            currentCard: session.currentCard
+            currentCard: currentCard
                 ? {
-                      id: session.currentCard.id,
-                      cardText: session.currentCard.cardText,
-                      cardType: session.currentCard.cardType,
-                      ...projectCardIntensities(session.currentCard),
-                      questionCategoryId: session.currentCard.questionCategoryId,
-                      dareTypeId: session.currentCard.dareTypeId,
+                      id: currentCard.id,
+                      cardText: currentCard.cardText,
+                      cardType: currentCard.cardType,
+                      ...projectCardIntensities(currentCard),
+                      questionCategoryId: currentCard.questionCategoryId,
+                      dareTypeId: currentCard.dareTypeId,
                   }
                 : null,
-            cardsShown: session.sessionHistory.length,
-            remainingCardCount: session.remainingEligibleCardCount(cards),
-            voteResult: session.voteResult(),
+            cardsShown: session.cardsShown,
+            remainingCardCount: await session.remainingEligibleCardCount(
+                this.cards.scan(this.localizationPolicy(session), session.historyContext),
+            ),
+            voteResult: projectVoteResult(voting),
             votedPlayerIds: [...session.votes.keys()],
-            neverHaveIEverVoting: projectNeverHaveIEverVoting(session),
-            persistence: this.owners.get(session.id) ? "DATASPACE" : "EPHEMERAL",
+            neverHaveIEverVoting: voting,
+            persistence: this.owners.get(session) ? "DATASPACE" : "EPHEMERAL",
             settings: {
                 mode: session.mode,
                 profileId: session.profile.id,

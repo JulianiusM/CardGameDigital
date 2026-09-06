@@ -19,14 +19,20 @@ export function isAllowedByHistory(
     },
     sessionHistory: readonly CardAppearance[],
     groupHistoryCardIds: ReadonlySet<CardId>,
+    lastSequenceByCardId?: ReadonlyMap<CardId, number>,
+    cardsShown = sessionHistory.length,
 ): boolean {
-    const sessionAppearances = sessionHistory.filter((entry) => entry.cardId === card.id);
-    if (sessionAppearances.length && !card.repeatableInSession) return false;
-    if (sessionAppearances.length) {
-        const last = sessionAppearances.at(-1)!;
-        const otherCardsSince = sessionHistory.length - last.sequence;
-        if (otherCardsSince < card.repeatCooldown) return false;
+    let lastSequence = lastSequenceByCardId?.get(card.id);
+    if (!lastSequenceByCardId) {
+        for (let index = sessionHistory.length - 1; index >= 0; index--) {
+            if (sessionHistory[index].cardId === card.id) {
+                lastSequence = sessionHistory[index].sequence;
+                break;
+            }
+        }
     }
+    if (lastSequence !== undefined && !card.repeatableInSession) return false;
+    if (lastSequence !== undefined && cardsShown - lastSequence < card.repeatCooldown) return false;
     if (groupHistoryCardIds.has(card.id) && !card.alwaysEligible) return false;
     return true;
 }

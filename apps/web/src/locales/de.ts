@@ -85,10 +85,21 @@ export const de = {
         newGame: CLIENT_VOCABULARY.NEW_GAME["de-DE"],
         noPlayers: "Fügt mindestens eine Person hinzu.",
         minimumPlayers: "Für Couch Mode werden mindestens zwei Personen benötigt.",
-        exhausted: "Keine passenden Karten mehr. Ändert die Einstellungen oder beendet das Spiel.",
+        exhausted:
+            "Keine passenden Karten mehr. Beendet dieses Spiel, um neue Einstellungen zu wählen.",
+        chooseAnotherType:
+            "Keine passenden Karten dieses Typs mehr. Wählt den anderen Typ oder beendet das Spiel.",
         noCardsForSettings:
             "Mit dem aktuellen Profil und den Einstellungen sind keine Karten verfügbar.",
-        stale: "Der Spielstand hat sich geändert. Bitte versucht es erneut.",
+        recoveryTitle: "Zurück zu eurem Spiel",
+        recoveryHint: "Wir prüfen den aktuellen Spielstand, bevor es weitergeht.",
+        recoveryFailed:
+            "Euer Spiel ist gerade nicht erreichbar. Der Verweis bleibt auf diesem Gerät gespeichert. Versucht es gleich erneut.",
+        recoveryAccount:
+            "Prüft, ob ihr im selben Konto und Datenraum angemeldet seid, und verbindet euch erneut.",
+        recoveryRetry: "Erneut verbinden",
+        gameUnavailable:
+            "Dieses Spiel ist nicht mehr verfügbar. Ihr könnt ein neues Spiel starten.",
         genericError: "Etwas ist schiefgelaufen.",
     },
     room: {
@@ -126,7 +137,8 @@ export const de = {
         localPerson: "Lokale Person entfernen",
         addLocalPerson: "+ Person auf diesem Gerät",
         profile: "Spielprofil",
-        adultConfirmation: "Ich bin volljährig und möchte explizite Profile freischalten.",
+        adultConfirmation:
+            "Ich bin volljährig und möchte explizite Inhalte für dieses Spiel freischalten.",
         groupHistory: "Gruppe und gemeinsamer Verlauf",
         gameMode: "Spielmodus",
         cardLanguage: CLIENT_VOCABULARY.CARD_LANGUAGE["de-DE"],
@@ -559,7 +571,12 @@ export const de = {
         menuHint: "Standards, Regeln und einzelne Karten verwalten.",
         unavailable:
             "Die Kartenverwaltung benötigt einen lokalen Datenraum oder ein angemeldetes Konto.",
-        unavailableTitle: "Kartenverwaltung ist hier nicht verfügbar",
+        unavailableTitle: "Richtlinie nicht geladen",
+        reloadPolicy: "Richtlinie neu laden",
+        reloadHint:
+            "Beim Neuladen werden ungespeicherte Änderungen durch den aktuellen Stand ersetzt. Ein laufendes Spiel bleibt unverändert.",
+        retryLoading: "Erneut laden",
+        chooseScope: "Anderen Bereich wählen",
         scope: "Geltungsbereich",
         dataSpacePolicyLevel: "DATASPACE-RICHTLINIE",
         groupPolicyLevel: "GRUPPENRICHTLINIE",
@@ -603,6 +620,14 @@ export const de = {
             "Alle lokalen Richtlinien dieses Bereichs durch die importierte Datei ersetzen?",
         replaceScope: "Bereich ersetzen",
         imported: "Kartenrichtlinie importiert.",
+        importTooLarge:
+            "Diese Datei ist zu groß. Wähle einen Kartenrichtlinien-Export unter 64 MiB.",
+        invalidImport:
+            "Wähle einen gültigen v2-Export mit höchstens 250 Regeln und 50.000 Kartenausnahmen. Deine aktuelle Richtlinie bleibt erhalten.",
+        invalidSessionPolicy:
+            "Prüfe die Richtlinienwerte. Ein Spiel unterstützt höchstens 250 Regeln und 1.000 Kartenausnahmen. Deine gespeicherte Einrichtung bleibt erhalten.",
+        ruleLimitReached:
+            "Diese Richtlinie hat bereits 250 Regeln. Bearbeite oder entferne eine Regel, bevor du eine weitere hinzufügst.",
         tabsLabel: "Ebenen der Kartenverwaltung",
         defaultsTab: "Bereichsstandards",
         rulesTab: "Bedingte Regeln",
@@ -832,6 +857,9 @@ export const de = {
         } as Record<string, string>,
     },
     boundaries: {
+        enrollmentTitle: "In dieses Spiel einsteigen",
+        enrollmentHint:
+            "Speichere deine privaten Entscheidungen, bevor du mitspielst. Sie gelten ab der nächsten Karte und bleiben für dieses Spiel fest. Du kannst auch ohne Ausschlüsse fortfahren.",
         heading: "Deine privaten Grenzen",
         privacy: "Deine Auswahl wird nie anderen Personen zugeordnet angezeigt.",
         questions: "Diese Fragethemen auslassen",

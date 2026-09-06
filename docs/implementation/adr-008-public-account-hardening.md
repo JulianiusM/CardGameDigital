@@ -22,6 +22,10 @@ the TAD's lower-dependency scrypt preference for this implementation detail.
   URL rather than forwarded host input, issuer/subject is database-unique, and JIT
   provisioning creates its owned DataSpace in the same transaction. Provider access,
   refresh, and ID tokens are not retained after the local session is established.
+- Email and verification retain their claim-source provenance: a UserInfo address
+  change cannot inherit verification for the ID-token address. Verified-email linking
+  conditionally claims an unlinked local account and never replaces another
+  issuer/subject link. Conflicting identities receive separate synthetic-email accounts.
 - Enforced public state-changing HTTP requests require the configured public Origin (or
   Referer fallback). Sensitive account routes are rate-limited. Logout is POST,
   not a state-changing GET.

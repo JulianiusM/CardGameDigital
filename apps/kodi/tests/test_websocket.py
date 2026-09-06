@@ -11,7 +11,8 @@ import unittest
 from unittest.mock import Mock, patch
 
 from support import RESOURCES_ROOT
-from lib.transport.websocket import WEBSOCKET_GUID, WebSocketConnection
+from lib.transport.websocket import WEBSOCKET_GUID, WebSocketConnection, WebSocketFailure
+from lib.protocol.validation import PROTOCOL_VERSION, MAX_MESSAGE_BYTES, ProtocolViolation, decode_envelope
 
 
 def server_frame(opcode: int, payload: bytes) -> bytes:
@@ -38,6 +39,35 @@ def read_client_frame(connection: socket.socket) -> tuple[int, bytes, bool]:
 
 
 class WebSocketTransportTests(unittest.TestCase):
+    def test_rejects_oversized_continuation_before_reading_its_body(self) -> None:
+        connection = WebSocketConnection("ws://example.test/ws", "http://example.test")
+        connection._fragment_opcode = 0x1
+        connection._fragments = bytearray(b"x" * 100)
+        with patch.object(connection, "_read_exact", side_effect=[b"\x80\x7f", struct.pack("!Q", MAX_MESSAGE_BYTES)]) as read:
+            with self.assertRaisesRegex(WebSocketFailure, "Fragmented message exceeds"):
+                connection._receive_frame()
+        self.assertEqual(read.call_count, 2)
+        self.assertEqual(len(connection._fragments), 100)
+
+    def test_utf8_decoder_accepts_exact_budget_and_rejects_one_more_byte(self) -> None:
+        fixture = json.loads((RESOURCES_ROOT / "data" / "fixtures" / "ordinary-room.json").read_text(encoding="utf-8"))
+        raw = json.dumps(fixture, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+        # JSON permits trailing whitespace; this tests the byte boundary independently
+        # of the logical roster/settings bounds.
+        exact = raw + b" " * (MAX_MESSAGE_BYTES - len(raw))
+        self.assertEqual(decode_envelope(exact)["payload"], fixture["payload"])
+        with self.assertRaisesRegex(ProtocolViolation, "message exceeds"):
+            decode_envelope(exact + b" ")
+        with self.assertRaisesRegex(ProtocolViolation, "message exceeds"):
+            decode_envelope("界" * (MAX_MESSAGE_BYTES // 3 + 1))
+
+    def test_rejects_oversized_outgoing_json_before_sending(self) -> None:
+        connection = WebSocketConnection("ws://example.test/ws", "http://example.test")
+        with patch.object(connection, "_send_frame") as send:
+            with self.assertRaisesRegex(WebSocketFailure, "Outgoing WebSocket message exceeds"):
+                connection.send_json({"value": "界" * (MAX_MESSAGE_BYTES // 3 + 1)})
+        send.assert_not_called()
+
     def test_wss_requires_modern_tls_and_verifies_the_server_hostname(self) -> None:
         context = ssl.create_default_context()
         context.minimum_version = ssl.TLSVersion.MINIMUM_SUPPORTED
@@ -88,12 +118,12 @@ class WebSocketTransportTests(unittest.TestCase):
                     connection.sendall(server_frame(0x9, b"alive"))
                     hello = json.dumps(
                         {
-                            "protocol": 2,
+                            "protocol": PROTOCOL_VERSION,
                             "type": "server.hello",
                             "requestId": "one",
                             "revision": None,
                             "payload": {
-                                "protocolVersion": 2,
+                                "protocolVersion": PROTOCOL_VERSION,
                                 "participantId": "00000000-0000-4000-8000-000000000001",
                                 "role": "DISPLAY",
                             },

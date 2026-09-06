@@ -318,7 +318,7 @@ class LocalizationTests(unittest.TestCase):
                 "Zu Kodi zurückkehren? Ein wiederherstellbares Spiel bleibt verfügbar."
             ),
             strings.CONFIRM_ADULT_BODY: (
-                "Dieses Profil enthält explizite Inhalte für Erwachsene. Bestätige, "
+                "Diese Einstellungen erlauben explizite Inhalte für Erwachsene. Bestätige, "
                 "dass alle Spielenden volljährig sind."
             ),
             strings.ROOM_DISPLAY_LEAVE_TITLE: "Diese Anzeige vom Raum trennen?",

@@ -2,8 +2,10 @@
 
 ## Status
 
-Implemented. Protocol v1 was later retired when Room settings ownership changed;
-protocol v2 is the current transport contract.
+Implemented. Protocol v1 was retired when Room settings ownership changed, and v2
+when late joining required private enrollment. Version 3 was retired to guarantee the
+4 MiB native receive budget and the configured capacity up to 1,000 participants and
+1,000 players. Protocol v4 is the current transport contract.
 
 ## Decision
 
@@ -13,9 +15,9 @@ protocol v2 is the current transport contract.
   `client.hello` until its Room and participant credential are verified. Role and
   capabilities come from persisted participant state; the client role field is not
   authoritative.
-- Version 2 envelopes and commands are validated with Zod at the WebSocket boundary.
+- Version 4 envelopes and commands are validated with Zod at the WebSocket boundary.
   Reconnect and explicit resynchronization return a complete authoritative Room
-  snapshot. The retired v1 contract remains only as historical documentation.
+  snapshot. The retired v1/v2/v3 contracts remain only as historical documentation.
 - `RoomService` serializes commands per Room. It restores a proposed `GameSession`, validates and transitions it, commits the runtime and card appearances transactionally, then publishes the new runtime for broadcast. Failed persistence never becomes visible to clients.
 - The persisted runtime has an explicit serialization version. Domain `Set` and `Map` values are converted to arrays rather than relying on implicit JSON behavior.
 - A Room stores an explicit nullable `currentSessionId`. Ended Session rows and

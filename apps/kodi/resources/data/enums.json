@@ -1,8 +1,11 @@
 {
     "schemaVersion": 1,
-    "protocolVersion": 2,
+    "protocolVersion": 4,
     "constraints": {
-        "maximumWebSocketMessageBytes": 65536,
+        "maximumWebSocketMessageBytes": 4194304,
+        "maximumRequestIdCharacters": 128,
+        "maximumRoomParticipants": 1000,
+        "maximumRoomPlayers": 1000,
         "roomCodePattern": "^[A-Z2-9]{6}$",
         "roomGameSettings": {
             "intensityProgressionInterval": { "minimum": 1, "maximum": 100 },
@@ -67,6 +70,7 @@
         "INVALID_GAME_STATE",
         "NOT_ACTIVE_PLAYER",
         "CARD_POOL_EXHAUSTED",
+        "SESSION_CAPACITY_EXCEEDED",
         "STALE_SESSION_REVISION",
         "NOT_AUTHORIZED",
         "PROTOCOL_VERSION_UNSUPPORTED"

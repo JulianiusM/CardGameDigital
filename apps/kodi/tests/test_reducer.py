@@ -137,7 +137,7 @@ class ReducerTests(unittest.TestCase):
             self.assertEqual(application.state.route, Route.SETUP_PLAYERS)
             application.stop()
 
-    def test_adult_profile_previews_only_after_confirmation(self) -> None:
+    def test_adult_settings_can_be_previewed_before_confirmation(self) -> None:
         adult_profile = {
             **PROFILE,
             "id": "PROFILE_SPICY",
@@ -161,10 +161,10 @@ class ReducerTests(unittest.TestCase):
 
             application.activate("setup:profile:PROFILE_SPICY")
 
-            self.assertFalse(
+            self.assertTrue(
                 any(effect.kind == "ELIGIBILITY_PREVIEW" for effect in submitted_effects)
             )
-            self.assertEqual(application.state.route, Route.SETUP_PROFILE)
+            self.assertEqual(application.state.route, Route.SETUP_PLAYERS)
 
             application.activate("setup:adult:confirm")
 
@@ -173,9 +173,9 @@ class ReducerTests(unittest.TestCase):
                 for effect in submitted_effects
                 if effect.kind == "ELIGIBILITY_PREVIEW"
             ]
-            self.assertEqual(len(previews), 1)
+            self.assertEqual(len(previews), 2)
             self.assertTrue(
-                previews[0].payload["settings"]["adultContentConfirmed"]
+                previews[-1].payload["settings"]["adultContentConfirmed"]
             )
             self.assertEqual(application.state.route, Route.SETUP_PLAYERS)
             application.stop()
@@ -1387,7 +1387,7 @@ class ReducerTests(unittest.TestCase):
             self.assertFalse(hasattr(Route, "SETUP_EXPECTED_PLAYERS"))
             application.stop()
 
-    def test_adult_profile_requires_explicit_confirmation_before_advancing(self) -> None:
+    def test_custom_effective_adult_content_requires_confirmation_on_review(self) -> None:
         adult_profile = {
             **PROFILE,
             "id": "PROFILE_SPICY",
@@ -1397,15 +1397,16 @@ class ReducerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             application = Application(directory)
             application.state = AppState(
-                route=Route.SETUP_PROFILE,
-                setup=initial_setup("HOST", "en-GB", False),
+                route=Route.SETUP_REVIEW,
+                setup=replace(initial_setup("HOST", "en-GB", False), profile_id="PROFILE_CUSTOM", eligibility={"total": 1, "adultConfirmationRequired": True}),
                 profiles=(adult_profile,),
             )
-            application.activate("setup:profile:PROFILE_SPICY")
-            self.assertEqual(application.state.route, Route.SETUP_PROFILE)
+            review = present(application.state)
+            self.assertFalse(next(item for item in review.actions if item.key == "setup:start").enabled)
+            self.assertTrue(any(item.key == "setup:adult:confirm" for item in review.actions))
             application.activate("setup:adult:confirm")
             self.assertTrue(application.state.setup.adult_content_confirmed)
-            self.assertEqual(application.state.route, Route.SETUP_CUSTOMIZE)
+            self.assertEqual(application.state.route, Route.SETUP_REVIEW)
             application.stop()
 
     def test_back_resets_collection_page_between_paginated_setup_screens(self) -> None:

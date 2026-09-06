@@ -1,7 +1,7 @@
 # Party Game TV German localization
 msgid ""
 msgstr ""
-"Project-Id-Version: Party Game TV 0.3.4\n"
+"Project-Id-Version: Party Game TV 0.4.0\n"
 "Language: de_DE\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 
@@ -722,8 +722,8 @@ msgid "The QR and URL contain only this public Room code."
 msgstr "QR-Code und URL enthalten nur diesen öffentlichen Raumcode."
 
 msgctxt "#32186"
-msgid "%s transport · API 1 · WebSocket 2"
-msgstr "%s-Transport · API 1 · WebSocket 2"
+msgid "%s transport · API 1 · WebSocket %s"
+msgstr "%s-Transport · API 1 · WebSocket %s"
 
 msgctxt "#32187"
 msgid "Example: 192.168.1.20:3000 or https://play.example.com"
@@ -1526,8 +1526,8 @@ msgid "I am 18 or older"
 msgstr "Volljährigkeit bestätigen"
 
 msgctxt "#32416"
-msgid "This profile contains explicit adult content. Confirm that everyone playing is an adult."
-msgstr "Dieses Profil enthält explizite Inhalte für Erwachsene. Bestätige, dass alle Spielenden volljährig sind."
+msgid "These settings allow explicit adult content. Confirm that everyone playing is an adult."
+msgstr "Diese Einstellungen erlauben explizite Inhalte für Erwachsene. Bestätige, dass alle Spielenden volljährig sind."
 
 msgctxt "#32418"
 msgid "Current value: %s"

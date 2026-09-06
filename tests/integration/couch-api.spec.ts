@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { randomUUID } from "node:crypto";
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { GAME_MODES } from "../../packages/game-core";
@@ -15,6 +16,8 @@ import { SessionImmutablePayloadChunkEntity } from "../../packages/persistence/e
 import { SessionImmutablePayloadEntity } from "../../packages/persistence/entities/game/SessionImmutablePayloadEntity";
 import { effectiveSettingsFromProfile } from "../../packages/application/roomGameSettings";
 import { TypeOrmCouchSessionRepository } from "../../packages/persistence/TypeOrmCouchSessionRepository";
+import { expectHiddenVotingAnswers } from "../support/votingPrivacy";
+import { CardEntity } from "../../packages/persistence/entities/card/CardEntity";
 
 const canonicalSettings = {
     profileId: "PROFILE_FRIENDS",
@@ -36,6 +39,26 @@ beforeAll(async () => {
     });
     await settings.read("/dev/null");
     await initDataSource();
+    const adultCardId = randomUUID();
+    await getAppDataSource()
+        .getRepository(CardEntity)
+        .save({
+            id: adultCardId,
+            cardType: "QUESTION",
+            questionCategoryId: "CAT_EVERYDAY",
+            dareTypeId: null,
+            socialSensitivity: "EXPLICIT",
+            intensity: 1,
+            localizations: [
+                {
+                    cardId: adultCardId,
+                    locale: "de-DE",
+                    text: "Adult-classified regression Card",
+                    active: true,
+                    updatedAt: new Date(),
+                },
+            ],
+        });
     app = (await import("../../apps/server/src/app")).default;
 }, 120_000);
 afterAll(async () => {
@@ -44,7 +67,36 @@ afterAll(async () => {
 });
 
 describe("Couch HTTP application adapter", () => {
-    it("compiles Session policy once and enforces its player-count range", async () => {
+    it.each(["de-DE", "en-GB", "en-US"])(
+        "enforces effective adult confirmation with localized %s errors",
+        async (locale) => {
+            const input = {
+                mode: GAME_MODES.CLASSIC,
+                players: [{ name: "Anna" }, { name: "Ben" }],
+                profileId: "PROFILE_CUSTOM",
+                configuration: effectiveSettingsFromProfile("PROFILE_SPICY"),
+                adultContentConfirmed: false,
+                cardLocale: "de-DE",
+            };
+            const rejected = await request(app)
+                .post("/api/v1/couch/sessions")
+                .set("accept-language", locale)
+                .send(input)
+                .expect(400);
+            expect(rejected.body.error.code).toBe("VALIDATION_ERROR");
+            expect(rejected.body.error.message).toBe(
+                locale === "de-DE"
+                    ? "Explizite Inhalte erfordern eine Bestätigung."
+                    : "Explicit content requires confirmation.",
+            );
+            await request(app)
+                .post("/api/v1/couch/sessions")
+                .send({ ...input, adultContentConfirmed: true })
+                .expect(201);
+        },
+    );
+
+    it("captures sparse Session policy once and enforces its player-count range", async () => {
         const cardPolicy = {
             scopeDefault: {
                 playerCount: { mode: "SET", value: { minimum: 3, maximum: null } },
@@ -78,14 +130,14 @@ describe("Couch HTTP application adapter", () => {
             .findOneByOrFail({
                 id: created.body.id,
             });
-        expect(stored.runtimeStateVersion).toBe(5);
-        expect(JSON.parse(stored.runtimeStateJson).compiledCardPolicy).toBeNull();
-        expect(stored.compiledCardPolicyDigest).toMatch(/^[a-f0-9]{64}$/);
+        expect(stored.runtimeStateVersion).toBe(7);
+        expect(JSON.parse(stored.runtimeStateJson).policySnapshot).toBeNull();
+        expect(stored.policyInputDigest).toMatch(/^[a-f0-9]{64}$/);
         const snapshot = await getAppDataSource()
             .getRepository(SessionImmutablePayloadEntity)
             .findOneByOrFail({
-                digest: stored.compiledCardPolicyDigest!,
-                payloadKind: "COMPILED_CARD_POLICY",
+                digest: stored.policyInputDigest!,
+                payloadKind: "POLICY_INPUT",
             });
         const chunks = await getAppDataSource()
             .getRepository(SessionImmutablePayloadChunkEntity)
@@ -97,10 +149,8 @@ describe("Couch HTTP application adapter", () => {
         const hydrated = await new TypeOrmCouchSessionRepository(getAppDataSource()).load(
             created.body.id,
         );
-        expect(hydrated?.compiledCardPolicy).toMatchObject({
-            catalog: { contract: "game-card-catalog/v2", sequence: expect.any(Number) },
-            cards: expect.any(Array),
-        });
+        expect(hydrated?.sessionCardPolicy).toEqual(cardPolicy);
+        expect(hydrated?.catalog).toMatchObject({ contract: "game-card-catalog/v2" });
         expect(Buffer.byteLength(stored.runtimeStateJson, "utf8")).toBeLessThan(32_000);
 
         await request(app)
@@ -110,7 +160,7 @@ describe("Couch HTTP application adapter", () => {
         const storedAfterCard = await getAppDataSource()
             .getRepository(CouchGameSessionEntity)
             .findOneByOrFail({ id: created.body.id });
-        expect(JSON.parse(storedAfterCard.runtimeStateJson).sessionHistory).toEqual([]);
+        expect(JSON.parse(storedAfterCard.runtimeStateJson).sessionHistory).toHaveLength(1);
         const hydratedAfterCard = await new TypeOrmCouchSessionRepository(getAppDataSource()).load(
             created.body.id,
         );
@@ -129,10 +179,10 @@ describe("Couch HTTP application adapter", () => {
         const secondStored = await getAppDataSource()
             .getRepository(CouchGameSessionEntity)
             .findOneByOrFail({ id: second.body.id });
-        expect(secondStored.compiledCardPolicyDigest).toBe(stored.compiledCardPolicyDigest);
+        expect(secondStored.policyInputDigest).toBe(stored.policyInputDigest);
         expect(
             await getAppDataSource().getRepository(SessionImmutablePayloadEntity).countBy({
-                digest: stored.compiledCardPolicyDigest!,
+                digest: stored.policyInputDigest!,
             }),
         ).toBe(1);
         await getAppDataSource()
@@ -255,38 +305,64 @@ describe("Couch HTTP application adapter", () => {
         });
     });
 
-    it("applies named reveal without leaking Couch answers during collection", async () => {
-        const created = await request(app)
-            .post("/api/v1/couch/sessions")
-            .send({
-                mode: GAME_MODES.NEVER_HAVE_I_EVER,
-                players: [{ name: "Anna" }, { name: "Ben" }],
-                neverHaveIEverRevealMode: "NAMED_ANSWERS",
-                ...canonicalSettings,
-            })
-            .expect(201);
-        const shown = await request(app)
-            .post(`/api/v1/couch/sessions/${created.body.id}/start`)
-            .send({ revision: 0 })
-            .expect(200);
-        const firstVote = await request(app)
-            .post(`/api/v1/couch/sessions/${created.body.id}/vote`)
-            .send({ revision: 1, playerId: shown.body.players[0].id, vote: "YES" })
-            .expect(200);
-        expect(firstVote.body.neverHaveIEverVoting.result).toBeNull();
-        expect(JSON.stringify(firstVote.body.neverHaveIEverVoting)).not.toContain('"YES"');
-
-        await request(app)
-            .post(`/api/v1/couch/sessions/${created.body.id}/vote`)
-            .send({ revision: 2, playerId: shown.body.players[1].id, vote: "NO" })
-            .expect(200)
-            .expect(({ body }) =>
-                expect(body.neverHaveIEverVoting.result.namedAnswers).toEqual([
+    it.each(["ANONYMOUS_AGGREGATE", "NAMED_ANSWERS"])(
+        "protects the complete Couch response in %s",
+        async (revealMode) => {
+            const created = await request(app)
+                .post("/api/v1/couch/sessions")
+                .send({
+                    mode: GAME_MODES.NEVER_HAVE_I_EVER,
+                    players: [{ name: "Anna" }, { name: "Ben" }, { name: "Chris" }],
+                    neverHaveIEverRevealMode: revealMode,
+                    ...canonicalSettings,
+                })
+                .expect(201);
+            const shown = await request(app)
+                .post(`/api/v1/couch/sessions/${created.body.id}/start`)
+                .send({ revision: 0 })
+                .expect(200);
+            expectHiddenVotingAnswers(created.body);
+            expectHiddenVotingAnswers(shown.body);
+            for (const [index, vote] of ["YES", "NO"].entries()) {
+                const response = await request(app)
+                    .post(`/api/v1/couch/sessions/${created.body.id}/vote`)
+                    .send({ revision: index + 1, playerId: shown.body.players[index].id, vote })
+                    .expect(200);
+                expect(response.body.neverHaveIEverVoting.result).toBeNull();
+                expectHiddenVotingAnswers(response.body);
+                const reloaded = await request(app)
+                    .get(`/api/v1/couch/sessions/${created.body.id}`)
+                    .expect(200);
+                expectHiddenVotingAnswers(reloaded.body);
+            }
+            const revealed = await request(app)
+                .post(`/api/v1/couch/sessions/${created.body.id}/vote`)
+                .send({ revision: 3, playerId: shown.body.players[2].id, vote: "YES" })
+                .expect(200);
+            expect(revealed.body.voteResult).toEqual({ yes: 2, no: 1, total: 3 });
+            expect(revealed.body.neverHaveIEverVoting.result).toMatchObject(
+                revealed.body.voteResult,
+            );
+            if (revealMode === "NAMED_ANSWERS") {
+                expect(revealed.body.neverHaveIEverVoting.result.namedAnswers).toEqual([
                     { playerId: shown.body.players[0].id, displayName: "Anna", vote: "YES" },
                     { playerId: shown.body.players[1].id, displayName: "Ben", vote: "NO" },
-                ]),
-            );
-    });
+                    { playerId: shown.body.players[2].id, displayName: "Chris", vote: "YES" },
+                ]);
+            } else {
+                expect(JSON.stringify(revealed.body)).not.toMatch(
+                    /"(?:YES|NO)"|"(?:vote|votes|namedAnswers)"\s*:/,
+                );
+            }
+            for (const [index, action] of ["advance", "end"].entries()) {
+                const response = await request(app)
+                    .post(`/api/v1/couch/sessions/${created.body.id}/${action}`)
+                    .send({ revision: 4 + index })
+                    .expect(200);
+                expectHiddenVotingAnswers(response.body);
+            }
+        },
+    );
 
     it("selects an active Card locale independently of Accept-Language", async () => {
         const created = await request(app)

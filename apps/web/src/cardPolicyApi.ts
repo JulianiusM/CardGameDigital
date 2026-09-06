@@ -1,6 +1,7 @@
-import { fetchJsonResponse, httpErrorDetails } from "./http";
+import { ApiError, fetchJsonResponse, httpErrorDetails } from "./http";
 import { messages } from "./i18n";
 import {
+    cardPolicySummaryResponseSchema,
     decodeCardPolicyBulkApplyResponse,
     decodeCardPolicyDefaultResponse,
     decodeCardPolicyExactResponse,
@@ -33,7 +34,12 @@ async function json<T>(
 ): Promise<T> {
     const { response, body } = await fetchJsonResponse(path, init);
     if (!response.ok) {
-        throw new Error(httpErrorDetails(body).message ?? messages.common.requestFailed);
+        const error = httpErrorDetails(body);
+        throw new ApiError(
+            error.code ?? "UNKNOWN_ERROR",
+            error.message ?? messages.common.requestFailed,
+            response.status,
+        );
     }
     return decode ? decode(body) : (body as T);
 }
@@ -83,11 +89,19 @@ export const cardPolicyApi = {
             decodeEligibilityPreview,
         ),
     exportHref: (groupId: string | null) => `/api/v1/card-policy/export${scopeQuery(groupId)}`,
-    importScope: (groupId: string | null, input: PortableCardPolicy) =>
-        json<{ scope: unknown }>(`/api/v1/card-policy/import${scopeQuery(groupId)}`, {
+    importScope: (
+        groupId: string | null,
+        input: PortableCardPolicy,
+        expectedScopeRevision: number,
+    ) =>
+        json<void>(`/api/v1/card-policy/import${scopeQuery(groupId)}`, {
             method: "POST",
-            body: JSON.stringify(input),
+            body: JSON.stringify({ policy: input, expectedScopeRevision }),
         }),
+    loadScope: (groupId: string | null) =>
+        json(`/api/v1/card-policy/scope${scopeQuery(groupId)}`, {}, (body) =>
+            cardPolicySummaryResponseSchema.parse(body),
+        ),
     loadDefault: (groupId: string | null) =>
         json(
             `/api/v1/card-policy/default${scopeQuery(groupId)}`,
@@ -142,12 +156,12 @@ export const cardPolicyApi = {
             })}`,
             { method: "DELETE" },
         ),
-    reorderRules: (groupId: string | null, orderedIds: string[]) =>
+    reorderRules: (groupId: string | null, orderedIds: string[], expectedScopeRevision: number) =>
         json(
             `/api/v1/card-policy/rules/reorder${scopeQuery(groupId)}`,
             {
                 method: "POST",
-                body: JSON.stringify({ orderedIds }),
+                body: JSON.stringify({ orderedIds, expectedScopeRevision }),
             },
             decodeCardPolicyRulesResponse,
         ),
@@ -182,13 +196,19 @@ export const cardPolicyApi = {
         filters: Record<string, string>,
         directives: CardPolicyDirectives,
         confirmedCount: number,
+        expectedScopeRevision: number,
     ) => {
         const { limit: _limit, cursor: _cursor, ...boundedFilters } = filters;
         return json(
             `/api/v1/card-policy/cards/bulk${scopeQuery(groupId)}`,
             {
                 method: "POST",
-                body: JSON.stringify({ filters: boundedFilters, directives, confirmedCount }),
+                body: JSON.stringify({
+                    filters: boundedFilters,
+                    directives,
+                    confirmedCount,
+                    expectedScopeRevision,
+                }),
             },
             decodeCardPolicyBulkApplyResponse,
         );

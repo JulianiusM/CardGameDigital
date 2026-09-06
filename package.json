@@ -42,6 +42,7 @@
         "package:server-web:public": "npm run build:server-web && ts-node --project tsconfig.server.json tooling/release/package.ts public",
         "package:server-web:smoke": "ts-node --project tsconfig.server.json tooling/release/smoke.ts",
         "test": "vitest run",
+        "benchmark:operations": "ts-node --project tsconfig.server.json tooling/testing/operationalBudgets.ts",
         "test:quick": "vitest run tests/unit tests/architecture",
         "test:unit": "vitest run tests/unit",
         "test:integration": "vitest run tests/integration",

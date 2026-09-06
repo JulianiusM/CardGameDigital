@@ -9,7 +9,7 @@ roles, or persistence commits.
 ```text
 Svelte browser / Kodi native client
   ├─ HTTP /api/v1 ───────────────┐
-  └─ WebSocket /ws (protocol 2) ─┤
+  └─ WebSocket /ws (protocol 4) ─┤
                                   ▼
 Express / WebSocket adapters
                                   ▼
@@ -101,7 +101,7 @@ available actions come from authenticated server state, not client claims.
 ## Interfaces
 
 External semantics are versioned and documented under [`docs/contracts`](contracts/):
-HTTP API v1, WebSocket protocol v2, bundled catalog, and infrastructure integrations.
+HTTP API v1, WebSocket protocol v4, bundled catalog, and infrastructure integrations.
 The TAD and implementation ADRs explain the decisions behind these contracts.
 The native client architecture and independent package boundary are documented in
 [`KODI_CLIENT.md`](KODI_CLIENT.md).

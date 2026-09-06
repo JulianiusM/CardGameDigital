@@ -2,6 +2,8 @@ import { Column, Entity, Index, OneToMany, PrimaryColumn } from "typeorm";
 import { RoomParticipantEntity } from "./RoomParticipantEntity";
 
 @Entity("rooms")
+@Index("IDX_room_retention", ["dataSpaceId", "closedAt"])
+@Index("IDX_room_expiry", ["closedAt", "expiresAt"])
 export class RoomEntity {
     @PrimaryColumn("varchar", { length: 36 }) id!: string;
     @Index({ unique: true }) @Column("varchar", { length: 8 }) code!: string;

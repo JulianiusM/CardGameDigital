@@ -8,6 +8,7 @@ import {
 } from "../../../../packages/persistence";
 import { CardEntity } from "../../../../packages/persistence/entities/card/CardEntity";
 import settings from "./settings";
+import { gameResourceLimits } from "./operationalSettings";
 import { CardPolicyService } from "../../../../packages/application/cardPolicyService";
 import {
     initializeRoomCreateProtection,
@@ -23,6 +24,7 @@ export function getRoomService(): RoomService {
         new TypeOrmRealtimeRoomRepository(
             getAppDataSource(),
             settings.value.roomCreateIdempotencyTombstoneSeconds,
+            gameResourceLimits(settings.value),
         ),
         new TypeOrmCardRepository(getAppDataSource().getRepository(CardEntity)),
         new CryptoRandomSource(),
@@ -43,6 +45,7 @@ export function getRoomService(): RoomService {
             idempotencyProtection: initializeRoomCreateProtection().protection,
             observability: roomLifecycleObservability,
         },
+        gameResourceLimits(settings.value),
     );
     return instance;
 }

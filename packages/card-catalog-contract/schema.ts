@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { MAXIMUM_CARD_TEXT_BYTES, MAXIMUM_CARD_TEXT_CHARACTERS } from "./contentLimits";
 import {
     CARD_TYPES,
     DARE_TYPES,
@@ -20,11 +21,21 @@ export const CARD_CATALOG_SOCIAL_SENSITIVITIES = Object.values(SOCIAL_SENSITIVIT
 const canonicalUuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const localeIdPattern = /^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$/;
 const canonicalUuidSchema = z.string().regex(canonicalUuidPattern).pipe(z.uuid());
-const minimumPlayerCountSchema = z.number().int().min(2);
-const maximumPlayerCountSchema = z.number().int().min(2).nullable();
+const minimumPlayerCountSchema = z.number().int().min(2).max(2_147_483_647);
+const maximumPlayerCountSchema = z.number().int().min(2).max(2_147_483_647).nullable();
 const nonBlankFinalText = z
     .string()
     .min(1)
+    .refine((value) => {
+        let characters = 0;
+        for (const _character of value)
+            if (++characters > MAXIMUM_CARD_TEXT_CHARACTERS) return false;
+        return true;
+    }, "exceeds supported text characters")
+    .refine(
+        (value) => new TextEncoder().encode(value).byteLength <= MAXIMUM_CARD_TEXT_BYTES,
+        "exceeds supported UTF-8 text bytes",
+    )
     .refine((value) => value === value.trim(), "must not contain leading/trailing whitespace");
 const localeId = z.string().min(2).max(35).regex(localeIdPattern);
 const localizationSchema = z.object({ locale: localeId, text: nonBlankFinalText }).strict();
@@ -47,7 +58,7 @@ export const cardCatalogSchema = z
         contract: z.literal(CARD_CATALOG_CONTRACT),
         catalogId: z.literal(CARD_CATALOG_ID),
         catalogVersion: z.string().min(1).max(80),
-        sequence: z.number().int().positive(),
+        sequence: z.number().int().positive().max(2_147_483_647),
         generatedAt: z.iso.datetime({ offset: true }),
         snapshotKind: z.literal(CARD_CATALOG_SNAPSHOT_KIND),
         cardDefaults: z
@@ -103,7 +114,7 @@ export const cardCatalogSchema = z
                         intensity: z.number().int().min(1).max(5),
                         alwaysEligible: z.boolean(),
                         repeatableInSession: z.boolean(),
-                        repeatCooldown: z.number().int().nonnegative(),
+                        repeatCooldown: z.number().int().nonnegative().max(2_147_483_647),
                         weight: z.number().positive(),
                         socialSensitivity: z.enum(CARD_CATALOG_SOCIAL_SENSITIVITIES).optional(),
                         minimumPlayerCount: minimumPlayerCountSchema.optional(),
@@ -124,13 +135,16 @@ export const cardCatalogSchema = z
 
 export type CardCatalog = z.infer<typeof cardCatalogSchema>;
 export type CardCatalogCard = CardCatalog["cards"][number];
+export const cardCatalogHeaderSchema = cardCatalogSchema.omit({ cards: true });
+export type CardCatalogHeader = z.infer<typeof cardCatalogHeaderSchema>;
+export const catalogCardSchema = cardCatalogSchema.shape.cards.element;
 
 type TaxonomyDefaults =
     | CardCatalog["taxonomy"]["questionCategories"][number]
     | CardCatalog["taxonomy"]["dareTypes"][number];
 
 function primaryTaxonomy(
-    catalog: CardCatalog,
+    catalog: CardCatalogHeader,
     card: CardCatalogCard,
 ): TaxonomyDefaults | undefined {
     if (card.cardType === CARD_TYPES.QUESTION) {
@@ -145,7 +159,7 @@ function primaryTaxonomy(
     return undefined;
 }
 
-export function resolveProducerCardMetadata(catalog: CardCatalog, card: CardCatalogCard) {
+export function resolveProducerCardMetadata(catalog: CardCatalogHeader, card: CardCatalogCard) {
     const taxonomy = primaryTaxonomy(catalog, card);
     const cardHasMaximum = Object.hasOwn(card, "maximumPlayerCount");
     const taxonomyHasMaximum = Boolean(

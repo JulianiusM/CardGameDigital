@@ -10,6 +10,7 @@ export class CardPolicyScopeDefaultEntity {
     @Column("varchar", { name: "group_id", length: 36, nullable: true }) groupId!: string | null;
     @Column("text", { name: "directives_json" }) directivesJson!: string;
     @Column("int", { default: 1 }) revision!: number;
+    @Column("int", { name: "scope_revision", default: 0 }) scopeRevision!: number;
     @Column("datetime", { name: "created_at" }) createdAt!: Date;
     @Column("datetime", { name: "updated_at" }) updatedAt!: Date;
     @ManyToOne(() => DataSpace, { onDelete: "CASCADE" })

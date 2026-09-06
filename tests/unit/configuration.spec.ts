@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { resolveSettings } from "../../apps/server/src/modules/settings";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import {
+    operationalSettingsDefaults,
+    operationalSettingsKeys,
+} from "../../apps/server/src/modules/operationalSettings";
 
 const safePublicEnvironment = {
     DEPLOYMENT_MODE: "public",
@@ -17,6 +24,84 @@ const safePublicEnvironment = {
 } satisfies NodeJS.ProcessEnv;
 
 describe("deployment configuration", () => {
+    it("loads every operational budget from CSV and lets environment settings override it", () => {
+        expect(Object.values(operationalSettingsKeys).sort()).toEqual(
+            Object.keys(operationalSettingsDefaults).sort(),
+        );
+        const directory = fs.mkdtempSync(path.join(os.tmpdir(), "game-resource-settings-"));
+        const file = path.join(directory, "settings.csv");
+        try {
+            fs.writeFileSync(
+                file,
+                Object.entries(operationalSettingsKeys)
+                    .map(([key, property]) => `${key},${operationalSettingsDefaults[property] * 2}`)
+                    .join("\n"),
+            );
+            const fromFile = resolveSettings({}, file);
+            const environment = Object.fromEntries(
+                Object.entries(operationalSettingsKeys).map(([key, property]) => [
+                    key,
+                    String(operationalSettingsDefaults[property] * 3),
+                ]),
+            );
+            const fromEnvironment = resolveSettings(environment, file);
+            for (const property of Object.values(operationalSettingsKeys)) {
+                expect(fromFile[property], property).toBe(
+                    operationalSettingsDefaults[property] * 2,
+                );
+                expect(fromEnvironment[property], property).toBe(
+                    operationalSettingsDefaults[property] * 3,
+                );
+            }
+            expect(
+                resolveSettings(
+                    {
+                        NODE_ENV: "e2e",
+                        GAME_HTTP_CONCURRENT_REQUESTS: "3",
+                        E2E_GAME_HTTP_CONCURRENT_REQUESTS: "5",
+                    },
+                    file,
+                ).gameHttpConcurrentRequests,
+            ).toBe(5);
+        } finally {
+            fs.unlinkSync(file);
+            fs.rmdirSync(directory);
+        }
+    });
+
+    it.each([
+        { SESSION_CACHE_MAXIMUM_ENTRIES: "0" },
+        { GAME_RETENTION_BATCH_SIZE: "1.5" },
+        { POLICY_CONCURRENT_WORK: "NaN" },
+        { POLICY_CONCURRENT_IMPORTS: "Infinity" },
+        { SESSION_IDLE_TTL_SECONDS: "-1" },
+        { GAME_MAINTENANCE_INTERVAL_MS: "2147483648" },
+        { WEBSOCKET_QUEUED_BYTES_PER_SOCKET: "1024" },
+        { WEBSOCKET_MAXIMUM_CONNECTIONS: "4096" },
+        { ROOM_COMMAND_QUEUE_TERMINAL_PER_GAME: "1" },
+        { COUCH_COMMAND_QUEUE_PER_GAME: "300" },
+    ])("rejects unsafe or inconsistent operational settings %o", (environment) => {
+        expect(() => resolveSettings(environment, "/definitely/missing/settings.csv")).toThrow();
+    });
+
+    it("accepts raised capacities when their cleanup reservations are supplied", () => {
+        expect(
+            resolveSettings(
+                {
+                    WEBSOCKET_MAXIMUM_CONNECTIONS: "4096",
+                    ROOM_COMMAND_QUEUE_TERMINAL_MAXIMUM: "4096",
+                    GAME_RETENTION_BATCH_SIZE: "64",
+                    SESSION_IDLE_TTL_SECONDS: "172800",
+                },
+                "/definitely/missing/settings.csv",
+            ),
+        ).toMatchObject({
+            webSocketMaximumConnections: 4096,
+            roomCommandQueueTerminalMaximum: 4096,
+            gameRetentionBatchSize: 64,
+            sessionIdleTtlSeconds: 172800,
+        });
+    });
     it("uses a local, account-free SQLite deployment by default", () => {
         const settings = resolveSettings({}, "/definitely/missing/settings.csv");
         expect(settings).toMatchObject({

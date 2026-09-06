@@ -26,6 +26,13 @@ export type NeverHaveIEverVotingProjection = {
     } | null;
 };
 
+/** The retained totals field must never bypass the canonical reveal decision. */
+export function projectVoteResult(voting: NeverHaveIEverVotingProjection | null) {
+    if (!voting?.result) return { yes: 0, no: 0, total: 0 };
+    const { yes, no, total } = voting.result;
+    return { yes, no, total };
+}
+
 /** One privacy-enforcing projection shared by Couch, Personal, and Party Screen. */
 export function projectNeverHaveIEverVoting(
     session: GameSession,

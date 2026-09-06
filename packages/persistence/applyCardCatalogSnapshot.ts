@@ -1,5 +1,16 @@
+import {
+    MAXIMUM_CARD_TEXT_BYTES,
+    MAXIMUM_CARD_TEXT_CHARACTERS,
+} from "../card-catalog-contract/contentLimits";
+import { serializeSqliteConnection } from "./transaction";
+import { endSessionsFromOtherCatalogs } from "./catalogSessionLifetime";
 import { In, type DataSource, type EntityManager, type QueryRunner } from "typeorm";
-import type { ValidatedCardCatalogArtifact } from "../card-catalog-contract";
+import {
+    catalogFileCards,
+    type CatalogFileArtifact,
+    type CardCatalogCard,
+    type ValidatedCardCatalogArtifact,
+} from "../card-catalog-contract";
 import { CardCatalogVersionEntity } from "./entities/card/CardCatalogVersionEntity";
 import { CardEntity } from "./entities/card/CardEntity";
 import { CardLocalizationEntity } from "./entities/card/CardLocalizationEntity";
@@ -16,7 +27,15 @@ import { resolveProducerCardMetadata } from "../card-catalog-contract";
 export type CardCatalogApplyResult = "APPLIED" | "UNCHANGED" | "NEWER_INSTALLED";
 const CATALOG_LOCK_NAME = "game_card_catalog_apply_v1";
 const DEVELOPMENT_FIXTURE_VERSION_PREFIX = "development-fixture";
-const DATABASE_BATCH_SIZE = 250;
+const DATABASE_BATCH_SIZE = 48;
+type CatalogArtifact = ValidatedCardCatalogArtifact | CatalogFileArtifact;
+function catalogCardCount(artifact: CatalogArtifact): number {
+    return "file" in artifact ? artifact.cardCount : artifact.catalog.cards.length;
+}
+async function* catalogCards(artifact: CatalogArtifact): AsyncIterable<CardCatalogCard> {
+    if ("file" in artifact) yield* catalogFileCards(artifact);
+    else yield* artifact.catalog.cards;
+}
 
 export function isDevelopmentCardCatalogVersion(catalogVersion: string): boolean {
     return catalogVersion.startsWith(DEVELOPMENT_FIXTURE_VERSION_PREFIX);
@@ -24,7 +43,7 @@ export function isDevelopmentCardCatalogVersion(catalogVersion: string): boolean
 
 function isCatalogLineageReplacement(
     installed: CardCatalogVersionEntity | null,
-    artifact: ValidatedCardCatalogArtifact,
+    artifact: CatalogArtifact,
 ): boolean {
     if (!installed) return false;
     return (
@@ -63,7 +82,7 @@ async function releaseCatalogLock(queryRunner: QueryRunner): Promise<void> {
 
 async function decide(
     manager: EntityManager,
-    artifact: ValidatedCardCatalogArtifact,
+    artifact: CatalogArtifact,
 ): Promise<CardCatalogApplyResult | null> {
     const versions = manager.getRepository(CardCatalogVersionEntity);
     const releases = await versions.find({
@@ -102,7 +121,7 @@ async function decide(
 
 async function removeDevelopmentFixtureReleases(
     manager: EntityManager,
-    artifact: ValidatedCardCatalogArtifact,
+    artifact: CatalogArtifact,
 ): Promise<void> {
     if (isDevelopmentCardCatalogVersion(artifact.catalog.catalogVersion)) return;
     const versions = manager.getRepository(CardCatalogVersionEntity);
@@ -114,17 +133,14 @@ async function removeDevelopmentFixtureReleases(
     }
 }
 
-async function reconcileLocales(
-    manager: EntityManager,
-    artifact: ValidatedCardCatalogArtifact,
-): Promise<void> {
+async function reconcileLocales(manager: EntityManager, artifact: CatalogArtifact): Promise<void> {
     const repository = manager.getRepository(LocaleEntity);
-    const incoming = new Set(artifact.catalog.locales.map((locale) => locale.id));
-    for (const stored of await repository.find()) {
-        if (!incoming.has(stored.id)) {
-            await repository.update({ id: stored.id }, { active: false, isDefault: false });
-        }
-    }
+    await repository
+        .createQueryBuilder()
+        .update()
+        .set({ active: false, isDefault: false })
+        .where("active = :active OR is_default = :active", { active: true })
+        .execute();
     for (const locale of artifact.catalog.locales) {
         await repository.upsert(
             {
@@ -166,32 +182,34 @@ function availableSavedCardLanguages(
 
 async function reconcileSavedCardLanguages(
     manager: EntityManager,
-    artifact: ValidatedCardCatalogArtifact,
+    artifact: CatalogArtifact,
 ): Promise<void> {
     const activeLocales = new Set(
         artifact.catalog.locales.filter(({ active }) => active).map(({ id }) => id),
     );
-    const settings = manager.getRepository(DataSpaceGameSettingsEntity);
-    for (const stored of await settings.find()) {
-        const normalized = availableSavedCardLanguages(
-            stored.cardLanguageSettingsJson,
-            activeLocales,
-        );
-        if (normalized !== stored.cardLanguageSettingsJson) {
-            await settings.update(
-                { dataSpaceId: stored.dataSpaceId },
-                { cardLanguageSettingsJson: normalized },
+    for (const [table, key] of [
+        ["data_space_game_settings", "data_space_id"],
+        ["game_groups", "id"],
+    ] as const) {
+        let after = "";
+        while (true) {
+            const rows = await manager.query(
+                `SELECT ${key} AS owner_id, card_language_settings_json FROM ${table} WHERE ${key} > ? ORDER BY ${key} LIMIT 64`,
+                [after],
             );
-        }
-    }
-    const groups = manager.getRepository(GroupEntity);
-    for (const stored of await groups.find()) {
-        const normalized = availableSavedCardLanguages(
-            stored.cardLanguageSettingsJson,
-            activeLocales,
-        );
-        if (normalized !== stored.cardLanguageSettingsJson) {
-            await groups.update({ id: stored.id }, { cardLanguageSettingsJson: normalized });
+            if (!rows.length) break;
+            for (const row of rows) {
+                const normalized = availableSavedCardLanguages(
+                    row.card_language_settings_json,
+                    activeLocales,
+                );
+                if (normalized !== row.card_language_settings_json)
+                    await manager.query(
+                        `UPDATE ${table} SET card_language_settings_json = ? WHERE ${key} = ?`,
+                        [normalized, row.owner_id],
+                    );
+            }
+            after = rows.at(-1)!.owner_id;
         }
     }
 }
@@ -212,7 +230,7 @@ async function rebaseExistingGroupHistory(
 
 async function reconcileTaxonomies(
     manager: EntityManager,
-    artifact: ValidatedCardCatalogArtifact,
+    artifact: CatalogArtifact,
 ): Promise<void> {
     const categories = manager.getRepository(QuestionCategoryEntity);
     const categoryLocalizations = manager.getRepository(QuestionCategoryTranslationEntity);
@@ -268,60 +286,84 @@ async function reconcileTaxonomies(
     }
 }
 
-async function reconcileCards(
-    manager: EntityManager,
-    artifact: ValidatedCardCatalogArtifact,
-): Promise<void> {
+async function reconcileCards(manager: EntityManager, artifact: CatalogArtifact): Promise<void> {
     const cards = manager.getRepository(CardEntity);
     const localizations = manager.getRepository(CardLocalizationEntity);
     const flags = manager.getRepository(CardOperationalFlagEntity);
-    const incomingCardIds = new Set(artifact.catalog.cards.map((card) => card.id));
-    for (const stored of await cards.find({ select: { id: true } })) {
-        if (!incomingCardIds.has(stored.id))
-            await cards.update({ id: stored.id }, { active: false });
-    }
+    // FULL apply is one transaction: mark the old view inactive, then upsert
+    // bounded batches. No catalog-sized ID/text arrays or per-language cross product.
+    await cards.createQueryBuilder().update().set({ active: false }).execute();
     const updatedAt = new Date();
-    const cardRows = artifact.catalog.cards.map((card) => {
-        const producerMetadata = resolveProducerCardMetadata(artifact.catalog, card);
-        return {
-            id: card.id,
-            cardType: card.cardType,
-            yesNoAnswerPossible: card.yesNoAnswerPossible,
-            questionCategoryId: card.questionCategoryId,
-            dareTypeId: card.dareTypeId,
-            dareAffinityCategoryId: card.dareAffinityCategoryId,
-            intensity: card.intensity,
-            alwaysEligible: card.alwaysEligible,
-            repeatableInSession: card.repeatableInSession,
-            repeatCooldown: card.repeatCooldown,
-            weight: card.weight,
-            ...producerMetadata,
-            active: card.lifecycle === "ACTIVE",
+    await localizations.createQueryBuilder().update().set({ active: false, updatedAt }).execute();
+    let batch: CardCatalogCard[] = [];
+    let bytes = 0;
+    const flush = async () => {
+        if (!batch.length) return;
+        await cards.upsert(
+            batch.map((card) => ({
+                id: card.id,
+                cardType: card.cardType,
+                yesNoAnswerPossible: card.yesNoAnswerPossible,
+                questionCategoryId: card.questionCategoryId,
+                dareTypeId: card.dareTypeId,
+                dareAffinityCategoryId: card.dareAffinityCategoryId,
+                intensity: card.intensity,
+                alwaysEligible: card.alwaysEligible,
+                repeatableInSession: card.repeatableInSession,
+                repeatCooldown: card.repeatCooldown,
+                weight: card.weight,
+                ...resolveProducerCardMetadata(artifact.catalog, card),
+                active: card.lifecycle === "ACTIVE",
+            })),
+            ["id"],
+        );
+        await flags.delete({ cardId: In(batch.map(({ id }) => id)) });
+        let renderingBatch: Partial<CardLocalizationEntity>[] = [];
+        let renderingBytes = 0;
+        const flushRenderings = async () => {
+            if (!renderingBatch.length) return;
+            await localizations.upsert(renderingBatch, ["cardId", "locale"]);
+            renderingBatch = [];
+            renderingBytes = 0;
         };
-    });
-    for (const batch of batches(cardRows)) await cards.upsert(batch, ["id"]);
-
-    const incomingIds = [...incomingCardIds];
-    for (const batch of batches(incomingIds)) {
-        await flags.delete({ cardId: In(batch) });
-        await localizations.update({ cardId: In(batch) }, { active: false, updatedAt });
+        for (const card of batch) {
+            if (card.operationalFlags.length)
+                await flags.insert(
+                    card.operationalFlags.map((flag) => ({ cardId: card.id, flag })),
+                );
+            for (const localization of card.localizations) {
+                const size = Buffer.byteLength(localization.text) * 2 + 256;
+                if (
+                    renderingBatch.length >= DATABASE_BATCH_SIZE ||
+                    renderingBytes + size > 128 * 1024
+                )
+                    await flushRenderings();
+                renderingBatch.push({
+                    cardId: card.id,
+                    locale: localization.locale,
+                    text: localization.text,
+                    active: true,
+                    updatedAt,
+                });
+                renderingBytes += size;
+            }
+        }
+        await flushRenderings();
+        batch = [];
+        bytes = 0;
+    };
+    for await (const card of catalogCards(artifact)) {
+        const size =
+            1024 +
+            card.localizations.reduce(
+                (total, value) => total + Buffer.byteLength(value.text) + 128,
+                0,
+            );
+        if (batch.length >= DATABASE_BATCH_SIZE || bytes + size > 256 * 1024) await flush();
+        batch.push(card);
+        bytes += size;
     }
-    const flagRows = artifact.catalog.cards.flatMap((card) =>
-        card.operationalFlags.map((flag) => ({ cardId: card.id, flag })),
-    );
-    for (const batch of batches(flagRows)) await flags.insert(batch);
-    const localizationRows = artifact.catalog.cards.flatMap((card) =>
-        card.localizations.map((localization) => ({
-            cardId: card.id,
-            locale: localization.locale,
-            text: localization.text,
-            active: true,
-            updatedAt,
-        })),
-    );
-    for (const batch of batches(localizationRows)) {
-        await localizations.upsert(batch, ["cardId", "locale"]);
-    }
+    await flush();
 }
 
 async function assertConsistent(manager: EntityManager, defaultLocale: string): Promise<void> {
@@ -331,33 +373,48 @@ async function assertConsistent(manager: EntityManager, defaultLocale: string): 
     });
     if (defaults !== 1)
         throw new Error(`Card catalog requires one active default locale; found ${defaults}`);
-    const activeCards = await manager.getRepository(CardEntity).find({
-        where: { active: true },
-        select: { id: true },
-    });
-    const localizedCardIds = new Set(
-        (
-            await manager.getRepository(CardLocalizationEntity).find({
-                where: { locale: defaultLocale, active: true },
-                select: { cardId: true },
-            })
-        ).map(({ cardId }) => cardId),
-    );
-    for (const card of activeCards) {
-        if (!localizedCardIds.has(card.id)) {
-            throw new Error(`Active Card ${card.id} lacks default-locale content`);
-        }
-    }
+    const missing = await manager
+        .getRepository(CardEntity)
+        .createQueryBuilder("card")
+        .where("card.active = :active", { active: true })
+        .andWhere(
+            "NOT EXISTS (SELECT 1 FROM card_localizations l WHERE l.card_id = card.id AND l.locale = :locale AND l.active = :active)",
+            { locale: defaultLocale },
+        )
+        .getExists();
+    if (missing) throw new Error("Active Card lacks default-locale content");
 }
 
 export async function applyCardCatalogSnapshot(
     dataSource: DataSource,
-    artifact: ValidatedCardCatalogArtifact,
+    artifact: CatalogArtifact,
+): Promise<CardCatalogApplyResult> {
+    return serializeSqliteConnection(dataSource, () =>
+        applyCatalogTransaction(dataSource, artifact),
+    );
+}
+
+async function applyCatalogTransaction(
+    dataSource: DataSource,
+    artifact: CatalogArtifact,
 ): Promise<CardCatalogApplyResult> {
     const queryRunner = dataSource.createQueryRunner();
     await queryRunner.connect();
     let lockAcquired = false;
     try {
+        if (dataSource.options.type !== "better-sqlite3") {
+            const [database] = await queryRunner.query(
+                "SELECT @@SESSION.sql_mode AS mode, @@max_allowed_packet AS packet",
+            );
+            if (Number(database.packet) < 1024 * 1024) {
+                throw new Error(
+                    "Catalog installation requires max_allowed_packet of at least 1 MiB",
+                );
+            }
+            const modes = new Set(String(database.mode).split(",").filter(Boolean));
+            modes.add("STRICT_ALL_TABLES");
+            await queryRunner.query("SET SESSION sql_mode = ?", [[...modes].join(",")]);
+        }
         await acquireCatalogLock(queryRunner);
         lockAcquired = true;
         await queryRunner.startTransaction();
@@ -372,6 +429,22 @@ export async function applyCardCatalogSnapshot(
             await removeDevelopmentFixtureReleases(queryRunner.manager, artifact);
             const decision = await decide(queryRunner.manager, artifact);
             if (decision) {
+                const bytes =
+                    dataSource.options.type === "better-sqlite3"
+                        ? "LENGTH(CAST(l.text AS BLOB))"
+                        : "OCTET_LENGTH(l.text)";
+                const characters =
+                    dataSource.options.type === "better-sqlite3"
+                        ? "LENGTH(l.text)"
+                        : "CHAR_LENGTH(l.text)";
+                const oversized = await queryRunner.query(
+                    `SELECT l.card_id FROM card_localizations l JOIN cards c ON c.id = l.card_id WHERE l.active = 1 AND c.active = 1 AND (${bytes} > ? OR ${characters} > ?) LIMIT 1`,
+                    [MAXIMUM_CARD_TEXT_BYTES, MAXIMUM_CARD_TEXT_CHARACTERS],
+                );
+                if (oversized.length)
+                    throw new Error(
+                        "Installed Card content exceeds supported rendering bytes or characters; deploy a corrected catalog release",
+                    );
                 await queryRunner.commitTransaction();
                 return decision;
             }
@@ -379,6 +452,7 @@ export async function applyCardCatalogSnapshot(
             await reconcileSavedCardLanguages(queryRunner.manager, artifact);
             await reconcileTaxonomies(queryRunner.manager, artifact);
             await reconcileCards(queryRunner.manager, artifact);
+            await endSessionsFromOtherCatalogs(queryRunner.manager, artifact.artifactDigest);
             await assertConsistent(queryRunner.manager, artifact.catalog.defaultLocale);
             const appliedAt = nextAppliedAt(installedCatalog);
             if (rebaseGroupHistory) {
@@ -393,7 +467,7 @@ export async function applyCardCatalogSnapshot(
                 generatedAt: new Date(artifact.catalog.generatedAt),
                 appliedAt,
                 defaultLocale: artifact.catalog.defaultLocale,
-                cardCount: artifact.catalog.cards.length,
+                cardCount: catalogCardCount(artifact),
                 localeCount: artifact.catalog.locales.length,
             });
             await queryRunner.commitTransaction();

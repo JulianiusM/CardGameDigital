@@ -5,6 +5,7 @@ import { Column, Entity, Index, PrimaryColumn } from "typeorm";
 })
 @Index("IDX_room_create_idempotency_tombstone", ["state", "tombstoneExpiresAt"])
 @Index("IDX_room_create_idempotency_creator", ["creatorParticipantId"])
+@Index("IDX_room_create_resource", ["resourceId", "state"])
 @Entity("room_create_idempotency")
 export class RoomCreateIdempotencyEntity {
     @PrimaryColumn("varchar", { length: 36 }) id!: string;

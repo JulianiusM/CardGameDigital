@@ -1,27 +1,39 @@
+import { testCatalogAccess, testCardById } from "../support/game";
 import http from "node:http";
+import { probeKodiCapacity } from "../support/kodiCapacity";
 import { afterEach, describe, expect, it } from "vitest";
 import { WebSocket } from "ws";
 import { attachWebSocketServer } from "../../apps/server/src/modules/websocket";
+import settings from "../../apps/server/src/modules/settings";
 import { RoomService } from "../../packages/application/roomService";
 import {
     SequenceRandomSource,
+    GameSession,
+    reconcileSessionMembership,
     type GameSessionRuntimeState,
     type PlayerBoundaries,
 } from "../../packages/game-core";
 import type {
     RealtimeRoomRepository,
+    RoomRuntimeCommit,
     RoomParticipant,
     RoomState,
 } from "../../packages/application/realtimeRooms";
-import type { CardRepository } from "../../packages/application/repositories";
-import { card } from "../support/game";
+import type { TestCardRepository as CardRepository } from "../support/game";
+import { card, profile } from "../support/game";
+import { capacityId, maximumRoomSettings } from "../support/transportCapacity";
 import {
     defaultRoomGameSettings,
     type RoomGameSettings,
     type VersionedRoomGameSettings,
 } from "../../packages/application/roomGameSettings";
-import { PROTOCOL_VERSION } from "../../packages/protocol";
+import {
+    PROTOCOL_VERSION,
+    MAX_WEBSOCKET_MESSAGE_BYTES,
+    roomSnapshotEnvelopeSchema,
+} from "../../packages/protocol";
 import { applyMemoryLifecycleTransition } from "../support/realtimeLifecycle";
+import { expectHiddenVotingAnswers } from "../support/votingPrivacy";
 
 class Repo implements RealtimeRoomRepository {
     room!: RoomState;
@@ -91,7 +103,24 @@ class Repo implements RealtimeRoomRepository {
     async applyLifecycleTransition(
         transition: Parameters<RealtimeRoomRepository["applyLifecycleTransition"]>[0],
     ) {
-        return applyMemoryLifecycleTransition(this.room, this.participants, transition);
+        const current = this.runtime;
+        if (
+            transition.type === "CLOSE" &&
+            transition.expectedSessionRevision != null &&
+            current?.revision !== transition.expectedSessionRevision
+        ) {
+            throw Object.assign(new Error("stale"), { code: "STALE_SESSION_REVISION" });
+        }
+        const result = applyMemoryLifecycleTransition(this.room, this.participants, transition);
+        if (this.runtime) {
+            const ids = new Set(
+                this.participants
+                    .filter((p) => p.connectionStatus !== "LEFT" && p.role !== "DISPLAY")
+                    .flatMap((p) => [p.id, ...p.devicePlayers.map(({ id }) => id)]),
+            );
+            this.runtime = reconcileSessionMembership(this.runtime, ids, result.roomClosed);
+        }
+        return result;
     }
     async resetConnectedParticipants(at: number, reconnectDeadline: number) {
         const reset: RoomParticipant[] = [];
@@ -179,19 +208,27 @@ class Repo implements RealtimeRoomRepository {
     async listBoundaries() {
         return this.boundaries;
     }
-    async selectGroup() {
-        return new Set<never>();
-    }
+    async selectGroup() {}
     async groupHistory() {
         return new Set<never>();
+    }
+    async runtimeRevision() {
+        return this.runtime ? { id: this.runtime.id, revision: this.runtime.revision } : null;
     }
     async loadRuntime() {
         return this.runtime;
     }
-    async commitRuntime(_id: string, previous: number | null, runtime: GameSessionRuntimeState) {
+    async commitRuntime(
+        _id: string,
+        previous: number | null,
+        runtime: GameSessionRuntimeState,
+        options: RoomRuntimeCommit = {},
+    ) {
         if ((this.runtime?.revision ?? null) !== previous)
             throw Object.assign(new Error("stale"), { code: "STALE_SESSION_REVISION" });
         this.runtime = runtime;
+        const enrollment = options.enrollment;
+        if (enrollment) this.boundaries.set(enrollment.participantId, enrollment.boundaries);
     }
     async clearEndedRuntime(_roomId: string, sessionId: string, revision: number) {
         if (
@@ -210,12 +247,11 @@ const cards: CardRepository = {
     async defaultLocale() {
         return "en-GB";
     },
+    ...testCatalogAccess,
     async listActive() {
         return [card({ id: "ws-question" as never })];
     },
-    async getById() {
-        return null;
-    },
+    getById: testCardById,
     async findEligibleCandidates() {
         return [];
     },
@@ -224,6 +260,320 @@ let server: http.Server | undefined;
 afterEach(() => new Promise<void>((resolve) => server?.close(() => resolve()) ?? resolve()));
 
 describe("Room WebSocket protocol", () => {
+    it("rejects connections above the configured process capacity", async () => {
+        const previous = settings.value.webSocketMaximumConnections;
+        settings.value.webSocketMaximumConnections = 1;
+        const service = new RoomService(new Repo(), cards, new SequenceRandomSource([0]));
+        server = http.createServer();
+        const wss = attachWebSocketServer(server, service);
+        await new Promise<void>((resolve) => server!.listen(0, "127.0.0.1", resolve));
+        const port = (server.address() as { port: number }).port;
+        const first = new WebSocket(`ws://127.0.0.1:${port}/ws`);
+        let second: WebSocket | undefined;
+        try {
+            await new Promise<void>((resolve) => first.once("open", resolve));
+            second = new WebSocket(`ws://127.0.0.1:${port}/ws`);
+            await expect(
+                new Promise<number>((resolve) => second!.once("close", resolve)),
+            ).resolves.toBe(1013);
+            expect(first.readyState).toBe(WebSocket.OPEN);
+        } finally {
+            first.terminate();
+            second?.terminate();
+            await new Promise<void>((resolve) => wss.close(() => resolve()));
+            settings.value.webSocketMaximumConnections = previous;
+        }
+    });
+    it("saves maximum settings and resynchronizes maximum roster, text and voting through fragmented Kodi transport", async () => {
+        const repository = new Repo();
+        const maximumCard = card({
+            id: capacityId(2001) as never,
+            yesNoAnswerPossible: true,
+            cardText: "界".repeat(2096) + "a".repeat(1904),
+        });
+        const catalog = {
+            ...cards,
+            async listActive() {
+                return [maximumCard];
+            },
+        };
+        const service = new RoomService(
+            repository,
+            catalog,
+            new SequenceRandomSource([0]),
+            undefined,
+            { maximumParticipants: 1000, maximumPlayers: 1000 },
+        );
+        const host = await service.createRoom("界".repeat(40));
+        const display = await service.joinRoom(host.roomCode, "屏".repeat(40), "DISPLAY");
+        const extra = { id: capacityId(3000), name: "同".repeat(40) };
+        repository.participants[0].devicePlayers = [extra];
+        const template = repository.participants[0];
+        repository.participants.push(
+            ...Array.from({ length: 998 }, (_, i) => ({
+                ...template,
+                id: capacityId(i + 1),
+                displayName: "名".repeat(40),
+                role: "PLAYER" as const,
+                devicePlayers: [],
+                connectionStatus: "CONNECTED" as const,
+            })),
+        );
+        server = http.createServer();
+        const wss = attachWebSocketServer(server, service);
+        // Fragment the real adapter's UTF-8 output, including within a CJK code point.
+        wss.on("connection", (socket) => {
+            const send = socket.send.bind(socket);
+            socket.send = ((data: string, callback: (error?: Error) => void) => {
+                if (typeof data !== "string" || !data.includes('"type":"room.snapshot"'))
+                    return send(data, callback);
+                const bytes = Buffer.from(data);
+                for (let offset = 0; offset < bytes.length; offset += 65537) {
+                    const final = offset + 65537 >= bytes.length;
+                    send(
+                        bytes.subarray(offset, offset + 65537),
+                        { binary: false, fin: final },
+                        final ? callback : undefined,
+                    );
+                }
+            }) as typeof socket.send;
+        });
+        await new Promise<void>((resolve) => server!.listen(0, "127.0.0.1", resolve));
+        const port = (server.address() as { port: number }).port;
+        const client = await hello(port, host.roomCode, host.participantCredential, "HOST");
+        try {
+            const settings = maximumRoomSettings();
+            client.socket.send(
+                JSON.stringify({
+                    protocol: PROTOCOL_VERSION,
+                    type: "command.updateRoomSettings",
+                    requestId: "maximum-settings",
+                    revision: null,
+                    payload: { expectedRevision: 0, settings },
+                }),
+            );
+            await waitFor(
+                () =>
+                    client.messages.some(
+                        (message) =>
+                            message.type === "room.snapshot" &&
+                            message.payload.settings.revision === 1,
+                    ),
+                () => JSON.stringify(client.messages.filter((message) => message.type === "error")),
+            );
+            const saved = client.messages.find(
+                (message) =>
+                    message.type === "room.snapshot" && message.payload.settings.revision === 1,
+            );
+            roomSnapshotEnvelopeSchema.parse(saved);
+            expect(saved.payload.settings.cardPolicy).toEqual(settings.cardPolicy);
+            const players = repository.participants
+                .filter((p) => p.role !== "DISPLAY")
+                .flatMap((p) => [{ id: p.id, name: p.displayName }, ...p.devicePlayers]);
+            const session = new GameSession(
+                {
+                    id: capacityId(2002),
+                    mode: "NEVER_HAVE_I_EVER",
+                    players,
+                    profile: profile(),
+                    cardLocale: "en-GB",
+                    neverHaveIEverRevealMode: "NAMED_ANSWERS",
+                    catalog: await catalog.catalogProvenance(),
+                },
+                new SequenceRandomSource([0]),
+            );
+            await session.startTurn(0, [maximumCard]);
+            session.submitVote(session.revision, players[0].id, "YES");
+            for (const revealed of [false, true]) {
+                if (revealed)
+                    for (const player of players.slice(1))
+                        session.submitVote(session.revision, player.id, "NO");
+                repository.runtime = session.toRuntimeState();
+                const observed = await probeKodiCapacity({
+                    origin: `http://127.0.0.1:${port}`,
+                    roomCode: display.roomCode,
+                    credential: display.participantCredential,
+                });
+                expect(observed).toMatchObject({
+                    participants: 1000,
+                    players: 1000,
+                    rules: 250,
+                    exactCards: 1000,
+                    cardBytes: 8192,
+                    result: revealed ? { total: 1000, namedAnswers: 1000 } : null,
+                });
+                expect(observed.bytes).toBeGreaterThan(65536);
+                expect(observed.bytes).toBeLessThan(MAX_WEBSOCKET_MESSAGE_BYTES);
+            }
+        } finally {
+            client.socket.terminate();
+            for (const socket of wss.clients) socket.terminate();
+            await new Promise<void>((resolve) => wss.close(() => resolve()));
+        }
+    }, 30_000);
+    it("honors configured queued frames while an earlier message is blocked", async () => {
+        const previousMaximum = settings.value.webSocketQueuedMessages;
+        settings.value.webSocketQueuedMessages = 2;
+        const service = new RoomService(new Repo(), cards, new SequenceRandomSource([0]));
+        let release!: () => void;
+        const blocked = new Promise<null>((resolve) => {
+            release = () => resolve(null);
+        });
+        service.authenticate = () => blocked;
+        server = http.createServer();
+        const wss = attachWebSocketServer(server, service);
+        await new Promise<void>((resolve) => server!.listen(0, "127.0.0.1", resolve));
+        const port = (server.address() as { port: number }).port;
+        const socket = new WebSocket(`ws://127.0.0.1:${port}/ws`);
+        await new Promise<void>((resolve) => socket.once("open", resolve));
+        const closed = new Promise<number>((resolve) => socket.once("close", resolve));
+        const message = JSON.stringify({
+            protocol: PROTOCOL_VERSION,
+            type: "client.hello",
+            requestId: "blocked",
+            revision: null,
+            payload: {
+                supportedProtocolVersions: [PROTOCOL_VERSION],
+                applicationVersion: "test",
+                role: "HOST",
+                capabilities: [],
+                roomCode: "ABCDEF",
+                participantCredential: "a".repeat(64),
+            },
+        });
+        try {
+            for (let index = 0; index < 3; index++) socket.send(message);
+            await expect(closed).resolves.toBe(1013);
+        } finally {
+            release();
+            socket.terminate();
+            await new Promise<void>((resolve) => wss.close(() => resolve()));
+            settings.value.webSocketQueuedMessages = previousMaximum;
+        }
+    });
+
+    it("does not send an older broadcast after a newer direct snapshot", async () => {
+        const repository = new Repo();
+        const service = new RoomService(repository, cards, new SequenceRandomSource([0]));
+        const host = await service.createRoom("Host");
+        const guest = await service.joinRoom(host.roomCode, "Guest", "PLAYER");
+        server = http.createServer();
+        const wss = attachWebSocketServer(server, service);
+        await new Promise<void>((resolve) => server!.listen(0, "127.0.0.1", resolve));
+        const port = (server.address() as { port: number }).port;
+        const hostClient = await hello(port, host.roomCode, host.participantCredential, host.role);
+        let release!: () => void;
+        let captured!: () => void;
+        const blocked = new Promise<void>((resolve) => {
+            release = resolve;
+        });
+        const ready = new Promise<void>((resolve) => {
+            captured = resolve;
+        });
+        const projection = service.snapshotProjection.bind(service);
+        let holdNext = true;
+        service.snapshotProjection = async (...args) => {
+            const project = await projection(...args);
+            if (holdNext) {
+                holdNext = false;
+                captured();
+                await blocked;
+            }
+            return project;
+        };
+        const joining = hello(port, guest.roomCode, guest.participantCredential, guest.role);
+        try {
+            await ready;
+            repository.settings = { ...repository.settings, revision: 1 };
+            hostClient.socket.send(
+                JSON.stringify({
+                    protocol: PROTOCOL_VERSION,
+                    type: "room.snapshot.request",
+                    requestId: "newer",
+                    revision: null,
+                    payload: {},
+                }),
+            );
+            await waitFor(() =>
+                hostClient.messages.some(
+                    (message) =>
+                        message.type === "room.snapshot" && message.payload.settings.revision === 1,
+                ),
+            );
+            release();
+            const guestClient = await joining;
+            const revisions = hostClient.messages
+                .filter((message) => message.type === "room.snapshot")
+                .map((message) => message.payload.settings.revision);
+            expect(revisions.at(-1)).toBe(1);
+            expect(revisions.slice(revisions.indexOf(1))).not.toContain(0);
+            guestClient.socket.terminate();
+        } finally {
+            release();
+            hostClient.socket.terminate();
+            (await joining).socket.terminate();
+            await new Promise<void>((resolve) => wss.close(() => resolve()));
+        }
+    });
+
+    it("answers heartbeats while an authenticated gameplay command is waiting", async () => {
+        const service = new RoomService(new Repo(), cards, new SequenceRandomSource([0]));
+        const host = await service.createRoom("Host");
+        server = http.createServer();
+        const wss = attachWebSocketServer(server, service);
+        await new Promise<void>((resolve) => server!.listen(0, "127.0.0.1", resolve));
+        const port = (server.address() as { port: number }).port;
+        const client = await hello(port, host.roomCode, host.participantCredential, host.role);
+        let release!: () => void;
+        let entered!: () => void;
+        let completed = false;
+        const blocked = new Promise<void>((resolve) => {
+            release = resolve;
+        });
+        const ready = new Promise<void>((resolve) => {
+            entered = resolve;
+        });
+        service.execute = async (roomId, participant) => {
+            entered();
+            await blocked;
+            completed = true;
+            return service.snapshot(roomId, participant);
+        };
+        try {
+            client.socket.send(
+                JSON.stringify({
+                    protocol: PROTOCOL_VERSION,
+                    type: "command.startSession",
+                    requestId: "slow",
+                    revision: null,
+                    payload: {},
+                }),
+            );
+            await ready;
+            client.socket.send(
+                JSON.stringify({
+                    protocol: PROTOCOL_VERSION,
+                    type: "client.ping",
+                    requestId: "heartbeat",
+                    revision: null,
+                    payload: {},
+                }),
+            );
+            await waitFor(() =>
+                client.messages.some(
+                    (message) =>
+                        message.type === "server.pong" && message.requestId === "heartbeat",
+                ),
+            );
+            expect(completed).toBe(false);
+        } finally {
+            release();
+            await waitFor(() => completed);
+            client.socket.terminate();
+            await new Promise<void>((resolve) => wss.close(() => resolve()));
+        }
+    });
+
     it("rejects binary protocol messages", async () => {
         const service = new RoomService(new Repo(), cards, new SequenceRandomSource([0]));
         server = http.createServer();
@@ -256,45 +606,48 @@ describe("Room WebSocket protocol", () => {
         await new Promise<void>((resolve) => wss.close(() => resolve()));
     });
 
-    it("rejects retired protocol versions with the stable negotiation error", async () => {
-        const service = new RoomService(new Repo(), cards, new SequenceRandomSource([0]));
-        server = http.createServer();
-        const wss = attachWebSocketServer(server, service);
-        await new Promise<void>((resolve) => server!.listen(0, "127.0.0.1", resolve));
-        const port = (server.address() as { port: number }).port;
-        const socket = new WebSocket(`ws://127.0.0.1:${port}/ws`);
-        const messages: any[] = [];
-        socket.on("message", (raw) => messages.push(JSON.parse(raw.toString())));
-        await new Promise<void>((resolve, reject) => {
-            socket.once("open", resolve);
-            socket.once("error", reject);
-        });
-        socket.send(
-            JSON.stringify({
-                protocol: 1,
-                type: "client.hello",
-                requestId: "retired",
-                revision: null,
-                payload: {},
-            }),
-        );
-        await waitFor(() =>
-            messages.some(
-                (message) =>
-                    message.type === "error" &&
-                    message.payload.code === "PROTOCOL_VERSION_UNSUPPORTED",
-            ),
-        );
-        expect(messages).toContainEqual(
-            expect.objectContaining({
-                protocol: PROTOCOL_VERSION,
-                type: "error",
-                payload: expect.objectContaining({ code: "PROTOCOL_VERSION_UNSUPPORTED" }),
-            }),
-        );
-        socket.terminate();
-        await new Promise<void>((resolve) => wss.close(() => resolve()));
-    });
+    it.each([1, 2, 3])(
+        "rejects retired protocol %s with the stable negotiation error",
+        async (protocol) => {
+            const service = new RoomService(new Repo(), cards, new SequenceRandomSource([0]));
+            server = http.createServer();
+            const wss = attachWebSocketServer(server, service);
+            await new Promise<void>((resolve) => server!.listen(0, "127.0.0.1", resolve));
+            const port = (server.address() as { port: number }).port;
+            const socket = new WebSocket(`ws://127.0.0.1:${port}/ws`);
+            const messages: any[] = [];
+            socket.on("message", (raw) => messages.push(JSON.parse(raw.toString())));
+            await new Promise<void>((resolve, reject) => {
+                socket.once("open", resolve);
+                socket.once("error", reject);
+            });
+            socket.send(
+                JSON.stringify({
+                    protocol,
+                    type: "client.hello",
+                    requestId: "retired",
+                    revision: null,
+                    payload: {},
+                }),
+            );
+            await waitFor(() =>
+                messages.some(
+                    (message) =>
+                        message.type === "error" &&
+                        message.payload.code === "PROTOCOL_VERSION_UNSUPPORTED",
+                ),
+            );
+            expect(messages).toContainEqual(
+                expect.objectContaining({
+                    protocol: PROTOCOL_VERSION,
+                    type: "error",
+                    payload: expect.objectContaining({ code: "PROTOCOL_VERSION_UNSUPPORTED" }),
+                }),
+            );
+            socket.terminate();
+            await new Promise<void>((resolve) => wss.close(() => resolve()));
+        },
+    );
 
     it("authenticates host, two players, and display and resynchronizes snapshots", async () => {
         const service = new RoomService(new Repo(), cards, new SequenceRandomSource([0]));
@@ -1078,6 +1431,20 @@ describe("Room WebSocket protocol", () => {
 
         const late = await service.joinRoom(host.roomCode, "Late", "PLAYER");
         const lateClient = await hello(port, late.roomCode, late.participantCredential, late.role);
+        expect(repository.runtime?.players).toHaveLength(1);
+        lateClient.socket.send(
+            JSON.stringify({
+                protocol: PROTOCOL_VERSION,
+                type: "command.setBoundaries",
+                requestId: "enroll-late",
+                revision: null,
+                payload: {
+                    disabledQuestionCategoryIds: [],
+                    disabledDareTypeIds: ["DARE_NUDITY"],
+                    blockedOperationalFlags: [],
+                },
+            }),
+        );
         await waitFor(() =>
             [hostClient, lateClient].every((client) =>
                 client.messages.some(
@@ -1098,24 +1465,28 @@ describe("Room WebSocket protocol", () => {
     });
 
     it.each([
-        ["command.skipCard", "SKIPPED", "HOST"],
-        ["command.vetoCard", "VETOED", "PLAYER"],
+        ["command.skipCard", "SKIPPED", "HOST", false],
+        ["command.vetoCard", "VETOED", "PLAYER", false],
+        ["command.skipCard", "SKIPPED", "HOST", true],
+        ["command.vetoCard", "VETOED", "PLAYER", true],
     ] as const)(
         "broadcasts the committed %s Card replacement before its fresh snapshot",
-        async (commandType, reason, actorRole) => {
+        async (commandType, reason, actorRole, exhausted) => {
             const repository = new Repo();
             const neverCards: CardRepository = {
                 ...cards,
-                listActive: async () => [
-                    card({
-                        id: "replacement-a" as never,
-                        yesNoAnswerPossible: true,
-                    }),
-                    card({
-                        id: "replacement-b" as never,
-                        yesNoAnswerPossible: true,
-                    }),
-                ],
+                ...testCatalogAccess,
+                listActive: async () =>
+                    [
+                        card({
+                            id: "replacement-a" as never,
+                            yesNoAnswerPossible: true,
+                        }),
+                        card({
+                            id: "replacement-b" as never,
+                            yesNoAnswerPossible: true,
+                        }),
+                    ].slice(0, exhausted ? 1 : 2),
             };
             const service = new RoomService(
                 repository,
@@ -1162,20 +1533,68 @@ describe("Room WebSocket protocol", () => {
             send(clients[0], "command.startTurn", 0);
             await waitFor(() => repository.runtime?.revision === 1);
             const firstCardId = repository.runtime?.currentCard?.id;
+            clients[0].socket.send(
+                JSON.stringify({
+                    protocol: PROTOCOL_VERSION,
+                    type: "command.submitVote",
+                    requestId: "partial-before-refusal",
+                    revision: 1,
+                    payload: { vote: "YES" },
+                }),
+            );
+            await waitFor(() => repository.runtime?.revision === 2);
             const actor = actorRole === "HOST" ? clients[0] : clients[1];
-            send(actor, commandType, 1);
+            send(actor, commandType, 2);
             await waitFor(() => repository.runtime?.currentCard?.id !== firstCardId);
             expect(repository.runtime?.sessionHistory[0]).toMatchObject({
                 skipped: commandType === "command.skipCard",
                 completed: false,
                 vetoed: commandType === "command.vetoCard",
             });
+            if (exhausted) {
+                await waitFor(() =>
+                    clients.every((client) =>
+                        client.messages.some(
+                            (message) =>
+                                message.type === "room.snapshot" &&
+                                message.payload.session?.revision === 3,
+                        ),
+                    ),
+                );
+                for (const client of clients) {
+                    const final = client.messages.find(
+                        (message) =>
+                            message.type === "room.snapshot" &&
+                            message.payload.session?.revision === 3,
+                    );
+                    expect(final.payload.session.currentCard).toBeNull();
+                    expect(final.payload.session.state).toBe("WAITING_FOR_PLAYER");
+                    expectHiddenVotingAnswers(final);
+                    expect(
+                        client.messages.some((message) => message.type === "session.cardReplaced"),
+                    ).toBe(false);
+                }
+                for (const client of clients) client.socket.terminate();
+                await new Promise<void>((resolve) => wss.close(() => resolve()));
+                return;
+            }
             await waitFor(() =>
                 clients.every((client) =>
                     client.messages.some(
                         (message) =>
                             message.type === "session.cardReplaced" &&
                             message.payload.reason === reason,
+                    ),
+                ),
+            );
+            // Broadcasts yield to I/O between recipients. Receiving the replacement
+            // event does not imply that each following snapshot has arrived yet.
+            await waitFor(() =>
+                clients.every((client) =>
+                    client.messages.some(
+                        (message) =>
+                            message.type === "room.snapshot" &&
+                            message.payload.session?.revision === 3,
                     ),
                 ),
             );
@@ -1197,105 +1616,182 @@ describe("Room WebSocket protocol", () => {
         },
     );
 
-    it("keeps named Never Have I Ever answers private until every voter completes", async () => {
-        const repository = new Repo();
-        const neverCards: CardRepository = {
-            ...cards,
-            listActive: async () => [
-                card({ id: "named-never-ws" as never, yesNoAnswerPossible: true }),
-            ],
-        };
-        const service = new RoomService(repository, neverCards, new SequenceRandomSource([0]));
-        const host = await service.createRoom("Host", null, {
-            ...defaultRoomGameSettings(),
-            mode: "NEVER_HAVE_I_EVER",
-            neverHaveIEverRevealMode: "NAMED_ANSWERS",
-        });
-        const player = await service.joinRoom(host.roomCode, "Player", "PLAYER");
-        const display = await service.joinRoom(host.roomCode, "Display", "DISPLAY");
-        server = http.createServer();
-        const wss = attachWebSocketServer(server, service);
-        await new Promise<void>((resolve) => server!.listen(0, "127.0.0.1", resolve));
-        const port = (server.address() as { port: number }).port;
-        const hostClient = await hello(port, host.roomCode, host.participantCredential, host.role);
-        const playerClient = await hello(
-            port,
-            player.roomCode,
-            player.participantCredential,
-            player.role,
-        );
-        const displayClient = await hello(
-            port,
-            display.roomCode,
-            display.participantCredential,
-            display.role,
-        );
-        const clients = [hostClient, playerClient, displayClient];
-        const send = sendRoomCommand;
-        hostClient.socket.send(
-            JSON.stringify({
-                protocol: PROTOCOL_VERSION,
-                type: "command.startSession",
-                requestId: "named-start",
-                revision: null,
-                payload: {},
-            }),
-        );
-        await waitFor(() => repository.runtime?.revision === 0);
-        send(hostClient, "command.startTurn", 0);
-        await waitFor(() => repository.runtime?.revision === 1);
-        send(hostClient, "command.submitVote", 1, {
-            playerId: host.participantId,
-            vote: "YES",
-        });
-        await waitFor(() => repository.runtime?.revision === 2);
-        await waitFor(() =>
-            clients.every((client) => {
+    it.each(["ANONYMOUS_AGGREGATE", "NAMED_ANSWERS"] as const)(
+        "protects full HOST/PLAYER/DISPLAY envelopes in %s",
+        async (revealMode) => {
+            const repository = new Repo();
+            const neverCards: CardRepository = {
+                ...cards,
+                ...testCatalogAccess,
+                listActive: async () => [
+                    card({
+                        id: "e58090b4-2868-4bc8-8337-8d12c1c33ae4" as never,
+                        yesNoAnswerPossible: true,
+                    }),
+                ],
+            };
+            const service = new RoomService(repository, neverCards, new SequenceRandomSource([0]));
+            const host = await service.createRoom("Host", null, {
+                ...defaultRoomGameSettings(),
+                mode: "NEVER_HAVE_I_EVER",
+                neverHaveIEverRevealMode: revealMode,
+            });
+            const player = await service.joinRoom(host.roomCode, "Player", "PLAYER");
+            const otherPlayer = await service.joinRoom(host.roomCode, "Other", "PLAYER");
+            const display = await service.joinRoom(host.roomCode, "Display", "DISPLAY");
+            server = http.createServer();
+            const wss = attachWebSocketServer(server, service);
+            await new Promise<void>((resolve) => server!.listen(0, "127.0.0.1", resolve));
+            const port = (server.address() as { port: number }).port;
+            const hostClient = await hello(
+                port,
+                host.roomCode,
+                host.participantCredential,
+                host.role,
+            );
+            const playerClient = await hello(
+                port,
+                player.roomCode,
+                player.participantCredential,
+                player.role,
+            );
+            const displayClient = await hello(
+                port,
+                display.roomCode,
+                display.participantCredential,
+                display.role,
+            );
+            const otherClient = await hello(
+                port,
+                otherPlayer.roomCode,
+                otherPlayer.participantCredential,
+                otherPlayer.role,
+            );
+            const clients = [hostClient, playerClient, otherClient, displayClient];
+            const send = sendRoomCommand;
+            hostClient.socket.send(
+                JSON.stringify({
+                    protocol: PROTOCOL_VERSION,
+                    type: "command.startSession",
+                    requestId: "named-start",
+                    revision: null,
+                    payload: {},
+                }),
+            );
+            await waitFor(() => repository.runtime?.revision === 0);
+            send(hostClient, "command.startTurn", 0);
+            await waitFor(() => repository.runtime?.revision === 1);
+            await waitFor(() =>
+                clients.every(
+                    (client) =>
+                        client.messages.findLast((message) => message.type === "room.snapshot")
+                            ?.payload.session?.revision === 1,
+                ),
+            );
+            for (const client of clients) {
+                expectHiddenVotingAnswers(
+                    client.messages.findLast((message) => message.type === "room.snapshot"),
+                );
+            }
+            send(hostClient, "command.submitVote", 1, {
+                playerId: host.participantId,
+                vote: "YES",
+            });
+            await waitFor(() => repository.runtime?.revision === 2);
+            await waitFor(() =>
+                clients.every((client) => {
+                    const snapshot = client.messages.findLast(
+                        (message) => message.type === "room.snapshot",
+                    );
+                    return (
+                        snapshot?.payload.session?.neverHaveIEverVoting?.progress?.[0]?.status ===
+                        "VOTED"
+                    );
+                }),
+            );
+            for (const client of clients) {
                 const snapshot = client.messages.findLast(
                     (message) => message.type === "room.snapshot",
                 );
-                return (
-                    snapshot?.payload.session?.neverHaveIEverVoting?.progress?.[0]?.status ===
-                    "VOTED"
-                );
-            }),
-        );
-        for (const client of clients) {
-            const voting = client.messages.findLast((message) => message.type === "room.snapshot")
-                .payload.session.neverHaveIEverVoting;
-            expect(voting.result).toBeNull();
-            expect(JSON.stringify(voting)).not.toContain('"YES"');
-        }
+                expect(snapshot.payload.session.neverHaveIEverVoting.result).toBeNull();
+                expectHiddenVotingAnswers(snapshot);
+            }
 
-        send(playerClient, "command.submitVote", 2, {
-            playerId: player.participantId,
-            vote: "NO",
-        });
-        await waitFor(() =>
-            clients.every((client) => {
+            send(playerClient, "command.submitVote", 2, {
+                playerId: player.participantId,
+                vote: "NO",
+            });
+            await waitFor(() =>
+                clients.every(
+                    (client) =>
+                        client.messages.findLast((message) => message.type === "room.snapshot")
+                            ?.payload.session?.revision === 3,
+                ),
+            );
+            for (const client of clients) {
+                expectHiddenVotingAnswers(
+                    client.messages.findLast((message) => message.type === "room.snapshot"),
+                );
+            }
+            send(otherClient, "command.submitVote", 3, {
+                playerId: otherPlayer.participantId,
+                vote: "YES",
+            });
+            await waitFor(() =>
+                clients.every((client) => {
+                    const snapshot = client.messages.findLast(
+                        (message) => message.type === "room.snapshot",
+                    );
+                    return snapshot?.payload.session?.state === "SHOWING_RESULTS";
+                }),
+            );
+            for (const client of clients) {
                 const snapshot = client.messages.findLast(
                     (message) => message.type === "room.snapshot",
                 );
-                return snapshot?.payload.session?.state === "SHOWING_RESULTS";
-            }),
-        );
-        for (const client of clients) {
-            expect(
-                client.messages.findLast((message) => message.type === "room.snapshot").payload
-                    .session.neverHaveIEverVoting.result.namedAnswers,
-            ).toEqual([
-                { playerId: host.participantId, displayName: "Host", vote: "YES" },
-                { playerId: player.participantId, displayName: "Player", vote: "NO" },
-            ]);
-        }
-        for (const client of clients) client.socket.terminate();
-        await new Promise<void>((resolve) => wss.close(() => resolve()));
-    });
+                expect(snapshot.payload.session.voteResult).toEqual({ yes: 2, no: 1, total: 3 });
+                if (revealMode === "NAMED_ANSWERS") {
+                    expect(
+                        snapshot.payload.session.neverHaveIEverVoting.result.namedAnswers,
+                    ).toEqual([
+                        { playerId: host.participantId, displayName: "Host", vote: "YES" },
+                        { playerId: player.participantId, displayName: "Player", vote: "NO" },
+                        { playerId: otherPlayer.participantId, displayName: "Other", vote: "YES" },
+                    ]);
+                } else {
+                    expect(JSON.stringify(snapshot)).not.toMatch(
+                        /"(?:YES|NO)"|"(?:vote|votes|namedAnswers)"\s*:/,
+                    );
+                }
+            }
+            for (const [index, action] of [
+                "command.advanceSession",
+                "command.endSession",
+            ].entries()) {
+                send(hostClient, action, 4 + index);
+                await waitFor(() =>
+                    clients.every(
+                        (client) =>
+                            client.messages.findLast((message) => message.type === "room.snapshot")
+                                ?.payload.session?.revision ===
+                            5 + index,
+                    ),
+                );
+                for (const client of clients)
+                    expectHiddenVotingAnswers(
+                        client.messages.findLast((message) => message.type === "room.snapshot"),
+                    );
+            }
+            for (const client of clients) client.socket.terminate();
+            await new Promise<void>((resolve) => wss.close(() => resolve()));
+        },
+    );
 
     it("rejects a stale Never Have I Ever result Skip without an internal-server message", async () => {
         const repository = new Repo();
         const neverCards: CardRepository = {
             ...cards,
+            ...testCatalogAccess,
             listActive: async () => [card({ id: "never-ws" as never, yesNoAnswerPossible: true })],
         };
         const service = new RoomService(repository, neverCards, new SequenceRandomSource([0]));

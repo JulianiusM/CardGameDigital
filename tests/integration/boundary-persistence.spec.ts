@@ -1,3 +1,6 @@
+import { catalogSessionLifetimeTests } from "../support/catalogSessions";
+import { gameRetentionTests } from "../support/gameRetention";
+import { policyCommitTests } from "../support/policyCommits";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -12,11 +15,21 @@ import { TypeOrmRealtimeRoomRepository } from "../../packages/persistence";
 import { DARE_TYPES, OPERATIONAL_FLAGS, QUESTION_CATEGORIES } from "../../packages/game-core";
 import { defaultRoomGameSettings } from "../../packages/application/roomGameSettings";
 import { DEFAULT_ROOM_CAPACITY } from "../../packages/application/roomService";
+import { privateBoundaryRetentionTests } from "../support/privateBoundaryRetention";
+import { correctiveConsentTests } from "../support/correctiveConsent";
+import { authoritativeCommitTests } from "../support/authoritativeCommits";
 
 let directory: string;
 let repository: TypeOrmRealtimeRoomRepository;
 let roomId: string;
 let participantId: string;
+
+privateBoundaryRetentionTests(getAppDataSource);
+correctiveConsentTests(getAppDataSource);
+authoritativeCommitTests(getAppDataSource);
+policyCommitTests(getAppDataSource);
+catalogSessionLifetimeTests(getAppDataSource);
+gameRetentionTests(getAppDataSource);
 
 beforeAll(async () => {
     directory = fs.mkdtempSync(path.join(os.tmpdir(), "boundaries-"));

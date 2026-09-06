@@ -17,22 +17,14 @@
 import { MESSAGE_KEYS } from "../../../../packages/localization/keys";
 import type { Request } from "express";
 import * as oidc from "openid-client";
-import { z } from "zod";
 import { ensureDataSpaceForUser, findOrCreateUserFromOidc } from "./database/services/UserService";
 import { bindAccountSession } from "./database/services/AccountSessionService";
 import { ExpectedError } from "./lib/errors";
 import { persistSession, regenerateSession } from "./lib/session";
 import settings from "./settings";
+import { resolveOidcIdentityClaims } from "./oidcIdentity";
 
 let config: oidc.Configuration;
-
-const oidcIdentityClaimsSchema = z.object({
-    sub: z.string().min(1).max(255),
-    email: z.email().max(100).optional(),
-    email_verified: z.boolean().optional(),
-    preferred_username: z.string().min(1).max(100).optional(),
-    name: z.string().min(1).max(50).optional(),
-});
 
 export async function initOIDC() {
     if (!settings.value.initialized) await settings.read();
@@ -125,17 +117,7 @@ export async function callback(req: Request): Promise<string> {
         }
     }
 
-    // Prefer userInfo claims if present, otherwise ID Token claims
-    // UserInfo can omit email_verified. Merge it over the verified ID-token claims
-    // so an absent UserInfo field never downgrades the linking decision.
-    const parsedClaims = oidcIdentityClaimsSchema.safeParse({ ...claims, ...userInfo });
-    if (!parsedClaims.success) {
-        throw new ExpectedError(MESSAGE_KEYS.ACCOUNT_INVALID_OIDC_SESSION);
-    }
-    const identityClaims = parsedClaims.data;
-    if (identityClaims.sub !== claims.sub) {
-        throw new ExpectedError(MESSAGE_KEYS.ACCOUNT_INVALID_OIDC_SESSION);
-    }
+    const identityClaims = resolveOidcIdentityClaims(claims, userInfo);
 
     // JIT-provision or load your local user
     // Persist your standard session identity (same model as manual login)

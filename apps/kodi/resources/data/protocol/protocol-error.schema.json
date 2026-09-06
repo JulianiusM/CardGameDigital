@@ -2,9 +2,11 @@
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",
     "properties": {
-        "protocol": { "type": "number", "const": 2 },
+        "protocol": { "type": "number", "const": 4 },
         "type": { "type": "string", "const": "error" },
-        "requestId": { "anyOf": [{ "type": "string", "minLength": 1 }, { "type": "null" }] },
+        "requestId": {
+            "anyOf": [{ "type": "string", "minLength": 1, "maxLength": 128 }, { "type": "null" }]
+        },
         "revision": { "type": "null" },
         "payload": {
             "type": "object",
@@ -26,6 +28,7 @@
                         "INVALID_GAME_STATE",
                         "NOT_ACTIVE_PLAYER",
                         "CARD_POOL_EXHAUSTED",
+                        "SESSION_CAPACITY_EXCEEDED",
                         "STALE_SESSION_REVISION",
                         "NOT_AUTHORIZED",
                         "PROTOCOL_VERSION_UNSUPPORTED"

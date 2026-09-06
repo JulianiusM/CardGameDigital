@@ -1,11 +1,13 @@
 import { z } from "zod";
-import { DARE_TYPES, OPERATIONAL_FLAGS, QUESTION_CATEGORIES } from "../game-core";
 import {
     clientCapabilitySchema,
     clientRoleSchema,
     envelopeSchema,
     neverHaveIEverVoteValueSchema,
     roomGameSettingsSchema,
+    questionCategoriesSchema,
+    dareTypesSchema,
+    operationalFlagsSchema,
 } from "./common";
 export * from "./cardPolicy";
 export * from "./common";
@@ -68,9 +70,9 @@ export const roomCommandEnvelopeSchema = z.union([
         revision: z.null(),
         payload: z
             .object({
-                disabledQuestionCategoryIds: z.array(z.enum(QUESTION_CATEGORIES)),
-                disabledDareTypeIds: z.array(z.enum(DARE_TYPES)),
-                blockedOperationalFlags: z.array(z.enum(OPERATIONAL_FLAGS)),
+                disabledQuestionCategoryIds: questionCategoriesSchema,
+                disabledDareTypeIds: dareTypesSchema,
+                blockedOperationalFlags: operationalFlagsSchema,
             })
             .strict(),
     }),

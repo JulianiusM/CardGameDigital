@@ -1,11 +1,12 @@
 <script lang="ts">
-    import { onMount } from "svelte";
+    import { onMount, tick } from "svelte";
     import QRCode from "qrcode";
     import AdaptiveBackdrop from "./AdaptiveBackdrop.svelte";
     import Account from "./Account.svelte";
     import CardManagement from "./CardManagement.svelte";
-    import type { BoundarySelection } from "./BoundarySetup.svelte";
+    import BoundarySetup, { type BoundarySelection } from "./BoundarySetup.svelte";
     import Couch from "./Couch.svelte";
+    import { COUCH_SESSION_STORAGE_KEY } from "./api";
     import GameSettingsEditor from "./GameSettingsEditor.svelte";
     import GameSettingsModal from "./GameSettingsModal.svelte";
     import Help from "./Help.svelte";
@@ -108,6 +109,22 @@
         openSettings();
     }
     $: effectiveRole = refreshed(updateCounter, connection?.role);
+    $: enrollmentPending = Boolean(
+        session &&
+        session.state !== "ENDED" &&
+        effectiveRole !== "DISPLAY" &&
+        !session.players.some(({ id }) => id === joined?.participantId),
+    );
+    let wasEnrollmentPending = false;
+    $: if (wasEnrollmentPending && !enrollmentPending && session) {
+        wasEnrollmentPending = false;
+        void tick().then(() => {
+            window.scrollTo(0, 0);
+            const heading = document.querySelector<HTMLElement>(".game-shell h2");
+            heading?.setAttribute("tabindex", "-1");
+            heading?.focus({ preventScroll: true });
+        });
+    } else if (enrollmentPending) wasEnrollmentPending = true;
     $: roomPresence = refreshed(updateCounter, connection?.presence ?? []);
     $: connectionError = refreshed(updateCounter, connection?.error ?? "");
     $: connectionErrorCode = refreshed(updateCounter, connection?.errorCode ?? "");
@@ -183,7 +200,7 @@
             navigate("/play/room", { replace: true, force: true });
             return;
         }
-        if (route === "couch") {
+        if (route === "couch" && !sessionStorage.getItem(COUCH_SESSION_STORAGE_KEY)) {
             const setup = loadSetup();
             if (setup.intent !== "HOST" || setup.step !== "screen" || setup.deviceMode !== "couch")
                 navigate("/play/?setup=group", { replace: true, force: true });
@@ -447,7 +464,7 @@
             <Couch />
         {:else if route === "room"}
             <main
-                class:playing={Boolean(session && session.state !== "ENDED")}
+                class:playing={Boolean(session && session.state !== "ENDED" && !enrollmentPending)}
                 class:display-role={effectiveRole === "DISPLAY"}
             >
                 {#if snapshot}<div class="room-size" aria-live="polite">
@@ -519,6 +536,18 @@
                             onViewSettings={() => (currentSettingsOpen = true)}
                             onLeave={leaveRoom}
                         />
+                    {:else if enrollmentPending}
+                        <section class="card-panel enrollment-panel">
+                            <h2>{messages.boundaries.enrollmentTitle}</h2>
+                            <p>{messages.boundaries.enrollmentHint}</p>
+                            <BoundarySetup
+                                cardLocale={snapshot.settings.cardLocale}
+                                onSave={saveBoundaries}
+                            />
+                            <button class="secondary" on:click={leaveRoom}
+                                >{messages.room.leaveRoom}</button
+                            >
+                        </section>
                     {:else}
                         <RoomGameplay
                             {session}

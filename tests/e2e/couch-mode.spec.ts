@@ -1,11 +1,225 @@
-import { waitForPaint } from "./visual-audit-helpers";
+import { captureVisualAudit, waitForPaint } from "./visual-audit-helpers";
 import { expect, test, type Page } from "@playwright/test";
+import { en } from "../../apps/web/src/locales/en";
+import { de } from "../../apps/web/src/locales/de";
 
 test.beforeEach(async ({ context }) => {
     await context.addInitScript(() => {
         if (!localStorage.getItem("party-game.locale"))
             localStorage.setItem("party-game.locale", "de");
     });
+});
+
+for (const [language, copy] of [
+    ["en", en],
+    ["de", de],
+] as const) {
+    test(`Card policy import preflight preserves the scope and navigation in ${language}`, async ({
+        page,
+    }, testInfo) => {
+        test.setTimeout(90_000);
+        await page.addInitScript(
+            (locale) => localStorage.setItem("party-game.locale", locale),
+            language,
+        );
+        await page.goto("/play/cards");
+        await expect(page.locator(".policy-import-label")).toBeVisible();
+        const before = await (await page.request.get("/api/v1/card-policy/export")).json();
+        const file = page.locator('input[type="file"]');
+        for (const width of [1280, 320]) {
+            await page.setViewportSize({ width, height: width === 320 ? 568 : 900 });
+            await file.setInputFiles({
+                name: "invalid.json",
+                mimeType: "application/json",
+                buffer: Buffer.from("{"),
+            });
+            const errorPanel = page.locator(".policy-error");
+            await expect(errorPanel).toContainText(copy.cardManagement.invalidImport);
+            await expect(errorPanel).toBeFocused();
+            await errorPanel.scrollIntoViewIfNeeded();
+            await expect(page.locator(".policy-confirmation-actions")).toHaveCount(0);
+            expect(
+                await errorPanel.evaluate((element) => element.scrollHeight - element.clientHeight),
+            ).toBeLessThanOrEqual(1);
+            const invalidAudit = await captureVisualAudit(
+                page,
+                `phase-4-import-error-${language}-${width}`,
+            );
+            expect(invalidAudit.horizontalOverflow).toBe(0);
+            expect(invalidAudit.outOfBounds).toEqual([]);
+            expect(invalidAudit.smallTargets).toEqual([]);
+            await testInfo.attach(`import-error-${width}`, {
+                path: invalidAudit.screenshotPath,
+                contentType: "image/png",
+            });
+            await file.setInputFiles({
+                name: "界".repeat(80) + ".json",
+                mimeType: "application/json",
+                buffer: Buffer.from(
+                    JSON.stringify({
+                        format: "party-game-card-policy/v2",
+                        scopeDefault: {},
+                        rules: [],
+                        exactCards: [],
+                    }),
+                ),
+            });
+            const confirmation = page.locator(".policy-confirmation-card:not(.policy-error)");
+            await expect(confirmation).toBeVisible();
+            const cancel = confirmation.getByRole("button", {
+                name: copy.common.cancel,
+                exact: true,
+            });
+            await cancel.focus();
+            await expect(cancel).toBeFocused();
+            await confirmation.scrollIntoViewIfNeeded();
+            const audit = await captureVisualAudit(
+                page,
+                `phase-4-import-confirmation-${language}-${width}`,
+            );
+            expect(audit.horizontalOverflow).toBe(0);
+            expect(audit.outOfBounds).toEqual([]);
+            expect(audit.smallTargets).toEqual([]);
+            await testInfo.attach(`import-confirmation-${width}`, {
+                path: audit.screenshotPath,
+                contentType: "image/png",
+            });
+            await cancel.press("Enter");
+            await expect(confirmation).toHaveCount(0);
+            expect(await (await page.request.get("/api/v1/card-policy/export")).json()).toEqual(
+                before,
+            );
+        }
+        await page.locator(".card-management-shell a[href='/play/']").first().click();
+        await expect(page.locator(".home-shell")).toBeVisible();
+    });
+
+    test(`Card policy Session limits preserve a recoverable draft in ${language}`, async ({
+        page,
+    }, testInfo) => {
+        test.setTimeout(90_000);
+        await page.addInitScript(
+            (locale) => localStorage.setItem("party-game.locale", locale),
+            language,
+        );
+        await page.goto("/play/");
+        await page.evaluate(() => {
+            const id = (index: number) =>
+                `10000000-0000-4000-8000-${String(index).padStart(12, "0")}`;
+            sessionStorage.setItem(
+                "party-game:setup",
+                JSON.stringify({
+                    step: "customize",
+                    cardPolicy: {
+                        scopeDefault: {},
+                        conditionalRules: Array.from({ length: 250 }, (_, index) => ({
+                            id: id(index + 1),
+                            name: `Rule ${index + 1}`,
+                            order: index,
+                            enabled: false,
+                            predicate: {},
+                            directives: {},
+                        })),
+                        exactCards: Array.from({ length: 1000 }, (_, index) => ({
+                            cardId: id(index + 1),
+                            directives: { availability: "EXCLUDE" },
+                        })),
+                    },
+                }),
+            );
+        });
+        for (const width of [1280, 320]) {
+            await page.setViewportSize({ width, height: width === 320 ? 700 : 800 });
+            await page.goto("/play/cards?scope=session&returnTo=%2Fplay%2F%3Fsetup%3Dcustomize");
+            const before = await page.evaluate(() => sessionStorage.getItem("party-game:setup"));
+            await page.getByRole("tab", { name: copy.cardManagement.rulesTab }).click();
+            await page
+                .getByRole("button", { name: copy.cardManagement.addRule, exact: true })
+                .click();
+            const errorPanel = page.locator(".policy-error");
+            await expect(errorPanel).toContainText(copy.cardManagement.ruleLimitReached);
+            await expect(errorPanel).toBeFocused();
+            await page.getByRole("tab", { name: copy.cardManagement.cardsTab }).click();
+            await page
+                .getByRole("group", { name: copy.cardManagement.availability, exact: true })
+                .getByRole("button", {
+                    name: copy.cardManagement.availabilityDirectives.EXCLUDE,
+                    exact: true,
+                })
+                .click();
+            await page.getByRole("button", { name: copy.common.save, exact: true }).click();
+            await expect(errorPanel).toContainText(copy.cardManagement.invalidSessionPolicy);
+            await expect(errorPanel).toBeFocused();
+            expect(await page.evaluate(() => sessionStorage.getItem("party-game:setup"))).toBe(
+                before,
+            );
+            expect(
+                await errorPanel.evaluate((element) => element.scrollHeight - element.clientHeight),
+            ).toBeLessThanOrEqual(1);
+            const audit = await captureVisualAudit(
+                page,
+                `phase-4-session-limit-${language}-${width}`,
+            );
+            expect(audit.horizontalOverflow).toBe(0);
+            expect(audit.outOfBounds).toEqual([]);
+            expect(audit.smallTargets).toEqual([]);
+            await testInfo.attach(`session-limit-${width}`, {
+                path: audit.screenshotPath,
+                contentType: "image/png",
+            });
+            await page.getByRole("tab", { name: copy.cardManagement.rulesTab }).click();
+            await page
+                .getByRole("textbox", { name: copy.cardManagement.ruleName, exact: true })
+                .fill(`Edited ${width}`);
+            await page.getByRole("button", { name: copy.common.save, exact: true }).click();
+            await expect(errorPanel).toHaveCount(0);
+            const saved = await page.evaluate(
+                () => JSON.parse(sessionStorage.getItem("party-game:setup")!).cardPolicy,
+            );
+            expect(saved.conditionalRules).toHaveLength(250);
+            expect(saved.exactCards).toHaveLength(1000);
+            expect(saved.conditionalRules[0].name).toBe(`Edited ${width}`);
+        }
+        await page.locator(".card-management-shell a[href='/play/?setup=customize']").click();
+        await expect(page).toHaveURL(/setup=customize/);
+    });
+}
+
+test("edited profiles require adult confirmation before Couch play", async ({ page }, testInfo) => {
+    test.setTimeout(90_000);
+    await reachCouch(page, "Wahrheit oder Pflicht");
+    await page.goto("/play/?setup=customize");
+    await expect(page.getByRole("heading", { name: "Erlebnis anpassen" })).toBeVisible();
+    await page.getByRole("slider", { name: /Endintensität/ }).fill("5");
+    await page.locator(".sensitivity-setting").getByRole("slider").fill("5");
+    for (const button of await page.getByRole("button", { name: "Alle aktiv", exact: true }).all())
+        await button.click();
+    const confirmation = page.locator(".adult-confirmation");
+    await expect(confirmation).toBeVisible();
+    for (const width of [1280, 320]) {
+        await page.setViewportSize({ width, height: width === 320 ? 568 : 800 });
+        await confirmation.scrollIntoViewIfNeeded();
+        const report = await captureVisualAudit(page, `phase-2-adult-confirmation-${width}`);
+        await testInfo.attach(`adult-confirmation-${width}`, {
+            path: report.screenshotPath,
+            contentType: "image/png",
+        });
+        expect(report.horizontalOverflow).toBe(0);
+        expect(report.outOfBounds).toEqual([]);
+        expect(report.smallTargets).toEqual([]);
+        expect(report.overlaps).toEqual([]);
+        expect(report.truncations).toEqual([]);
+    }
+    await page.getByRole("button", { name: /^Weiter/ }).click();
+    await page.getByRole("button", { name: /Nur dieser Bildschirm/ }).click();
+    await page.getByRole("button", { name: /Weiter zur Lobby/ }).click();
+    await page.getByRole("button", { name: /Spiel starten/ }).click();
+    await expect(page.locator(".notification-toast")).toContainText(
+        "Explizite Inhalte erfordern eine Bestätigung.",
+    );
+    await page.locator(".adult-confirmation input").check();
+    await page.getByRole("button", { name: /Spiel starten/ }).click();
+    await expect(page.getByText("Runde 1")).toBeVisible();
 });
 
 async function reachCouch(
@@ -256,7 +470,9 @@ test("Golden Mischief uses warm local surfaces and a motion-aware adaptive backd
     expect(visualState.symbolBlend).toBe("normal");
     expect(visualState.sampledGradient).toMatch(/^\d+,\d+,\d+$/);
     expect(visualState.symbolColor).not.toBe("rgb(148, 80, 27)");
-    expect(visualState.symbolOpacity).toBe("0.1");
+    await expect(
+        page.locator(".incoming-symbol[data-gradient-color][data-adaptive-color]").first(),
+    ).toHaveCSS("opacity", "0.1");
     expect(visualState.tile).toBe("rgba(255, 248, 232, 0.94)");
     expect(visualState.tileFilter).toBe("none");
     expect(visualState.trigger).toBe("rgba(255, 248, 232, 0.72)");
@@ -1218,7 +1434,12 @@ test("built-in profiles offer a validation-preserving Customize shortcut", async
         width: undefined,
     });
     expect(Math.abs(skipStyles.height - nextStyles.height)).toBeLessThan(1);
-    expect(Math.abs(skipStyles.width - nextStyles.width)).toBeLessThanOrEqual(1.1);
+    await expect
+        .poll(async () => {
+            const [skipSize, nextSize] = await Promise.all([styles(skip), styles(next)]);
+            return Math.abs(skipSize.width - nextSize.width);
+        })
+        .toBeLessThanOrEqual(1.1);
     await skip.click();
     await expect(page.getByRole("heading", { name: /Bildschirme/ })).toBeVisible();
 });
@@ -1712,7 +1933,7 @@ test("Card management stays bounded and Session changes return to quick setup", 
     });
 });
 
-test("Card management bounds thousand-entry Group and rule collections", async ({ page }) => {
+test("Card management bounds thousand-entry Groups and 250-rule collections", async ({ page }) => {
     const stableId = (index: number) =>
         `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`;
     const groups = Array.from({ length: 1_000 }, (_, index) => ({
@@ -1720,7 +1941,7 @@ test("Card management bounds thousand-entry Group and rule collections", async (
         name: `Gruppe ${String(index + 1).padStart(4, "0")}`,
         members: [`Person ${index + 1}`],
     }));
-    const rules = Array.from({ length: 1_000 }, (_, index) => ({
+    const rules = Array.from({ length: 250 }, (_, index) => ({
         id: stableId(index + 2_000),
         name: `Regel ${String(index + 1).padStart(4, "0")}`,
         order: (index + 1) * 10,
@@ -1732,9 +1953,11 @@ test("Card management bounds thousand-entry Group and rule collections", async (
     await page.route("**/api/v1/groups", (route) =>
         route.fulfill({ contentType: "application/json", body: JSON.stringify({ groups }) }),
     );
-    await page.route("**/api/v1/card-policy/rules", (route) => {
+    await page.route("**/api/v1/card-policy/scope", async (route) => {
         if (route.request().method() !== "GET") return route.fallback();
-        return route.fulfill({ contentType: "application/json", body: JSON.stringify({ rules }) });
+        const response = await route.fetch();
+        const scope = await response.json();
+        return route.fulfill({ response, json: { ...scope, rules } });
     });
 
     await page.goto("/play/cards");
@@ -1749,10 +1972,10 @@ test("Card management bounds thousand-entry Group and rule collections", async (
     await expect(page.locator(".policy-rule-select")).toHaveCount(10);
     await expect(page.locator(".policy-rule-row-actions")).toHaveCount(10);
     await expect(page.getByRole("button", { name: /Nach unten: Regel 0001/ })).toBeVisible();
-    await expect(page.getByText("1000 Regeln", { exact: true })).toBeVisible();
-    await page.getByRole("searchbox", { name: "Regeln durchsuchen" }).fill("0999");
+    await expect(page.getByText("250 Regeln", { exact: true })).toBeVisible();
+    await page.getByRole("searchbox", { name: "Regeln durchsuchen" }).fill("0249");
     await expect(page.locator(".policy-rule-select")).toHaveCount(1);
-    await expect(page.getByText("Regel 0999", { exact: true })).toBeVisible();
+    await expect(page.getByText("Regel 0249", { exact: true })).toBeVisible();
     await page.setViewportSize({ width: 320, height: 700 });
     await expect
         .poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))

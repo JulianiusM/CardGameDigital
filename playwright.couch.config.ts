@@ -22,7 +22,7 @@ const reporters: ReporterDescription[] =
 
 export default defineConfig({
     testDir: "tests/e2e",
-    testMatch: ["couch-mode.spec.ts", "party-screen.spec.ts"],
+    testMatch: ["couch-mode.spec.ts", "couch-recovery.spec.ts", "party-screen.spec.ts"],
     timeout: 30_000,
     fullyParallel: false,
     workers: 2,

@@ -1,5 +1,7 @@
 # WebSocket protocol v2 contract
 
+Historical contract; current clients use [protocol v4](websocket-v4.md).
+
 ## Connection and identity
 
 Connect to `/ws`. Every strict envelope contains `protocol: 2`, `type`, `requestId`,
@@ -122,6 +124,12 @@ required for that Card. While collection is active, no viewer—including Host a
 DISPLAY—receives an answer value. After completion, anonymous mode exposes counts only;
 named mode additionally exposes ordered `{playerId,displayName,vote}` entries.
 
+Every outward voting field follows that same reveal decision. The retained `voteResult`
+field is `{yes:0,no:0,total:0}` before reveal and after advance/end; at reveal it mirrors
+only the canonical result's counts. It never contains named answers. This is a privacy
+correction within protocol v2: field names/types and the documented privacy semantics
+are unchanged. Existing web and Kodi decoders remain compatible.
+
 An active Session projection includes `startedAt`, expressed as Unix epoch milliseconds.
 It is the authoritative start instant persisted with the Session; clients derive elapsed
 play time from it instead of starting a local timer when they first observe the Session.
@@ -159,6 +167,14 @@ receives host authority. The first eligible Player to connect is promoted. Once 
 display also disconnects and exhausts grace, the abandoned Room closes. Transient
 disconnects inside the grace period never trigger cleanup. Durable DataSpace Session
 history is retained; only the live Room becomes unavailable.
+
+Private boundary values belong only to active recovery and a continuing Room lobby.
+Ending a Session scrubs its runtime copy, including historical rows retained after
+`command.resetSession`. The still-open Room retains each eligible participant's separate
+boundary row for its next game. Leave, credential invalidation, activation/reconnect
+expiry, and Room closure/expiry remove the participant's row and all represented-player
+runtime copies. Temporary disconnect/restart within grace retains them. See the
+[database retention contract](./infrastructure.md#private-boundary-retention-and-backups).
 
 A PLAYER participant that authenticates while a Session is active is added once to the
 authoritative Session roster, together with any people represented by that device. A

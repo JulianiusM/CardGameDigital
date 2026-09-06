@@ -15,15 +15,26 @@
  */
 
 import { NextFunction, Request, Response } from "express";
+import { retainHttpWork } from "../httpWorkCapacity";
 
 export function asyncHandler(fn: (req: Request, res: Response, next: NextFunction) => any) {
-    return (req: Request, res: Response, next: NextFunction) =>
-        Promise.resolve(fn(req, res, next)).catch(next);
+    return (req: Request, res: Response, next: NextFunction) => {
+        const release = retainHttpWork(req);
+        return Promise.resolve()
+            .then(() => fn(req, res, next))
+            .catch(next)
+            .finally(release);
+    };
 }
 
 export function asyncParamHandler(
     fn: (req: Request, res: Response, next: NextFunction, id: any) => any,
 ) {
-    return (req: Request, res: Response, next: NextFunction, id: any) =>
-        Promise.resolve(fn(req, res, next, id)).catch(next);
+    return (req: Request, res: Response, next: NextFunction, id: any) => {
+        const release = retainHttpWork(req);
+        return Promise.resolve()
+            .then(() => fn(req, res, next, id))
+            .catch(next)
+            .finally(release);
+    };
 }

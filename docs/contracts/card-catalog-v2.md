@@ -865,3 +865,26 @@ The following are contract evolution and require a later major identifier:
 - accepting previously unknown properties.
 
 A future delta/patch format must be introduced explicitly and MUST NOT overload or weaken v2 `FULL` semantics.
+
+## Deployment resource profile (2026-09-06)
+
+The server validates file input incrementally. Catalog length has no Card-count cap.
+Each Card record and the complete non-Card header must fit 16 MiB of raw JSON. Card text
+and taxonomy descriptions must fit 4,000 Unicode characters and 8,192 UTF-8 bytes; label
+and locale-name limits remain 80 characters. The semantic validator enforces UTF-8 byte
+limits in addition to JSON Schema character limits. This tightens previously unbounded
+text acceptance: publishers must validate releases against the current deployment
+profile before shipping. No partial release is installed on failure.
+
+Producer `sequence`, `repeatCooldown`, and player-count bounds must fit signed 32-bit
+positive/nonnegative SQL integers (maximum 2,147,483,647). Positive finite weights are
+stored as `DOUBLE` and drawn in log space. MariaDB/MySQL import enables strict writes and
+requires `max_allowed_packet` of at least 1 MiB. Import batches are bounded independently
+of catalog and language count. The normalized catalog remains the only stored Card-text
+source; no Session snapshot duplicates its renderings. A temporary UUID-only uniqueness
+index is deleted after validation.
+
+A new catalog ends incompatible active games atomically. Same-fingerprint recovery is
+supported; Group appearance history and stable logical Card UUIDs remain independent of
+catalog lifetime. More Cards or languages increase normalized catalog storage and scan
+work, not per-Session translation storage.

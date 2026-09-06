@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { DataSource } from "typeorm";
-import { validateCardCatalogArtifact } from "../../packages/card-catalog-contract";
+import { validateCardCatalogFile } from "../../packages/card-catalog-contract";
 import { applyCardCatalogSnapshot } from "../../packages/persistence/applyCardCatalogSnapshot";
 import { dataSourceOptions } from "../../apps/server/src/modules/database/dataSource";
 import { resolveSettings } from "../../apps/server/src/modules/settings";
@@ -17,7 +17,7 @@ async function main() {
     await source.runMigrations({ transaction: "all" });
     await applyCardCatalogSnapshot(
         source,
-        validateCardCatalogArtifact(fs.readFileSync(path.resolve("catalog/card-catalog.json"))),
+        await validateCardCatalogFile(path.resolve("catalog/card-catalog.json")),
     );
     await source.destroy();
     console.log(`Couch E2E database initialized at ${dbFile}`);

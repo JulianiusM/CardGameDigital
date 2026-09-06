@@ -7,6 +7,7 @@ import {
     type TestInfo,
 } from "@playwright/test";
 import { WebSocket } from "ws";
+import { readFileSync } from "node:fs";
 import { PROTOCOL_VERSION, type RoomJoinResponse } from "../../packages/protocol";
 import {
     captureVisualAudit,
@@ -1035,7 +1036,7 @@ test("visually audits Help and Card management with hostile collection names", a
         name: `${longStem}-${String(index + 1).padStart(4, "0")}-${longStem}`.slice(0, 80),
         members: [maximumName((index % 20) + 1)],
     }));
-    const rules = Array.from({ length: 1_000 }, (_, index) => ({
+    const rules = Array.from({ length: 250 }, (_, index) => ({
         id: stableId(index + 2_000),
         name: maximumRuleName(index + 1),
         order: (index + 1) * 10,
@@ -1068,9 +1069,11 @@ test("visually audits Help and Card management with hostile collection names", a
     await page.route("**/api/v1/groups", (route) =>
         route.fulfill({ contentType: "application/json", body: JSON.stringify({ groups }) }),
     );
-    await page.route("**/api/v1/card-policy/rules", (route) => {
+    await page.route("**/api/v1/card-policy/scope", async (route) => {
         if (route.request().method() !== "GET") return route.fallback();
-        return route.fulfill({ contentType: "application/json", body: JSON.stringify({ rules }) });
+        const response = await route.fetch();
+        const scope = await response.json();
+        return route.fulfill({ response, json: { ...scope, rules } });
     });
     await page.route("**/api/v1/card-policy/cards**", async (route) => {
         if (route.request().method() !== "GET") return route.fallback();
@@ -1126,7 +1129,7 @@ test("visually audits Help and Card management with hostile collection names", a
     await expect(page.locator(".policy-range-fields")).toBeVisible();
     await expect(page.getByLabel("Karten dazwischen")).toHaveValue("9999");
     await expect(page.getByLabel("Relatives Gewicht")).toHaveValue("9999.9");
-    await audit(page, testInfo, "20-card-rules-1000-long-names-phone", { fullPage: true });
+    await audit(page, testInfo, "20-card-rules-250-long-names-phone", { fullPage: true });
     await page.emulateMedia({ forcedColors: "active", reducedMotion: "reduce" });
     await page.locator(".policy-rule-select").first().focus();
     await audit(page, testInfo, "20a-card-rule-row-phone-forced-colors-focus", {
@@ -1138,7 +1141,7 @@ test("visually audits Help and Card management with hostile collection names", a
     await firstRuleDrawer.locator(":scope > summary").focus();
     await audit(page, testInfo, "20a-card-rule-drawer-open-phone-focus", { fullPage: true });
     await page.setViewportSize({ width: 1440, height: 1000 });
-    await audit(page, testInfo, "21-card-rules-1000-long-names-desktop", { fullPage: true });
+    await audit(page, testInfo, "21-card-rules-250-long-names-desktop", { fullPage: true });
     await page.getByRole("tab", { name: "Kartenausnahmen" }).click();
     const selectedManagedCardTitle = page.locator(".managed-card-header h2");
     await expect(selectedManagedCardTitle).toHaveText(maximumCardText());
@@ -1360,6 +1363,41 @@ test("visually audits waiting, Conversation Meta, and exhausted Couch states", a
     page,
 }, testInfo) => {
     test.setTimeout(90_000);
+    const catalog = JSON.parse(readFileSync("catalog/card-catalog.json", "utf8")) as {
+        cards: {
+            id: string;
+            cardType: string;
+            questionCategoryId: string | null;
+            intensity: number;
+        }[];
+    };
+    const question = catalog.cards.find(
+        (card) =>
+            card.cardType === "QUESTION" &&
+            card.questionCategoryId === "CAT_EVERYDAY" &&
+            card.intensity === 1,
+    )!;
+    const meta = catalog.cards.find((card) => card.cardType === "CONVERSATION_META")!;
+    await page.route("**/api/v1/couch/sessions", async (route) => {
+        const response = await route.fetch({
+            postData: JSON.stringify({
+                ...route.request().postDataJSON(),
+                cardPolicy: {
+                    scopeDefault: { availability: "EXCLUDE" },
+                    conditionalRules: [],
+                    exactCards: [question, meta].map(({ id }) => ({
+                        cardId: id,
+                        directives: {
+                            availability: "INCLUDE",
+                            repeatableInSession: "DISABLE",
+                            intensity: { mode: "SET", value: 1 },
+                        },
+                    })),
+                },
+            }),
+        });
+        await route.fulfill({ response });
+    });
     await page.setViewportSize({ width: 320, height: 568 });
     await page.goto("/play/");
     await page.getByRole("button", { name: /Spiel hosten/ }).click();
@@ -1379,27 +1417,26 @@ test("visually audits waiting, Conversation Meta, and exhausted Couch states", a
     await audit(page, testInfo, "23f-couch-waiting-for-player-phone", { fullPage: true });
     await page.getByRole("button", { name: "Karte aufdecken" }).click();
     await expect(page.locator('.game-card[data-type="QUESTION"]')).toBeVisible();
-    await page.getByRole("button", { name: "Weiter", exact: true }).click();
+    await page.locator(".actions").getByRole("button", { name: "Weiter", exact: true }).click();
     await expect(page.locator(".turn-ready")).toBeVisible();
     await page.getByRole("button", { name: "Karte aufdecken" }).click();
     await expect(page.locator('.game-card[data-type="CONVERSATION_META"]')).toBeVisible();
     await audit(page, testInfo, "23g-couch-conversation-meta-phone", { fullPage: true });
 
-    await page.route("**/api/v1/couch/sessions/*/advance", (route) =>
-        route.fulfill({
-            status: 409,
-            contentType: "application/json",
-            body: JSON.stringify({
-                error: {
-                    code: "CARD_POOL_EXHAUSTED",
-                    message: "Keine passenden Karten mehr.",
-                },
-            }),
-        }),
-    );
-    await page.getByRole("button", { name: "Weiter", exact: true }).click();
+    await page
+        .locator(".actions")
+        .getByRole("button", { name: "Überspringen", exact: true })
+        .click();
     await expect(page.locator(".exhausted-state")).toBeVisible();
+    await expect(page.locator(".game-card")).toHaveCount(0);
     await audit(page, testInfo, "23h-couch-card-pool-exhausted-phone", { fullPage: true });
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await audit(page, testInfo, "23i-couch-refusal-exhausted-desktop", { fullPage: true });
+    await page
+        .locator(".exhausted-state")
+        .getByRole("button", { name: "Spiel beenden", exact: true })
+        .click();
+    await expect(page.locator(".session-summary")).toBeVisible();
 });
 
 test("visually audits the configured 1000-player ceiling on the production roster", async ({

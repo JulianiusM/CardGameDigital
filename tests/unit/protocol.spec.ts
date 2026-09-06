@@ -16,7 +16,7 @@ import {
 } from "../../packages/protocol";
 import { defaultRoomGameSettings } from "../../packages/application/roomGameSettings";
 
-describe("protocol v2 boundary", () => {
+describe(`protocol v${PROTOCOL_VERSION} boundary`, () => {
     it("declares every stable application error emitted over WebSocket", () => {
         expect(protocolErrorCodeSchema.parse("CARD_LOCALE_UNAVAILABLE")).toBe(
             "CARD_LOCALE_UNAVAILABLE",

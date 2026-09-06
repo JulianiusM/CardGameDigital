@@ -23,5 +23,7 @@ export * from "./history/history";
 export * from "./profiles/gameProfile";
 export * from "./random/randomSource";
 export * from "./selection/weightedSelection";
+export * from "./selection/cardStream";
+export * from "./policies/sessionPolicy";
 export * from "./sessions/session";
 export * from "./profiles/builtInProfiles";

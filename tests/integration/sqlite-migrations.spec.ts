@@ -15,7 +15,6 @@ import { RoomCreateIdempotencyEntity } from "../../packages/persistence/entities
 import { InstallationMetadataEntity } from "../../packages/persistence/entities/server/InstallationMetadataEntity";
 import { DataSpace } from "../../packages/persistence/entities/user/DataSpace";
 import { resolveSettings } from "../../apps/server/src/modules/settings";
-import { hydrateSessionImmutableState } from "../../packages/persistence/sessionImmutablePayloadStore";
 import { ensureInstallationIdentity } from "../../apps/server/src/modules/installationIdentity";
 import { resetInstallationIdentity } from "../../apps/server/src/modules/installationIdentityReset";
 import { defaultRoomGameSettings } from "../../packages/application/roomGameSettings";
@@ -28,6 +27,65 @@ afterEach(async () => {
 });
 
 describe("SQLite migration path", () => {
+    it("backfills monotonic policy clocks without resetting existing row revisions", async () => {
+        directory = fs.mkdtempSync(path.join(os.tmpdir(), "card-game-policy-clock-"));
+        const options = dataSourceOptions(
+            resolveSettings({ DB_FILE: path.join(directory, "clock.sqlite") }, "/dev/null"),
+        );
+        const index = migrations.findIndex(
+            ({ name }) => name === "AddCardPolicyScopeRevisions1787360000000",
+        );
+        expect(index).toBeGreaterThan(0);
+        source = new DataSource({ ...options, migrations: migrations.slice(0, index) });
+        await source.initialize();
+        await source.runMigrations({ transaction: "all" });
+        const first = await source
+            .getRepository(DataSpace)
+            .save({ name: "Existing default", defaultForOwner: false });
+        const second = await source
+            .getRepository(DataSpace)
+            .save({ name: "No default", defaultForOwner: false });
+        const now = "2026-09-05 00:00:00";
+        await source.query(
+            "INSERT INTO card_policy_scope_defaults (owner_key, data_space_id, group_id, directives_json, revision, created_at, updated_at) VALUES (?, ?, NULL, '{}', 4, ?, ?)",
+            [`DATASPACE:${first.id}`, first.id, now, now],
+        );
+        for (const [owner, revision] of [
+            [first, 9],
+            [second, 7],
+        ] as const) {
+            await source.query(
+                "INSERT INTO card_policy_conditional_rules (id, owner_key, data_space_id, group_id, name, rule_order, enabled, predicate_json, directives_json, revision, created_at, updated_at) VALUES (?, ?, ?, NULL, 'Existing rule', 10, 1, '{}', '{}', ?, ?, ?)",
+                [randomUUID(), `DATASPACE:${owner.id}`, owner.id, revision, now, now],
+            );
+        }
+        await source.destroy();
+        source = new DataSource({ ...options, migrations: [migrations[index]] });
+        await source.initialize();
+        await source.runMigrations({ transaction: "all" });
+        const rows = await source.query(
+            "SELECT data_space_id, revision, scope_revision FROM card_policy_scope_defaults",
+        );
+        expect(rows).toEqual(
+            expect.arrayContaining([
+                { data_space_id: first.id, revision: 4, scope_revision: 9 },
+                { data_space_id: second.id, revision: 0, scope_revision: 7 },
+            ]),
+        );
+        const { TypeOrmCardPolicyRepository } =
+            await import("../../packages/persistence/TypeOrmCardPolicyRepository");
+        const repository = new TypeOrmCardPolicyRepository(source);
+        const owner = {
+            dataSpaceId: first.id,
+            groupId: null,
+            ownerKey: `DATASPACE:${first.id}`,
+            name: "DataSpace" as const,
+        };
+        const loaded = await repository.load(owner);
+        await repository.deleteRule(owner, loaded.rules[0].id, 9);
+        expect((await repository.load(owner)).revision).toBe(10);
+    });
+
     it("migrates an empty database, enables WAL, and persists a DataSpace", async () => {
         directory = fs.mkdtempSync(path.join(os.tmpdir(), "card-game-sqlite-"));
         const dbFile = path.join(directory, "game.sqlite");
@@ -660,16 +718,60 @@ describe("SQLite migration path", () => {
                     Buffer.byteLength(payload_base64, "utf8") <= 32_768,
             ),
         ).toBe(true);
-        const hydrated = await hydrateSessionImmutableState(
-            source.manager,
-            externalized.runtime_state_json,
-            {
-                compiledCardPolicyDigest: externalized.compiled_card_policy_digest,
-                groupHistoryDigest: externalized.group_history_digest,
-            },
+        // Historical v5 payloads are superseded by the forward v7 migration below.
+        await source.destroy();
+        const freezeMigration = migrations.find(
+            ({ name }) => name === "FreezeSessionCatalogs1787361000000",
+        )!;
+        source = new DataSource({ ...options, migrations: [freezeMigration] });
+        await source.initialize();
+        await source.runMigrations({ transaction: "all" });
+        const [upgraded] = await source.query(
+            "SELECT runtime_state_version, runtime_state_json, ended_at FROM couch_game_sessions WHERE id = ?",
+            [id],
         );
-        expect(hydrated.compiledCardPolicy?.cards).toHaveLength(1_940);
-        expect(hydrated.groupHistoryCardIds).toHaveLength(1_940);
+        expect(upgraded.runtime_state_version).toBe(6);
+        expect(JSON.parse(upgraded.runtime_state_json)).toMatchObject({
+            version: 6,
+            state: "ENDED",
+            frozenCatalog: null,
+            currentCard: null,
+            boundariesByPlayer: [],
+            revision: 1,
+        });
+        expect(upgraded.ended_at).not.toBeNull();
+        expect(
+            await source.query("SELECT digest FROM session_immutable_payloads WHERE digest = ?", [
+                externalized.compiled_card_policy_digest,
+            ]),
+        ).toHaveLength(1);
+        await source.destroy();
+        const liveMigration = migrations.find(
+            ({ name }) => name === "UseLiveSessionCatalog1787362000000",
+        )!;
+        source = new DataSource({ ...options, migrations: [liveMigration] });
+        await source.initialize();
+        await source.runMigrations({ transaction: "all" });
+        const [live] = await source.query(
+            "SELECT runtime_state_version, runtime_state_json, policy_input_digest FROM couch_game_sessions WHERE id = ?",
+            [id],
+        );
+        expect(live.runtime_state_version).toBe(7);
+        expect(JSON.parse(live.runtime_state_json)).toMatchObject({
+            state: "ENDED",
+            cardsShown: 0,
+            policySnapshot: null,
+        });
+        expect(live.runtime_state_json).not.toContain("frozenCatalog");
+        expect(live.policy_input_digest).toBeNull();
+        expect(await source.query("SELECT digest FROM session_immutable_payloads")).toHaveLength(0);
+        // Re-running after partial DDL completion must leave v7 state unchanged.
+        const runner = source.createQueryRunner();
+        try {
+            await new liveMigration().up(runner);
+        } finally {
+            await runner.release();
+        }
     });
 
     it("rebases Groups that predate the installed Card catalog", async () => {

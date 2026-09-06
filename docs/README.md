@@ -8,12 +8,20 @@
 - [Visual & Interaction Design](VISUAL_INTERACTION_DESIGN.md)
 - [Implementation ADRs and progress](implementation/)
 - [Core release audit](implementation/core-release-audit.md)
+- [Implementation review and corrective-action baseline — 2026-09-05](implementation/implementation-review-2026-09-05.md)
+- [Corrective Phase 3: authoritative snapshots and commits — 2026-09-05](implementation/corrective-phase-3-2026-09-05.md)
+- [Corrective Phase 3 follow-up: live catalog and bounded data — 2026-09-06](implementation/corrective-phase-3-rework-2026-09-06.md)
+- [Corrective Phase 4: wire capacity and policy transfer — 2026-09-06](implementation/corrective-phase-4-2026-09-06.md)
+- [Corrective Phase 5: recovery and actionable errors — 2026-09-06](implementation/corrective-phase-5-2026-09-06.md)
+- [Corrective Phase 6: retention and operational budgets — 2026-09-06](implementation/corrective-phase-6-2026-09-06.md)
+- [Corrective Phase 2: consent and refusal — 2026-09-05](implementation/corrective-phase-2-2026-09-05.md)
 
 ## Interfaces and operations
 
 - [External interface contracts](contracts/README.md)
 - [HTTP API v1](contracts/http-api.md)
-- [WebSocket protocol v2](contracts/websocket-v2.md)
+- [WebSocket protocol v4](contracts/websocket-v4.md)
+- [Retired WebSocket protocol v2](contracts/websocket-v2.md)
 - [Retired WebSocket protocol v1](contracts/websocket-v1.md)
 - [Bundled Card catalog](contracts/card-catalog-v2.md)
 - [Historical immutable Card catalog v1](contracts/card-catalog-v1.md)

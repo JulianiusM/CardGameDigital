@@ -170,7 +170,3 @@ export function roomSettingsGameProfile(settings: RoomGameSettings): GameProfile
         letsTalkMetaInterval: settings.configuration.letsTalkMetaInterval,
     });
 }
-
-export function profileRequiresAdultConfirmation(profileId: string): boolean {
-    return builtInGameProfile(profileId)?.requiresAdultConfirmation ?? false;
-}

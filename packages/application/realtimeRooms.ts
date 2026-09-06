@@ -18,6 +18,12 @@ export type RoomRoleChangeReason =
     | "HOST_ACTIVATION_EXPIRED";
 export type ParticipantConnectionStatus = "CONNECTED" | "TEMPORARILY_DISCONNECTED" | "LEFT";
 export type DevicePlayer = { id: string; name: string };
+export type RoomEnrollment = { participantId: string; boundaries: PlayerBoundaries };
+export type RoomRuntimeCommit = {
+    settingsRevision?: number;
+    enrollment?: RoomEnrollment;
+    actor?: Pick<RoomParticipant, "id" | "role">;
+};
 export type RoomParticipant = {
     id: string;
     roomId: string;
@@ -119,7 +125,13 @@ export type RoomLifecycleTransition =
           targetParticipantId: string;
           at: number;
       }
-    | { type: "CLOSE"; roomId: string; participantId: string; at: number }
+    | {
+          type: "CLOSE";
+          roomId: string;
+          participantId: string;
+          at: number;
+          expectedSessionRevision?: number | null;
+      }
     | { type: "RECONCILE"; roomId: string; at: number };
 
 export type RoomCloseReason =
@@ -166,6 +178,8 @@ export interface RealtimeRoomRepository {
     loadRoomState(roomId: string): Promise<RoomState>;
     getParticipant(roomId: string, participantId: string): Promise<RoomParticipant | null>;
     listParticipants(roomId: string): Promise<readonly RoomParticipant[]>;
+    /** Terminal transitions erase participant boundary rows and represented-player runtime
+     * boundaries in the same transaction; active recovery and continuing lobbies retain them. */
     applyLifecycleTransition(
         transition: RoomLifecycleTransition,
     ): Promise<RoomLifecycleTransitionResult>;
@@ -183,16 +197,21 @@ export interface RealtimeRoomRepository {
         expectedRevision: number,
         settings: RoomGameSettings,
     ): Promise<VersionedRoomGameSettings>;
+    /** Save lobby choices only; active first-time enrollment uses commitRuntime. */
     saveBoundaries(participantId: string, boundaries: PlayerBoundaries): Promise<void>;
     listBoundaries(roomId: string): Promise<ReadonlyMap<string, PlayerBoundaries>>;
-    selectGroup(roomId: string, groupId: string | null): Promise<ReadonlySet<CardId>>;
-    groupHistory(roomId: string, groupId: string | null): Promise<ReadonlySet<CardId>>;
+    selectGroup(roomId: string, groupId: string | null): Promise<void>;
     policyOwner?(roomId: string): Promise<{ dataSpaceId: string; groupId: string | null } | null>;
+    runtimeRevision(roomId: string): Promise<{ id: string; revision: number } | null>;
     loadRuntime(roomId: string): Promise<GameSessionRuntimeState | null>;
+    /** Preserve optimistic revisions and exclude ended/departed-player boundaries.
+     * First-time enrollment saves the participant's boundary row and expanded runtime
+     * together; a stale revision or terminal participant rejects the entire transaction. */
     commitRuntime(
         roomId: string,
         previousRevision: number | null,
         runtime: GameSessionRuntimeState,
+        options?: RoomRuntimeCommit,
     ): Promise<void>;
     clearEndedRuntime(roomId: string, sessionId: string, revision: number): Promise<void>;
 }

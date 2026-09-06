@@ -5,6 +5,7 @@ import { getResponder, type CiaoService, type Responder, type ServiceTxt } from 
 import settings, { type Settings } from "./settings";
 import { logEvent } from "./structuredLogger";
 import { roomDisplayBootstrapCapability } from "./roomCreateProtection";
+import { PROTOCOL_VERSION } from "../../../../packages/protocol/version";
 import {
     API_BASE_PATH,
     LOCAL_DISCOVERY_TXT_VERSION,
@@ -166,7 +167,7 @@ export function buildLocalServiceAdvertisement(
         advertisedPort: value.mdnsAdvertisedPort,
         tlsRequired: value.mdnsAdvertisedTls,
         apiVersionHints: [1],
-        webSocketVersionHints: [2],
+        webSocketVersionHints: [PROTOCOL_VERSION],
         capabilityHints: capabilities,
         bindings: eligibleNetworkBindings(value, interfaces),
     };

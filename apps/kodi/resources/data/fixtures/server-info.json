@@ -5,7 +5,7 @@
     "deploymentMode": "local",
     "publicRuntimeSecurity": "enforced",
     "authenticationAvailable": false,
-    "protocolVersions": [2],
+    "protocolVersions": [4],
     "roomCapacity": { "maximumParticipants": 100, "maximumPlayers": 100 },
     "roomAccess": { "configuredBaseUrl": null, "availableBaseUrls": ["http://192.168.1.20:3000"] },
     "capabilities": {

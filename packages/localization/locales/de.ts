@@ -4,6 +4,12 @@ export const de = {
     messages: {
         "request.internal": "Interner Serverfehler",
         "request.invalid": "Ungültige Eingabe.",
+        "request.tooLarge":
+            "Diese Anfrage ist zu groß. Verkleinere die Datei oder die Einstellungen und versuche es erneut.",
+        "cardPolicy.invalidImport":
+            "Diese Datei ist keine unterstützte Kartenrichtlinie. Wähle einen v2-Export mit höchstens 250 Regeln und 50.000 Kartenausnahmen.",
+        "cardPolicy.unknownCard":
+            "Diese Richtlinie verweist auf Karten, die hier fehlen. Verwende einen Export für den installierten Katalog.",
         "request.notFound": "Nicht gefunden.",
         "account.localDisabled": "Lokale Anmeldung ist deaktiviert.",
         "account.oidcDisabled": "OIDC ist deaktiviert.",
@@ -50,6 +56,8 @@ export const de = {
         "room.devicePlayersLocked": "Lokale Personen sind nach Spielstart gesperrt.",
         "room.hostOnlyTransfer": "Nur der Host kann die Host-Aufgabe übertragen.",
         "room.boundariesLocked": "Grenzen sind nach Spielstart gesperrt.",
+        "room.enrollmentRequired":
+            "Speichere deine privaten Grenzen, bevor du in dieses Spiel einsteigst.",
         "room.settingsLocked": "Raumeinstellungen sind nach Spielstart gesperrt.",
         "room.sessionAlreadyStarted": "Das Spiel wurde bereits gestartet.",
         "room.unknownProfile": "Unbekanntes Spielprofil.",
@@ -63,6 +71,26 @@ export const de = {
         "room.notAuthorized": "Nicht berechtigt.",
         "game.staleRevision": "Der Spielstand hat sich geändert.",
         "game.invalidState": "Diese Aktion ist im aktuellen Spielzustand nicht möglich.",
+        "cardPolicy.revisionConflict":
+            "Diese Richtlinie wurde geändert. Lade die Richtlinie neu und prüfe den aktuellen Stand, bevor du erneut speicherst.",
+        "cardPolicy.ruleNotFound":
+            "Diese Regel ist nicht mehr verfügbar. Lade die Richtlinie neu und wähle eine andere Regel.",
+        "cardPolicy.resultSetChanged":
+            "Die passenden Karten haben sich geändert. Lade die Richtlinie neu, prüfe die Kartenliste und bestätige die Sammeländerung erneut.",
+        "cardPolicy.invalidRuleOrder":
+            "Die Reihenfolge muss jede Regel genau einmal enthalten. Lade die Richtlinie vor dem Umsortieren neu.",
+        "cardPolicy.notFound":
+            "Diese Kartenausnahme ist nicht mehr verfügbar. Lade die Richtlinie vor dem erneuten Bearbeiten neu.",
+        "card.notFound":
+            "Diese Karte ist nicht verfügbar. Lade die Kartenliste neu und wähle eine andere Karte.",
+        "group.notFound":
+            "Diese Gruppe ist im aktuellen Datenraum nicht mehr verfügbar. Wähle einen anderen Geltungsbereich oder prüfe dein Konto.",
+        "cardPolicy.capacityExceeded":
+            "Eine Richtlinie kann höchstens 250 Regeln und 50.000 Kartenausnahmen enthalten.",
+        "game.catalogCapacityExceeded":
+            "Dieser Katalog ist zu groß, um ein Spiel zu starten. Verkleinere den installierten Katalog oder seine Texte.",
+        "game.sessionCapacityExceeded":
+            "Der Server hat seine Spielkapazität erreicht. Versuche es gleich erneut oder beende ein ungenutztes Spiel.",
         "game.cardPoolExhausted": "Keine Karte erfüllt alle aktiven Regeln.",
         "catalog.localeUnavailable": "Diese Kartensprache ist nicht verfügbar.",
         "game.sessionNotFound": "Das Couch-Spiel wurde nicht gefunden.",

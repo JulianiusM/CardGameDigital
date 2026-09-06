@@ -7,8 +7,7 @@ import {
     SequenceRandomSource,
 } from "../../packages/game-core";
 import { card, profile } from "../support/game";
-
-function votingSession(revealMode: "ANONYMOUS_AGGREGATE" | "NAMED_ANSWERS") {
+async function votingSession(revealMode: "ANONYMOUS_AGGREGATE" | "NAMED_ANSWERS") {
     const session = new GameSession(
         {
             id: `never-${revealMode}`,
@@ -23,17 +22,15 @@ function votingSession(revealMode: "ANONYMOUS_AGGREGATE" | "NAMED_ANSWERS") {
         },
         new SequenceRandomSource([0]),
     );
-    session.startTurn(0, [card({ id: "never-card" as never, yesNoAnswerPossible: true })]);
+    await session.startTurn(0, [card({ id: "never-card" as never, yesNoAnswerPossible: true })]);
     return session;
 }
-
 describe("Never Have I Ever privacy projection", () => {
     it.each(Object.values(NEVER_HAVE_I_EVER_REVEAL_MODES))(
         "shows completion but no answers while collecting in %s",
-        (revealMode) => {
-            const session = votingSession(revealMode);
+        async (revealMode) => {
+            const session = await votingSession(revealMode);
             session.submitVote(1, "anna", "YES");
-
             expect(projectNeverHaveIEverVoting(session)).toEqual({
                 revealMode,
                 progress: [
@@ -44,12 +41,10 @@ describe("Never Have I Ever privacy projection", () => {
             });
         },
     );
-
-    it("reveals named answers in authoritative voter order only after completion", () => {
-        const session = votingSession(NEVER_HAVE_I_EVER_REVEAL_MODES.NAMED_ANSWERS);
+    it("reveals named answers in authoritative voter order only after completion", async () => {
+        const session = await votingSession(NEVER_HAVE_I_EVER_REVEAL_MODES.NAMED_ANSWERS);
         session.submitVote(1, "anna", "YES");
         session.submitVote(2, "ben", "NO");
-
         expect(projectNeverHaveIEverVoting(session)?.result).toEqual({
             yes: 1,
             no: 1,
@@ -60,12 +55,10 @@ describe("Never Have I Ever privacy projection", () => {
             ],
         });
     });
-
-    it("keeps anonymous results aggregate-only", () => {
-        const session = votingSession(NEVER_HAVE_I_EVER_REVEAL_MODES.ANONYMOUS_AGGREGATE);
+    it("keeps anonymous results aggregate-only", async () => {
+        const session = await votingSession(NEVER_HAVE_I_EVER_REVEAL_MODES.ANONYMOUS_AGGREGATE);
         session.submitVote(1, "anna", "YES");
         session.submitVote(2, "ben", "NO");
-
         expect(projectNeverHaveIEverVoting(session)?.result).toEqual({ yes: 1, no: 1, total: 2 });
     });
 });

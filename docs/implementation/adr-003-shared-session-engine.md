@@ -51,19 +51,29 @@ Cards, avoiding a four-point band jump. Never Have I Ever advances a round after
 completed all-player Card; Card pacing uses displayed appearance count. Exhaustion never
 advances progression early.
 
-Persisted GameSession runtime is version 5. Version 2 introduced progression policy
-inside the frozen Session profile; version 3 records `completed`, `skipped`, and
-`vetoed` as separate authoritative CardAppearance outcomes; version 4 adds the immutable
-compiled Card-policy snapshot and pending Session policy. Version 5 compacts that
-snapshot into per-Card positional values. Persistence then removes the compact compiled
-policy and frozen Group history from the hot runtime row, stores each independently by
-content digest in compressed bounded chunks, and rehydrates both before restoring the
-aggregate. Group history uses an exact bitset against the frozen compiled Card order, so
-its storage is one bit per current Card rather than one UUID per seen Card. Played-Card
-history is rehydrated from its normalized appearance rows instead of being duplicated in runtime JSON. Accompanying database migrations upgrade stored
-active runtimes instead of inferring old versions during normal gameplay. Because
-version 2 encoded both skip and veto as `skipped`, migrated historical vetoes remain
-classified as skips; version 3 and later record all new outcomes exactly.
+Session runtime **v7** records the catalog fingerprint and captured sparse DataSpace,
+Group and Session policy inputs. It stores no catalog membership, metadata array,
+translation snapshot, compiled per-Card policy or Group-history bitset. A changed catalog
+ends incompatible active games atomically at startup. Same-fingerprint recovery remains
+available; this is not a save-and-quit feature. Saved Group history never blocks catalog
+updates and keeps its stable Card UUIDs.
+
+Each draw scans every localized candidate in 256-Card metadata pages. Indexed lookups
+supply that Card's last Session appearance and membership in the Group history window
+captured at start. The engine reevaluates current progression, roster, boundaries,
+cooldown and captured policy, then runs a weighted reservoir for each relevant Card type.
+Cooldown expiry only makes a Card eligible again; it provides no priority. Only the
+selected Card's chosen rendering is fetched. Fallback availability uses one `EXISTS`
+query per page across the ordered locale set, without joining or loading translations.
+
+Sparse policy inputs alone use content-addressed Brotli chunks (24 KiB binary / 32 KiB
+Base64), with digest lookup before compression and validated size/count metadata on
+recovery. Ended games detach them; bounded cleanup runs at end, account/DataSpace
+deletion, catalog replacement and periodically. Identical live decoded inputs share weak
+references. Runtime retains the most recent two appearances plus a total shown counter;
+persistent draws query normalized history without loading the archive. Unsaved Rooms
+retain one last-seen row per played Card and erase those rows when the game ends.
+Saved sessions retain their required appearance archive.
 
 `AlwaysEligible` ignores Group history only. `RepeatableInSession` is required
 for same-Session repetition. Cooldown counts other displayed cards since the
@@ -73,7 +83,9 @@ last appearance, matching the GDD's recommended semantics.
 
 The domain depends on `RandomSource`. The application adapter uses
 `node:crypto.randomInt`; tests use `SequenceRandomSource`. Domain selection
-never calls `Math.random()`.
+never calls `Math.random()`. A log-space exponential race retains one candidate per
+Card type while consuming the full eligible stream. Within the selected type, a Card
+has its ordinary weight; page order and expired cooldowns do not add priority.
 
 ## Consequences
 

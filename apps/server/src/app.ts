@@ -1,3 +1,6 @@
+import { MAX_HTTP_JSON_BYTES } from "../../../packages/protocol/limits";
+import { createGameWorkLimiter } from "./modules/gameWorkLimits";
+import { createHttpWorkCapacity } from "./modules/httpWorkCapacity";
 /*
  * Copyright 2026 Julian Malovanij
  *
@@ -77,7 +80,15 @@ app.use((request, response, next) => {
     }
     next();
 });
-app.use(express.json());
+app.use(createHttpWorkCapacity());
+const parseJson = express.json({ limit: MAX_HTTP_JSON_BYTES });
+app.use((request, response, next) => {
+    // Match Express's case-insensitive paths and optional trailing slash too, so
+    // every import reaches its authenticated, separately bounded parser.
+    if (request.method === "POST" && /^\/api\/v1\/card-policy\/import\/?$/i.test(request.path))
+        return next();
+    parseJson(request, response, next);
+});
 app.use(express.urlencoded({ extended: true }));
 const webDirectory = resolveRuntimeAssetPath("web");
 app.use("/play", express.static(webDirectory));
@@ -161,16 +172,16 @@ const accountLimiter = rateLimit({
     handler: localizedRateLimitHandler,
 });
 const roomCreationLimiter = rateLimit({
-    windowMs: 15 * 60_000,
-    limit: 10,
+    windowMs: settings.value.gameCreationRateWindowMs,
+    limit: settings.value.roomCreationRatePerAddress,
     standardHeaders: true,
     legacyHeaders: false,
     skip: skipPublicAbuseControls,
     handler: localizedRateLimitHandler,
 });
 const roomJoinLimiter = rateLimit({
-    windowMs: 15 * 60_000,
-    limit: 30,
+    windowMs: settings.value.roomJoinRateWindowMs,
+    limit: settings.value.roomJoinRatePerAddress,
     standardHeaders: true,
     legacyHeaders: false,
     skip: skipPublicAbuseControls,
@@ -203,6 +214,7 @@ app.use(
 );
 
 app.get("/", (_req, res) => res.redirect("/play/"));
+app.use(createGameWorkLimiter());
 app.use("/api", apiRouter);
 
 app.get("/healthz", (_req, res) => res.status(200).send("ok"));

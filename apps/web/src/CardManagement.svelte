@@ -1,9 +1,12 @@
 <script lang="ts">
     import { scrollCopy } from "./scrollCopy";
-    import { onMount } from "svelte";
+    import { onMount, tick } from "svelte";
     import CardPolicyDirectiveEditor from "./CardPolicyDirectiveEditor.svelte";
     import ResponsiveTabs, { type ResponsiveTab } from "./ResponsiveTabs.svelte";
     import { cardPolicyApi } from "./cardPolicyApi";
+    import { ApiError } from "./http";
+    import { readPolicyImport, validateSessionPolicyDraft } from "./cardPolicyDraft";
+    import { MAX_POLICY_RULES } from "../../../packages/protocol/limits";
     import { locale, messages } from "./i18n";
     import { loadCardLocales, loadGroups } from "./multiplayer";
     import { CARD_TYPES, SOCIAL_SENSITIVITY_ORDER } from "../../../packages/game-core";
@@ -106,6 +109,10 @@
     let bulkPending = false;
     let clearCardPending = false;
     let pendingImport: { name: string; policy: PortableCardPolicy } | null = null;
+    let policyError: string | null = null;
+    let policyErrorPanel: HTMLDivElement | null = null;
+    let policyRecovery: "reload" | "groups" | "account" | null = null;
+    let scopeHeading: HTMLSpanElement | null = null;
     let busy = true;
     let unavailable = false;
 
@@ -164,7 +171,12 @@
         { value: "", label: messages.cardManagement.anyValue },
         ...dareTypeIds.map((id) => ({ value: id, label: taxonomyLabel(taxonomy, id) })),
     ] satisfies WrappingSelectOption[];
-    onMount(async () => {
+    onMount(() => {
+        void initialize();
+    });
+
+    async function initialize(): Promise<void> {
+        busy = true;
         try {
             if (sessionMode) {
                 const setup = loadSetup();
@@ -187,46 +199,61 @@
             cardLocale = supported?.id ?? locales.defaultLocale;
             await ensureCardTaxonomy(cardLocale);
             await reloadScope();
+            unavailable = false;
         } catch (cause) {
             unavailable = true;
-            notifyError(cause);
+            await showPolicyError(cause, true);
         } finally {
             busy = false;
         }
-    });
-
-    function notifyError(cause: unknown): void {
-        showNotification(
-            cause instanceof Error ? cause.message : messages.common.requestFailed,
-            "error",
-        );
     }
 
-    async function perform(action: () => Promise<void>, success?: string): Promise<void> {
+    let scopeRevision = 0;
+
+    async function perform(
+        action: () => Promise<void>,
+        success?: string,
+        refreshPolicy = false,
+    ): Promise<void> {
         if (busy) return;
         busy = true;
+        policyError = null;
+        policyRecovery = null;
         dismissNotification();
         try {
             await action();
+            if (!sessionMode && refreshPolicy) {
+                const selectedId = selectedRule?.id;
+                const scope = await cardPolicyApi.loadScope(groupId);
+                scopeRevision = scope.scopeRevision;
+                scopeDefault = scope.scopeDefault;
+                rules = scope.rules;
+                const selected = rules.find(({ id }) => id === selectedId);
+                selectedRule = selected ? structuredClone(selected) : null;
+            }
             if (success) showNotification(success, "success");
         } catch (cause) {
-            notifyError(cause);
+            await showPolicyError(cause, true);
         } finally {
             busy = false;
         }
     }
 
     async function reloadScope(): Promise<void> {
+        pendingImport = null;
+        policyError = null;
+        policyRecovery = null;
+        bulkPending = false;
+        clearCardPending = false;
+        deleteRulePending = false;
         if (sessionMode) {
             scopeDefault = { directives: structuredClone(sessionPolicy.scopeDefault), revision: 0 };
             rules = sessionPolicy.conditionalRules.map((rule) => ({ ...rule, revision: 0 }));
         } else {
-            const [defaults, loadedRules] = await Promise.all([
-                cardPolicyApi.loadDefault(groupId),
-                cardPolicyApi.loadRules(groupId),
-            ]);
-            scopeDefault = defaults.scopeDefault;
-            rules = loadedRules.rules;
+            const scope = await cardPolicyApi.loadScope(groupId);
+            scopeRevision = scope.scopeRevision;
+            scopeDefault = scope.scopeDefault;
+            rules = scope.rules;
         }
         selectedRule = rules[0] ? structuredClone(rules[0]) : null;
         rulePage = 0;
@@ -235,9 +262,10 @@
     }
 
     function persistSessionPolicy(next: SessionCardPolicy): void {
-        sessionPolicy = structuredClone(next);
+        const validated = validateSessionPolicyDraft(next);
         const setup = loadSetup();
-        saveSetup({ ...setup, cardPolicy: structuredClone(next) });
+        saveSetup({ ...setup, cardPolicy: validated });
+        sessionPolicy = validated;
     }
 
     function propertyLabel(property: (typeof propertyNames)[number]): string {
@@ -262,10 +290,16 @@
     }
 
     function selectScope(value: string | null): void {
+        if (busy) return;
         scopePickerOpen = false;
         if (groupId === value) return;
         groupId = value;
-        void perform(reloadScope);
+        // Hide the old scope until its replacement has loaded successfully.
+        unavailable = true;
+        void perform(async () => {
+            await reloadScope();
+            unavailable = false;
+        });
     }
 
     async function readImport(event: Event): Promise<void> {
@@ -273,43 +307,91 @@
         const file = input.files?.[0];
         input.value = "";
         if (!file) return;
+        pendingImport = null;
+        policyError = null;
+        dismissNotification();
         try {
             pendingImport = {
                 name: file.name,
-                policy: JSON.parse(await file.text()) as PortableCardPolicy,
+                policy: await readPolicyImport(file),
             };
         } catch (cause) {
-            notifyError(cause);
+            await showPolicyError(cause);
+        }
+    }
+
+    async function showPolicyError(cause: unknown, canReload = false): Promise<void> {
+        policyError = cause instanceof Error ? cause.message : messages.common.requestFailed;
+        policyRecovery = canReload ? "reload" : null;
+        if (cause instanceof ApiError) {
+            if (cause.code === "GROUP_NOT_FOUND") {
+                policyRecovery = "groups";
+                unavailable = true;
+            } else if (cause.status === 401 || cause.status === 403) {
+                policyRecovery = "account";
+                unavailable = true;
+            }
+        }
+        await tick();
+        policyErrorPanel?.focus();
+    }
+
+    async function recoverPolicy(): Promise<void> {
+        if (busy) return;
+        if (unavailable) await initialize();
+        else await perform(reloadScope);
+        await tick();
+        if (!policyError) scopeHeading?.focus();
+    }
+
+    async function recoverScope(): Promise<void> {
+        if (busy) return;
+        groupId = null;
+        groupQuery = "";
+        groupPage = 0;
+        await initialize();
+        if (!policyError) {
+            scopePickerOpen = true;
+            await tick();
+            scopeHeading?.focus();
         }
     }
 
     function confirmImport(): void {
         if (!pendingImport) return;
         const policy = pendingImport.policy;
-        void perform(async () => {
-            await cardPolicyApi.importScope(groupId, policy);
-            pendingImport = null;
-            await reloadScope();
-        }, messages.cardManagement.imported);
+        void perform(
+            async () => {
+                await cardPolicyApi.importScope(groupId, policy, scopeRevision);
+                pendingImport = null;
+                await reloadScope();
+            },
+            messages.cardManagement.imported,
+            true,
+        );
     }
 
     function saveDefault(): void {
-        void perform(async () => {
-            if (sessionMode) {
-                persistSessionPolicy({
-                    ...sessionPolicy,
-                    scopeDefault: structuredClone(scopeDefault.directives),
-                });
-                await searchCards();
-                return;
-            }
-            const result = await cardPolicyApi.saveDefault(
-                groupId,
-                scopeDefault.directives,
-                scopeDefault.revision,
-            );
-            scopeDefault = result.scopeDefault;
-        }, messages.cardManagement.saved);
+        void perform(
+            async () => {
+                if (sessionMode) {
+                    persistSessionPolicy({
+                        ...sessionPolicy,
+                        scopeDefault: structuredClone(scopeDefault.directives),
+                    });
+                    await searchCards();
+                    return;
+                }
+                const result = await cardPolicyApi.saveDefault(
+                    groupId,
+                    scopeDefault.directives,
+                    scopeDefault.revision,
+                );
+                scopeDefault = result.scopeDefault;
+            },
+            messages.cardManagement.saved,
+            true,
+        );
     }
 
     function resetRulePreview(): void {
@@ -319,36 +401,47 @@
     }
 
     function addRule(): void {
-        void perform(async () => {
-            if (sessionMode) {
-                const rule: StoredRule = {
-                    id: randomUuidV4(),
+        if (rules.length >= MAX_POLICY_RULES) {
+            void showPolicyError(new Error(messages.cardManagement.ruleLimitReached));
+            return;
+        }
+        void perform(
+            async () => {
+                if (sessionMode) {
+                    const rule: StoredRule = {
+                        id: randomUuidV4(),
+                        name: messages.cardManagement.ruleNamePlaceholder,
+                        order: Math.max(0, ...rules.map(({ order }) => order)) + 10,
+                        enabled: false,
+                        predicate: {},
+                        directives: { availability: "EXCLUDE" },
+                        revision: 0,
+                    };
+                    const updatedRules = [...rules, rule];
+                    persistSessionPolicy({
+                        ...sessionPolicy,
+                        conditionalRules: updatedRules.map(
+                            ({ revision: _revision, ...entry }) => entry,
+                        ),
+                    });
+                    rules = updatedRules;
+                    chooseRule(rule);
+                    rulePage = Math.floor((rules.length - 1) / rulePageSize);
+                    return;
+                }
+                const result = await cardPolicyApi.createRule(groupId, {
                     name: messages.cardManagement.ruleNamePlaceholder,
-                    order: Math.max(0, ...rules.map(({ order }) => order)) + 10,
                     enabled: false,
                     predicate: {},
                     directives: { availability: "EXCLUDE" },
-                    revision: 0,
-                };
-                rules = [...rules, rule];
-                persistSessionPolicy({
-                    ...sessionPolicy,
-                    conditionalRules: rules.map(({ revision: _revision, ...entry }) => entry),
                 });
-                chooseRule(rule);
+                rules = [...rules, result.rule];
+                chooseRule(result.rule);
                 rulePage = Math.floor((rules.length - 1) / rulePageSize);
-                return;
-            }
-            const result = await cardPolicyApi.createRule(groupId, {
-                name: messages.cardManagement.ruleNamePlaceholder,
-                enabled: false,
-                predicate: {},
-                directives: { availability: "EXCLUDE" },
-            });
-            rules = [...rules, result.rule];
-            chooseRule(result.rule);
-            rulePage = Math.floor((rules.length - 1) / rulePageSize);
-        }, messages.cardManagement.ruleDraftCreated);
+            },
+            messages.cardManagement.ruleDraftCreated,
+            true,
+        );
     }
 
     function chooseRule(rule: StoredRule): void {
@@ -363,22 +456,29 @@
 
     function saveRule(): void {
         if (!selectedRule || !selectedRule.name.trim()) return;
-        void perform(async () => {
-            if (sessionMode) {
-                rules = rules.map((rule) =>
-                    rule.id === selectedRule?.id ? structuredClone(selectedRule) : rule,
-                );
-                persistSessionPolicy({
-                    ...sessionPolicy,
-                    conditionalRules: rules.map(({ revision: _revision, ...entry }) => entry),
-                });
-                await searchCards();
-                return;
-            }
-            const result = await cardPolicyApi.updateRule(groupId, selectedRule!);
-            rules = rules.map((rule) => (rule.id === result.rule.id ? result.rule : rule));
-            selectedRule = structuredClone(result.rule);
-        }, messages.cardManagement.saved);
+        void perform(
+            async () => {
+                if (sessionMode) {
+                    const updatedRules = rules.map((rule) =>
+                        rule.id === selectedRule?.id ? structuredClone(selectedRule) : rule,
+                    );
+                    persistSessionPolicy({
+                        ...sessionPolicy,
+                        conditionalRules: updatedRules.map(
+                            ({ revision: _revision, ...entry }) => entry,
+                        ),
+                    });
+                    rules = updatedRules;
+                    await searchCards();
+                    return;
+                }
+                const result = await cardPolicyApi.updateRule(groupId, selectedRule!);
+                rules = rules.map((rule) => (rule.id === result.rule.id ? result.rule : rule));
+                selectedRule = structuredClone(result.rule);
+            },
+            messages.cardManagement.saved,
+            true,
+        );
     }
 
     function deleteRule(): void {
@@ -450,33 +550,40 @@
         const ordered = [...rules];
         [ordered[index], ordered[target]] = [ordered[target], ordered[index]];
         const selectedRuleId = selectedRule?.id;
-        void perform(async () => {
-            if (sessionMode) {
-                rules = ordered.map((rule, ruleIndex) => ({
-                    ...rule,
-                    order: (ruleIndex + 1) * 10,
-                }));
-                persistSessionPolicy({
-                    ...sessionPolicy,
-                    conditionalRules: rules.map(({ revision: _revision, ...entry }) => entry),
-                });
-            } else {
-                rules = (
-                    await cardPolicyApi.reorderRules(
-                        groupId,
-                        ordered.map(({ id }) => id),
+        void perform(
+            async () => {
+                if (sessionMode) {
+                    rules = ordered.map((rule, ruleIndex) => ({
+                        ...rule,
+                        order: (ruleIndex + 1) * 10,
+                    }));
+                    persistSessionPolicy({
+                        ...sessionPolicy,
+                        conditionalRules: rules.map(({ revision: _revision, ...entry }) => entry),
+                    });
+                } else {
+                    rules = (
+                        await cardPolicyApi.reorderRules(
+                            groupId,
+                            ordered.map(({ id }) => id),
+                            scopeRevision,
+                        )
+                    ).rules;
+                }
+                if (selectedRuleId) {
+                    const selected = rules.find(({ id }) => id === selectedRuleId);
+                    selectedRule = selected ? structuredClone(selected) : null;
+                }
+                const visibleIndex = rules
+                    .filter(({ name }) =>
+                        name.toLocaleLowerCase(locale).includes(normalizedRuleQuery),
                     )
-                ).rules;
-            }
-            if (selectedRuleId) {
-                const selected = rules.find(({ id }) => id === selectedRuleId);
-                selectedRule = selected ? structuredClone(selected) : null;
-            }
-            const visibleIndex = rules
-                .filter(({ name }) => name.toLocaleLowerCase(locale).includes(normalizedRuleQuery))
-                .findIndex(({ id }) => id === ruleId);
-            if (visibleIndex >= 0) rulePage = Math.floor(visibleIndex / rulePageSize);
-        }, messages.cardManagement.orderSaved);
+                    .findIndex(({ id }) => id === ruleId);
+                if (visibleIndex >= 0) rulePage = Math.floor(visibleIndex / rulePageSize);
+            },
+            messages.cardManagement.orderSaved,
+            true,
+        );
     }
 
     function searchParameters(cursor?: string): Record<string, string> {
@@ -575,28 +682,32 @@
     function saveCard(): void {
         if (!selectedCard) return;
         const selectedId = selectedCard.id;
-        void perform(async () => {
-            if (!Object.keys(cardDirectives).length) {
-                if (selectedCard!.localRevision > 0) await removeCardOverride(false);
-                return;
-            }
-            if (sessionMode) {
-                const exactCards = [
-                    ...sessionPolicy.exactCards.filter(({ cardId }) => cardId !== selectedId),
-                    { cardId: selectedId, directives: structuredClone(cardDirectives) },
-                ];
-                persistSessionPolicy({ ...sessionPolicy, exactCards });
-            } else {
-                await cardPolicyApi.saveCard(
-                    groupId,
-                    selectedId,
-                    cardDirectives,
-                    selectedCard!.localRevision,
-                );
-            }
-            await searchCards();
-            selectFirstCard(selectedId, cardPages[0].cards);
-        }, messages.cardManagement.saved);
+        void perform(
+            async () => {
+                if (!Object.keys(cardDirectives).length) {
+                    if (selectedCard!.localRevision > 0) await removeCardOverride(false);
+                    return;
+                }
+                if (sessionMode) {
+                    const exactCards = [
+                        ...sessionPolicy.exactCards.filter(({ cardId }) => cardId !== selectedId),
+                        { cardId: selectedId, directives: structuredClone(cardDirectives) },
+                    ];
+                    persistSessionPolicy({ ...sessionPolicy, exactCards });
+                } else {
+                    await cardPolicyApi.saveCard(
+                        groupId,
+                        selectedId,
+                        cardDirectives,
+                        selectedCard!.localRevision,
+                    );
+                }
+                await searchCards();
+                selectFirstCard(selectedId, cardPages[0].cards);
+            },
+            messages.cardManagement.saved,
+            true,
+        );
     }
 
     async function removeCardOverride(refresh = true): Promise<void> {
@@ -618,22 +729,30 @@
     }
 
     function clearCard(): void {
-        void perform(() => removeCardOverride(), messages.cardManagement.deleted);
+        void perform(() => removeCardOverride(), messages.cardManagement.deleted, true);
     }
 
     function applyCardToResults(): void {
         if (sessionMode || cardTotal === 0 || !Object.keys(cardDirectives).length) return;
-        void perform(async () => {
-            const result = await cardPolicyApi.bulkApply(
-                groupId,
-                searchParameters(),
-                cardDirectives,
-                cardTotal,
-            );
-            bulkPending = false;
-            await searchCards();
-            showNotification(messages.cardManagement.bulkApplied(result.appliedCount), "success");
-        });
+        void perform(
+            async () => {
+                const result = await cardPolicyApi.bulkApply(
+                    groupId,
+                    searchParameters(),
+                    cardDirectives,
+                    cardTotal,
+                    scopeRevision,
+                );
+                bulkPending = false;
+                await searchCards();
+                showNotification(
+                    messages.cardManagement.bulkApplied(result.appliedCount),
+                    "success",
+                );
+            },
+            undefined,
+            true,
+        );
     }
 
     function displayValue(property: string, value: unknown): string {
@@ -746,15 +865,62 @@
             </header>
         {/if}
 
-        {#if unavailable}
-            <section class="card-panel card-management-unavailable" role="alert" in:panelTransition>
-                <span aria-hidden="true"><UiIcon name="privacy" /></span>
+        {#if policyError}
+            <div
+                class="policy-confirmation-card destructive policy-error"
+                role="alert"
+                tabindex="-1"
+                bind:this={policyErrorPanel}
+                transition:revealTransition
+            >
+                <span class="policy-confirmation-icon" aria-hidden="true"
+                    ><UiIcon name="privacy" /></span
+                >
                 <div>
-                    <h2>{messages.cardManagement.unavailableTitle}</h2>
-                    <p>{messages.cardManagement.unavailable}</p>
+                    {#if unavailable}<h2>{messages.cardManagement.unavailableTitle}</h2>{/if}
+                    <p>{policyError}</p>
+                    {#if policyRecovery === "reload" && !unavailable}<small
+                            >{messages.cardManagement.reloadHint}</small
+                        >{/if}
                 </div>
-            </section>
-        {:else if busy && !rules.length && !cardPages.length}
+                {#if policyRecovery}
+                    <div class="policy-confirmation-actions">
+                        {#if policyRecovery === "groups"}
+                            {#if sessionMode}
+                                <a class="secondary" href={backHref}
+                                    >{messages.cardManagement.backToSetup}</a
+                                >
+                            {:else}
+                                <button
+                                    class="secondary"
+                                    disabled={busy}
+                                    on:click={() => void recoverScope()}
+                                    >{messages.cardManagement.chooseScope}</button
+                                >
+                            {/if}
+                        {:else}
+                            <button
+                                class="secondary"
+                                disabled={busy}
+                                on:click={() => void recoverPolicy()}
+                                >{unavailable
+                                    ? messages.cardManagement.retryLoading
+                                    : messages.cardManagement.reloadPolicy}</button
+                            >
+                        {/if}
+                        {#if policyRecovery === "account" || policyRecovery === "groups"}
+                            <a
+                                class="secondary"
+                                href="/play/account"
+                                target="_blank"
+                                rel="noopener noreferrer">{messages.menu.account}</a
+                            >
+                        {/if}
+                    </div>
+                {/if}
+            </div>
+        {/if}
+        {#if busy && !rules.length && !cardPages.length && !unavailable}
             <section class="card-panel policy-loading" aria-live="polite" in:panelTransition>
                 <span class="policy-loading-symbol" aria-hidden="true"
                     ><UiIcon name="content" /></span
@@ -764,7 +930,7 @@
                     <small>{messages.cardManagement.loadingHint}</small>
                 </div>
             </section>
-        {:else}
+        {:else if !unavailable}
             <section
                 class="card-panel policy-scope-card"
                 aria-labelledby="policy-scope-heading"
@@ -778,7 +944,12 @@
                         /></span
                     >
                     <div>
-                        <span class="eyebrow" id="policy-scope-heading">
+                        <span
+                            class="eyebrow"
+                            id="policy-scope-heading"
+                            tabindex="-1"
+                            bind:this={scopeHeading}
+                        >
                             {sessionMode
                                 ? messages.cardManagement.sessionPolicyLevel
                                 : selectedGroup
@@ -1988,7 +2159,9 @@
                                                     </dd>
                                                 </div>
                                                 <div>
-                                                    <dt>{messages.cardManagement.producerValue}</dt>
+                                                    <dt>
+                                                        {messages.cardManagement.producerValue}
+                                                    </dt>
                                                     <dd>
                                                         {displayValue(
                                                             property,

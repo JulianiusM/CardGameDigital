@@ -6,6 +6,7 @@ import unittest
 from unittest.mock import Mock, patch
 
 from support import RESOURCES_ROOT
+from lib.protocol.validation import PROTOCOL_VERSION
 from lib.discovery.dns import (
     CLASS_IN,
     TYPE_A,
@@ -66,7 +67,7 @@ class DnsParserTests(unittest.TestCase):
     def test_parses_and_projects_a_complete_dns_sd_answer(self) -> None:
         instance = "Living Room._partycard._tcp.local."
         host = "partybox.local."
-        txt = [b"txtvers=1", b"api=1", b"ws=2", b"tls=0", b"path=/api/v1", b"cap=rooms,display-bootstrap"]
+        txt = [b"txtvers=1", b"api=1", f"ws={PROTOCOL_VERSION}".encode("ascii"), b"tls=0", b"path=/api/v1", b"cap=rooms,display-bootstrap"]
         txt_wire = b"".join(bytes((len(entry),)) + entry for entry in txt)
         packet = struct.pack("!HHHHHH", 0, 0x8400, 0, 1, 0, 3)
         packet += record(SERVICE_TYPE, TYPE_PTR, encode_name(instance))
@@ -78,7 +79,7 @@ class DnsParserTests(unittest.TestCase):
         endpoints = endpoints_from_records(SERVICE_TYPE, records)
         self.assertEqual(len(endpoints), 1)
         self.assertEqual(endpoints[0].origin, "http://192.168.1.20:3000")
-        self.assertEqual(endpoints[0].txt["ws"], "2")
+        self.assertEqual(endpoints[0].txt["ws"], str(PROTOCOL_VERSION))
 
     def test_rejects_cyclic_compression_pointer(self) -> None:
         packet = struct.pack("!HHHHHH", 0, 0x8400, 0, 1, 0, 0)
@@ -103,7 +104,7 @@ class DnsParserTests(unittest.TestCase):
     def test_ignores_expired_and_non_internet_records(self) -> None:
         instance = "TV._partycard._tcp.local."
         host = "partybox.local."
-        txt_items = [b"txtvers=1", b"api=1", b"ws=2", b"tls=0", b"path=/api/v1", b"cap=rooms"]
+        txt_items = [b"txtvers=1", b"api=1", f"ws={PROTOCOL_VERSION}".encode("ascii"), b"tls=0", b"path=/api/v1", b"cap=rooms"]
         txt = b"".join(bytes((len(entry),)) + entry for entry in txt_items)
         packet = struct.pack("!HHHHHH", 0, 0x8400, 0, 1, 0, 3)
         packet += record(SERVICE_TYPE, TYPE_PTR, encode_name(instance), ttl=0)
@@ -127,13 +128,14 @@ class DnsParserTests(unittest.TestCase):
         valid = {
             "txtvers": "1",
             "api": "1",
-            "ws": "2",
+            "ws": str(PROTOCOL_VERSION),
             "tls": "1",
             "path": "/api/v1",
             "cap": "rooms",
         }
         self.assertTrue(valid_partycard_txt(valid))
-        self.assertFalse(valid_partycard_txt({**valid, "ws": "3"}))
+        self.assertFalse(valid_partycard_txt({**valid, "ws": str(PROTOCOL_VERSION - 1)}))
+        self.assertFalse(valid_partycard_txt({**valid, "ws": str(PROTOCOL_VERSION + 1)}))
         self.assertFalse(valid_partycard_txt({**valid, "cap": "display-bootstrap"}))
 
 

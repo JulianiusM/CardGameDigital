@@ -163,7 +163,7 @@ function applyDirectives<T extends Card>(
     includeAvailability: boolean,
 ): EffectivePolicyCard<T> {
     if (!directives) return current;
-    const next = { ...current, provenance: { ...current.provenance } };
+    const next = current;
     if (includeAvailability && isAvailabilityOverride(directives.availability)) {
         next.policyAvailable = directives.availability === "INCLUDE";
         next.provenance.availability = source;
@@ -236,34 +236,51 @@ function applyScope<T extends Card>(
     includeAvailability: boolean,
 ): EffectivePolicyCard<T> {
     if (!scope) return card;
-    let current = applyDirectives(
-        card,
-        producer,
-        scope.scopeDefault,
-        `${scope.name} Scope Default`,
-        includeAvailability,
-    );
-    const rules = [...(scope.conditionalRules ?? [])].sort(
-        (left, right) => left.order - right.order || left.id.localeCompare(right.id),
-    );
-    for (const rule of rules) {
-        if (rule.enabled && matchesCardPolicyPredicate(producer, rule.predicate)) {
-            current = applyDirectives(
-                current,
-                producer,
-                rule.directives,
-                `${scope.name} rule “${rule.name}”`,
-                includeAvailability,
-            );
-        }
+    const current = { ...card, provenance: { ...card.provenance } };
+    const unresolved = new Set<keyof CardPolicyDirectives>([
+        "availability",
+        "alwaysEligible",
+        "repeatableInSession",
+        "repeatCooldown",
+        "intensity",
+        "weight",
+        "socialSensitivity",
+        "playerCount",
+    ]);
+    if (!includeAvailability) unresolved.delete("availability");
+    const overrides = (directives: CardPolicyDirectives) =>
+        Object.entries(directives).filter(([property, directive]) => {
+            if (
+                !unresolved.has(property as keyof CardPolicyDirectives) ||
+                !directive ||
+                directive === "INHERIT"
+            )
+                return false;
+            return typeof directive === "string" || directive.mode !== "INHERIT";
+        });
+    const apply = (entries: ReturnType<typeof overrides>, source: string) => {
+        if (!entries.length) return;
+        applyDirectives(
+            current,
+            producer,
+            Object.fromEntries(entries),
+            source,
+            includeAvailability,
+        );
+        for (const [property] of entries) unresolved.delete(property as keyof CardPolicyDirectives);
+    };
+    apply(overrides(scope.exactCards?.get(producer.id) ?? {}), `${scope.name} Exact Card`);
+    // Predicates always refer to producer metadata. The last non-inherited directive
+    // for each independent property wins, so earlier shadowed rules need no evaluation.
+    const rules = sortedScopeRules(scope);
+    for (let index = rules.length - 1; index >= 0 && unresolved.size; index--) {
+        const rule = rules[index];
+        const entries = overrides(rule.directives);
+        if (entries.length && matchesCardPolicyPredicate(producer, rule.predicate))
+            apply(entries, `${scope.name} rule “${rule.name}”`);
     }
-    return applyDirectives(
-        current,
-        producer,
-        scope.exactCards?.get(producer.id),
-        `${scope.name} Exact Card`,
-        includeAvailability,
-    );
+    apply(overrides(scope.scopeDefault ?? {}), `${scope.name} Scope Default`);
+    return current;
 }
 
 export function resolveCardPolicy<T extends Card>(input: {
@@ -289,26 +306,20 @@ export function resolveCardPolicy<T extends Card>(input: {
     };
     current = applyScope(current, producer, input.dataSpace, true);
     current = applyScope(current, producer, input.group, true);
-    current = applyScope(current, producer, input.session, false);
-    const sessionAvailability: CardPolicyScope | undefined = input.session
-        ? {
-              name: input.session.name,
-              scopeDefault: input.session.scopeDefault
-                  ? { availability: input.session.scopeDefault.availability }
-                  : undefined,
-              conditionalRules: input.session.conditionalRules?.map((rule) => ({
-                  ...rule,
-                  directives: { availability: rule.directives.availability },
-              })),
-              exactCards: new Map(
-                  [...(input.session.exactCards ?? new Map()).entries()].map(([id, directives]) => [
-                      id,
-                      { availability: directives.availability },
-                  ]),
-              ),
-          }
-        : undefined;
-    return applyScope(current, producer, sessionAvailability, true);
+    // Availability and the other properties are independent. Applying Session
+    // directives together preserves precedence without rebuilding a second scope.
+    return applyScope(current, producer, input.session, true);
+}
+
+const sortedRules = new WeakMap<CardPolicyScope, readonly CardPolicyRule[]>();
+function sortedScopeRules(scope: CardPolicyScope): readonly CardPolicyRule[] {
+    const cached = sortedRules.get(scope);
+    if (cached) return cached;
+    const rules = [...(scope.conditionalRules ?? [])]
+        .filter((rule) => rule.enabled)
+        .sort((left, right) => left.order - right.order || left.id.localeCompare(right.id));
+    sortedRules.set(scope, rules);
+    return rules;
 }
 
 export function isValidPlayerCountRange(range: PlayerCountRange): boolean {

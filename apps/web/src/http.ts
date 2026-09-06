@@ -1,6 +1,16 @@
 import { locale, messages } from "./i18n";
 import { decodeHttpErrorResponse, type HttpErrorResponse } from "../../../packages/protocol";
 
+export class ApiError extends Error {
+    constructor(
+        readonly code: string,
+        message: string,
+        readonly status: number,
+    ) {
+        super(message);
+    }
+}
+
 export function httpErrorDetails(body: unknown): HttpErrorResponse["error"] {
     return decodeHttpErrorResponse(body)?.error ?? {};
 }

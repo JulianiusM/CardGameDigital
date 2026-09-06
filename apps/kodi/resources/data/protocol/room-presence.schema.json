@@ -2,14 +2,17 @@
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",
     "properties": {
-        "protocol": { "type": "number", "const": 2 },
+        "protocol": { "type": "number", "const": 4 },
         "type": { "type": "string", "const": "room.presence" },
-        "requestId": { "anyOf": [{ "type": "string", "minLength": 1 }, { "type": "null" }] },
+        "requestId": {
+            "anyOf": [{ "type": "string", "minLength": 1, "maxLength": 128 }, { "type": "null" }]
+        },
         "revision": { "type": "null" },
         "payload": {
             "type": "object",
             "properties": {
                 "connected": {
+                    "maxItems": 1000,
                     "type": "array",
                     "items": {
                         "type": "object",

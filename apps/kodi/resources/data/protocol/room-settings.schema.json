@@ -891,6 +891,7 @@
             "type": "object",
             "properties": {
                 "enabledQuestionCategoryIds": {
+                    "maxItems": 12,
                     "type": "array",
                     "items": {
                         "type": "string",
@@ -911,6 +912,7 @@
                     }
                 },
                 "enabledDareTypeIds": {
+                    "maxItems": 13,
                     "type": "array",
                     "items": {
                         "type": "string",
@@ -932,6 +934,7 @@
                     }
                 },
                 "blockedOperationalFlags": {
+                    "maxItems": 7,
                     "type": "array",
                     "items": {
                         "type": "string",

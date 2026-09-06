@@ -4,11 +4,15 @@
 
 Each player device can exclude question categories, dare types, and operational content
 flags. The server combines these limits with profile and intensity before selecting a
-card. Other participants learn only that your setup was saved—not which limit belongs
-to whom.
+card. Only your device shows whether your choices are saved. Other participants receive
+neither the exclusions nor who selected them.
 
 Questions apply the active player's limits. Dares and group-wide modes apply the
 relevant limits of everyone affected.
+
+When you join a game already in progress, save your private choices before entering play.
+You can explicitly continue with no exclusions. Your choices apply from the next card
+and remain fixed for this game. You do not join a Never Have I Ever vote already underway.
 
 For **Never Have I Ever**, check the answer reveal setting before voting. **Anonymous**
 keeps individual answers hidden; **Reveal answers** deliberately shows every player's
@@ -32,6 +36,8 @@ permissions never override another person's boundaries.
 
 ## Adult content
 
-The adult profile requires deliberate confirmation and is only for consenting adults.
+Settings that allow explicit content require deliberate confirmation and are only for
+consenting adults. This also applies to Custom and edited presets; the profile name
+does not determine whether confirmation is needed.
 Confirmation never disables individual boundaries. If age, consent, or context is
 uncertain, choose another profile.

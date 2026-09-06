@@ -6,6 +6,7 @@ import {
     cardPolicyPredicateSchema,
     cardPolicyRuleSchema,
     sessionCardPolicySchema,
+    portableCardPolicyScopeSchema,
 } from "./cardPolicy";
 import { roomGameSettingsSchema } from "./common";
 
@@ -52,7 +53,17 @@ export const cardPolicyDefaultUpdateRequestSchema = z
     .strict();
 
 export const cardPolicyRuleReorderRequestSchema = z
-    .object({ orderedIds: z.array(z.uuid()).max(250) })
+    .object({
+        orderedIds: z.array(z.uuid()).max(250),
+        expectedScopeRevision: cardPolicyRevisionSchema,
+    })
+    .strict();
+
+export const cardPolicyImportRequestSchema = z
+    .object({
+        policy: portableCardPolicyScopeSchema,
+        expectedScopeRevision: cardPolicyRevisionSchema,
+    })
     .strict();
 
 export const cardPolicyRulePreviewRequestSchema = z
@@ -74,6 +85,7 @@ export const cardPolicyBulkApplyRequestSchema = z
         filters: cardPolicySearchSchema.omit({ cursor: true, limit: true }),
         directives: cardPolicyDirectivesSchema,
         confirmedCount: z.number().int().nonnegative().max(50_000),
+        expectedScopeRevision: cardPolicyRevisionSchema,
     })
     .strict();
 
@@ -155,6 +167,7 @@ export const eligibilityPreviewSchema = z
         byType: z.record(z.enum(CARD_TYPES), z.number().int().nonnegative()),
         atStartByType: z.record(z.enum(CARD_TYPES), z.number().int().nonnegative()),
         playerCount: z.number().int().min(2),
+        adultConfirmationRequired: z.boolean(),
     })
     .strict();
 
@@ -169,6 +182,17 @@ export const cardPolicyScopedDefaultResponseSchema = z
 export const cardPolicyRulesResponseSchema = z
     .object({ rules: z.array(storedRuleSchema) })
     .strict();
+
+export const cardPolicySummaryResponseSchema = z
+    .object({
+        scope: policyScopeSchema,
+        scopeRevision: cardPolicyRevisionSchema,
+        scopeDefault: storedDefaultSchema,
+        rules: z.array(storedRuleSchema).max(250),
+    })
+    .strict();
+
+export type CardPolicySummaryResponse = z.infer<typeof cardPolicySummaryResponseSchema>;
 
 export const cardPolicyRuleResponseSchema = z.object({ rule: storedRuleSchema }).strict();
 

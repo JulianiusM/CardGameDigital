@@ -1,3 +1,9 @@
+import { readStoredJson, writeStoredJson } from "./storedJson";
+import {
+    DEFAULT_GAME_RESOURCE_LIMITS,
+    type GameResourceLimits,
+} from "../application/gameResourceLimits";
+import { admitPersistentGame, lockGameCapacity } from "./gameCapacity";
 import { v5 as uuidv5 } from "uuid";
 import {
     In,
@@ -8,12 +14,22 @@ import {
     type DataSource,
     type EntityManager,
 } from "typeorm";
-import type { CardId, GameSessionRuntimeState, PlayerBoundaries } from "../game-core";
+import {
+    reconcileSessionMembership,
+    type CardId,
+    type GameSessionRuntimeState,
+    type PlayerBoundaries,
+} from "../game-core";
+import { persistenceTransaction } from "./transaction";
+import { MESSAGE_KEYS } from "../localization/keys";
+import { sessionPlayers, boundariesForSessionPlayers } from "../application/roomParticipants";
+import { CardCatalogVersionEntity } from "./entities/card/CardCatalogVersionEntity";
 import type {
     DevicePlayer,
     RealtimeRoomRepository,
     RoomCapacity,
     RoomCreateIdempotencyRecord,
+    RoomRuntimeCommit,
     RoomLifecycleTransition,
     RoomLifecycleTransitionResult,
     RoomParticipant,
@@ -35,10 +51,17 @@ import { RoomParticipantEntity } from "./entities/game/RoomParticipantEntity";
 import { GameSessionEntity } from "./entities/game/GameSessionEntity";
 import { CardAppearanceEntity } from "./entities/game/CardAppearanceEntity";
 import { RoomParticipantBoundaryEntity } from "./entities/game/RoomParticipantBoundaryEntity";
+import {
+    participantBoundariesAreNeeded,
+    retainedRoomBoundaryPlayerIds,
+    retainedRuntimeBoundaries,
+    scrubRoomPrivateBoundaries,
+} from "./privateBoundaryRetention";
 import { RoomCreateIdempotencyEntity } from "./entities/game/RoomCreateIdempotencyEntity";
 import { GroupEntity } from "./entities/game/GroupEntity";
 import { CouchCardAppearanceEntity } from "./entities/game/CouchCardAppearanceEntity";
 import {
+    collectUnusedSessionInputs,
     externalizeSessionImmutableState,
     hydrateSessionImmutableState,
 } from "./sessionImmutablePayloadStore";
@@ -46,9 +69,12 @@ import {
 const APPEARANCE_NAMESPACE = "d2dad6a5-b25c-570d-a102-9e8b9106a77b";
 
 export class TypeOrmRealtimeRoomRepository implements RealtimeRoomRepository {
+    private nextPolicyCleanupAt = 0;
+
     constructor(
         private readonly source: DataSource,
         private readonly idempotencyTombstoneSeconds = 86_400,
+        private readonly limits: GameResourceLimits = DEFAULT_GAME_RESOURCE_LIMITS,
     ) {}
     async roomCodeExists(code: string): Promise<boolean> {
         return this.source.getRepository(RoomEntity).existsBy({ code });
@@ -97,7 +123,8 @@ export class TypeOrmRealtimeRoomRepository implements RealtimeRoomRepository {
     private async createRoomTransaction(
         input: Parameters<RealtimeRoomRepository["createRoom"]>[0],
     ): ReturnType<RealtimeRoomRepository["createRoom"]> {
-        return await this.source.transaction(async (manager) => {
+        return await persistenceTransaction(this.source, async (manager) => {
+            await lockGameCapacity(manager);
             if (input.idempotency) {
                 const existing = await manager
                     .getRepository(RoomCreateIdempotencyEntity)
@@ -108,6 +135,7 @@ export class TypeOrmRealtimeRoomRepository implements RealtimeRoomRepository {
                     });
                 if (existing) return this.resolveCreateIdempotency(existing, input.idempotency);
             }
+            await admitPersistentGame(manager, "ROOM", this.limits);
             await validateCreateGroupOwnership();
             await manager.getRepository(RoomEntity).insert({
                 id: input.roomId,
@@ -115,7 +143,7 @@ export class TypeOrmRealtimeRoomRepository implements RealtimeRoomRepository {
                 dataSpaceId: input.dataSpaceId,
                 groupId: input.settings.groupId,
                 settingsRevision: 0,
-                gameSettingsJson: JSON.stringify(input.settings),
+                gameSettingsJson: await writeStoredJson(input.settings),
                 settingsUpdatedByParticipantId: input.participant.id,
                 currentSessionId: null,
                 createdAt: new Date(input.createdAt),
@@ -192,7 +220,7 @@ export class TypeOrmRealtimeRoomRepository implements RealtimeRoomRepository {
         input: Omit<RoomParticipant, "roomId"> & { roomCode: string; credentialHash: string },
         capacity: RoomCapacity,
     ): Promise<void> {
-        await this.source.transaction(async (manager) => {
+        await persistenceTransaction(this.source, async (manager) => {
             const roomQuery = manager
                 .getRepository(RoomEntity)
                 .createQueryBuilder("room")
@@ -280,7 +308,7 @@ export class TypeOrmRealtimeRoomRepository implements RealtimeRoomRepository {
         at: number,
         reconnectDeadline: number,
     ): Promise<readonly RoomParticipant[]> {
-        return this.source.transaction(async (manager) => {
+        return persistenceTransaction(this.source, async (manager) => {
             const repository = manager.getRepository(RoomParticipantEntity);
             const connected = await repository.findBy({ connectionStatus: "CONNECTED" });
             if (!connected.length) return [];
@@ -352,6 +380,10 @@ export class TypeOrmRealtimeRoomRepository implements RealtimeRoomRepository {
     }
 
     async deleteExpiredRoomCreateTombstones(at: number, limit: number): Promise<number> {
+        if (at >= this.nextPolicyCleanupAt) {
+            await persistenceTransaction(this.source, collectUnusedSessionInputs);
+            this.nextPolicyCleanupAt = at + 60_000;
+        }
         const repository = this.source.getRepository(RoomCreateIdempotencyEntity);
         const expired = await repository.find({
             where: {
@@ -369,7 +401,9 @@ export class TypeOrmRealtimeRoomRepository implements RealtimeRoomRepository {
     async loadSettings(roomId: string): Promise<VersionedRoomGameSettings> {
         const room = await this.source.getRepository(RoomEntity).findOneByOrFail({ id: roomId });
         return {
-            ...normalizeRoomGameSettings(JSON.parse(room.gameSettingsJson) as RoomGameSettings),
+            ...normalizeRoomGameSettings(
+                await readStoredJson<RoomGameSettings>(room.gameSettingsJson),
+            ),
             revision: room.settingsRevision,
             updatedByParticipantId: room.settingsUpdatedByParticipantId,
         };
@@ -380,7 +414,7 @@ export class TypeOrmRealtimeRoomRepository implements RealtimeRoomRepository {
         expectedRevision: number,
         settings: RoomGameSettings,
     ): Promise<VersionedRoomGameSettings> {
-        return this.source.transaction(async (manager) => {
+        return persistenceTransaction(this.source, async (manager) => {
             const rooms = manager.getRepository(RoomEntity);
             const room = await rooms.findOneByOrFail({ id: roomId });
             if (settings.groupId) {
@@ -405,7 +439,7 @@ export class TypeOrmRealtimeRoomRepository implements RealtimeRoomRepository {
                 {
                     groupId: settings.groupId,
                     settingsRevision: revision,
-                    gameSettingsJson: JSON.stringify(settings),
+                    gameSettingsJson: await writeStoredJson(settings),
                     settingsUpdatedByParticipantId: participantId,
                 },
             );
@@ -418,20 +452,45 @@ export class TypeOrmRealtimeRoomRepository implements RealtimeRoomRepository {
         });
     }
     async saveBoundaries(participantId: string, boundaries: PlayerBoundaries): Promise<void> {
-        const repository = this.source.getRepository(RoomParticipantBoundaryEntity);
-        await repository.save(
-            repository.create({
-                participantId,
-                disabledQuestionCategoryIdsJson: JSON.stringify([
-                    ...boundaries.disabledQuestionCategoryIds,
-                ]),
-                disabledDareTypeIdsJson: JSON.stringify([...boundaries.disabledDareTypeIds]),
-                blockedOperationalFlagsJson: JSON.stringify([
-                    ...boundaries.blockedOperationalFlags,
-                ]),
-                updatedAt: new Date(),
-            }),
-        );
+        const participantRoom = await this.source
+            .getRepository(RoomParticipantEntity)
+            .findOneByOrFail({ id: participantId });
+        await persistenceTransaction(this.source, async (manager) => {
+            const roomQuery = manager
+                .getRepository(RoomEntity)
+                .createQueryBuilder("room")
+                .where("room.id = :roomId", { roomId: participantRoom.roomId });
+            if (this.source.options.type === "mariadb" || this.source.options.type === "mysql")
+                roomQuery.setLock("pessimistic_write");
+            const room = await roomQuery.getOneOrFail();
+            const participant = await manager
+                .getRepository(RoomParticipantEntity)
+                .findOneByOrFail({ id: participantId });
+            if (!participantBoundariesAreNeeded(room, participant, Date.now())) {
+                throw Object.assign(new Error(MESSAGE_KEYS.ROOM_NOT_AUTHORIZED), {
+                    code: "NOT_AUTHORIZED",
+                });
+            }
+            if (room.currentSessionId) {
+                throw Object.assign(new Error(MESSAGE_KEYS.ROOM_BOUNDARIES_LOCKED), {
+                    code: "INVALID_GAME_STATE",
+                });
+            }
+            const repository = manager.getRepository(RoomParticipantBoundaryEntity);
+            await repository.save(
+                repository.create({
+                    participantId,
+                    disabledQuestionCategoryIdsJson: JSON.stringify([
+                        ...boundaries.disabledQuestionCategoryIds,
+                    ]),
+                    disabledDareTypeIdsJson: JSON.stringify([...boundaries.disabledDareTypeIds]),
+                    blockedOperationalFlagsJson: JSON.stringify([
+                        ...boundaries.blockedOperationalFlags,
+                    ]),
+                    updatedAt: new Date(),
+                }),
+            );
+        });
     }
 
     async listBoundaries(roomId: string): Promise<ReadonlyMap<string, PlayerBoundaries>> {
@@ -460,19 +519,21 @@ export class TypeOrmRealtimeRoomRepository implements RealtimeRoomRepository {
             ]),
         );
     }
-    async selectGroup(roomId: string, groupId: string | null): Promise<ReadonlySet<CardId>> {
-        return this.source.transaction(async (manager) => {
+    async selectGroup(roomId: string, groupId: string | null): Promise<void> {
+        return persistenceTransaction(this.source, async (manager) => {
             const rooms = manager.getRepository(RoomEntity);
             const room = await rooms.findOneByOrFail({ id: roomId });
-            const history = await this.loadOwnedGroupHistory(manager, room.dataSpaceId, groupId);
+            if (
+                groupId &&
+                (!room.dataSpaceId ||
+                    !(await manager
+                        .getRepository(GroupEntity)
+                        .existsBy({ id: groupId, dataSpaceId: room.dataSpaceId })))
+            )
+                throw Object.assign(new Error(MESSAGE_KEYS.ROOM_NOT_AUTHORIZED), {
+                    code: "NOT_AUTHORIZED",
+                });
             await rooms.update({ id: roomId }, { groupId });
-            return history;
-        });
-    }
-    async groupHistory(roomId: string, groupId: string | null): Promise<ReadonlySet<CardId>> {
-        return this.source.transaction(async (manager) => {
-            const room = await manager.getRepository(RoomEntity).findOneByOrFail({ id: roomId });
-            return this.loadOwnedGroupHistory(manager, room.dataSpaceId, groupId);
         });
     }
     async policyOwner(
@@ -481,57 +542,220 @@ export class TypeOrmRealtimeRoomRepository implements RealtimeRoomRepository {
         const room = await this.source.getRepository(RoomEntity).findOneByOrFail({ id: roomId });
         return room.dataSpaceId ? { dataSpaceId: room.dataSpaceId, groupId: room.groupId } : null;
     }
-    async loadRuntime(roomId: string): Promise<GameSessionRuntimeState | null> {
-        const room = await this.source.getRepository(RoomEntity).findOneByOrFail({ id: roomId });
-        if (!room.currentSessionId) return null;
-        const record = await this.source
-            .getRepository(GameSessionEntity)
-            .findOneBy({ id: room.currentSessionId, roomId });
-        if (!record) return null;
-        const appearances = await this.source.getRepository(CardAppearanceEntity).find({
-            where: { sessionId: record.id },
-            order: { sequence: "ASC" },
+    runtimeRevision(roomId: string): Promise<{ id: string; revision: number } | null> {
+        return persistenceTransaction(this.source, async (manager) => {
+            const record = await manager
+                .getRepository(GameSessionEntity)
+                .createQueryBuilder("session")
+                .innerJoin(
+                    RoomEntity,
+                    "room",
+                    "room.currentSessionId = session.id AND room.id = :roomId",
+                    { roomId },
+                )
+                .select(["session.id", "session.revision"])
+                .getOne();
+            return record ? { id: record.id, revision: record.revision } : null;
         });
-        const parsed = await hydrateSessionImmutableState(
-            this.source.manager,
-            record.runtimeStateJson,
-            {
-                compiledCardPolicyDigest: record.compiledCardPolicyDigest,
-                groupHistoryDigest: record.groupHistoryDigest,
-            },
-            appearances.length
-                ? appearances.map((appearance) => ({
-                      cardId: appearance.cardId as CardId,
-                      playerId: appearance.playerId,
-                      roundNumber: appearance.roundNumber,
-                      sequence: appearance.sequence,
-                      skipped: appearance.skipped,
-                      completed: appearance.completed,
-                      vetoed: appearance.vetoed,
-                  }))
-                : undefined,
-        );
-        if (
-            parsed.version !== record.runtimeStateVersion ||
-            parsed.revision !== record.revision ||
-            parsed.id !== record.id
-        )
-            throw new Error("Stored GameSession runtime is inconsistent");
-        return parsed;
+    }
+
+    async loadRuntime(roomId: string): Promise<GameSessionRuntimeState | null> {
+        return persistenceTransaction(this.source, async (manager) => {
+            const room = await manager.getRepository(RoomEntity).findOneByOrFail({ id: roomId });
+            if (!room.currentSessionId) return null;
+            const record = await manager
+                .getRepository(GameSessionEntity)
+                .findOneBy({ id: room.currentSessionId, roomId });
+            if (!record) return null;
+            const parsed = await hydrateSessionImmutableState(manager, record.runtimeStateJson, {
+                policyInputDigest: record.policyInputDigest,
+            });
+            if (
+                parsed.version !== record.runtimeStateVersion ||
+                parsed.revision !== record.revision ||
+                parsed.id !== record.id
+            )
+                throw new Error("Stored GameSession runtime is inconsistent");
+            return parsed;
+        });
     }
     async commitRuntime(
         roomId: string,
         previousRevision: number | null,
         runtime: GameSessionRuntimeState,
+        options: RoomRuntimeCommit = {},
     ): Promise<void> {
-        await this.source.transaction(async (manager) => {
-            const room = await manager.getRepository(RoomEntity).findOneByOrFail({ id: roomId });
+        await persistenceTransaction(this.source, async (manager) => {
+            // Share the lifecycle lock so a Session save cannot reintroduce erased boundaries.
+            const roomQuery = manager
+                .getRepository(RoomEntity)
+                .createQueryBuilder("room")
+                .where("room.id = :roomId", { roomId });
+            if (this.source.options.type === "mariadb" || this.source.options.type === "mysql")
+                roomQuery.setLock("pessimistic_write");
+            const room = await roomQuery.getOneOrFail();
+            if (options.actor) {
+                const actor = await manager.getRepository(RoomParticipantEntity).findOneBy({
+                    id: options.actor.id,
+                    roomId,
+                });
+                if (
+                    !actor ||
+                    actor.role !== options.actor.role ||
+                    actor.connectionStatus !== "CONNECTED" ||
+                    !participantBoundariesAreNeeded(room, actor, Date.now())
+                ) {
+                    throw Object.assign(new Error(MESSAGE_KEYS.ROOM_NOT_AUTHORIZED), {
+                        code: "NOT_AUTHORIZED",
+                    });
+                }
+            }
             const sessions = manager.getRepository(GameSessionEntity);
+            const enrollment = options.enrollment;
+            if (enrollment) {
+                const participant = await manager
+                    .getRepository(RoomParticipantEntity)
+                    .findOneByOrFail({ id: enrollment.participantId, roomId });
+                if (
+                    participant.connectionStatus !== "CONNECTED" ||
+                    !participantBoundariesAreNeeded(room, participant, Date.now())
+                ) {
+                    throw Object.assign(new Error(MESSAGE_KEYS.ROOM_NOT_AUTHORIZED), {
+                        code: "NOT_AUTHORIZED",
+                    });
+                }
+                const existing = room.currentSessionId
+                    ? await sessions.findOneBy({
+                          id: room.currentSessionId,
+                          roomId,
+                          revision: previousRevision!,
+                      })
+                    : null;
+                if (
+                    !existing ||
+                    existing.id !== runtime.id ||
+                    existing.endedAt ||
+                    runtime.state === "ENDED"
+                ) {
+                    throw Object.assign(new Error(MESSAGE_KEYS.GAME_STALE_REVISION), {
+                        code: "STALE_SESSION_REVISION",
+                    });
+                }
+                const previous = await readStoredJson<GameSessionRuntimeState>(
+                    existing.runtimeStateJson,
+                );
+                if (previous.players.some(({ id }) => id === participant.id)) {
+                    throw Object.assign(new Error(MESSAGE_KEYS.ROOM_BOUNDARIES_LOCKED), {
+                        code: "INVALID_GAME_STATE",
+                    });
+                }
+                const boundaries = enrollment.boundaries;
+                await manager.getRepository(RoomParticipantBoundaryEntity).save({
+                    participantId: participant.id,
+                    disabledQuestionCategoryIdsJson: JSON.stringify([
+                        ...boundaries.disabledQuestionCategoryIds,
+                    ]),
+                    disabledDareTypeIdsJson: JSON.stringify([...boundaries.disabledDareTypeIds]),
+                    blockedOperationalFlagsJson: JSON.stringify([
+                        ...boundaries.blockedOperationalFlags,
+                    ]),
+                    updatedAt: new Date(),
+                });
+            }
+            if (runtime.boundariesByPlayer.length) {
+                const participants = await manager
+                    .getRepository(RoomParticipantEntity)
+                    .findBy({ roomId });
+                runtime = {
+                    ...runtime,
+                    boundariesByPlayer: retainedRuntimeBoundaries(
+                        runtime,
+                        retainedRoomBoundaryPlayerIds(room, participants, Date.now()),
+                    ),
+                };
+            }
             if (previousRevision === null) {
+                if (
+                    !room.dataSpaceId &&
+                    (await sessions.countBy({ roomId })) >= this.limits.temporaryRoomSessionCapacity
+                )
+                    throw Object.assign(new Error(MESSAGE_KEYS.GAME_SESSION_CAPACITY_EXCEEDED), {
+                        code: "SESSION_CAPACITY_EXCEEDED",
+                        status: 429,
+                    });
                 if (room.currentSessionId)
                     throw Object.assign(new Error("Room already has a current Session"), {
                         code: "INVALID_GAME_STATE",
                     });
+                const participants = (
+                    await manager.getRepository(RoomParticipantEntity).findBy({ roomId })
+                ).map((participant) => this.projectParticipant(participant));
+                const actual = sessionPlayers(participants);
+                const samePlayers =
+                    actual.length === runtime.players.length &&
+                    actual.every((player) =>
+                        runtime.players.some(
+                            (selected) =>
+                                selected.id === player.id && selected.name === player.name,
+                        ),
+                    );
+                if (
+                    !samePlayers ||
+                    (options.settingsRevision !== undefined &&
+                        options.settingsRevision !== room.settingsRevision)
+                )
+                    throw Object.assign(new Error(MESSAGE_KEYS.GAME_STALE_REVISION), {
+                        code: "STALE_SESSION_REVISION",
+                    });
+                const storedBoundaries = await manager
+                    .getRepository(RoomParticipantBoundaryEntity)
+                    .findBy({ participantId: In(participants.map(({ id }) => id)) });
+                const expanded = boundariesForSessionPlayers(
+                    participants,
+                    new Map(
+                        storedBoundaries.map((entry) => [
+                            entry.participantId,
+                            {
+                                disabledQuestionCategoryIds: new Set(
+                                    JSON.parse(entry.disabledQuestionCategoryIdsJson),
+                                ),
+                                disabledDareTypeIds: new Set(
+                                    JSON.parse(entry.disabledDareTypeIdsJson),
+                                ),
+                                blockedOperationalFlags: new Set(
+                                    JSON.parse(entry.blockedOperationalFlagsJson),
+                                ),
+                            } as PlayerBoundaries,
+                        ]),
+                    ),
+                );
+                const selectedBoundaries = new Map(runtime.boundariesByPlayer);
+                for (const player of actual) {
+                    const selected = selectedBoundaries.get(player.id);
+                    const current = expanded.get(player.id);
+                    for (const key of [
+                        "disabledQuestionCategoryIds",
+                        "disabledDareTypeIds",
+                        "blockedOperationalFlags",
+                    ] as const) {
+                        if (
+                            JSON.stringify([...(selected?.[key] ?? [])].sort()) !==
+                            JSON.stringify([...(current?.[key] ?? [])].sort())
+                        )
+                            throw Object.assign(new Error(MESSAGE_KEYS.GAME_STALE_REVISION), {
+                                code: "STALE_SESSION_REVISION",
+                            });
+                    }
+                }
+                if (runtime.catalog) {
+                    const catalog = await manager
+                        .getRepository(CardCatalogVersionEntity)
+                        .findOne({ where: {}, order: { appliedAt: "DESC", sequence: "DESC" } });
+                    if (catalog?.artifactDigest !== runtime.catalog.artifactDigest)
+                        throw Object.assign(new Error(MESSAGE_KEYS.GAME_STALE_REVISION), {
+                            code: "STALE_SESSION_REVISION",
+                        });
+                }
                 const persisted = await externalizeSessionImmutableState(manager, runtime);
                 await sessions.insert({
                     id: runtime.id,
@@ -541,8 +765,7 @@ export class TypeOrmRealtimeRoomRepository implements RealtimeRoomRepository {
                     revision: runtime.revision,
                     runtimeStateVersion: runtime.version,
                     runtimeStateJson: persisted.runtimeStateJson,
-                    compiledCardPolicyDigest: persisted.compiledCardPolicyDigest,
-                    groupHistoryDigest: persisted.groupHistoryDigest,
+                    policyInputDigest: persisted.policyInputDigest,
                     startedAt: new Date(runtime.startedAt),
                     endedAt: runtime.state === "ENDED" ? new Date() : null,
                 });
@@ -563,8 +786,7 @@ export class TypeOrmRealtimeRoomRepository implements RealtimeRoomRepository {
                     });
                 const existing = await sessions.findOneBy({ id: runtime.id, roomId });
                 const persisted = await externalizeSessionImmutableState(manager, runtime, {
-                    compiledCardPolicyDigest: existing?.compiledCardPolicyDigest ?? null,
-                    groupHistoryDigest: existing?.groupHistoryDigest ?? null,
+                    policyInputDigest: existing?.policyInputDigest ?? null,
                 });
                 const updated = await sessions.update(
                     { id: runtime.id, roomId, revision: previousRevision },
@@ -572,8 +794,7 @@ export class TypeOrmRealtimeRoomRepository implements RealtimeRoomRepository {
                         revision: runtime.revision,
                         runtimeStateVersion: runtime.version,
                         runtimeStateJson: persisted.runtimeStateJson,
-                        compiledCardPolicyDigest: persisted.compiledCardPolicyDigest,
-                        groupHistoryDigest: persisted.groupHistoryDigest,
+                        policyInputDigest: persisted.policyInputDigest,
                         endedAt: runtime.state === "ENDED" ? new Date() : null,
                     },
                 );
@@ -583,6 +804,7 @@ export class TypeOrmRealtimeRoomRepository implements RealtimeRoomRepository {
                     });
             }
             await this.persistChangedAppearances(manager, runtime, room);
+            if (runtime.state === "ENDED") await collectUnusedSessionInputs(manager);
         });
     }
 
@@ -592,6 +814,10 @@ export class TypeOrmRealtimeRoomRepository implements RealtimeRoomRepository {
         room: RoomEntity,
     ) {
         const appearances = manager.getRepository(CardAppearanceEntity);
+        if (!room.dataSpaceId && runtime.state === "ENDED") {
+            await appearances.delete({ sessionId: runtime.id });
+            return;
+        }
         const storedLatest = await appearances.findOne({
             where: { sessionId: runtime.id },
             order: { sequence: "DESC" },
@@ -600,7 +826,9 @@ export class TypeOrmRealtimeRoomRepository implements RealtimeRoomRepository {
             ({ sequence }) => !storedLatest || sequence >= storedLatest.sequence,
         );
         for (const appearance of changedAppearances) {
-            const id = uuidv5(`${runtime.id}:${appearance.sequence}`, APPEARANCE_NAMESPACE);
+            // Unsaved Rooms need last-seen eligibility facts, not an archive of repeat turns.
+            const identity = room.dataSpaceId ? appearance.sequence : appearance.cardId;
+            const id = uuidv5(`${runtime.id}:${identity}`, APPEARANCE_NAMESPACE);
             const existing = storedLatest?.id === id ? storedLatest : null;
             await appearances.save(
                 appearances.create({
@@ -621,7 +849,7 @@ export class TypeOrmRealtimeRoomRepository implements RealtimeRoomRepository {
     }
 
     async clearEndedRuntime(roomId: string, sessionId: string, revision: number): Promise<void> {
-        await this.source.transaction(async (manager) => {
+        await persistenceTransaction(this.source, async (manager) => {
             const sessions = manager.getRepository(GameSessionEntity);
             const session = await sessions.findOneBy({ id: sessionId, roomId, revision });
             if (!session?.endedAt)
@@ -641,7 +869,7 @@ export class TypeOrmRealtimeRoomRepository implements RealtimeRoomRepository {
     private async applyLifecycleTransitionOnce(
         transition: RoomLifecycleTransition,
     ): Promise<RoomLifecycleTransitionResult> {
-        return this.source.transaction(async (manager) => {
+        return persistenceTransaction(this.source, async (manager) => {
             const roomQuery = manager
                 .getRepository(RoomEntity)
                 .createQueryBuilder("room")
@@ -670,6 +898,9 @@ export class TypeOrmRealtimeRoomRepository implements RealtimeRoomRepository {
                 where: { roomId: room.id },
                 order: { createdAt: "ASC", id: "ASC" },
             });
+            const previousParticipants = new Map(
+                participants.map((participant) => [participant.id, { ...participant }]),
+            );
             const at = new Date(transition.at);
             const hostStatusBefore = derivePersistedRoomHostStatus(
                 this.projectRoom(room),
@@ -721,8 +952,28 @@ export class TypeOrmRealtimeRoomRepository implements RealtimeRoomRepository {
                 }
             }
 
-            await manager.getRepository(RoomEntity).save(room);
-            await repository.save(participants);
+            await manager.getRepository(RoomEntity).update(
+                { id: room.id },
+                {
+                    activatedAt: room.activatedAt,
+                    firstHostAssignedAt: room.firstHostAssignedAt,
+                    closedAt: room.closedAt,
+                },
+            );
+            const changedParticipants = participants.filter((participant) => {
+                const previous = previousParticipants.get(participant.id)!;
+                return (Object.keys(participant) as (keyof RoomParticipantEntity)[]).some(
+                    (key) => participant[key] !== previous[key],
+                );
+            });
+            if (changedParticipants.length) await repository.save(changedParticipants);
+            // Reconnect and role changes preserve the roster and frozen voters. Only a
+            // terminal participant/Room transition can remove Session membership.
+            if (terminalParticipantIds.size || room.closedAt || transition.type === "CLOSE")
+                await this.reconcileSessionMembership(manager, room, participants, transition);
+            if (terminalParticipantIds.size || room.closedAt) {
+                await scrubRoomPrivateBoundaries(manager, room, participants, transition.at);
+            }
             const replayResultsErased = await this.markCreateResultsGone(
                 manager,
                 [...terminalParticipantIds],
@@ -893,6 +1144,62 @@ export class TypeOrmRealtimeRoomRepository implements RealtimeRoomRepository {
         });
     }
 
+    private async reconcileSessionMembership(
+        manager: EntityManager,
+        room: RoomEntity,
+        participants: readonly RoomParticipantEntity[],
+        transition: RoomLifecycleTransition,
+    ): Promise<void> {
+        const expected = transition.type === "CLOSE" ? transition.expectedSessionRevision : null;
+        const sessions = manager.getRepository(GameSessionEntity);
+        const stored = room.currentSessionId
+            ? await sessions.findOneBy({ id: room.currentSessionId, roomId: room.id })
+            : null;
+        if (expected != null && stored?.revision !== expected) {
+            throw Object.assign(new Error(MESSAGE_KEYS.GAME_STALE_REVISION), {
+                code: "STALE_SESSION_REVISION",
+            });
+        }
+        if (!stored) return;
+        const runtime = await readStoredJson<GameSessionRuntimeState>(stored.runtimeStateJson);
+        const remainingIds = new Set(
+            participants
+                .filter(
+                    ({ role, connectionStatus }) =>
+                        role !== "DISPLAY" && connectionStatus !== "LEFT",
+                )
+                .flatMap((participant) => [
+                    participant.id,
+                    ...(JSON.parse(participant.devicePlayersJson) as DevicePlayer[]).map(
+                        ({ id }) => id,
+                    ),
+                ]),
+        );
+        const proposed = reconcileSessionMembership(runtime, remainingIds, room.closedAt !== null);
+        if (proposed.revision === runtime.revision) return;
+        const updated = await sessions.update(
+            { id: stored.id, roomId: room.id, revision: stored.revision },
+            {
+                revision: proposed.revision,
+                runtimeStateJson: await writeStoredJson(proposed),
+                endedAt: proposed.state === "ENDED" ? new Date(transition.at) : null,
+                policyInputDigest: proposed.state === "ENDED" ? null : stored.policyInputDigest,
+            },
+        );
+        if (updated.affected !== 1) {
+            throw Object.assign(new Error(MESSAGE_KEYS.GAME_STALE_REVISION), {
+                code: "STALE_SESSION_REVISION",
+            });
+        }
+        if (proposed.state === "ENDED") {
+            if (!room.dataSpaceId)
+                await manager
+                    .getRepository(CardAppearanceEntity)
+                    .delete({ sessionId: proposed.id });
+            await collectUnusedSessionInputs(manager);
+        }
+    }
+
     private async markCreateResultsGone(
         manager: EntityManager,
         participantIds: readonly string[],
@@ -983,41 +1290,6 @@ export class TypeOrmRealtimeRoomRepository implements RealtimeRoomRepository {
             leftAt: participant.leftAt?.getTime() ?? null,
             revokedAt: participant.revokedAt?.getTime() ?? null,
         };
-    }
-
-    private async loadOwnedGroupHistory(
-        manager: EntityManager,
-        dataSpaceId: string | null,
-        groupId: string | null,
-    ): Promise<ReadonlySet<CardId>> {
-        if (!groupId) return new Set<CardId>();
-        if (!dataSpaceId) {
-            throw Object.assign(new Error("Unowned Room cannot use a persistent Group"), {
-                code: "NOT_AUTHORIZED",
-            });
-        }
-        const group = await manager.getRepository(GroupEntity).findOneBy({
-            id: groupId,
-            dataSpaceId,
-        });
-        if (!group) {
-            throw Object.assign(new Error("Group is outside the Room DataSpace"), {
-                code: "NOT_AUTHORIZED",
-            });
-        }
-        const shownAt = group.historyResetAt ? MoreThan(group.historyResetAt) : undefined;
-        const where = { groupId, ...(shownAt ? { shownAt } : {}) };
-        const [roomHistory, couchHistory] = await Promise.all([
-            manager.getRepository(CardAppearanceEntity).find({
-                where,
-                select: { cardId: true },
-            }),
-            manager.getRepository(CouchCardAppearanceEntity).find({
-                where,
-                select: { cardId: true },
-            }),
-        ]);
-        return new Set([...roomHistory, ...couchHistory].map(({ cardId }) => cardId as CardId));
     }
 }
 

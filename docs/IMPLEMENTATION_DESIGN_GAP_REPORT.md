@@ -13,8 +13,8 @@ tests, assets, and release automation were inspected together.
 - Every presentation receives the frozen voter roster with per-player `PENDING` /
   `VOTED` progress. No answer value is projected before all required voters finish;
   named values appear only in the configured named-result state.
-- The current WebSocket contract and documentation use protocol v2. Protocol v1 is
-  retained only as a retired historical contract.
+- The current WebSocket contract and documentation use protocol v3. Protocols v1/v2
+  are retained only as retired historical contracts.
 - Couch, account, help, HOST, PLAYER, and DISPLAY presentations use the single Svelte
   client. The old Pug renderer/pages are removed; `/play/room` is the canonical hosted
   route and historical role-specific URLs redirect there.

@@ -4,10 +4,13 @@
         {
             "type": "object",
             "properties": {
-                "protocol": { "type": "number", "const": 2 },
+                "protocol": { "type": "number", "const": 4 },
                 "type": { "type": "string", "const": "command.startSession" },
                 "requestId": {
-                    "anyOf": [{ "type": "string", "minLength": 1 }, { "type": "null" }]
+                    "anyOf": [
+                        { "type": "string", "minLength": 1, "maxLength": 128 },
+                        { "type": "null" }
+                    ]
                 },
                 "revision": { "type": "null" },
                 "payload": { "type": "object", "properties": {}, "additionalProperties": false }
@@ -18,10 +21,13 @@
         {
             "type": "object",
             "properties": {
-                "protocol": { "type": "number", "const": 2 },
+                "protocol": { "type": "number", "const": 4 },
                 "type": { "type": "string", "const": "command.startTurn" },
                 "requestId": {
-                    "anyOf": [{ "type": "string", "minLength": 1 }, { "type": "null" }]
+                    "anyOf": [
+                        { "type": "string", "minLength": 1, "maxLength": 128 },
+                        { "type": "null" }
+                    ]
                 },
                 "revision": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
                 "payload": { "type": "object", "properties": {}, "additionalProperties": false }
@@ -32,10 +38,13 @@
         {
             "type": "object",
             "properties": {
-                "protocol": { "type": "number", "const": 2 },
+                "protocol": { "type": "number", "const": 4 },
                 "type": { "type": "string", "const": "command.chooseCardType" },
                 "requestId": {
-                    "anyOf": [{ "type": "string", "minLength": 1 }, { "type": "null" }]
+                    "anyOf": [
+                        { "type": "string", "minLength": 1, "maxLength": 128 },
+                        { "type": "null" }
+                    ]
                 },
                 "revision": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
                 "payload": {
@@ -53,10 +62,13 @@
         {
             "type": "object",
             "properties": {
-                "protocol": { "type": "number", "const": 2 },
+                "protocol": { "type": "number", "const": 4 },
                 "type": { "type": "string", "const": "command.skipCard" },
                 "requestId": {
-                    "anyOf": [{ "type": "string", "minLength": 1 }, { "type": "null" }]
+                    "anyOf": [
+                        { "type": "string", "minLength": 1, "maxLength": 128 },
+                        { "type": "null" }
+                    ]
                 },
                 "revision": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
                 "payload": { "type": "object", "properties": {}, "additionalProperties": false }
@@ -67,10 +79,13 @@
         {
             "type": "object",
             "properties": {
-                "protocol": { "type": "number", "const": 2 },
+                "protocol": { "type": "number", "const": 4 },
                 "type": { "type": "string", "const": "command.advanceSession" },
                 "requestId": {
-                    "anyOf": [{ "type": "string", "minLength": 1 }, { "type": "null" }]
+                    "anyOf": [
+                        { "type": "string", "minLength": 1, "maxLength": 128 },
+                        { "type": "null" }
+                    ]
                 },
                 "revision": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
                 "payload": { "type": "object", "properties": {}, "additionalProperties": false }
@@ -81,10 +96,13 @@
         {
             "type": "object",
             "properties": {
-                "protocol": { "type": "number", "const": 2 },
+                "protocol": { "type": "number", "const": 4 },
                 "type": { "type": "string", "const": "command.submitVote" },
                 "requestId": {
-                    "anyOf": [{ "type": "string", "minLength": 1 }, { "type": "null" }]
+                    "anyOf": [
+                        { "type": "string", "minLength": 1, "maxLength": 128 },
+                        { "type": "null" }
+                    ]
                 },
                 "revision": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
                 "payload": {
@@ -107,10 +125,13 @@
         {
             "type": "object",
             "properties": {
-                "protocol": { "type": "number", "const": 2 },
+                "protocol": { "type": "number", "const": 4 },
                 "type": { "type": "string", "const": "command.vetoCard" },
                 "requestId": {
-                    "anyOf": [{ "type": "string", "minLength": 1 }, { "type": "null" }]
+                    "anyOf": [
+                        { "type": "string", "minLength": 1, "maxLength": 128 },
+                        { "type": "null" }
+                    ]
                 },
                 "revision": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
                 "payload": { "type": "object", "properties": {}, "additionalProperties": false }
@@ -121,10 +142,13 @@
         {
             "type": "object",
             "properties": {
-                "protocol": { "type": "number", "const": 2 },
+                "protocol": { "type": "number", "const": 4 },
                 "type": { "type": "string", "const": "command.updateRoomSettings" },
                 "requestId": {
-                    "anyOf": [{ "type": "string", "minLength": 1 }, { "type": "null" }]
+                    "anyOf": [
+                        { "type": "string", "minLength": 1, "maxLength": 128 },
+                        { "type": "null" }
+                    ]
                 },
                 "revision": { "type": "null" },
                 "payload": {
@@ -1309,6 +1333,7 @@
                                     "type": "object",
                                     "properties": {
                                         "enabledQuestionCategoryIds": {
+                                            "maxItems": 12,
                                             "type": "array",
                                             "items": {
                                                 "type": "string",
@@ -1329,6 +1354,7 @@
                                             }
                                         },
                                         "enabledDareTypeIds": {
+                                            "maxItems": 13,
                                             "type": "array",
                                             "items": {
                                                 "type": "string",
@@ -1350,6 +1376,7 @@
                                             }
                                         },
                                         "blockedOperationalFlags": {
+                                            "maxItems": 7,
                                             "type": "array",
                                             "items": {
                                                 "type": "string",
@@ -1471,16 +1498,20 @@
         {
             "type": "object",
             "properties": {
-                "protocol": { "type": "number", "const": 2 },
+                "protocol": { "type": "number", "const": 4 },
                 "type": { "type": "string", "const": "command.setBoundaries" },
                 "requestId": {
-                    "anyOf": [{ "type": "string", "minLength": 1 }, { "type": "null" }]
+                    "anyOf": [
+                        { "type": "string", "minLength": 1, "maxLength": 128 },
+                        { "type": "null" }
+                    ]
                 },
                 "revision": { "type": "null" },
                 "payload": {
                     "type": "object",
                     "properties": {
                         "disabledQuestionCategoryIds": {
+                            "maxItems": 12,
                             "type": "array",
                             "items": {
                                 "type": "string",
@@ -1501,6 +1532,7 @@
                             }
                         },
                         "disabledDareTypeIds": {
+                            "maxItems": 13,
                             "type": "array",
                             "items": {
                                 "type": "string",
@@ -1522,6 +1554,7 @@
                             }
                         },
                         "blockedOperationalFlags": {
+                            "maxItems": 7,
                             "type": "array",
                             "items": {
                                 "type": "string",
@@ -1551,10 +1584,13 @@
         {
             "type": "object",
             "properties": {
-                "protocol": { "type": "number", "const": 2 },
+                "protocol": { "type": "number", "const": 4 },
                 "type": { "type": "string", "const": "command.setDevicePlayers" },
                 "requestId": {
-                    "anyOf": [{ "type": "string", "minLength": 1 }, { "type": "null" }]
+                    "anyOf": [
+                        { "type": "string", "minLength": 1, "maxLength": 128 },
+                        { "type": "null" }
+                    ]
                 },
                 "revision": { "type": "null" },
                 "payload": {
@@ -1576,10 +1612,13 @@
         {
             "type": "object",
             "properties": {
-                "protocol": { "type": "number", "const": 2 },
+                "protocol": { "type": "number", "const": 4 },
                 "type": { "type": "string", "const": "command.transferHost" },
                 "requestId": {
-                    "anyOf": [{ "type": "string", "minLength": 1 }, { "type": "null" }]
+                    "anyOf": [
+                        { "type": "string", "minLength": 1, "maxLength": 128 },
+                        { "type": "null" }
+                    ]
                 },
                 "revision": {
                     "anyOf": [
@@ -1606,10 +1645,13 @@
         {
             "type": "object",
             "properties": {
-                "protocol": { "type": "number", "const": 2 },
+                "protocol": { "type": "number", "const": 4 },
                 "type": { "type": "string", "const": "command.endSession" },
                 "requestId": {
-                    "anyOf": [{ "type": "string", "minLength": 1 }, { "type": "null" }]
+                    "anyOf": [
+                        { "type": "string", "minLength": 1, "maxLength": 128 },
+                        { "type": "null" }
+                    ]
                 },
                 "revision": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
                 "payload": { "type": "object", "properties": {}, "additionalProperties": false }
@@ -1620,10 +1662,13 @@
         {
             "type": "object",
             "properties": {
-                "protocol": { "type": "number", "const": 2 },
+                "protocol": { "type": "number", "const": 4 },
                 "type": { "type": "string", "const": "command.resetSession" },
                 "requestId": {
-                    "anyOf": [{ "type": "string", "minLength": 1 }, { "type": "null" }]
+                    "anyOf": [
+                        { "type": "string", "minLength": 1, "maxLength": 128 },
+                        { "type": "null" }
+                    ]
                 },
                 "revision": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
                 "payload": { "type": "object", "properties": {}, "additionalProperties": false }
@@ -1634,10 +1679,13 @@
         {
             "type": "object",
             "properties": {
-                "protocol": { "type": "number", "const": 2 },
+                "protocol": { "type": "number", "const": 4 },
                 "type": { "type": "string", "const": "command.closeRoom" },
                 "requestId": {
-                    "anyOf": [{ "type": "string", "minLength": 1 }, { "type": "null" }]
+                    "anyOf": [
+                        { "type": "string", "minLength": 1, "maxLength": 128 },
+                        { "type": "null" }
+                    ]
                 },
                 "revision": {
                     "anyOf": [
@@ -1653,10 +1701,13 @@
         {
             "type": "object",
             "properties": {
-                "protocol": { "type": "number", "const": 2 },
+                "protocol": { "type": "number", "const": 4 },
                 "type": { "type": "string", "const": "command.leaveRoom" },
                 "requestId": {
-                    "anyOf": [{ "type": "string", "minLength": 1 }, { "type": "null" }]
+                    "anyOf": [
+                        { "type": "string", "minLength": 1, "maxLength": 128 },
+                        { "type": "null" }
+                    ]
                 },
                 "revision": {
                     "anyOf": [

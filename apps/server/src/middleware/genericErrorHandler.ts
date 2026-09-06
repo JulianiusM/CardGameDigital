@@ -1,5 +1,6 @@
 import { MESSAGE_KEYS } from "../../../../packages/localization/keys";
 import type { NextFunction, Request, Response } from "express";
+import { handleJsonBodyError } from "./jsonBodyErrorHandler";
 import { APIError, ExpectedError, ValidationError } from "../modules/lib/errors";
 import settings from "../modules/settings";
 import { configuredErrorLogFields, logEvent } from "../modules/structuredLogger";
@@ -15,6 +16,7 @@ export function handleGenericError(
     response: Response,
     _next: NextFunction,
 ): void {
+    if (handleJsonBodyError(error, request, response)) return;
     const status = "status" in error && typeof error.status === "number" ? error.status : 500;
     if (status >= 500) {
         logEvent(

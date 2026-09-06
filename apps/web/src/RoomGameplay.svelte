@@ -67,10 +67,12 @@
         {/if}
     {/if}
 
-    {#if exhausted}
+    {#if session.state !== "ENDED" && !session.currentCard && (session.remainingCardCount === 0 || (exhausted && session.state !== "CHOOSING_CARD_TYPE"))}
         <div class="card-panel exhausted-state game-phase" role="status">
             <h2>{messages.couch.exhausted}</h2>
-            <button class="secondary" on:click={onOpenSettings}>{messages.settings.title}</button>
+            {#if role !== "DISPLAY"}<button class="secondary" on:click={onOpenSettings}
+                    >{messages.settings.title}</button
+                >{/if}
             {#if role === "HOST"}<button
                     class="danger"
                     on:click={() => onCommand("command.endSession")}>{messages.common.end}</button
@@ -90,6 +92,7 @@
         </div>
     {:else if session.state === "CHOOSING_CARD_TYPE"}
         <div class="choice card-panel game-phase">
+            {#if exhausted}<p role="status">{messages.couch.chooseAnotherType}</p>{/if}
             <h2>
                 {actions.has("CHOOSE_CARD_TYPE")
                     ? messages.room.privateChoice

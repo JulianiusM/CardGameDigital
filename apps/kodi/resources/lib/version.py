@@ -1,3 +1,3 @@
 """Independent native-client release version."""
 
-APPLICATION_VERSION = "0.3.4"
+APPLICATION_VERSION = "0.4.0"

@@ -99,3 +99,13 @@ eine Ausnahme entfernt, erbt die Karte wieder normal.
 herunter. **Bereich importieren** prüft die Datei und fragt nach, bevor dieser Bereich
 ersetzt wird. Der Import ändert weder Herstellerkatalog noch Besitz-IDs. Behandle
 exportierte Richtlinien als Konfigurationsdaten und prüfe vor dem Import ihre Herkunft.
+
+## Änderungen an anderer Stelle
+
+Wurde die Richtlinie während der Bearbeitung geändert oder eine Regel entfernt,
+erklärt die Fehlermeldung den Grund. Dein ungespeicherter Entwurf bleibt sichtbar,
+bis du **Richtlinie neu laden** wählst. Dabei ersetzt der aktuelle gespeicherte Stand
+den Entwurf. Prüfe ihn vor einer erneuten Änderung. Ist eine Gruppe nicht verfügbar,
+wähle einen anderen Bereich oder prüfe **Konto** im separaten Tab. Bei Ladeproblemen
+hilft **Erneut laden**. Die erfasste Richtlinie eines laufenden Spiels bleibt dabei
+unverändert.

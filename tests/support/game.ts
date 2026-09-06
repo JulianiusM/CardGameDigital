@@ -1,4 +1,38 @@
 import type { GameProfile, PlayableCard, PlayerBoundaries } from "../../packages/game-core";
+import type {
+    CardRepository,
+    CardLocalizationPolicy,
+} from "../../packages/application/repositories";
+
+export const testCatalogAccess = {
+    async catalogProvenance() {
+        return {
+            catalogId: "test",
+            sequence: 1,
+            catalogVersion: "test-1",
+            contract: "game-card-catalog/v2",
+            artifactDigest: "0".repeat(64),
+        };
+    },
+    async *scan(
+        this: {
+            listActive(localization: CardLocalizationPolicy): Promise<readonly PlayableCard[]>;
+        },
+        localization: CardLocalizationPolicy,
+    ) {
+        yield* await this.listActive(localization);
+    },
+    async groupHistoryWindow(_space: string, groupId: string, before: number) {
+        return { groupId, before, after: null };
+    },
+};
+export async function testCardById(
+    this: { listActive(localization: CardLocalizationPolicy): Promise<readonly PlayableCard[]> },
+    id: string,
+    localization: CardLocalizationPolicy,
+) {
+    return (await this.listActive(localization)).find((card) => card.id === id) ?? null;
+}
 import {
     CARD_TYPES,
     DARE_TYPES,
@@ -60,3 +94,8 @@ export function boundaries(overrides: Partial<PlayerBoundaries> = {}): PlayerBou
         ...overrides,
     };
 }
+
+export type TestCardRepository = CardRepository & {
+    listActive(localization: CardLocalizationPolicy): Promise<readonly PlayableCard[]>;
+    findEligibleCandidates(...args: unknown[]): Promise<readonly PlayableCard[]>;
+};

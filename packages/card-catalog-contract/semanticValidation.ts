@@ -1,3 +1,4 @@
+import type { CardCatalogHeader, CardCatalogCard } from "./schema";
 import { CARD_TYPES } from "../game-core";
 import { cardCatalogSchema, resolveProducerCardMetadata, type CardCatalog } from "./schema";
 
@@ -26,16 +27,22 @@ function addDuplicates(issues: CatalogSemanticIssue[], path: string, values: rea
 }
 
 export function catalogSemanticIssues(catalog: CardCatalog): CatalogSemanticIssue[] {
+    const validator = catalogSemanticValidator(catalog);
+    addDuplicates(
+        validator.issues,
+        "cards",
+        catalog.cards.map((card) => card.id),
+    );
+    catalog.cards.forEach(validator.validateCard);
+    return validator.issues;
+}
+
+export function catalogSemanticValidator(catalog: CardCatalogHeader) {
     const issues: CatalogSemanticIssue[] = [];
     addDuplicates(
         issues,
         "locales",
         catalog.locales.map((locale) => locale.id),
-    );
-    addDuplicates(
-        issues,
-        "cards",
-        catalog.cards.map((card) => card.id),
     );
     addDuplicates(
         issues,
@@ -65,8 +72,14 @@ export function catalogSemanticIssues(catalog: CardCatalog): CatalogSemanticIssu
     );
     const dareTypes = new Map(catalog.taxonomy.dareTypes.map((type) => [type.id, type]));
     validateTaxonomyLocalizations();
+    const taxonomyLocales = new Map(
+        [...catalog.taxonomy.questionCategories, ...catalog.taxonomy.dareTypes].map((taxonomy) => [
+            taxonomy.id,
+            new Set(taxonomy.localizations.map(({ locale }) => locale)),
+        ]),
+    );
 
-    for (const [index, card] of catalog.cards.entries()) {
+    function validateCard(card: CardCatalogCard, index: number) {
         const path = `cards.${index}.id(${card.id})`;
         addDuplicates(
             issues,
@@ -100,7 +113,7 @@ export function catalogSemanticIssues(catalog: CardCatalog): CatalogSemanticIssu
         }
         validateCardTaxonomyLabels(card, path);
     }
-    return issues;
+    return { issues, validateCard };
 
     function validateCardLocales(card: CardCatalog["cards"][number], path: string) {
         for (const localization of card.localizations) {
@@ -132,7 +145,7 @@ export function catalogSemanticIssues(catalog: CardCatalog): CatalogSemanticIssu
         for (const localization of card.localizations) {
             for (const [id, taxonomy] of references) {
                 if (!id) continue;
-                if (!taxonomy?.localizations.some((item) => item.locale === localization.locale)) {
+                if (!taxonomyLocales.get(id as never)?.has(localization.locale)) {
                     issues.push({
                         path,
                         message: `missing ${localization.locale} label for '${id}'`,

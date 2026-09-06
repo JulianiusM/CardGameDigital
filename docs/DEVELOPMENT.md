@@ -74,8 +74,8 @@ non-loopback and production public configurations still require HTTPS.
 - Preserve the envelope, request correlation, optimistic revision, and viewer-specific
   snapshot behavior.
 - Never trust claimed roles/capabilities over the credential-authenticated participant.
-- Update `docs/contracts/websocket-v2.md` and WebSocket integration tests.
-- A breaking change requires a new protocol version; do not silently redefine version 2.
+- Update `docs/contracts/websocket-v4.md` and WebSocket integration tests.
+- A breaking change requires a new protocol version; do not silently redefine the current version.
 
 ## Changing the Kodi client
 

@@ -44,5 +44,14 @@ Ephemeral answers remain only in active runtime recovery state and never enter h
 
 ## Offline behavior
 
+The browser retains its Session reference through uncertain reloads and failed command
+responses. It suspends game controls and reads the authoritative snapshot before play
+continues, without replaying a possibly committed mutation. Definitive Session-not-found
+clears the reference; account/access failures keep it and offer Account separately.
+Recovery takes precedence over the fresh-game setup guard when a Session reference
+survives but setup state is absent. Read attempts are bounded and offer explicit retry.
+This follows the Phase 3 live-catalog rework: same-catalog automatic recovery is supported,
+and a changed catalog can end incompatible games. It adds no save-and-quit behavior.
+
 Vite bundles all required gameplay JavaScript and CSS. The UI uses system fonts
 and CSS visuals and has no runtime CDN or remote-asset dependency.

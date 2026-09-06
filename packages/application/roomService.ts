@@ -1,3 +1,9 @@
+import { SessionCache } from "./sessionCache";
+import { DEFAULT_GAME_RESOURCE_LIMITS, type GameResourceLimits } from "./gameResourceLimits";
+import { CommandQueue } from "./commandQueue";
+import { withSessionCreationCapacity } from "./sessionCreationCapacity";
+import { consentCheckedCards, currentSessionCard } from "./sessionCards";
+import type { CardStream } from "../game-core";
 import { MESSAGE_KEYS } from "../localization/keys";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import {
@@ -38,14 +44,14 @@ import {
 import {
     defaultRoomGameSettings,
     normalizeRoomGameSettings,
-    profileRequiresAdultConfirmation,
     roomSettingsGameProfile,
     type RoomGameSettings,
     type VersionedRoomGameSettings,
 } from "./roomGameSettings";
-import { projectNeverHaveIEverVoting } from "./neverHaveIEverVoting";
+import { projectNeverHaveIEverVoting, projectVoteResult } from "./neverHaveIEverVoting";
 import { projectCardIntensities } from "./cardIntensityProjection";
 import type { CardPolicyService } from "./cardPolicyService";
+import { requiresAdultConfirmation } from "./adultConfirmation";
 import {
     NOOP_ROOM_LIFECYCLE_OBSERVABILITY,
     type RoomCreateIdempotencyOutcome,
@@ -147,7 +153,7 @@ export type RoomSnapshot = {
     hostStatus: import("./realtimeRooms").RoomHostStatus;
     boundaryConfigured: boolean;
     settings: VersionedRoomGameSettings;
-    session: ReturnType<RoomService["project"]> | null;
+    session: Awaited<ReturnType<RoomService["project"]>> | null;
 };
 
 export type RoomConnectionActivation = RoomParticipant & {
@@ -182,8 +188,8 @@ const DEFAULT_ROOM_LIFECYCLE: RoomLifecycleOptions = {
 };
 
 export class RoomService {
-    private readonly sessions = new Map<string, GameSession>();
-    private readonly queues = new Map<string, Promise<unknown>>();
+    private readonly sessions: SessionCache;
+    private readonly queues: CommandQueue;
     private readonly lifecycle: RoomLifecycleOptions;
     constructor(
         private readonly repository: RealtimeRoomRepository,
@@ -196,8 +202,16 @@ export class RoomService {
         private readonly capacity: Readonly<RoomCapacity> = DEFAULT_ROOM_CAPACITY,
         private readonly cardPolicies?: CardPolicyService,
         lifecycle: Partial<RoomLifecycleOptions> = {},
+        private readonly limits: GameResourceLimits = DEFAULT_GAME_RESOURCE_LIMITS,
     ) {
         this.lifecycle = { ...DEFAULT_ROOM_LIFECYCLE, ...lifecycle };
+        this.sessions = new SessionCache(limits);
+        this.queues = new CommandQueue(
+            limits.roomCommandQueuePerGame,
+            limits.roomCommandQueueMaximum,
+            limits.roomCommandQueueTerminalPerGame,
+            limits.roomCommandQueueTerminalMaximum,
+        );
     }
 
     async createRoom(
@@ -298,7 +312,7 @@ export class RoomService {
                 code,
                 dataSpaceId,
                 createdAt,
-                expiresAt: new Date(createdAt + 24 * 60 * 60 * 1000),
+                expiresAt: new Date(createdAt + this.limits.roomLifetimeSeconds * 1000),
                 bootstrapMode,
                 firstHostAssignedAt: role === "HOST" ? createdAt : null,
                 activationDeadline,
@@ -462,7 +476,6 @@ export class RoomService {
             const result = await this.repository.applyLifecycleTransition(lifecycleTransition);
             this.observeLifecycleTransition(lifecycleTransition, result);
             if (!result.participant || result.roomClosed) return null;
-            await this.addConnectedParticipant(result.participant);
             return {
                 ...result.participant,
                 roleChanges: [...result.roleChanges],
@@ -485,10 +498,19 @@ export class RoomService {
             this.repository.listParticipants(participant.roomId),
             this.repository.policyOwner?.(participant.roomId) ?? Promise.resolve(null),
         ]);
-        const [cards, groupHistoryCardIds] = await Promise.all([
-            this.cards.listActive(this.localizationPolicy(settings)),
-            this.repository.groupHistory(participant.roomId, settings.groupId),
-        ]);
+        const group =
+            settings.groupId && policyOwner?.dataSpaceId
+                ? await this.cards.groupHistoryWindow(
+                      policyOwner.dataSpaceId,
+                      settings.groupId,
+                      Date.now(),
+                  )
+                : null;
+        const cards = this.cards.scan(this.localizationPolicy(settings), {
+            sessionId: "",
+            topology: "ROOM",
+            group,
+        });
         return this.cardPolicies.eligibilityPreview({
             cards,
             dataSpaceId: policyOwner?.dataSpaceId,
@@ -497,7 +519,6 @@ export class RoomService {
             sessionPolicy: settings.cardPolicy,
             mode: settings.mode,
             playerCount: Math.max(2, sessionPlayers(participants).length),
-            groupHistoryCardIds,
         });
     }
 
@@ -512,41 +533,44 @@ export class RoomService {
         participant: RoomParticipant,
         reconnectGraceMs = this.lifecycle.reconnectGraceMs,
     ): Promise<RoomLifecycleTransitionResult> {
-        return this.serialize(participant.roomId, async () => {
-            const at = Date.now();
-            const transition = {
-                type: "DISCONNECT",
-                roomId: participant.roomId,
-                participantId: participant.id,
-                at,
-                reconnectDeadline: at + reconnectGraceMs,
-            } as const;
-            const result = await this.repository.applyLifecycleTransition(transition);
-            this.observeLifecycleTransition(transition, result);
-            return result;
-        });
+        return this.serialize(
+            participant.roomId,
+            async () => {
+                const at = Date.now();
+                const transition = {
+                    type: "DISCONNECT",
+                    roomId: participant.roomId,
+                    participantId: participant.id,
+                    at,
+                    reconnectDeadline: at + reconnectGraceMs,
+                } as const;
+                const result = await this.repository.applyLifecycleTransition(transition);
+                this.observeLifecycleTransition(transition, result);
+                return result;
+            },
+            true,
+        );
     }
 
     async expireDisconnectedParticipant(
         roomId: string,
         participantId: string,
     ): Promise<RoomLifecycleTransitionResult> {
-        return this.serialize(roomId, async () => {
-            const before = await this.repository.getParticipant(roomId, participantId);
-            const transition = {
-                type: "EXPIRE",
-                roomId,
-                participantId,
-                at: Date.now(),
-            } as const;
-            const result = await this.repository.applyLifecycleTransition(transition);
-            this.observeLifecycleTransition(transition, result);
-            if (before && result.expiredParticipants.some(({ id }) => id === participantId)) {
-                await this.removeParticipantFromSession(roomId, before);
-            }
-            await this.endRuntimeIfRoomClosed(roomId, result.roomClosed);
-            return result;
-        });
+        return this.serialize(
+            roomId,
+            async () => {
+                const transition = {
+                    type: "EXPIRE",
+                    roomId,
+                    participantId,
+                    at: Date.now(),
+                } as const;
+                const result = await this.repository.applyLifecycleTransition(transition);
+                this.observeLifecycleTransition(transition, result);
+                return result;
+            },
+            true,
+        );
     }
 
     async reconcileDueRooms(limit = 100): Promise<
@@ -559,22 +583,20 @@ export class RoomService {
         const roomIds = await this.repository.findDueRoomIds(at, limit);
         const results = [];
         for (const roomId of roomIds) {
-            const result = await this.serialize(roomId, async () => {
-                const before = await this.repository.listParticipants(roomId);
-                const transition = {
-                    type: "RECONCILE",
-                    roomId,
-                    at,
-                } as const;
-                const reconciled = await this.repository.applyLifecycleTransition(transition);
-                this.observeLifecycleTransition(transition, reconciled);
-                for (const expired of reconciled.expiredParticipants) {
-                    const participant = before.find(({ id }) => id === expired.id);
-                    if (participant) await this.removeParticipantFromSession(roomId, participant);
-                }
-                await this.endRuntimeIfRoomClosed(roomId, reconciled.roomClosed);
-                return reconciled;
-            });
+            const result = await this.serialize(
+                roomId,
+                async () => {
+                    const transition = {
+                        type: "RECONCILE",
+                        roomId,
+                        at,
+                    } as const;
+                    const reconciled = await this.repository.applyLifecycleTransition(transition);
+                    this.observeLifecycleTransition(transition, reconciled);
+                    return reconciled;
+                },
+                true,
+            );
             results.push({ roomId, result });
         }
         await this.repository.deleteExpiredRoomCreateTombstones(at, limit);
@@ -582,6 +604,11 @@ export class RoomService {
     }
 
     async snapshot(roomId: string, viewer?: RoomParticipant): Promise<RoomSnapshot> {
+        return (await this.snapshotProjection(roomId))(viewer);
+    }
+
+    /** Build shared state once per broadcast; viewer-specific controls remain private. */
+    async snapshotProjection(roomId: string): Promise<(viewer?: RoomParticipant) => RoomSnapshot> {
         const [session, participants, boundaries, roomSettings, room] = await Promise.all([
             this.loadSession(roomId),
             this.repository.listParticipants(roomId),
@@ -590,11 +617,11 @@ export class RoomService {
             this.repository.loadRoomState(roomId),
         ]);
         const remainingCardCount = session
-            ? session.remainingEligibleCardCount(
-                  await this.cards.listActive(this.localizationPolicy(session)),
+            ? await session.remainingEligibleCardCount(
+                  this.cards.scan(this.localizationPolicy(session), session.historyContext),
               )
             : 0;
-        return {
+        const common: RoomSnapshot = {
             roomId,
             capacity: this.capacity,
             participants: participants.map(
@@ -609,12 +636,31 @@ export class RoomService {
             ),
             bootstrapMode: room.bootstrapMode,
             hostStatus: derivePersistedRoomHostStatus(room, participants),
-            boundaryConfigured: viewer ? boundaries.has(viewer.id) : false,
+            boundaryConfigured: false,
             settings: roomSettings,
             session: session
-                ? this.project(session, viewer, participants, remainingCardCount)
+                ? await this.project(session, undefined, participants, remainingCardCount)
                 : null,
         };
+        const participantsById = new Map(
+            participants.map((participant) => [participant.id, participant]),
+        );
+        const players = new Map(session?.players.map((player) => [player.id, player]));
+        return (viewer) => ({
+            ...common,
+            boundaryConfigured: viewer ? boundaries.has(viewer.id) : false,
+            session:
+                session && common.session
+                    ? {
+                          ...common.session,
+                          ...this.projectViewer(
+                              session,
+                              viewer ? (participantsById.get(viewer.id) ?? viewer) : undefined,
+                              players,
+                          ),
+                      }
+                    : null,
+        });
     }
 
     execute(
@@ -622,46 +668,27 @@ export class RoomService {
         participant: RoomParticipant,
         command: RoomCommand,
     ): Promise<RoomSnapshot> {
-        return this.serialize(roomId, () => this.executeSerialized(roomId, participant, command));
+        return this.serialize(
+            roomId,
+            () => this.executeSerialized(roomId, participant, command),
+            ["command.endSession", "command.leaveRoom", "command.closeRoom"].includes(command.type),
+        );
     }
 
-    private serialize<T>(roomId: string, action: () => Promise<T>): Promise<T> {
+    private serialize<T>(roomId: string, action: () => Promise<T>, terminal = false): Promise<T> {
         // All participant and Session transitions for one Room share a promise chain.
         // A failure is isolated so it cannot poison later work, while Rooms remain concurrent.
-        const prior = this.queues.get(roomId) ?? Promise.resolve();
-        const next = prior.catch(() => undefined).then(action);
-        const tracked = next
-            .catch(() => undefined)
-            .finally(() => {
-                if (this.queues.get(roomId) === tracked) this.queues.delete(roomId);
-            });
-        this.queues.set(roomId, tracked);
-        return next;
+        return this.queues.run(roomId, action, terminal);
     }
 
-    private async addConnectedParticipant(participant: RoomParticipant): Promise<void> {
-        if (participant.role === "DISPLAY") return;
-        const current = await this.loadSession(participant.roomId);
-        if (!current || current.state === "ENDED") return;
-        const proposed = GameSession.restore(current.toRuntimeState(), this.random);
-        proposed.addPlayers(current.revision, [
-            { id: participant.id, name: participant.displayName },
-            ...participant.devicePlayers,
-        ]);
-        if (proposed.revision === current.revision) return;
-        await this.repository.commitRuntime(
-            participant.roomId,
-            current.revision,
-            proposed.toRuntimeState(),
-        );
-        this.sessions.set(participant.roomId, proposed);
+    pruneSessions(at = Date.now()): number {
+        return this.sessions.prune(at);
     }
 
     private async leaveParticipant(
         roomId: string,
         participant: RoomParticipant,
     ): Promise<RoomLifecycleTransitionResult> {
-        await this.removeParticipantFromSession(roomId, participant);
         const transition = {
             type: "LEAVE",
             roomId,
@@ -670,44 +697,7 @@ export class RoomService {
         } as const;
         const result = await this.repository.applyLifecycleTransition(transition);
         this.observeLifecycleTransition(transition, result);
-        await this.endRuntimeIfRoomClosed(roomId, result.roomClosed);
         return result;
-    }
-
-    private async removeParticipantFromSession(
-        roomId: string,
-        participant: RoomParticipant,
-    ): Promise<void> {
-        const participants = await this.repository.listParticipants(roomId);
-        const current = await this.loadSession(roomId);
-        if (current && participant.role !== "DISPLAY") {
-            const controlledIds = controlledPlayerIds(participant, participants);
-            const proposed = GameSession.restore(current.toRuntimeState(), this.random);
-            proposed.removePlayers(current.revision, controlledIds);
-            if (proposed.revision !== current.revision) {
-                await this.repository.commitRuntime(
-                    roomId,
-                    current.revision,
-                    proposed.toRuntimeState(),
-                );
-                this.sessions.set(roomId, proposed);
-            }
-        }
-    }
-
-    private async endRuntimeIfRoomClosed(roomId: string, roomClosed: boolean): Promise<void> {
-        if (!roomClosed) return;
-        const closingSession = await this.loadSession(roomId);
-        if (closingSession && closingSession.state !== "ENDED") {
-            const ended = GameSession.restore(closingSession.toRuntimeState(), this.random);
-            ended.end(closingSession.revision);
-            await this.repository.commitRuntime(
-                roomId,
-                closingSession.revision,
-                ended.toRuntimeState(),
-            );
-        }
-        this.sessions.delete(roomId);
     }
 
     private async executeSerialized(
@@ -762,20 +752,19 @@ export class RoomService {
     }
 
     private async startSession(roomId: string, participant: RoomParticipant) {
+        return withSessionCreationCapacity(
+            () => this.startSessionWithinCapacity(roomId, participant),
+            this.limits.sessionConcurrentStarts,
+        );
+    }
+
+    private async startSessionWithinCapacity(roomId: string, participant: RoomParticipant) {
         if (await this.loadSession(roomId))
             throw Object.assign(new Error(MESSAGE_KEYS.ROOM_SESSION_ALREADY_STARTED), {
                 code: "INVALID_GAME_STATE",
             });
         const settings = await this.repository.loadSettings(roomId);
         await this.validateRoomSettings(settings);
-        if (
-            profileRequiresAdultConfirmation(settings.profileId) &&
-            !settings.adultContentConfirmed
-        ) {
-            throw Object.assign(new Error(MESSAGE_KEYS.ROOM_ADULT_CONFIRMATION_REQUIRED), {
-                code: "NOT_AUTHORIZED",
-            });
-        }
         const profile = roomSettingsGameProfile(settings);
         const participants = await this.repository.listParticipants(roomId);
         const players = sessionPlayers(participants);
@@ -788,51 +777,61 @@ export class RoomService {
             participants,
             await this.repository.listBoundaries(roomId),
         );
-        const groupHistoryCardIds = await this.repository.selectGroup(roomId, settings.groupId);
-        const cards = await this.cards.listActive({
-            locale: settings.cardLocale,
-            missingTranslation: settings.cardFallbackEnabled
-                ? "FALLBACK"
-                : this.cardTranslationPolicy.missingTranslation,
-            fallbackLocales: settings.cardFallbackEnabled
-                ? settings.cardFallbackLocales
-                : this.cardTranslationPolicy.fallbackLocales,
-        });
+        await this.repository.selectGroup(roomId, settings.groupId);
+        const catalog = await this.cards.catalogProvenance();
         const policyOwner = await this.repository.policyOwner?.(roomId);
-        const compiled = this.cardPolicies
-            ? await this.cardPolicies.compileSessionCards({
-                  cards,
-                  dataSpaceId: policyOwner?.dataSpaceId,
-                  groupId: policyOwner?.groupId,
-                  profile,
-                  sessionPolicy: settings.cardPolicy,
-              })
-            : null;
+        const policySnapshot =
+            (await this.cardPolicies?.captureSessionPolicy({
+                dataSpaceId: policyOwner?.dataSpaceId,
+                groupId: settings.groupId,
+            })) ?? null;
+        const sessionId = randomUUID();
+        const startedAt = Date.now();
+        const group =
+            settings.groupId && policyOwner?.dataSpaceId
+                ? await this.cards.groupHistoryWindow(
+                      policyOwner.dataSpaceId,
+                      settings.groupId,
+                      startedAt,
+                  )
+                : null;
         const proposed = new GameSession(
             {
-                id: randomUUID(),
-                startedAt: Date.now(),
+                id: sessionId,
+                startedAt,
                 mode: settings.mode,
                 profile,
                 players,
                 boundariesByPlayer,
-                groupHistoryCardIds,
                 cardLocale: settings.cardLocale,
                 cardFallbackEnabled: settings.cardFallbackEnabled,
                 cardFallbackLocales: settings.cardFallbackLocales,
                 neverHaveIEverRevealMode: settings.neverHaveIEverRevealMode,
-                compiledCardPolicy: compiled?.snapshot,
+                catalog,
+                policySnapshot,
+                historyContext: { sessionId, topology: "ROOM", group },
                 sessionCardPolicy: settings.cardPolicy,
             },
             this.random,
         );
-        if (!proposed.hasEligibleCards(cards)) {
+        if (
+            !(await proposed.hasEligibleCards(
+                consentCheckedCards(
+                    proposed,
+                    this.cards.scan(this.localizationPolicy(proposed), proposed.historyContext),
+                    settings.adultContentConfirmed,
+                ),
+            ))
+        ) {
             throw Object.assign(new Error(MESSAGE_KEYS.GAME_CARD_POOL_EXHAUSTED), {
                 code: "CARD_POOL_EXHAUSTED",
             });
         }
         // Publish to the runtime cache only after the database transaction commits.
-        await this.repository.commitRuntime(roomId, null, proposed.toRuntimeState());
+        await this.repository.commitRuntime(roomId, null, proposed.toRuntimeState(), {
+            actor: participant,
+            settingsRevision: settings.revision,
+        });
         this.sessions.set(roomId, proposed);
         return this.snapshot(roomId, participant);
     }
@@ -842,7 +841,11 @@ export class RoomService {
         command: Extract<RoomCommand, { type: "command.setBoundaries" }>,
         participant: RoomParticipant,
     ) {
-        if (await this.loadSession(roomId)) {
+        const current = await this.loadSession(roomId);
+        if (
+            current &&
+            (current.state === "ENDED" || current.players.some(({ id }) => id === participant.id))
+        ) {
             throw Object.assign(new Error(MESSAGE_KEYS.ROOM_BOUNDARIES_LOCKED), {
                 code: "INVALID_GAME_STATE",
             });
@@ -856,7 +859,24 @@ export class RoomService {
                 command.payload.blockedOperationalFlags as OperationalFlag[],
             ),
         };
-        await this.repository.saveBoundaries(participant.id, boundaries);
+        if (current) {
+            const proposed = current.fork(this.random);
+            const players = sessionPlayers([participant]);
+            proposed.addPlayers(
+                current.revision,
+                players,
+                new Map(players.map(({ id }) => [id, boundaries])),
+            );
+            await this.repository.commitRuntime(
+                roomId,
+                current.revision,
+                proposed.toRuntimeState(),
+                { enrollment: { participantId: participant.id, boundaries }, actor: participant },
+            );
+            this.sessions.set(roomId, proposed);
+        } else {
+            await this.repository.saveBoundaries(participant.id, boundaries);
+        }
         return this.snapshot(roomId, participant);
     }
 
@@ -937,22 +957,12 @@ export class RoomService {
         command: Extract<RoomCommand, { type: "command.closeRoom" }>,
         participant: RoomParticipant,
     ) {
-        const current = await this.loadSession(roomId);
-        if (current && current.state !== "ENDED") {
-            const proposed = GameSession.restore(current.toRuntimeState(), this.random);
-            proposed.end(command.revision ?? current.revision);
-            await this.repository.commitRuntime(
-                roomId,
-                current.revision,
-                proposed.toRuntimeState(),
-            );
-            this.sessions.set(roomId, proposed);
-        }
         const transition = {
             type: "CLOSE",
             roomId,
             participantId: participant.id,
             at: Date.now(),
+            expectedSessionRevision: command.revision,
         } as const;
         const result = await this.repository.applyLifecycleTransition(transition);
         this.observeLifecycleTransition(transition, result);
@@ -973,6 +983,14 @@ export class RoomService {
             });
         if (command.type === "command.endSession" && current.state === "ENDED")
             return this.snapshot(roomId, participant);
+        if (
+            command.type !== "command.endSession" &&
+            !current.players.some(({ id }) => id === participant.id)
+        ) {
+            throw Object.assign(new Error(MESSAGE_KEYS.ROOM_ENROLLMENT_REQUIRED), {
+                code: "NOT_AUTHORIZED",
+            });
+        }
         const roomParticipants = await this.repository.listParticipants(roomId);
         const controllablePlayerIds = controlledPlayerIds(participant, roomParticipants);
         if (
@@ -990,34 +1008,36 @@ export class RoomService {
             throw Object.assign(new Error(MESSAGE_KEYS.ROOM_ACTIVE_PLAYER_OR_HOST_ONLY), {
                 code: "NOT_ACTIVE_PLAYER",
             });
-        const proposed = GameSession.restore(current.toRuntimeState(), this.random);
-        const cards =
-            command.type === "command.startTurn" ||
-            command.type === "command.chooseCardType" ||
-            command.type === "command.skipCard" ||
-            command.type === "command.vetoCard"
-                ? await this.cards.listActive({
-                      ...this.localizationPolicy(current),
-                  })
-                : [];
-        this.applySessionCommand(command, proposed, cards, participant, controllablePlayerIds);
+        const proposed = current.fork(this.random);
+        const cards = this.cards.scan(this.localizationPolicy(proposed), proposed.historyContext);
+        await this.applySessionCommand(
+            command,
+            proposed,
+            cards,
+            participant,
+            controllablePlayerIds,
+        );
         // The proposed aggregate is invisible to readers and WebSocket clients until commit.
-        await this.repository.commitRuntime(roomId, current.revision, proposed.toRuntimeState());
+        await this.repository.commitRuntime(roomId, current.revision, proposed.toRuntimeState(), {
+            actor: participant,
+        });
         this.sessions.set(roomId, proposed);
         return this.snapshot(roomId, participant);
     }
-    private applySessionCommand(
+    private async applySessionCommand(
         command: SessionCommand,
         proposed: GameSession,
-        cards: readonly PlayableCard[],
+        cards: CardStream,
         participant: RoomParticipant,
         controllablePlayerIds: ReadonlySet<string>,
     ) {
-        if (command.type === "command.startTurn") proposed.startTurn(command.revision, cards);
+        if (command.type === "command.startTurn") await proposed.startTurn(command.revision, cards);
         else if (command.type === "command.chooseCardType")
-            proposed.chooseCardType(command.revision, command.payload.cardType, cards);
-        else if (command.type === "command.skipCard") proposed.skipCard(command.revision, cards);
-        else if (command.type === "command.vetoCard") proposed.vetoCard(command.revision, cards);
+            await proposed.chooseCardType(command.revision, command.payload.cardType, cards);
+        else if (command.type === "command.skipCard")
+            await proposed.skipCard(command.revision, cards);
+        else if (command.type === "command.vetoCard")
+            await proposed.vetoCard(command.revision, cards);
         else if (command.type === "command.advanceSession") proposed.advance(command.revision);
         else if (command.type === "command.submitVote") {
             const voterId = command.payload.playerId ?? participant.id;
@@ -1032,6 +1052,11 @@ export class RoomService {
 
     private async loadSession(roomId: string): Promise<GameSession | null> {
         const cached = this.sessions.get(roomId);
+        if (cached) {
+            const persisted = await this.repository.runtimeRevision(roomId);
+            if (persisted?.id === cached.id && persisted.revision === cached.revision)
+                return cached;
+        }
         const runtime = await this.repository.loadRuntime(roomId);
         if (!runtime) {
             this.sessions.delete(roomId);
@@ -1206,6 +1231,7 @@ export class RoomService {
         transition: import("./realtimeRooms").RoomLifecycleTransition,
         result: RoomLifecycleTransitionResult,
     ): void {
+        if (result.roomClosed) this.sessions.delete(transition.roomId);
         this.lifecycle.observability.lifecycleTransition({
             roomId: transition.roomId,
             participantId: "participantId" in transition ? transition.participantId : null,
@@ -1217,20 +1243,13 @@ export class RoomService {
     private hashCredential(credential: string): string {
         return createHash("sha256").update(credential).digest("hex");
     }
-    project(
+    async project(
         session: GameSession,
         viewer?: RoomParticipant,
         participants: readonly RoomParticipant[] = [],
         remainingCardCount = 0,
     ) {
-        const controllablePlayerIds = viewer
-            ? controlledPlayerIds(viewer, participants)
-            : new Set<string>();
-        const availableActions = this.availableSessionActions(
-            session,
-            controllablePlayerIds,
-            viewer,
-        );
+        const voting = projectNeverHaveIEverVoting(session);
         return {
             id: session.id,
             startedAt: session.startedAt,
@@ -1240,19 +1259,37 @@ export class RoomService {
             roundNumber: session.roundNumber,
             activePlayer: session.activePlayer,
             players: session.players,
-            currentCard: projectCurrentCard(session.currentCard),
-            cardsShown: session.sessionHistory.length,
+            currentCard: projectCurrentCard(
+                await currentSessionCard(session, this.cards, this.localizationPolicy(session)),
+            ),
+            cardsShown: session.cardsShown,
             remainingCardCount,
-            voteResult: session.voteResult(),
-            neverHaveIEverVoting: projectNeverHaveIEverVoting(session),
+            voteResult: projectVoteResult(voting),
+            neverHaveIEverVoting: voting,
+            ...this.projectViewer(
+                session,
+                viewer,
+                new Map(session.players.map((player) => [player.id, player])),
+            ),
+        };
+    }
+
+    private projectViewer(
+        session: GameSession,
+        viewer: RoomParticipant | undefined,
+        players: ReadonlyMap<string, GameSession["players"][number]>,
+    ) {
+        const controlled = viewer ? controlledPlayerIds(viewer, []) : new Set<string>();
+        return {
             hasVoted: viewer ? session.votes.has(viewer.id) : false,
-            controllablePlayers: session.players
-                .filter(({ id }) => controllablePlayerIds.has(id))
-                .map((player) => ({ ...player, hasVoted: session.votes.has(player.id) })),
+            controllablePlayers: [...controlled].flatMap((id) => {
+                const player = players.get(id);
+                return player ? [{ ...player, hasVoted: session.votes.has(id) }] : [];
+            }),
             viewer: viewer
                 ? { participantId: viewer.id, role: viewer.role, displayName: viewer.displayName }
                 : null,
-            availableActions,
+            availableActions: this.availableSessionActions(session, controlled, viewer),
         };
     }
 
@@ -1262,6 +1299,9 @@ export class RoomService {
         viewer: RoomParticipant | undefined,
     ): string[] {
         if (!viewer || viewer.role === "DISPLAY") return [];
+        if (!session.players.some(({ id }) => id === viewer.id)) {
+            return viewer.role === "HOST" ? ["END_SESSION"] : [];
+        }
         const cardCanBeSkipped =
             session.state === "SHOWING_CARD" || session.state === "COLLECTING_ANSWERS";
         const sessionCanAdvance =

@@ -11,10 +11,8 @@ import {
     SESSION_STATES,
     SequenceRandomSource,
     StaleSessionRevisionError,
-    compactCompiledCardPolicyEntry,
 } from "../../packages/game-core";
 import { boundaries, card, profile } from "../support/game";
-
 const players = [
     { id: "a", name: "Anna" },
     { id: "b", name: "Ben" },
@@ -27,17 +25,52 @@ const repeatDare = card({
     dareTypeId: DARE_TYPES.SILLY,
     repeatableInSession: true,
 });
-
 describe("shared GameSession state machine", () => {
-    it("runs Classic turns, records skipped revealed cards, rotates players and completes rounds", () => {
+    it("owns and discards boundaries when players leave or the Session ends", () => {
+        const supplied = new Map([
+            ["a", boundaries({ disabledDareTypeIds: new Set([DARE_TYPES.NUDITY]) })],
+            [
+                "b",
+                boundaries({
+                    disabledQuestionCategoryIds: new Set([QUESTION_CATEGORIES.SEX_EXPERIENCE]),
+                }),
+            ],
+            ["outside-roster", boundaries()],
+        ]);
+        const session = new GameSession(
+            {
+                id: "private-lifecycle",
+                mode: GAME_MODES.CLASSIC,
+                players,
+                profile: profile(),
+                cardLocale: "en-GB",
+                boundariesByPlayer: supplied,
+            },
+            new SequenceRandomSource([0]),
+        );
+        expect(session.toRuntimeState().boundariesByPlayer.map(([id]) => id)).toEqual(["a", "b"]);
+        session.removePlayers(0, new Set(["b"]));
+        const active = session.toRuntimeState();
+        expect(active.boundariesByPlayer.map(([id]) => id)).toEqual(["a"]);
+        session.end(1);
+        expect(session.toRuntimeState().boundariesByPlayer).toEqual([]);
+        expect(supplied.size).toBe(3);
+        expect(
+            GameSession.restore(
+                { ...active, state: SESSION_STATES.ENDED },
+                new SequenceRandomSource([0]),
+            ).toRuntimeState().boundariesByPlayer,
+        ).toEqual([]);
+    });
+    it("runs Classic turns, records skipped revealed cards, rotates players and completes rounds", async () => {
         const session = new GameSession(
             { id: "s", mode: GAME_MODES.CLASSIC, players, profile: profile(), cardLocale: "en-GB" },
             new SequenceRandomSource([0]),
         );
         expect(session.activePlayer?.id).toBe("a");
-        session.chooseCardType(0, CARD_TYPES.QUESTION, [repeatQuestion]);
+        await session.chooseCardType(0, CARD_TYPES.QUESTION, [repeatQuestion]);
         expect(session.state).toBe(SESSION_STATES.SHOWING_CARD);
-        session.skipCard(1, [card({ id: "replacement" as never })]);
+        await session.skipCard(1, [card({ id: "replacement" as never })]);
         expect(session.sessionHistory[0]).toMatchObject({
             skipped: true,
             completed: false,
@@ -50,13 +83,12 @@ describe("shared GameSession state machine", () => {
             vetoed: false,
         });
         expect(session.activePlayer?.id).toBe("b");
-        session.chooseCardType(3, CARD_TYPES.DARE, [repeatDare]);
+        await session.chooseCardType(3, CARD_TYPES.DARE, [repeatDare]);
         session.advance(4);
         expect(session.roundNumber).toBe(2);
         expect(session.activePlayer?.id).toBe("a");
     });
-
-    it("projects the distinct authoritative Card pool remaining after history", () => {
+    it("projects the distinct authoritative Card pool remaining after history", async () => {
         const session = new GameSession(
             {
                 id: "pool",
@@ -76,91 +108,75 @@ describe("shared GameSession state machine", () => {
             dareTypeId: DARE_TYPES.SILLY,
         });
         const cards = [first, second, dare];
-
-        expect(session.remainingEligibleCardCount(cards)).toBe(3);
-        session.chooseCardType(0, CARD_TYPES.QUESTION, cards);
-        expect(session.remainingEligibleCardCount(cards)).toBe(2);
+        expect(await session.remainingEligibleCardCount(cards)).toBe(3);
+        await session.chooseCardType(0, CARD_TYPES.QUESTION, cards);
+        expect(await session.remainingEligibleCardCount(cards)).toBe(2);
     });
-
-    it("applies compact compiled policy before Group-history eligibility", () => {
-        const seen = card({ id: "compiled-history" as never });
+    it("applies captured sparse policy before Group history", async () => {
+        const seen = card({ id: "captured-history" as never });
         const session = new GameSession(
             {
-                id: "compiled-policy",
+                id: "s",
                 mode: GAME_MODES.CLASSIC,
                 players,
                 profile: profile(),
                 cardLocale: "en-GB",
                 groupHistoryCardIds: new Set([seen.id]),
-                compiledCardPolicy: {
-                    catalog: {
-                        catalogId: "test",
-                        sequence: 1,
-                        catalogVersion: "test-1",
-                        contract: "game-card-catalog/v2",
-                        artifactDigest: "0".repeat(64),
+                policySnapshot: {
+                    dataSpace: {
+                        scopeDefault: { alwaysEligible: "ENABLE" },
+                        conditionalRules: [],
+                        exactCards: [],
                     },
-                    policyRevisions: { dataSpace: 1, group: null },
-                    cards: [
-                        compactCompiledCardPolicyEntry({
-                            ...seen,
-                            policyAvailable: true,
-                            alwaysEligible: true,
-                        }),
-                    ],
+                    group: null,
                 },
             },
             new SequenceRandomSource([0]),
         );
-
-        expect(session.remainingEligibleCardCount([seen])).toBe(1);
-        expect(
-            GameSession.restore(session.toRuntimeState(), new SequenceRandomSource([0])),
-        ).toBeInstanceOf(GameSession);
+        expect(await session.remainingEligibleCardCount([seen])).toBe(1);
+        expect((await session.chooseCardType(0, CARD_TYPES.QUESTION, [seen])).id).toBe(seen.id);
     });
-
-    it("rejects stale revisions and commands invalid for the current mode/state", () => {
+    it("rejects stale revisions and commands invalid for the current mode/state", async () => {
         const session = new GameSession(
             { id: "s", mode: GAME_MODES.CLASSIC, players, profile: profile(), cardLocale: "en-GB" },
             new SequenceRandomSource([0]),
         );
-        expect(() => session.chooseCardType(1, CARD_TYPES.QUESTION, [repeatQuestion])).toThrow(
-            StaleSessionRevisionError,
-        );
+        await expect(
+            session.chooseCardType(1, CARD_TYPES.QUESTION, [repeatQuestion]),
+        ).rejects.toThrow(StaleSessionRevisionError);
         expect(() => session.advance(0)).toThrow(InvalidGameStateError);
         expect(session.revision).toBe(0);
     });
-
-    it("does not mutate authoritative history when a skip replacement is exhausted", () => {
+    it("commits refusal and offers another type when the replacement pool is exhausted", async () => {
         const session = new GameSession(
             { id: "s", mode: GAME_MODES.CLASSIC, players, profile: profile(), cardLocale: "en-GB" },
             new SequenceRandomSource([0]),
         );
-        session.chooseCardType(0, CARD_TYPES.QUESTION, [card({ id: "one-off" as never })]);
-        expect(() => session.skipCard(1, [session.currentCard!])).toThrowError(
-            /game.cardPoolExhausted/,
-        );
-        expect(session.revision).toBe(1);
+        await session.chooseCardType(0, CARD_TYPES.QUESTION, [card({ id: "one-off" as never })]);
+        expect(await session.skipCard(1, [session.currentCard!, repeatDare])).toBeNull();
+        expect(session.revision).toBe(2);
+        expect(session.currentCard).toBeNull();
+        expect(session.state).toBe(SESSION_STATES.CHOOSING_CARD_TYPE);
         expect(session.sessionHistory).toHaveLength(1);
-        expect(session.sessionHistory[0].skipped).toBe(false);
+        expect(session.sessionHistory[0].skipped).toBe(true);
+        expect((await session.chooseCardType(2, CARD_TYPES.DARE, [repeatDare])).id).toBe(
+            repeatDare.id,
+        );
     });
-
-    it("records private veto separately from an ordinary skip", () => {
+    it("records private veto separately from an ordinary skip", async () => {
         const session = new GameSession(
             { id: "s", mode: GAME_MODES.CLASSIC, players, profile: profile(), cardLocale: "en-GB" },
             new SequenceRandomSource([0]),
         );
-        session.chooseCardType(0, CARD_TYPES.QUESTION, [repeatQuestion]);
-        session.vetoCard(1, [card({ id: "veto-replacement" as never })]);
-
+        await session.chooseCardType(0, CARD_TYPES.QUESTION, [repeatQuestion]);
+        await session.vetoCard(1, [card({ id: "veto-replacement" as never })]);
         expect(session.sessionHistory[0]).toMatchObject({
             skipped: false,
             completed: false,
             vetoed: true,
         });
     });
-
-    it("runs Never Have I Ever with only yes/no questions and synchronized aggregate voting", () => {
+    it("runs Never Have I Ever with only yes/no questions and synchronized aggregate voting", async () => {
         const session = new GameSession(
             {
                 id: "s",
@@ -172,7 +188,7 @@ describe("shared GameSession state machine", () => {
             new SequenceRandomSource([0]),
         );
         const yesNo = card({ id: "yes" as never, yesNoAnswerPossible: true });
-        session.startTurn(0, [repeatQuestion, yesNo]);
+        await session.startTurn(0, [repeatQuestion, yesNo]);
         expect(session.currentCard?.id).toBe(yesNo.id);
         expect(session.activePlayer).toBeNull();
         expect(session.neverHaveIEverRevealMode).toBe(
@@ -185,8 +201,7 @@ describe("shared GameSession state machine", () => {
         session.advance(3);
         expect(session.state).toBe(SESSION_STATES.WAITING_FOR_PLAYER);
     });
-
-    it("freezes the Never Have I Ever voter set for the current card", () => {
+    it("freezes the Never Have I Ever voter set for the current card", async () => {
         const session = new GameSession(
             {
                 id: "fixed-voters",
@@ -198,17 +213,15 @@ describe("shared GameSession state machine", () => {
             },
             new SequenceRandomSource([0]),
         );
-        session.startTurn(0, [
+        await session.startTurn(0, [
             card({ id: "fixed-voter-card" as never, yesNoAnswerPossible: true }),
         ]);
-        session.addPlayers(1, [{ id: "late", name: "Late" }]);
-
+        session.addPlayers(1, [{ id: "late", name: "Late" }], new Map([["late", boundaries()]]));
         expect(session.votingPlayers.map(({ id }) => id)).toEqual(["a", "b"]);
         expect(() => session.submitVote(2, "late", "YES")).toThrow(/game.unknownPlayer/);
         session.submitVote(2, "a", "YES");
         session.submitVote(3, "b", "NO");
         expect(session.state).toBe(SESSION_STATES.SHOWING_RESULTS);
-
         const restored = GameSession.restore(
             JSON.parse(JSON.stringify(session.toRuntimeState())),
             new SequenceRandomSource([0]),
@@ -218,12 +231,11 @@ describe("shared GameSession state machine", () => {
             NEVER_HAVE_I_EVER_REVEAL_MODES.NAMED_ANSWERS,
         );
     });
-
     it("restores a Session below the creation minimum and can still end it", () => {
         const session = new GameSession(
             {
                 id: "shrinking-session",
-                startedAt: 123_456,
+                startedAt: 123456,
                 mode: GAME_MODES.CLASSIC,
                 players,
                 profile: profile(),
@@ -232,17 +244,15 @@ describe("shared GameSession state machine", () => {
             new SequenceRandomSource([0]),
         );
         session.removePlayers(0, new Set(["b"]));
-
         const restored = GameSession.restore(
             session.toRuntimeState(),
             new SequenceRandomSource([0]),
         );
         expect(restored.players.map(({ id }) => id)).toEqual(["a"]);
-        expect(restored.startedAt).toBe(123_456);
+        expect(restored.startedAt).toBe(123456);
         expect(() => restored.end(1)).not.toThrow();
         expect(restored.state).toBe(SESSION_STATES.ENDED);
     });
-
     it("restores an ended Session after its final player has left", () => {
         const session = new GameSession(
             {
@@ -255,18 +265,15 @@ describe("shared GameSession state machine", () => {
             new SequenceRandomSource([0]),
         );
         session.removePlayers(0, new Set(players.map(({ id }) => id)));
-
         const restored = GameSession.restore(
             JSON.parse(JSON.stringify(session.toRuntimeState())),
             new SequenceRandomSource([0]),
         );
-
         expect(restored.players).toEqual([]);
         expect(restored.state).toBe(SESSION_STATES.ENDED);
         expect(restored.activePlayer).toBeNull();
     });
-
-    it("adds a newly connected player once without resetting active play", () => {
+    it("adds a newly connected player once without resetting active play", async () => {
         const session = new GameSession(
             {
                 id: "join",
@@ -277,17 +284,15 @@ describe("shared GameSession state machine", () => {
             },
             new SequenceRandomSource([0]),
         );
-        session.chooseCardType(0, CARD_TYPES.QUESTION, [repeatQuestion]);
-        session.addPlayers(1, [{ id: "c", name: "Carla" }]);
-        session.addPlayers(2, [{ id: "c", name: "Carla" }]);
-
+        await session.chooseCardType(0, CARD_TYPES.QUESTION, [repeatQuestion]);
+        session.addPlayers(1, [{ id: "c", name: "Carla" }], new Map([["c", boundaries()]]));
+        session.addPlayers(2, [{ id: "c", name: "Carla" }], new Map([["c", boundaries()]]));
         expect(session.players.map(({ id }) => id)).toEqual(["a", "b", "c"]);
         expect(session.activePlayer?.id).toBe("a");
         expect(session.currentCard?.id).toBe(repeatQuestion.id);
         expect(session.revision).toBe(2);
     });
-
-    it("abandons an active player's Card when that player leaves", () => {
+    it("abandons an active player's Card when that player leaves", async () => {
         const session = new GameSession(
             {
                 id: "active-player-left",
@@ -298,17 +303,14 @@ describe("shared GameSession state machine", () => {
             },
             new SequenceRandomSource([0]),
         );
-        session.chooseCardType(0, CARD_TYPES.QUESTION, [repeatQuestion]);
-
+        await session.chooseCardType(0, CARD_TYPES.QUESTION, [repeatQuestion]);
         session.removePlayers(1, new Set(["a"]));
-
         expect(session.activePlayer?.id).toBe("b");
         expect(session.currentCard).toBeNull();
         expect(session.state).toBe(SESSION_STATES.CHOOSING_CARD_TYPE);
         expect(session.revision).toBe(2);
     });
-
-    it("keeps question and dare profile configuration independent", () => {
+    it("keeps question and dare profile configuration independent", async () => {
         const restrictive = profile({
             enabledQuestionCategoryIds: new Set([QUESTION_CATEGORIES.EVERYDAY]),
             enabledDareTypeIds: new Set(),
@@ -323,13 +325,12 @@ describe("shared GameSession state machine", () => {
             },
             new SequenceRandomSource([0]),
         );
-        expect(() => session.chooseCardType(0, CARD_TYPES.DARE, [repeatDare])).toThrowError(
+        await expect(session.chooseCardType(0, CARD_TYPES.DARE, [repeatDare])).rejects.toThrowError(
             /game.cardPoolExhausted/,
         );
         expect(session.revision).toBe(0);
     });
-
-    it("applies every player's private boundaries to Let's Talk conversation cards", () => {
+    it("applies every player's private boundaries to Let's Talk conversation cards", async () => {
         const session = new GameSession(
             {
                 id: "lets-talk-boundaries",
@@ -362,11 +363,9 @@ describe("shared GameSession state machine", () => {
             cardType: CARD_TYPES.CONVERSATION_META,
             questionCategoryId: null,
         });
-
-        session.startTurn(0, [question, blockedConversation, allowedConversation]);
+        await session.startTurn(0, [question, blockedConversation, allowedConversation]);
         session.advance(1);
-        session.startTurn(2, [question, blockedConversation, allowedConversation]);
-
+        await session.startTurn(2, [question, blockedConversation, allowedConversation]);
         expect(session.currentCard?.id).toBe(allowedConversation.id);
     });
 });

@@ -15,6 +15,7 @@ import { CardPolicyScopeDefaultEntity } from "../../../../../packages/persistenc
 import { CouchCardAppearanceEntity } from "../../../../../packages/persistence/entities/game/CouchCardAppearanceEntity";
 import { CouchGameSessionEntity } from "../../../../../packages/persistence/entities/game/CouchGameSessionEntity";
 import { DataSpaceGameSettingsEntity } from "../../../../../packages/persistence/entities/game/DataSpaceGameSettingsEntity";
+import { GameCapacityEntity } from "../../../../../packages/persistence/entities/game/GameCapacityEntity";
 import { GameSessionEntity } from "../../../../../packages/persistence/entities/game/GameSessionEntity";
 import { GroupEntity } from "../../../../../packages/persistence/entities/game/GroupEntity";
 import { RoomCreateIdempotencyEntity } from "../../../../../packages/persistence/entities/game/RoomCreateIdempotencyEntity";
@@ -56,6 +57,11 @@ import { RebaseGroupHistoryOnCatalog1787355000000 } from "../../../migrations/17
 import { CompactSessionCardPolicy1787356000000 } from "../../../migrations/1787356000000-CompactSessionCardPolicy";
 import { ExternalizeSessionImmutableState1787357000000 } from "../../../migrations/1787357000000-ExternalizeSessionImmutableState";
 import { AddLocalDiscoveryAndDisplayBootstrap1787358000000 } from "../../../migrations/1787358000000-AddLocalDiscoveryAndDisplayBootstrap";
+import { ScrubExpiredPrivateBoundaries1787359000000 } from "../../../migrations/1787359000000-ScrubExpiredPrivateBoundaries";
+import { AddCardPolicyScopeRevisions1787360000000 } from "../../../migrations/1787360000000-AddCardPolicyScopeRevisions";
+import { FreezeSessionCatalogs1787361000000 } from "../../../migrations/1787361000000-FreezeSessionCatalogs";
+import { UseLiveSessionCatalog1787362000000 } from "../../../migrations/1787362000000-UseLiveSessionCatalog";
+import { BoundGameRetention1787363000000 } from "../../../migrations/1787363000000-BoundGameRetention";
 
 export const entities = [
     CardCatalogVersionEntity,
@@ -74,6 +80,7 @@ export const entities = [
     CouchCardAppearanceEntity,
     CouchGameSessionEntity,
     DataSpaceGameSettingsEntity,
+    GameCapacityEntity,
     GameSessionEntity,
     GroupEntity,
     RoomCreateIdempotencyEntity,
@@ -118,6 +125,11 @@ export const migrations = [
     CompactSessionCardPolicy1787356000000,
     ExternalizeSessionImmutableState1787357000000,
     AddLocalDiscoveryAndDisplayBootstrap1787358000000,
+    ScrubExpiredPrivateBoundaries1787359000000,
+    AddCardPolicyScopeRevisions1787360000000,
+    FreezeSessionCatalogs1787361000000,
+    UseLiveSessionCatalog1787362000000,
+    BoundGameRetention1787363000000,
 ];
 
 export const subscribers = [];

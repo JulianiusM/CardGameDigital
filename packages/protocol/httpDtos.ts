@@ -136,6 +136,7 @@ export type CouchSessionSnapshot = {
     } | null;
     cardsShown: number;
     remainingCardCount: number;
+    /** Zero totals until reveal; never contains per-player answers. */
     voteResult: { yes: number; no: number; total: number };
     votedPlayerIds: string[];
     neverHaveIEverVoting: NeverHaveIEverVotingView | null;

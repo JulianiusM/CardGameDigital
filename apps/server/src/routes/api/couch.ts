@@ -1,17 +1,8 @@
 import { MESSAGE_KEYS } from "../../../../../packages/localization/keys";
 import express, { NextFunction, Request, Response } from "express";
 import { z } from "zod";
-import { CouchSessionService } from "../../../../../packages/application/couchSessionService";
-import { CryptoRandomSource } from "../../../../../packages/application/cryptoRandomSource";
+import { getCouchService } from "../../modules/couchSessions";
 import { CARD_TYPES, GAME_MODES, type DataSpaceId } from "../../../../../packages/game-core";
-import {
-    TypeOrmCardPolicyRepository,
-    TypeOrmCardRepository,
-    TypeOrmCouchSessionRepository,
-} from "../../../../../packages/persistence";
-import { getAppDataSource } from "../../modules/database/dataSource";
-import settings from "../../modules/settings";
-import { CardEntity } from "../../../../../packages/persistence/entities/card/CardEntity";
 import { asyncHandler } from "../../modules/lib/asyncHandler";
 import {
     detectLocale,
@@ -22,19 +13,9 @@ import { requireCurrentDataSpace } from "./dataSpaceAccess";
 import { effectiveGameSettingsSchema } from "../../../../../packages/protocol";
 import { logApiValidationError } from "../../middleware/validationErrorHandler";
 import { sessionCardPolicySchema } from "../../../../../packages/protocol/cardPolicy";
-import { CardPolicyService } from "../../../../../packages/application/cardPolicyService";
 
 const router = express.Router();
-const service = new CouchSessionService(
-    new TypeOrmCardRepository(getAppDataSource().getRepository(CardEntity)),
-    new CryptoRandomSource(),
-    {
-        missingTranslation: settings.value.cardMissingTranslation,
-        fallbackLocales: [settings.value.cardFallbackLocale],
-    },
-    new TypeOrmCouchSessionRepository(getAppDataSource()),
-    new CardPolicyService(new TypeOrmCardPolicyRepository(getAppDataSource())),
-);
+const service = getCouchService();
 const idSchema = z.uuid();
 const revisionSchema = z.number().int().nonnegative();
 const createSchema = z

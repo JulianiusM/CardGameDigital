@@ -4,11 +4,16 @@
 
 Jedes Spielergerät kann Fragekategorien, Pflichtarten und besondere Inhaltsmerkmale
 ausschließen. Der Server verbindet diese Grenzen mit Profil und Intensität, bevor eine
-Karte ausgewählt wird. Andere sehen nur, **dass** die eigene Konfiguration gespeichert
-wurde – nicht welche Grenze von wem stammt.
+Karte ausgewählt wird. Nur dein Gerät zeigt, ob deine Entscheidungen gespeichert sind.
+Andere erfahren weder die Ausschlüsse noch, wer sie gewählt hat.
 
 Bei Fragen gelten die Grenzen der aktiven Person. Bei Pflichten und gruppenweiten Modi
 werden die relevanten Grenzen aller betroffenen Personen berücksichtigt.
+
+Wenn du in ein laufendes Spiel einsteigst, speichere zuerst deine privaten Entscheidungen.
+Du kannst auch ausdrücklich ohne Ausschlüsse fortfahren. Deine Entscheidungen gelten ab
+der nächsten Karte und bleiben für dieses Spiel fest. An einer bereits laufenden
+Abstimmung bei Ich hab noch nie nimmst du noch nicht teil.
 
 Prüft bei **Ich hab noch nie** vor der Abstimmung die Art der Ergebnisanzeige. **Anonym**
 hält einzelne Antworten verborgen; bei **Antworten offen** werden nach Abschluss der
@@ -37,6 +42,8 @@ Sonderrechte über Grenzen anderer Personen.
 
 ## Inhalte für Erwachsene
 
-Das entsprechende Profil muss bewusst bestätigt werden und ist ausschließlich für
-einwilligende Erwachsene gedacht. Die Bestätigung hebt individuelle Grenzen nicht auf.
+Einstellungen, die explizite Inhalte erlauben, müssen bewusst bestätigt werden und sind
+ausschließlich für einwilligende Erwachsene gedacht. Das gilt auch für Custom und
+bearbeitete Vorlagen; der Profilname entscheidet nicht über die Bestätigung.
+Die Bestätigung hebt individuelle Grenzen nicht auf.
 Wenn Alter, Zustimmung oder Situation unklar sind, verwendet ein anderes Profil.

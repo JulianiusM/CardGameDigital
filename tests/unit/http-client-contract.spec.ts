@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { decodeHttpErrorResponse } from "../../packages/protocol";
+import { decodeCouchSessionSnapshot, decodeHttpErrorResponse } from "../../packages/protocol";
 
 beforeEach(() => {
     vi.stubGlobal("navigator", { language: "en-GB", languages: ["en-GB"] });
@@ -24,6 +24,35 @@ afterEach(() => {
 });
 
 describe("HTTP client contracts", () => {
+    it("rejects incomplete recovery snapshots instead of treating them as a recovered game", () => {
+        expect(decodeCouchSessionSnapshot(null)).toBeNull();
+        expect(
+            decodeCouchSessionSnapshot({ id: "10000000-0000-4000-8000-000000000001", revision: 2 }),
+        ).toBeNull();
+    });
+
+    it("preserves policy error codes and status for explicit recovery", async () => {
+        vi.stubGlobal(
+            "fetch",
+            vi.fn().mockResolvedValue({
+                ok: false,
+                status: 409,
+                json: async () => ({
+                    error: { code: "POLICY_REVISION_CONFLICT", message: "Reload the policy" },
+                }),
+            }),
+        );
+        const { cardPolicyApi } = await import("../../apps/web/src/cardPolicyApi");
+        const { ApiError } = await import("../../apps/web/src/http");
+        const error = await cardPolicyApi.loadScope(null).catch((cause: unknown) => cause);
+        expect(error).toBeInstanceOf(ApiError);
+        expect(error).toMatchObject({
+            code: "POLICY_REVISION_CONFLICT",
+            status: 409,
+            message: "Reload the policy",
+        });
+    }, 30_000);
+
     it("decodes documented error fields without rejecting additive details", () => {
         expect(
             decodeHttpErrorResponse({
@@ -79,11 +108,16 @@ describe("HTTP client contracts", () => {
                 }),
             }),
         );
-        const { ApiError, couchApi } = await import("../../apps/web/src/api");
+        const { couchApi } = await import("../../apps/web/src/api");
+        const { ApiError } = await import("../../apps/web/src/http");
 
         const error = await couchApi.get("session-id").catch((cause: unknown) => cause);
 
         expect(error).toBeInstanceOf(ApiError);
-        expect(error).toMatchObject({ code: "SESSION_NOT_FOUND", message: "Session is gone" });
+        expect(error).toMatchObject({
+            code: "SESSION_NOT_FOUND",
+            message: "Session is gone",
+            status: 404,
+        });
     });
 });

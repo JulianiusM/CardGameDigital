@@ -1,5 +1,9 @@
 import type {
     PlayableCard,
+    CardCandidate,
+    CardHistoryContext,
+    GroupHistoryWindow,
+    CatalogProvenance,
     CardId,
     CardType,
     DareTypeId,
@@ -18,6 +22,7 @@ export type CardCandidateRequest = {
     yesNoAnswerPossible?: boolean;
 };
 export type CardLocalizationPolicy = {
+    includeRetired?: boolean;
     locale: string;
     missingTranslation: "EXCLUDE" | "FALLBACK";
     fallbackLocales?: readonly string[];
@@ -27,25 +32,32 @@ export const DEFAULT_CARD_TRANSLATION_POLICY: Pick<
     "missingTranslation" | "fallbackLocales"
 > = Object.freeze({ missingTranslation: "EXCLUDE" });
 export interface CardRepository {
+    catalogProvenance(): Promise<CatalogProvenance>;
+    scan(
+        localization: CardLocalizationPolicy,
+        history?: CardHistoryContext | null,
+    ): AsyncIterable<CardCandidate>;
+    groupHistoryWindow(
+        dataSpaceId: string,
+        groupId: string,
+        before: number,
+    ): Promise<GroupHistoryWindow>;
     getById(id: CardId, localization: CardLocalizationPolicy): Promise<PlayableCard | null>;
-    listActive(localization: CardLocalizationPolicy): Promise<readonly PlayableCard[]>;
     isLocaleActive(locale: string): Promise<boolean>;
     defaultLocale(): Promise<string>;
-    findEligibleCandidates(
-        request: CardCandidateRequest,
-        localization: CardLocalizationPolicy,
-    ): Promise<readonly PlayableCard[]>;
 }
 export interface SessionRepository {
     get(id: GameSessionId): Promise<GameSessionSnapshot | null>;
     save(snapshot: GameSessionSnapshot): Promise<void>;
 }
 export interface CouchSessionRepository {
+    /** Small authoritative read; avoid hydrating immutable inputs for an unchanged cache entry. */
+    revision(id: string): Promise<number | null>;
     load(id: string): Promise<GameSessionRuntimeState | null>;
     ownerDataSpaceId(id: string): Promise<DataSpaceId | null>;
-    groupHistory(dataSpaceId: DataSpaceId, groupId: string): Promise<ReadonlySet<CardId>>;
     save(
         snapshot: GameSessionRuntimeState,
+        expectedRevision: number | null,
         ownership?: { dataSpaceId: DataSpaceId; groupId: string | null },
     ): Promise<void>;
 }

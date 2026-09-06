@@ -2,7 +2,8 @@
 
 `apps/kodi` is the native **Party Game TV** script add-on for Kodi 21/Omega and
 newer. It is an independently versioned thin client for HTTP API v1 and WebSocket
-protocol v2. The server remains authoritative for Card eligibility, localized Card
+protocol v4 (native release 0.4.0). Earlier clients must be upgraded before connecting
+to this server. The server remains authoritative for Card eligibility, localized Card
 text, turns, votes, roles, revisions, persistence, and host selection.
 
 ## Player flows
@@ -126,7 +127,7 @@ From the repository root:
 npm run kodi:generate       # regenerate schemas, fixtures, tokens, strings, and media
 npm run kodi:check          # drift, XML/static/privacy checks, and CPython unit tests
 npm run kodi:package        # deterministic install ZIP plus release metadata
-npm run kodi:package:verify -- artifacts/script.partycard.tv-0.3.4.zip
+npm run kodi:package:verify -- artifacts/script.partycard.tv-0.4.0.zip
 ```
 
 The package command writes these independent `kodi-client` release artifacts:

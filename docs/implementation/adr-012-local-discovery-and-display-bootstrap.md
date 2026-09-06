@@ -35,7 +35,9 @@ Accepted and implemented.
   credential. Once that credential is terminal, the encrypted response is erased and a
   bounded tombstone returns `IDEMPOTENCY_RESULT_GONE`.
 - Existing callers that omit `bootstrapMode` keep ordinary creator-Host behavior.
-  WebSocket protocol v2 gains additive snapshot and role-change fields; no v3 is needed.
+  Its snapshot and role-change fields were additive in WebSocket protocol v2. Mandatory
+  late-join enrollment later introduced [protocol v3](../contracts/websocket-v3.md).
+  Discovery advertises the current protocol from shared/generated definitions.
 - Operators must retain the database and replay secret together. Installation identity
   reset is an explicit offline operation and refuses unsafe live-state rotation unless
   runtime invalidation is requested. Retained rows identify both derived purpose keys,

@@ -2449,12 +2449,18 @@ Selecting it copies ordinary editable game settings, so the host can inspect and
 every value under Customize Experience. Persistent or one-game exceptions continue to
 use the same Card policy controls as every other game.
 
-At Session start the server resolves persistent and pending policy once against the
-installed v2 catalog. The immutable snapshot records catalog identity/digest, policy
-revisions, and compact per-Card effective values. A later policy or catalog edit
-affects a future Session, not the active one. Player-count eligibility uses the
-authoritative Session roster on every next-Card selection; displays do not count, late
-Players count from the next Card, and temporary disconnections remain counted.
+At Session start the server captures persistent and pending policy settings. Later
+policy edits affect future games. Every draw reevaluates those settings against the
+current release's live Card metadata and the current progression, roster, boundaries and
+cooldowns. Every currently eligible Card participates in the random draw. A Card whose
+cooldown expires simply rejoins that pool with its ordinary weight.
+
+Installing a different Card catalog requires restarting the server and ends incompatible
+active games. There is no save-and-quit feature that pins an old catalog. Same-catalog
+crash recovery remains supported for persisted active games. Saved Group history retains
+stable Card IDs independently and never prevents a catalog update. Player-count
+eligibility uses the authoritative Session roster; displays do not count, late Players
+count from the next Card, and temporary disconnections remain counted.
 
 Before start, setup and lobby surfaces show a small, visually subordinate
 server-calculated eligible Card count for

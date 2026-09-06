@@ -1342,6 +1342,11 @@ input[type="search"]::-webkit-search-cancel-button {
     color: var(--color-muted-cocoa);
     overflow-wrap: anywhere;
 }
+.policy-error h2 {
+    margin: 0;
+    font-size: clamp(1.2rem, 3vw, 1.5rem);
+    overflow-wrap: anywhere;
+}
 .policy-confirmation-actions {
     display: flex;
     flex-wrap: wrap;

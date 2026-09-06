@@ -6,15 +6,13 @@ import {
     SequenceRandomSource,
 } from "../../packages/game-core";
 import { card, profile } from "../support/game";
-
 const players = [
     { id: "a", name: "A" },
     { id: "b", name: "B" },
     { id: "c", name: "C" },
 ];
-
 describe("deterministic game simulations", () => {
-    it("balances Random Wahrheit oder Pflicht toward the configured target and caps streaks", () => {
+    it("balances Random Wahrheit oder Pflicht toward the configured target and caps streaks", async () => {
         const session = new GameSession(
             {
                 id: "random",
@@ -37,7 +35,7 @@ describe("deterministic game simulations", () => {
         ];
         const sequence: string[] = [];
         for (let turn = 0; turn < 1000; turn++) {
-            sequence.push(session.startTurn(session.revision, cards).cardType);
+            sequence.push((await session.startTurn(session.revision, cards)).cardType);
             session.advance(session.revision);
         }
         const ratio =
@@ -47,8 +45,7 @@ describe("deterministic game simulations", () => {
             /QUESTION,QUESTION,QUESTION,QUESTION|DARE,DARE,DARE,DARE/,
         );
     });
-
-    it("schedules Gespräch separately and continues normal questions after meta exhaustion", () => {
+    it("schedules Gespräch separately and continues normal questions after meta exhaustion", async () => {
         const session = new GameSession(
             {
                 id: "talk",
@@ -74,7 +71,7 @@ describe("deterministic game simulations", () => {
         ];
         const types: string[] = [];
         for (let turn = 0; turn < 9; turn++) {
-            types.push(session.startTurn(session.revision, cards).cardType);
+            types.push((await session.startTurn(session.revision, cards)).cardType);
             session.advance(session.revision);
         }
         expect(types).toEqual([

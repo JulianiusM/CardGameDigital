@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { CARD_LIFECYCLES } from "../card-catalog-contract/schema";
+import { MAX_POLICY_RULES, MAX_PORTABLE_EXACT_CARDS, MAX_SESSION_EXACT_CARDS } from "./limits";
 import {
     AVAILABILITY_DIRECTIVES,
     BOOLEAN_DIRECTIVES,
@@ -123,10 +124,10 @@ export const portableCardPolicyScopeSchema = z
                     })
                     .strict(),
             )
-            .max(250),
+            .max(MAX_POLICY_RULES),
         exactCards: z
             .array(z.object({ cardId: z.uuid(), directives: cardPolicyDirectivesSchema }).strict())
-            .max(50_000)
+            .max(MAX_PORTABLE_EXACT_CARDS)
             .refine(
                 (entries) => new Set(entries.map(({ cardId }) => cardId)).size === entries.length,
                 "Exact Card IDs must be unique",
@@ -137,10 +138,10 @@ export const portableCardPolicyScopeSchema = z
 export const sessionCardPolicySchema = z
     .object({
         scopeDefault: cardPolicyDirectivesSchema.default({}),
-        conditionalRules: z.array(cardPolicyRuleSchema).max(250).default([]),
+        conditionalRules: z.array(cardPolicyRuleSchema).max(MAX_POLICY_RULES).default([]),
         exactCards: z
             .array(z.object({ cardId: z.uuid(), directives: cardPolicyDirectivesSchema }).strict())
-            .max(1000)
+            .max(MAX_SESSION_EXACT_CARDS)
             .refine(
                 (entries) => new Set(entries.map(({ cardId }) => cardId)).size === entries.length,
                 "Exact Card IDs must be unique",

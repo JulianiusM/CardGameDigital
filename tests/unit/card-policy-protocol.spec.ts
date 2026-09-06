@@ -83,6 +83,7 @@ describe("Card-policy protocol", () => {
         const response = {
             total: 9,
             availableAtStart: 4,
+            adultConfirmationRequired: false,
             byType: { QUESTION: 5, DARE: 3, CONVERSATION_META: 1 },
             atStartByType: { QUESTION: 2, DARE: 2, CONVERSATION_META: 0 },
             playerCount: 4,

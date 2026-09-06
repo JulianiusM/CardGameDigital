@@ -42,6 +42,10 @@ conversation-card pool is exhausted.
 - **Next:** resolves the current card or result.
 - **End game:** ends the authoritative session for every connected device.
 
+Skip and veto also work on the last matching card. It disappears from every device and
+unrevealed answers are discarded. Choose another available type or end the game; nobody
+has to answer before refusing.
+
 If no card satisfies every active rule, the card pool is exhausted. Never weaken
 someone's boundaries silently; end the round or let the group deliberately choose a
 less restrictive profile for a new session.

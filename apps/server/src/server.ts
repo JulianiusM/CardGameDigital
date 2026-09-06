@@ -54,9 +54,13 @@ async function bootstrap() {
         const server = http.createServer(app);
         const { attachWebSocketServer } = await require("./modules/websocket");
         const { getRoomService } = await require("./modules/realtime");
+        const { startGameMaintenance } = await require("./modules/gameMaintenance");
         const websocketServer = attachWebSocketServer(server, getRoomService(), {
             hostDisconnectGraceMs: settings.value.roomReconnectGraceSeconds * 1_000,
         });
+        await websocketServer.roomLifecycleReady;
+        const maintenance = startGameMaintenance();
+        await maintenance.ready;
         const bindAddress = settings.value.httpBind === "[::]" ? "::" : settings.value.httpBind;
         const listenOptions = {
             port: settings.value.httpPort,
@@ -106,6 +110,7 @@ async function bootstrap() {
             }, 10_000);
             deadline.unref();
             await localDiscovery.stop();
+            await maintenance.stop();
             for (const client of websocketServer.clients) client.close(1001, "server shutdown");
             const websocketClosed = new Promise<void>((resolve, reject) => {
                 websocketServer.close((error?: Error) => {

@@ -24,7 +24,7 @@ export class CardEntity {
     @Column("boolean", { name: "repeatable_in_session", default: false })
     repeatableInSession!: boolean;
     @Column("int", { name: "repeat_cooldown", default: 0 }) repeatCooldown!: number;
-    @Column("float", { name: "weight", default: 1 }) weight!: number;
+    @Column("double", { name: "weight", default: 1 }) weight!: number;
     @Column("varchar", { name: "social_sensitivity", length: 24, default: "GENERAL" })
     socialSensitivity!: string;
     @Column("int", { name: "minimum_player_count", default: 2 }) minimumPlayerCount!: number;

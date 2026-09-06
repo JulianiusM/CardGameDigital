@@ -1,5 +1,6 @@
+import { MESSAGE_KEYS, type MessageKey } from "../localization/keys";
 import { randomUUID } from "node:crypto";
-import { In, type DataSource, type SelectQueryBuilder } from "typeorm";
+import { In, type DataSource, type EntityManager, type SelectQueryBuilder } from "typeorm";
 import { CardCatalogVersionEntity } from "./entities/card/CardCatalogVersionEntity";
 import { CardEntity } from "./entities/card/CardEntity";
 import { DareTypeTranslationEntity } from "./entities/card/DareTypeTranslationEntity";
@@ -19,10 +20,12 @@ import type {
     StoredPolicyRule,
 } from "../application/cardPolicyRepository";
 import type { CardPolicyDirectives, CardPolicyPredicate } from "../game-core";
+import { persistenceTransaction } from "./transaction";
 import { cardEntityToDomain } from "./cardMapper";
+import { TypeOrmCardRepository } from "./TypeOrmCardRepository";
 
-function conflict(): never {
-    throw Object.assign(new Error("Card policy changed in another tab"), {
+function conflict(message: MessageKey = MESSAGE_KEYS.CARD_POLICY_REVISION_CONFLICT): never {
+    throw Object.assign(new Error(message), {
         code: "POLICY_REVISION_CONFLICT",
         status: 409,
     });
@@ -35,28 +38,111 @@ function parse<T>(json: string): T {
 export class TypeOrmCardPolicyRepository implements CardPolicyRepository {
     constructor(private readonly dataSource: DataSource) {}
 
+    private async transaction<T>(action: (manager: EntityManager) => Promise<T>): Promise<T> {
+        try {
+            return await persistenceTransaction(this.dataSource, action);
+        } catch (error) {
+            const code = (error as { code?: string }).code;
+            if (code === "ER_LOCK_DEADLOCK" || code === "ER_LOCK_WAIT_TIMEOUT") conflict();
+            throw error;
+        }
+    }
+
     async load(owner: CardPolicyOwner): Promise<StoredCardPolicyScope> {
-        const [scopeDefault, rules, exactCards] = await Promise.all([
-            this.dataSource
-                .getRepository(CardPolicyScopeDefaultEntity)
-                .findOneBy({ ownerKey: owner.ownerKey }),
-            this.dataSource.getRepository(CardPolicyConditionalRuleEntity).find({
-                where: { ownerKey: owner.ownerKey },
-                order: { ruleOrder: "ASC", id: "ASC" },
-            }),
-            this.dataSource.getRepository(CardPolicyExactCardEntity).find({
-                where: { ownerKey: owner.ownerKey },
-                order: { cardId: "ASC" },
-            }),
-        ]);
+        return (await this.loadScopes([owner]))[0];
+    }
+
+    async loadScopes(owners: readonly CardPolicyOwner[]): Promise<StoredCardPolicyScope[]> {
+        return this.transaction(async (manager) => {
+            const scopes: StoredCardPolicyScope[] = [];
+            for (const owner of owners) {
+                const summary = await this.readSummary(manager, owner);
+                const entries = await manager.getRepository(CardPolicyExactCardEntity).find({
+                    where: { ownerKey: owner.ownerKey },
+                    order: { cardId: "ASC" },
+                    take: 50_001,
+                });
+                this.checkLimit(entries.length, 50_000);
+                scopes.push({
+                    ...summary,
+                    exactCards: entries.map((entry) => this.projectExact(entry)),
+                });
+            }
+            return scopes;
+        });
+    }
+
+    summary(owner: CardPolicyOwner): Promise<Omit<StoredCardPolicyScope, "exactCards">> {
+        return this.transaction((manager) => this.readSummary(manager, owner));
+    }
+
+    private async readSummary(manager: EntityManager, owner: CardPolicyOwner) {
+        const scope = await manager
+            .getRepository(CardPolicyScopeDefaultEntity)
+            .findOneBy({ ownerKey: owner.ownerKey });
+        const rules = await manager.getRepository(CardPolicyConditionalRuleEntity).find({
+            where: { ownerKey: owner.ownerKey },
+            order: { ruleOrder: "ASC", id: "ASC" },
+            take: 251,
+        });
+        this.checkLimit(rules.length, 250);
         return {
             owner,
-            scopeDefault: scopeDefault
-                ? this.projectDefault(scopeDefault)
-                : { directives: {}, revision: 0 },
+            revision: scope?.scopeRevision ?? 0,
+            scopeDefault: scope ? this.projectDefault(scope) : { directives: {}, revision: 0 },
             rules: rules.map((rule) => this.projectRule(rule)),
-            exactCards: exactCards.map((entry) => this.projectExact(entry)),
         };
+    }
+
+    private checkLimit(count: number, maximum: number): void {
+        if (count > maximum)
+            throw Object.assign(new Error(MESSAGE_KEYS.CARD_POLICY_CAPACITY_EXCEEDED), {
+                code: "VALIDATION_ERROR",
+                status: 400,
+            });
+    }
+
+    /** Keep one clock even for empty scopes. Row revisions use this clock, so
+     * deleting and recreating an override cannot resurrect an old revision. */
+    private async advanceScope(
+        manager: EntityManager,
+        owner: CardPolicyOwner,
+        expected?: number,
+    ): Promise<number> {
+        const repository = manager.getRepository(CardPolicyScopeDefaultEntity);
+        const now = new Date();
+        await repository
+            .createQueryBuilder()
+            .insert()
+            .values({
+                ownerKey: owner.ownerKey,
+                dataSpaceId: owner.dataSpaceId,
+                groupId: owner.groupId,
+                directivesJson: "{}",
+                revision: 0,
+                scopeRevision: 0,
+                createdAt: now,
+                updatedAt: now,
+            })
+            .orUpdate(["owner_key"], ["owner_key"])
+            .execute();
+        const query = repository
+            .createQueryBuilder("scope")
+            .where("scope.ownerKey = :ownerKey", owner);
+        if (this.dataSource.options.type !== "better-sqlite3") query.setLock("pessimistic_write");
+        const current = await query.getOneOrFail();
+        if (expected !== undefined && current.scopeRevision !== expected) conflict();
+        if (current.scopeRevision >= 2_147_483_647) conflict();
+        const revision = current.scopeRevision + 1;
+        const result = await repository.update(
+            { ownerKey: owner.ownerKey, scopeRevision: current.scopeRevision },
+            {
+                scopeRevision: revision,
+                updatedAt: now,
+            },
+        );
+        if (result.affected !== 1) conflict();
+        return revision;
     }
 
     async putDefault(
@@ -64,23 +150,16 @@ export class TypeOrmCardPolicyRepository implements CardPolicyRepository {
         directives: CardPolicyDirectives,
         expectedRevision: number,
     ): Promise<StoredPolicyDefault> {
-        return this.dataSource.transaction(async (manager) => {
-            const repository = manager.getRepository(CardPolicyScopeDefaultEntity);
-            const current = await repository.findOneBy({ ownerKey: owner.ownerKey });
-            if ((current?.revision ?? 0) !== expectedRevision) conflict();
-            const now = new Date();
-            const saved = await repository.save(
-                repository.create({
-                    ownerKey: owner.ownerKey,
-                    dataSpaceId: owner.dataSpaceId,
-                    groupId: owner.groupId,
-                    directivesJson: JSON.stringify(directives),
-                    revision: expectedRevision + 1,
-                    createdAt: current?.createdAt ?? now,
-                    updatedAt: now,
-                }),
-            );
-            return this.projectDefault(saved);
+        return this.transaction(async (manager) => {
+            const revision = await this.advanceScope(manager, owner);
+            const result = await manager
+                .getRepository(CardPolicyScopeDefaultEntity)
+                .update(
+                    { ownerKey: owner.ownerKey, revision: expectedRevision },
+                    { directivesJson: JSON.stringify(directives), revision, updatedAt: new Date() },
+                );
+            if (result.affected !== 1) conflict();
+            return { directives, revision };
         });
     }
 
@@ -93,31 +172,31 @@ export class TypeOrmCardPolicyRepository implements CardPolicyRepository {
             directives: CardPolicyDirectives;
         },
     ): Promise<StoredPolicyRule> {
-        return this.dataSource.transaction(async (manager) => {
+        return this.transaction(async (manager) => {
+            const revision = await this.advanceScope(manager, owner);
             const repository = manager.getRepository(CardPolicyConditionalRuleEntity);
+            this.checkLimit((await repository.countBy({ ownerKey: owner.ownerKey })) + 1, 250);
             const highest = await repository.findOne({
                 where: { ownerKey: owner.ownerKey },
                 order: { ruleOrder: "DESC" },
             });
             const now = new Date();
-            return this.projectRule(
-                await repository.save(
-                    repository.create({
-                        id: randomUUID(),
-                        ownerKey: owner.ownerKey,
-                        dataSpaceId: owner.dataSpaceId,
-                        groupId: owner.groupId,
-                        name: input.name,
-                        ruleOrder: (highest?.ruleOrder ?? 0) + 10,
-                        enabled: input.enabled,
-                        predicateJson: JSON.stringify(input.predicate),
-                        directivesJson: JSON.stringify(input.directives),
-                        revision: 1,
-                        createdAt: now,
-                        updatedAt: now,
-                    }),
-                ),
-            );
+            const rule = repository.create({
+                id: randomUUID(),
+                ownerKey: owner.ownerKey,
+                dataSpaceId: owner.dataSpaceId,
+                groupId: owner.groupId,
+                name: input.name,
+                enabled: input.enabled,
+                ruleOrder: (highest?.ruleOrder ?? 0) + 10,
+                predicateJson: JSON.stringify(input.predicate),
+                directivesJson: JSON.stringify(input.directives),
+                revision,
+                createdAt: now,
+                updatedAt: now,
+            });
+            await repository.insert(rule);
+            return this.projectRule(rule);
         });
     }
 
@@ -132,17 +211,29 @@ export class TypeOrmCardPolicyRepository implements CardPolicyRepository {
         },
         expectedRevision: number,
     ): Promise<StoredPolicyRule | null> {
-        const repository = this.dataSource.getRepository(CardPolicyConditionalRuleEntity);
-        const current = await repository.findOneBy({ id, ownerKey: owner.ownerKey });
-        if (!current) return null;
-        if (current.revision !== expectedRevision) conflict();
-        current.name = input.name;
-        current.enabled = input.enabled;
-        current.predicateJson = JSON.stringify(input.predicate);
-        current.directivesJson = JSON.stringify(input.directives);
-        current.revision++;
-        current.updatedAt = new Date();
-        return this.projectRule(await repository.save(current));
+        return this.transaction(async (manager) => {
+            const revision = await this.advanceScope(manager, owner);
+            const repository = manager.getRepository(CardPolicyConditionalRuleEntity);
+            const result = await repository.update(
+                { id, ownerKey: owner.ownerKey, revision: expectedRevision },
+                {
+                    name: input.name,
+                    enabled: input.enabled,
+                    predicateJson: JSON.stringify(input.predicate),
+                    directivesJson: JSON.stringify(input.directives),
+                    revision,
+                    updatedAt: new Date(),
+                },
+            );
+            if (result.affected !== 1) {
+                if (!(await repository.existsBy({ id, ownerKey: owner.ownerKey })))
+                    conflict(MESSAGE_KEYS.CARD_POLICY_RULE_NOT_FOUND);
+                conflict();
+            }
+            return this.projectRule(
+                await repository.findOneByOrFail({ id, ownerKey: owner.ownerKey }),
+            );
+        });
     }
 
     async deleteRule(
@@ -150,45 +241,60 @@ export class TypeOrmCardPolicyRepository implements CardPolicyRepository {
         id: string,
         expectedRevision: number,
     ): Promise<boolean> {
-        const repository = this.dataSource.getRepository(CardPolicyConditionalRuleEntity);
-        const current = await repository.findOneBy({ id, ownerKey: owner.ownerKey });
-        if (!current) return false;
-        if (current.revision !== expectedRevision) conflict();
-        await repository.delete({ id, ownerKey: owner.ownerKey });
-        return true;
+        return this.transaction(async (manager) => {
+            await this.advanceScope(manager, owner);
+            const repository = manager.getRepository(CardPolicyConditionalRuleEntity);
+            const result = await repository.delete({
+                id,
+                ownerKey: owner.ownerKey,
+                revision: expectedRevision,
+            });
+            if (result.affected !== 1) {
+                if (!(await repository.existsBy({ id, ownerKey: owner.ownerKey })))
+                    conflict(MESSAGE_KEYS.CARD_POLICY_RULE_NOT_FOUND);
+                conflict();
+            }
+            return true;
+        });
     }
 
     async reorderRules(
         owner: CardPolicyOwner,
         ids: readonly string[],
+        expectedScopeRevision: number,
     ): Promise<readonly StoredPolicyRule[]> {
-        return this.dataSource.transaction(async (manager) => {
+        return this.transaction(async (manager) => {
+            const revision = await this.advanceScope(manager, owner, expectedScopeRevision);
             const repository = manager.getRepository(CardPolicyConditionalRuleEntity);
             const rules = await repository.findBy({ ownerKey: owner.ownerKey });
+            const requested = new Set(ids);
             if (
                 rules.length !== ids.length ||
-                rules.some(({ id }) => !ids.includes(id)) ||
-                new Set(ids).size !== ids.length
+                requested.size !== ids.length ||
+                rules.some(({ id }) => !requested.has(id))
             ) {
-                throw Object.assign(new Error("Rule order must contain every scoped rule once"), {
+                throw Object.assign(new Error(MESSAGE_KEYS.CARD_POLICY_INVALID_RULE_ORDER), {
                     code: "VALIDATION_ERROR",
                     status: 400,
                 });
             }
-            for (const [index, rule] of rules.entries()) {
-                rule.ruleOrder = -1000 - index;
-            }
-            await repository.save(rules);
+            // Avoid collisions with the unique order index during a permutation.
+            for (const [index, rule] of rules.entries())
+                await repository.update({ id: rule.id }, { ruleOrder: -1000 - index });
             const byId = new Map(rules.map((rule) => [rule.id, rule]));
+            const ordered: StoredPolicyRule[] = [];
             for (const [index, id] of ids.entries()) {
                 const rule = byId.get(id)!;
                 rule.ruleOrder = (index + 1) * 10;
-                rule.revision++;
+                rule.revision = revision;
                 rule.updatedAt = new Date();
+                await repository.update(
+                    { id, ownerKey: owner.ownerKey },
+                    { ruleOrder: rule.ruleOrder, revision, updatedAt: rule.updatedAt },
+                );
+                ordered.push(this.projectRule(rule));
             }
-            return (await repository.save(ids.map((id) => byId.get(id)!))).map((rule) =>
-                this.projectRule(rule),
-            );
+            return ordered;
         });
     }
 
@@ -198,26 +304,38 @@ export class TypeOrmCardPolicyRepository implements CardPolicyRepository {
         directives: CardPolicyDirectives,
         expectedRevision: number,
     ): Promise<StoredExactCardPolicy | null> {
-        return this.dataSource.transaction(async (manager) => {
-            if (!(await manager.getRepository(CardEntity).existsBy({ id: cardId }))) return null;
+        if (!(await this.dataSource.getRepository(CardEntity).existsBy({ id: cardId })))
+            return null;
+        return this.transaction(async (manager) => {
+            const revision = await this.advanceScope(manager, owner);
             const repository = manager.getRepository(CardPolicyExactCardEntity);
             const current = await repository.findOneBy({ ownerKey: owner.ownerKey, cardId });
             if ((current?.revision ?? 0) !== expectedRevision) conflict();
             const now = new Date();
-            const saved = await repository.save(
-                repository.create({
-                    id: current?.id ?? randomUUID(),
+            if (current) {
+                const result = await repository.update(
+                    { id: current.id, revision: expectedRevision },
+                    { directivesJson: JSON.stringify(directives), revision, updatedAt: now },
+                );
+                if (result.affected !== 1) conflict();
+            } else {
+                this.checkLimit(
+                    (await repository.countBy({ ownerKey: owner.ownerKey })) + 1,
+                    50_000,
+                );
+                await repository.insert({
+                    id: randomUUID(),
                     ownerKey: owner.ownerKey,
                     dataSpaceId: owner.dataSpaceId,
                     groupId: owner.groupId,
                     cardId,
                     directivesJson: JSON.stringify(directives),
-                    revision: expectedRevision + 1,
-                    createdAt: current?.createdAt ?? now,
+                    revision,
+                    createdAt: now,
                     updatedAt: now,
-                }),
-            );
-            return this.projectExact(saved);
+                });
+            }
+            return { cardId, directives, revision };
         });
     }
 
@@ -226,84 +344,85 @@ export class TypeOrmCardPolicyRepository implements CardPolicyRepository {
         cardId: string,
         expectedRevision: number,
     ): Promise<boolean> {
-        const repository = this.dataSource.getRepository(CardPolicyExactCardEntity);
-        const current = await repository.findOneBy({ ownerKey: owner.ownerKey, cardId });
-        if (!current) return false;
-        if (current.revision !== expectedRevision) conflict();
-        await repository.delete({ id: current.id });
-        return true;
+        return this.transaction(async (manager) => {
+            await this.advanceScope(manager, owner);
+            const result = await manager
+                .getRepository(CardPolicyExactCardEntity)
+                .delete({ ownerKey: owner.ownerKey, cardId, revision: expectedRevision });
+            if (result.affected !== 1) conflict();
+            return true;
+        });
     }
 
-    async replaceScope(owner: CardPolicyOwner, input: PortableCardPolicyScope): Promise<void> {
-        await this.dataSource.transaction(async (manager) => {
+    async replaceScope(
+        owner: CardPolicyOwner,
+        input: PortableCardPolicyScope,
+        expectedScopeRevision: number,
+    ): Promise<void> {
+        this.checkLimit(input.rules.length, 250);
+        this.checkLimit(input.exactCards.length, 50_000);
+        await this.transaction(async (manager) => {
+            const revision = await this.advanceScope(manager, owner, expectedScopeRevision);
             const cardIds = input.exactCards.map(({ cardId }) => cardId);
             let existingCardCount = 0;
             for (let index = 0; index < cardIds.length; index += 500) {
-                existingCardCount += await manager.getRepository(CardEntity).countBy({
-                    id: In(cardIds.slice(index, index + 500)),
-                });
+                existingCardCount += await manager
+                    .getRepository(CardEntity)
+                    .countBy({ id: In(cardIds.slice(index, index + 500)) });
             }
-            if (existingCardCount !== cardIds.length) {
-                throw Object.assign(new Error("Imported Card policy references an unknown Card"), {
+            if (existingCardCount !== cardIds.length || new Set(cardIds).size !== cardIds.length) {
+                throw Object.assign(new Error(MESSAGE_KEYS.CARD_POLICY_UNKNOWN_CARD), {
                     code: "CARD_NOT_FOUND",
                     status: 400,
                 });
             }
-
-            await manager.getRepository(CardPolicyExactCardEntity).delete({
-                ownerKey: owner.ownerKey,
-            });
-            await manager.getRepository(CardPolicyConditionalRuleEntity).delete({
-                ownerKey: owner.ownerKey,
-            });
-            await manager.getRepository(CardPolicyScopeDefaultEntity).delete({
-                ownerKey: owner.ownerKey,
-            });
-
+            await manager
+                .getRepository(CardPolicyExactCardEntity)
+                .delete({ ownerKey: owner.ownerKey });
+            await manager
+                .getRepository(CardPolicyConditionalRuleEntity)
+                .delete({ ownerKey: owner.ownerKey });
             const now = new Date();
-            await manager.getRepository(CardPolicyScopeDefaultEntity).insert({
-                ownerKey: owner.ownerKey,
-                dataSpaceId: owner.dataSpaceId,
-                groupId: owner.groupId,
-                directivesJson: JSON.stringify(input.scopeDefault),
-                revision: 1,
-                createdAt: now,
-                updatedAt: now,
-            });
-            if (input.rules.length) {
-                await manager.getRepository(CardPolicyConditionalRuleEntity).insert(
-                    input.rules.map((rule, index) => ({
+            await manager.getRepository(CardPolicyScopeDefaultEntity).update(
+                { ownerKey: owner.ownerKey },
+                {
+                    directivesJson: JSON.stringify(input.scopeDefault),
+                    revision,
+                    updatedAt: now,
+                },
+            );
+            // Write at most one rule's bounded predicate per statement. Never
+            // construct a catalog-sized INSERT or return the import in a response.
+            for (const [index, rule] of input.rules.entries()) {
+                await manager.getRepository(CardPolicyConditionalRuleEntity).insert({
+                    id: randomUUID(),
+                    ownerKey: owner.ownerKey,
+                    dataSpaceId: owner.dataSpaceId,
+                    groupId: owner.groupId,
+                    name: rule.name,
+                    enabled: rule.enabled,
+                    ruleOrder: (index + 1) * 10,
+                    predicateJson: JSON.stringify(rule.predicate),
+                    directivesJson: JSON.stringify(rule.directives),
+                    revision,
+                    createdAt: now,
+                    updatedAt: now,
+                });
+            }
+            for (let index = 0; index < input.exactCards.length; index += 32) {
+                await manager.getRepository(CardPolicyExactCardEntity).insert(
+                    input.exactCards.slice(index, index + 32).map((entry) => ({
                         id: randomUUID(),
                         ownerKey: owner.ownerKey,
                         dataSpaceId: owner.dataSpaceId,
                         groupId: owner.groupId,
-                        name: rule.name,
-                        ruleOrder: (index + 1) * 10,
-                        enabled: rule.enabled,
-                        predicateJson: JSON.stringify(rule.predicate),
-                        directivesJson: JSON.stringify(rule.directives),
-                        revision: 1,
+                        cardId: entry.cardId,
+                        directivesJson: JSON.stringify(entry.directives),
+                        revision,
                         createdAt: now,
                         updatedAt: now,
                     })),
                 );
-            }
-            if (input.exactCards.length) {
-                for (let index = 0; index < input.exactCards.length; index += 500) {
-                    await manager.getRepository(CardPolicyExactCardEntity).insert(
-                        input.exactCards.slice(index, index + 500).map((entry) => ({
-                            id: randomUUID(),
-                            ownerKey: owner.ownerKey,
-                            dataSpaceId: owner.dataSpaceId,
-                            groupId: owner.groupId,
-                            cardId: entry.cardId,
-                            directivesJson: JSON.stringify(entry.directives),
-                            revision: 1,
-                            createdAt: now,
-                            updatedAt: now,
-                        })),
-                    );
-                }
             }
         });
     }
@@ -315,7 +434,9 @@ export class TypeOrmCardPolicyRepository implements CardPolicyRepository {
             .select("card.id", "id")
             .distinct(true)
             .orderBy("card.id", "ASC")
+            .limit(50_001)
             .getRawMany<{ id: string }>();
+        this.checkLimit(rows.length, 50_000);
         return rows.map(({ id }) => id);
     }
 
@@ -323,11 +444,14 @@ export class TypeOrmCardPolicyRepository implements CardPolicyRepository {
         owner: CardPolicyOwner,
         cardIds: readonly string[],
         directives: CardPolicyDirectives,
+        expectedScopeRevision: number,
     ): Promise<number> {
-        await this.dataSource.transaction(async (manager) => {
+        this.checkLimit(cardIds.length, 50_000);
+        await this.transaction(async (manager) => {
+            const revision = await this.advanceScope(manager, owner, expectedScopeRevision);
             const repository = manager.getRepository(CardPolicyExactCardEntity);
-            for (let index = 0; index < cardIds.length; index += 500) {
-                const ids = cardIds.slice(index, index + 500);
+            for (let index = 0; index < cardIds.length; index += 32) {
+                const ids = cardIds.slice(index, index + 32);
                 const existing = await repository.findBy({
                     ownerKey: owner.ownerKey,
                     cardId: In(ids),
@@ -344,13 +468,14 @@ export class TypeOrmCardPolicyRepository implements CardPolicyRepository {
                             groupId: owner.groupId,
                             cardId,
                             directivesJson: JSON.stringify(directives),
-                            revision: (current?.revision ?? 0) + 1,
+                            revision,
                             createdAt: current?.createdAt ?? now,
                             updatedAt: now,
                         });
                     }),
                 );
             }
+            this.checkLimit(await repository.countBy({ ownerKey: owner.ownerKey }), 50_000);
         });
         return cardIds.length;
     }
@@ -372,8 +497,23 @@ export class TypeOrmCardPolicyRepository implements CardPolicyRepository {
         };
     }
 
-    async listPolicyCards(locale: string): Promise<readonly ManagedCatalogCard[]> {
-        const entities = await this.cardSearchQuery({ locale, limit: 1 }).getMany();
+    scanPolicyCards(locale: string) {
+        return new TypeOrmCardRepository(this.dataSource.getRepository(CardEntity)).scan({
+            locale,
+            missingTranslation: "EXCLUDE",
+            includeRetired: true,
+        });
+    }
+
+    async policyPreviewSamples(
+        ids: readonly string[],
+        locale: string,
+    ): Promise<readonly ManagedCatalogCard[]> {
+        if (!ids.length) return [];
+        if (ids.length > 20) throw new Error("Policy preview sample is too large");
+        const entities = await this.cardSearchQuery({ locale, limit: 20 })
+            .andWhere("card.id IN (:...ids)", { ids })
+            .getMany();
         const labels = await this.taxonomyLabels(entities, locale);
         return entities.map((card) => this.toManagedCard(card, locale, labels));
     }

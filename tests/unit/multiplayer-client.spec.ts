@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import packageMetadata from "../../package.json";
+import { PROTOCOL_VERSION } from "../../packages/protocol/version";
 
 const ROOM_ID = "00000000-0000-4000-8000-000000000010";
 
@@ -99,7 +100,7 @@ function canonicalServerPayload(type: string, payload: unknown): unknown {
         return canonicalRoomSnapshot(payload as Record<string, unknown>);
     }
     if (type === "server.hello") {
-        return { protocolVersion: 2, ...(payload as Record<string, unknown>) };
+        return { protocolVersion: PROTOCOL_VERSION, ...(payload as Record<string, unknown>) };
     }
     return payload;
 }
@@ -129,7 +130,7 @@ class FakeWebSocket {
     receive(type: string, payload: unknown): void {
         this.onmessage?.({
             data: JSON.stringify({
-                protocol: 2,
+                protocol: PROTOCOL_VERSION,
                 type,
                 requestId: type === "server.pong" ? "test-ping" : null,
                 revision: null,
@@ -168,6 +169,30 @@ afterEach(() => {
 });
 
 describe("authoritative multiplayer client events", () => {
+    it("sends a null envelope revision for first-time boundaries during an active Session", async () => {
+        installBrowserGlobals();
+        const { RoomSocket } = await import("../../apps/web/src/multiplayer");
+        const connection = new RoomSocket(canonicalJoin(), () => undefined);
+        const socket = FakeWebSocket.instances[0];
+        socket.onopen?.();
+        socket.receive("server.hello", {
+            participantId: canonicalJoin().participantId,
+            role: "PLAYER",
+        });
+        socket.receive("room.snapshot", { session: { revision: 7 } });
+        connection.command("command.setBoundaries", {
+            disabledQuestionCategoryIds: [],
+            disabledDareTypeIds: [],
+            blockedOperationalFlags: [],
+        });
+        expect(JSON.parse(socket.sent.at(-1)!)).toMatchObject({
+            protocol: PROTOCOL_VERSION,
+            type: "command.setBoundaries",
+            revision: null,
+        });
+        connection.dispose();
+    }, 60_000);
+
     it("sends client.hello when randomUUID is unavailable on a plain-HTTP origin", async () => {
         installBrowserGlobals();
         vi.stubGlobal("crypto", {
@@ -194,11 +219,11 @@ describe("authoritative multiplayer client events", () => {
             };
         };
         expect(hello).toMatchObject({
-            protocol: 2,
+            protocol: PROTOCOL_VERSION,
             type: "client.hello",
             payload: {
                 roomCode: "ABC234",
-                supportedProtocolVersions: [2],
+                supportedProtocolVersions: [PROTOCOL_VERSION],
                 applicationVersion: packageMetadata.version,
             },
         });

@@ -1,5 +1,5 @@
 import { locale, messages } from "./i18n";
-import { fetchJsonResponse, httpErrorDetails } from "./http";
+import { ApiError, fetchJsonResponse, httpErrorDetails } from "./http";
 import { randomUuidV4 } from "./randomUuid";
 import packageMetadata from "../../../package.json";
 import {
@@ -35,7 +35,12 @@ export type ServerInfo = ServerInfoPayload;
 async function json<T>(path: string, init: RequestInit, decode?: (body: unknown) => T): Promise<T> {
     const { response, body } = await fetchJsonResponse(path, init);
     if (!response.ok) {
-        throw new Error(httpErrorDetails(body).message ?? messages.common.requestFailed);
+        const error = httpErrorDetails(body);
+        throw new ApiError(
+            error.code ?? "UNKNOWN_ERROR",
+            error.message ?? messages.common.requestFailed,
+            response.status,
+        );
     }
     return decode ? decode(body) : (body as T);
 }
@@ -466,10 +471,9 @@ export class RoomSocket {
         return false;
     }
     command(type: string, payload: object = {}): void {
-        if (
-            !this.authenticated ||
-            !this.send(type, this.snapshot?.session?.revision ?? null, payload)
-        ) {
+        const revision =
+            type === "command.setBoundaries" ? null : (this.snapshot?.session?.revision ?? null);
+        if (!this.authenticated || !this.send(type, revision, payload)) {
             this.errorCode = "CONNECTION_UNAVAILABLE";
             this.error = messages.common.connectionFailed;
             this.changed();

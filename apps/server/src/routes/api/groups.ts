@@ -1,3 +1,4 @@
+import { readStoredJson, writeStoredJson } from "../../../../../packages/persistence/storedJson";
 import { randomUUID } from "node:crypto";
 import express from "express";
 import { z } from "zod";
@@ -145,10 +146,12 @@ router.delete("/:id", async (request, response, next) => {
                 groupId,
             });
             for (const room of rooms) {
-                const roomSettings = JSON.parse(room.gameSettingsJson) as Record<string, unknown>;
+                const roomSettings = await readStoredJson<Record<string, unknown>>(
+                    room.gameSettingsJson,
+                );
                 room.groupId = null;
                 roomSettings.groupId = null;
-                room.gameSettingsJson = JSON.stringify(roomSettings);
+                room.gameSettingsJson = await writeStoredJson(roomSettings);
                 room.settingsRevision += 1;
                 room.settingsUpdatedByParticipantId = null;
             }

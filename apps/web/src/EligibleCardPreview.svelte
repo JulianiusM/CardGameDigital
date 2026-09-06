@@ -14,6 +14,7 @@
     export let playerCount = 2;
     export let compact = false;
     export let roomAccess: RoomEligibilityAccess | undefined = undefined;
+    export let onConfirmAdult: ((confirmed: boolean) => void) | undefined = undefined;
 
     let preview: EligibilityPreview | null = null;
     let loading = true;
@@ -110,3 +111,14 @@
     </div>
     {#if loading}<span class="eligibility-loading-mark" aria-hidden="true"></span>{/if}
 </section>
+
+{#if preview?.adultConfirmationRequired && onConfirmAdult}
+    <label class="adult-confirmation">
+        <input
+            type="checkbox"
+            checked={settings.adultContentConfirmed}
+            on:change={(event) => onConfirmAdult?.(event.currentTarget.checked)}
+        />
+        {messages.room.adultConfirmation}
+    </label>
+{/if}

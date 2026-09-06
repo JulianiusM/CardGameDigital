@@ -1298,11 +1298,17 @@ privacy rules.
 
 All messages use a versioned envelope.
 
+Protocol v4 requires every receiver to accept up to 4 MiB of UTF-8 JSON per message,
+including the envelope and all fragments. This covers up to 1,000 participants and
+1,000 represented players, maximum Card text and sparse Session policy, and named voting
+results. Version 3 is retired because its native receivers had inconsistent byte/roster
+limits. Enum lists are bounded and unique; request IDs are bounded to 128 characters.
+
 Example:
 
 ```json id="qsd16b"
 {
-    "protocol": 2,
+    "protocol": 4,
     "type": "session.cardShown",
     "requestId": null,
     "revision": 184,
@@ -1404,21 +1410,40 @@ never_have_i_ever_reveal_mode
 revision
 runtime_state_version
 runtime_state_json
-compiled_card_policy_digest
-group_history_digest
+policy_input_digest
 started_at
 ended_at
 ```
 
-The runtime JSON holds only small mutable state. Its catalog-sized compiled policy and
-frozen Group-history inputs live in separate immutable payload storage. Each payload is
-Brotli-compressed, identified by a kind-specific SHA-256 digest, and split into 24 KiB
-binary chunks whose Base64 database values stay below 32 KiB. Identical inputs are
-shared. Frozen Group history is an exact bitset indexed by the compiled Card order,
-requiring one bit per current Card instead of a UUID list. Current-Session Card history
-is loaded from normalized CardAppearance rows and is not duplicated in runtime JSON. These mappings preserve authoritative restart state
-while keeping every write bounded independently of catalog, Group-history, and Session
-length.
+Session runtime **v7** records the catalog fingerprint and captured sparse DataSpace,
+Group and Session policy inputs. It stores no catalog membership, metadata array,
+translation snapshot, compiled per-Card policy or Group-history bitset. A changed catalog
+ends incompatible active games atomically at startup. Same-fingerprint recovery remains
+available; this is not a save-and-quit feature. Saved Group history never blocks catalog
+updates and keeps its stable Card UUIDs.
+
+Each draw scans every localized candidate in 256-Card metadata pages. Indexed lookups
+supply that Card's last Session appearance and membership in the Group history window
+captured at start. The engine reevaluates current progression, roster, boundaries,
+cooldown and captured policy, then runs a weighted reservoir for each relevant Card type.
+Cooldown expiry only makes a Card eligible again; it provides no priority. Only the
+selected Card's chosen rendering is fetched. Fallback availability uses one `EXISTS`
+query per page across the ordered locale set, without joining or loading translations.
+
+Sparse policy inputs alone use content-addressed Brotli chunks (24 KiB binary / 32 KiB
+Base64), with digest lookup before compression and validated size/count metadata on
+recovery. Ended games detach them; bounded cleanup runs at end, account/DataSpace
+deletion, catalog replacement and periodically. Identical live decoded inputs share weak
+references. Runtime retains the most recent two appearances plus a total shown counter;
+persistent draws query normalized history without loading the archive. Unsaved Rooms
+retain one last-seen row per played Card and erase those rows when the game ends.
+Saved sessions retain their required appearance archive.
+
+Large hot runtime and Room-settings JSON uses `brotli-json/v1` storage envelopes above
+64 KiB. Envelopes are at most 512 KiB, decode to at most 4 MiB, and validate their byte
+length and SHA-256 digest. Small records remain plain JSON; HTTP and WebSocket objects
+are unaffected. Four concurrent codecs bound compression/decompression work. These
+records contain no catalog membership, compiled catalog policy or translations.
 
 ---
 
@@ -2299,24 +2324,29 @@ application resolves the saved Room settings, connected represented-player count
 DataSpace/Group owner, and shared history server-side; it does not trust a Group UUID or
 roster count supplied by a guest and does not mutate WebSocket presence.
 
-The compiled GameSession runtime is version 5. It contains immutable catalog provenance,
-maximum policy revisions, and compact positional effective values for every Card. The
-engine builds an O(1) Card-ID map in memory rather than repeating JSON property and
-provenance names per Card. Draw-time selection applies that map before the existing
-eligibility/history/weight pipeline; it does not reevaluate Conditional Rules. Roster
-count remains dynamic and is compared with each compiled atomic range at the next draw.
+Session runtime **v7** records the catalog fingerprint and captured sparse DataSpace,
+Group and Session policy inputs. It stores no catalog membership, metadata array,
+translation snapshot, compiled per-Card policy or Group-history bitset. A changed catalog
+ends incompatible active games atomically at startup. Same-fingerprint recovery remains
+available; this is not a save-and-quit feature. Saved Group history never blocks catalog
+updates and keeps its stable Card UUIDs.
 
-Persistence freezes two potentially catalog-sized inputs independently: the compiled
-policy and the Group history visible when the Session starts. They are compressed,
-content-addressed, and written as bounded immutable chunks; the active Session row keeps
-only foreign-key digests. The Group-history payload is an exact bitset indexed by the
-compiled snapshot, so even a 50,000-Card catalog needs only 6,250 raw bit bytes per
-Session. Separate digests let common compiled policies deduplicate even when Groups have
-different histories. A restart rehydrates the exact inputs rather than
-recompiling against possibly changed catalog or policy rows. Compilation reads the
-DataSpace scope and, when selected, that one Group scope only; rules from unrelated
-Groups never enter the Session payload. Normalized appearance rows provide mutable
-current-Session history and only the newest or changed appearance is written per commit.
+Each draw scans every localized candidate in 256-Card metadata pages. Indexed lookups
+supply that Card's last Session appearance and membership in the Group history window
+captured at start. The engine reevaluates current progression, roster, boundaries,
+cooldown and captured policy, then runs a weighted reservoir for each relevant Card type.
+Cooldown expiry only makes a Card eligible again; it provides no priority. Only the
+selected Card's chosen rendering is fetched. Fallback availability uses one `EXISTS`
+query per page across the ordered locale set, without joining or loading translations.
+
+Sparse policy inputs alone use content-addressed Brotli chunks (24 KiB binary / 32 KiB
+Base64), with digest lookup before compression and validated size/count metadata on
+recovery. Ended games detach them; bounded cleanup runs at end, account/DataSpace
+deletion, catalog replacement and periodically. Identical live decoded inputs share weak
+references. Runtime retains the most recent two appearances plus a total shown counter;
+persistent draws query normalized history without loading the archive. Unsaved Rooms
+retain one last-seen row per played Card and erase those rows when the game ends.
+Saved sessions retain their required appearance archive.
 
 Persistent scope rows use a server-derived owner key plus DataSpace and optional Group
 foreign keys. DataSpace/Group deletion cascades policy rows, while Card deletion remains

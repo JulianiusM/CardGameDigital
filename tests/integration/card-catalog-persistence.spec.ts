@@ -16,6 +16,11 @@ import { resolveSettings } from "../../apps/server/src/modules/settings";
 import { TypeOrmCardPolicyRepository, TypeOrmCardRepository } from "../../packages/persistence";
 import { applyCardCatalogSnapshot } from "../../packages/persistence/applyCardCatalogSnapshot";
 import { cardCatalog, catalogArtifact } from "../support/cardCatalog";
+import { CouchSessionService } from "../../packages/application/couchSessionService";
+import { CardPolicyService } from "../../packages/application/cardPolicyService";
+import { TypeOrmCouchSessionRepository } from "../../packages/persistence/TypeOrmCouchSessionRepository";
+import { SequenceRandomSource, type DataSpaceId } from "../../packages/game-core";
+import { defaultRoomGameSettings } from "../../packages/application/roomGameSettings";
 
 let source: DataSource | undefined;
 let directory: string | undefined;
@@ -40,6 +45,109 @@ afterEach(async () => {
 });
 
 describe("bundled Card catalog FULL reconciliation", () => {
+    it("scans across pages with the full fallback chain without loading renderings", async () => {
+        const db = await database();
+        const input = cardCatalog();
+        const template = input.cards[0];
+        input.cards = Array.from({ length: 257 }, (_, index) => ({
+            ...template,
+            id: `10000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
+        }));
+        await applyCardCatalogSnapshot(db, catalogArtifact(input));
+        const cards = new TypeOrmCardRepository(db.getRepository(CardEntity));
+        let selects = 0;
+        let renderings = 0;
+        const original = db.logger.logQuery;
+        const subscriber: import("typeorm").EntitySubscriberInterface = {
+            afterLoad(_entity, event) {
+                if (event?.metadata.target === CardLocalizationEntity) renderings++;
+            },
+        };
+        db.logger.logQuery = (query, ...args) => {
+            if (query.startsWith("SELECT")) selects++;
+            original.call(db.logger, query, ...args);
+        };
+        db.subscribers.push(subscriber);
+        try {
+            let count = 0;
+            let last = "";
+            for await (const candidate of cards.scan({
+                locale: "zz-ZZ",
+                missingTranslation: "FALLBACK",
+                fallbackLocales: [
+                    ...Array.from(
+                        { length: 99 },
+                        (_, index) => `zz-x-${String(index).padStart(3, "0")}`,
+                    ),
+                    "de-DE",
+                ],
+            })) {
+                count++;
+                last = candidate.id;
+                expect(candidate).not.toHaveProperty("cardText");
+            }
+            expect(count).toBe(257);
+            expect(last).toBe(input.cards.at(-1)!.id);
+            expect(selects).toBe(6); // metadata + flags per page, provenance before/after
+            expect(renderings).toBe(0);
+        } finally {
+            db.logger.logQuery = original;
+            db.subscribers.splice(db.subscribers.indexOf(subscriber), 1);
+        }
+    });
+
+    it("ends active Sessions on catalog replacement and detects releases changed during a scan", async () => {
+        const db = await database();
+        const initial = cardCatalog();
+        initial.cards[0].intensity = 1;
+        initial.cards[0].socialSensitivity = "GENERAL";
+        const firstArtifact = catalogArtifact(initial);
+        await applyCardCatalogSnapshot(db, firstArtifact);
+        const owner = await db
+            .getRepository(DataSpace)
+            .save({ name: "Pinned catalog", defaultForOwner: false });
+        const cards = new TypeOrmCardRepository(db.getRepository(CardEntity));
+        const repository = new TypeOrmCouchSessionRepository(db);
+        const createService = () =>
+            new CouchSessionService(
+                cards,
+                new SequenceRandomSource([0]),
+                undefined,
+                repository,
+                new CardPolicyService(new TypeOrmCardPolicyRepository(db)),
+            );
+        const settings = {
+            ...defaultRoomGameSettings(),
+            cardLocale: "en-GB",
+            persistence: "DATASPACE" as const,
+            dataSpaceId: owner.id as DataSpaceId,
+            players: [{ name: "First" }, { name: "Second" }],
+        };
+        const old = await createService().create(settings);
+        const next = structuredClone(initial);
+        next.sequence++;
+        next.catalogVersion = "test-2";
+        next.cards[0].id = "10000000-0000-4000-8000-000000000002";
+        next.cards[0].localizations = [
+            { locale: "de-DE", text: "Neue Frage" },
+            { locale: "en-GB", text: "New question" },
+        ];
+        const scan = cards
+            .scan({ locale: "en-GB", missingTranslation: "EXCLUDE" })
+            [Symbol.asyncIterator]();
+        expect((await scan.next()).value).toMatchObject({ id: initial.cards[0].id });
+        await applyCardCatalogSnapshot(db, catalogArtifact(next));
+        await expect(scan.next()).rejects.toMatchObject({ code: "STALE_SESSION_REVISION" });
+        expect(
+            await db.getRepository(CardEntity).findOneByOrFail({ id: initial.cards[0].id }),
+        ).toMatchObject({ active: false });
+        expect((await repository.load(old.id))?.state).toBe("ENDED");
+        const fresh = await createService().create(settings);
+        expect(
+            (await createService().chooseCardType(fresh.id, 0, "QUESTION")).currentCard?.cardText,
+        ).toBe("New question");
+    });
+
     it("populates Cards, locales, taxonomy labels and exact localizations", async () => {
         const db = await database();
         await expect(applyCardCatalogSnapshot(db, catalogArtifact(cardCatalog()))).resolves.toBe(
@@ -55,6 +163,32 @@ describe("bundled Card catalog FULL reconciliation", () => {
                 "en-GB",
             ]),
         ).toEqual([{ label: "Everyday" }]);
+        let renderingLoads = 0;
+        const subscriber: import("typeorm").EntitySubscriberInterface = {
+            afterLoad(_entity, event) {
+                if (event?.metadata.target === CardLocalizationEntity) renderingLoads++;
+            },
+        };
+        db.subscribers.push(subscriber);
+        try {
+            const cards = new TypeOrmCardRepository(db.getRepository(CardEntity));
+            const policy = {
+                locale: "en-GB",
+                missingTranslation: "FALLBACK" as const,
+                fallbackLocales: ["de-DE"],
+            };
+            const candidates = await collect(cards.scan(policy));
+            expect(candidates).toHaveLength(1);
+            expect(candidates[0]).not.toHaveProperty("cardText");
+            expect(renderingLoads).toBe(0);
+            expect(await cards.getById(candidates[0].id, policy)).toMatchObject({
+                locale: "en-GB",
+                cardText: "A question",
+            });
+            expect(renderingLoads).toBe(1);
+        } finally {
+            db.subscribers.splice(db.subscribers.indexOf(subscriber), 1);
+        }
     });
 
     it("keeps the complete filtered Card-search total across cursor pages", async () => {
@@ -456,17 +590,17 @@ describe("bundled Card catalog FULL reconciliation", () => {
         await applyCardCatalogSnapshot(db, catalogArtifact(input));
         const cards = new TypeOrmCardRepository(db.getRepository(CardEntity));
         expect(await cards.isLocaleActive("en-GB")).toBe(true);
-        expect(await cards.listActive({ locale: "en-GB", missingTranslation: "EXCLUDE" })).toEqual(
-            [],
-        );
+        expect(
+            await collect(cards.scan({ locale: "en-GB", missingTranslation: "EXCLUDE" })),
+        ).toEqual([]);
         expect(
             (
-                await cards.listActive({
+                await cards.getById(input.cards[0].id as never, {
                     locale: "en-GB",
                     missingTranslation: "FALLBACK",
                     fallbackLocales: ["fr-FR", "de-DE"],
                 })
-            )[0].cardText,
+            )?.cardText,
         ).toBe("Seulement français");
     });
 
@@ -525,3 +659,9 @@ describe("bundled Card catalog FULL reconciliation", () => {
         expect(await db.getRepository(CardCatalogVersionEntity).count()).toBe(1);
     });
 });
+
+async function collect<T>(stream: AsyncIterable<T>): Promise<T[]> {
+    const result: T[] = [];
+    for await (const item of stream) result.push(item);
+    return result;
+}

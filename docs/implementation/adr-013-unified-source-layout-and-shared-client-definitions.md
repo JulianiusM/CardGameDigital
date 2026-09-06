@@ -43,9 +43,14 @@ Golden Mischief values, and Kodi localization identifiers.
 ## Compatibility
 
 The move changes repository paths and source provenance only. HTTP API v1, WebSocket
-protocol v2, Card/catalog semantics, database migrations, browser URLs, Kodi add-on ID,
+wire semantics, Card/catalog semantics, database migrations, browser URLs, Kodi add-on ID,
 release-unit boundaries, and archive naming remain unchanged. Release launchers use the
 server entry point's new compiled path.
+
+The current WebSocket contract is [v4](../contracts/websocket-v4.md), introduced in
+corrective Phase 4 to guarantee shared transport capacity. It retains v3's mandatory
+late-join enrollment from corrective Phase 2. Generated native definitions carry both
+the byte allowance and the maximum Room participant/player counts.
 
 ## Enforcement
 

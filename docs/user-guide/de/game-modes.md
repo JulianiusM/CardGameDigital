@@ -44,6 +44,10 @@ aufgebraucht sind, läuft die Runde mit normalen Fragen weiter.
 - **Weiter:** Schließt die aktuelle Karte bzw. das Ergebnis ab.
 - **Runde beenden:** Beendet die autoritative Sitzung für alle Geräte.
 
+Überspringen und Veto funktionieren auch bei der letzten passenden Karte. Sie verschwindet
+von allen Geräten und unveröffentlichte Antworten werden verworfen. Ihr könnt einen
+anderen verfügbaren Typ wählen oder das Spiel beenden; niemand muss vorher antworten.
+
 Wenn keine Karte mehr zu allen aktiven Regeln passt, meldet das Spiel einen erschöpften
 Kartenpool. Senkt dann nicht heimlich Grenzen: beendet die Runde oder lasst die Gruppe
 gemeinsam eine bewusst weniger einschränkende Profileinstellung wählen.

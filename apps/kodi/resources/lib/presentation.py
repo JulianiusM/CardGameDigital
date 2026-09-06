@@ -37,6 +37,7 @@ from .protocol.validation import (
     NEVER_HAVE_I_EVER_REVEAL_MODE_ORDER,
     NO_VOTE,
     PENDING_VOTE_STATUS,
+    PROTOCOL_VERSION,
     RECONNECTING_HOST_STATE,
     RETIRED_CARD_LIFECYCLE,
     VOTED_VOTE_STATUS,
@@ -512,7 +513,7 @@ def _server_details(state: AppState) -> ViewModel:
     return ViewModel(
         msg(strings.SERVERS),
         raw(server.display_name),
-        msg(strings.SERVER_SECURITY, security),
+        msg(strings.SERVER_SECURITY, security, PROTOCOL_VERSION),
         actions=(
             item("server:use", strings.USE_SERVER),
             item("server:forget", strings.FORGET_SERVER, danger=True),
@@ -710,11 +711,7 @@ def _setup_profiles(state: AppState) -> ViewModel:
         )
         for profile in profiles
     )
-    selected_profile = next(
-        (profile for profile in state.profiles if profile.get("id") == setup.profile_id),
-        None,
-    )
-    requires_adult = bool(selected_profile and selected_profile.get("requiresAdultConfirmation"))
+    requires_adult = bool((setup.eligibility or {}).get("adultConfirmationRequired"))
     actions = ()
     body = Text.raw("")
     if requires_adult and not setup.adult_content_confirmed:
@@ -1882,7 +1879,7 @@ def _review(state: AppState) -> ViewModel:
     ]
     if setup.topology == "COUCH":
         facts.insert(3, ViewFact(msg(strings.PLAYERS), raw(len(setup.players))))
-    requires_adult = bool(profile and profile.get("requiresAdultConfirmation"))
+    requires_adult = bool(eligibility.get("adultConfirmationRequired"))
     can_start = (not requires_adult or setup.adult_content_confirmed) and int(
         eligibility.get("total", 1)
     ) > 0
@@ -1893,6 +1890,9 @@ def _review(state: AppState) -> ViewModel:
             enabled=can_start,
         ),
     )
+    if requires_adult and not setup.adult_content_confirmed:
+        body = msg(strings.CONFIRM_ADULT_BODY)
+        actions = (item("setup:adult:confirm", strings.CONFIRM_ADULT),) + actions
     return _setup_view(
         state,
         strings.READY_TO_PLAY,
@@ -2035,7 +2035,10 @@ def _couch_game(state: AppState) -> ViewModel:
             item("couch:resync", strings.REFRESH_STATE),
             item(END_COUCH_ACTION, strings.END_GAME, danger=True),
         )
-    elif state.couch_pool_exhausted:
+    elif not snapshot.get("currentCard") and (
+        snapshot.get("remainingCardCount") == 0
+        or (state.couch_pool_exhausted and snapshot.get("state") != "CHOOSING_CARD_TYPE")
+    ):
         card_label = msg(strings.POOL_EXHAUSTED)
         card_text = msg(strings.POOL_EXHAUSTED_BODY)
         body = Text.raw("")
@@ -3002,7 +3005,7 @@ def _diagnostics(state: AppState) -> ViewModel:
             secondary=raw(APPLICATION_VERSION),
             enabled=False,
         ),
-        item("diagnostics:protocol", strings.PROTOCOL, secondary=raw("2"), enabled=False),
+        item("diagnostics:protocol", strings.PROTOCOL, secondary=raw(PROTOCOL_VERSION), enabled=False),
         item(
             "diagnostics:connection",
             strings.CONNECTION,

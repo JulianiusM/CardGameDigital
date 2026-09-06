@@ -212,6 +212,7 @@ class HttpTransportTests(unittest.TestCase):
             return 200, {
                 "total": 12,
                 "availableAtStart": 10,
+                "adultConfirmationRequired": False,
                 "byType": {"QUESTION": 8, "DARE": 4, "CONVERSATION_META": 0},
                 "atStartByType": {"QUESTION": 7, "DARE": 3, "CONVERSATION_META": 0},
                 "playerCount": 4,

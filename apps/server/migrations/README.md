@@ -35,3 +35,27 @@ indexed by the frozen compiled Card order. The migration also removes duplicated
 history when complete normalized appearance rows exist. Runtime loads rehydrate all
 three inputs, while every insert and hot-row update remains independent of catalog and
 accumulated Group-history size.
+
+`1787359000000-ScrubExpiredPrivateBoundaries.ts` removes private boundaries from ended
+or detached Session snapshots and terminal participant/Room records while retaining
+active recovery and continuing lobby values. It changes data only, keeps runtime v5,
+and preserves non-sensitive history. Its `down` cannot reconstruct erased private data.
+Pre-migration backups remain subject to the operator retention policy documented in
+`docs/contracts/infrastructure.md`.
+
+`1787360000000-AddCardPolicyScopeRevisions.ts` adds an aggregate clock to each policy
+scope, backfilling existing revisions and missing empty anchors without resetting rows.
+
+`1787361000000-FreezeSessionCatalogs.ts` adds shared immutable catalog references and
+moves runtime to v6. Pre-v6 games end because their original localized catalog was not
+stored. Historical appearances/policy/history remain; active Cards, votes and private
+boundaries are cleared. The migration processes 25 hot rows at a time. Its `down` rejects
+downgrades; restore a matching backup/server version instead.
+
+`1787362000000-UseLiveSessionCatalog.ts` supersedes the v6 catalog-freezing design.
+It ends old runtimes, removes all three obsolete catalog/policy/history payload references,
+adds the sparse `policy_input_digest`, deletes unreferenced old payloads in batches, and
+adds indexed last-seen/Group-history lookups. Producer Card weights use `DOUBLE`.
+The migration is resumable after implicit-commit DDL and preserves saved appearances.
+Runtime v7 never restores a catalog snapshot or full appearance archive. The earlier
+migration files remain historical upgrade steps, not current runtime behavior.

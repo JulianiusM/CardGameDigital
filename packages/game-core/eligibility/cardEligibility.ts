@@ -14,6 +14,9 @@ export type EligibilityRequest = {
     sessionHistory: readonly CardAppearance[];
     groupHistoryCardIds: ReadonlySet<Card["id"]>;
     playerCount?: number;
+    lastSequenceByCardId?: ReadonlyMap<Card["id"], number>;
+    cardsShown?: number;
+    blockedFlags?: ReadonlySet<OperationalFlag>;
 };
 
 export type EligibilityReason =
@@ -74,7 +77,15 @@ export function eligibilityReasons(
     )
         reasons.push("PLAYER_COUNT");
     if (!card.active) reasons.push("INACTIVE");
-    if (!isAllowedByHistory(card, request.sessionHistory, request.groupHistoryCardIds))
+    if (
+        !isAllowedByHistory(
+            card,
+            request.sessionHistory,
+            request.groupHistoryCardIds,
+            request.lastSequenceByCardId,
+            request.cardsShown,
+        )
+    )
         reasons.push("HISTORY");
     return reasons;
 }
@@ -98,9 +109,7 @@ function addBoundaryReasons(card: Card, request: EligibilityRequest, reasons: El
         )
     )
         reasons.push("DARE_BOUNDARY");
-    const blockedFlags = new Set<OperationalFlag>(request.profile.blockedOperationalFlags);
-    for (const boundary of request.boundaries)
-        for (const flag of boundary.blockedOperationalFlags) blockedFlags.add(flag);
+    const blockedFlags = request.blockedFlags ?? mergedBlockedFlags(request);
     if (card.operationalFlags.some((flag) => blockedFlags.has(flag)))
         reasons.push("OPERATIONAL_FLAG");
 }
@@ -109,5 +118,37 @@ export function eligibleCards<T extends Card>(
     cards: readonly T[],
     request: EligibilityRequest,
 ): readonly T[] {
-    return cards.filter((card) => eligibilityReasons(card, request).length === 0);
+    const indexed = prepareEligibility(request);
+    return cards.filter((card) => eligibilityReasons(card, indexed).length === 0);
+}
+
+function mergedBlockedFlags(request: EligibilityRequest): ReadonlySet<OperationalFlag> {
+    const flags = new Set<OperationalFlag>(request.profile.blockedOperationalFlags);
+    for (const boundary of request.boundaries)
+        for (const flag of boundary.blockedOperationalFlags) flags.add(flag);
+    return flags;
+}
+
+export function prepareEligibility(request: EligibilityRequest): EligibilityRequest {
+    const lastSequenceByCardId =
+        request.lastSequenceByCardId ??
+        new Map(request.sessionHistory.map(({ cardId, sequence }) => [cardId, sequence]));
+    const boundary = {
+        disabledQuestionCategoryIds: new Set<QuestionCategoryId>(),
+        disabledDareTypeIds: new Set<DareTypeId>(),
+        blockedOperationalFlags: new Set<OperationalFlag>(),
+    };
+    for (const item of request.boundaries) {
+        for (const value of item.disabledQuestionCategoryIds)
+            boundary.disabledQuestionCategoryIds.add(value);
+        for (const value of item.disabledDareTypeIds) boundary.disabledDareTypeIds.add(value);
+        for (const value of item.blockedOperationalFlags)
+            boundary.blockedOperationalFlags.add(value);
+    }
+    return {
+        ...request,
+        boundaries: [boundary],
+        lastSequenceByCardId,
+        blockedFlags: request.blockedFlags ?? mergedBlockedFlags(request),
+    };
 }

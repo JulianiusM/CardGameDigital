@@ -31,7 +31,8 @@
         },
         "sequence": {
             "type": "integer",
-            "minimum": 1
+            "minimum": 1,
+            "maximum": 2147483647
         },
         "generatedAt": {
             "type": "string",
@@ -153,7 +154,9 @@
                 "text": {
                     "type": "string",
                     "minLength": 1,
-                    "pattern": "^\\S(?:[\\s\\S]*\\S)?$"
+                    "pattern": "^\\S(?:[\\s\\S]*\\S)?$",
+                    "maxLength": 4000,
+                    "$comment": "At most 8192 bytes when encoded as UTF-8; checked by the semantic/file validator."
                 }
             }
         },
@@ -181,7 +184,9 @@
                         {
                             "type": "null"
                         }
-                    ]
+                    ],
+                    "maxLength": 4000,
+                    "$comment": "At most 8192 bytes when encoded as UTF-8; checked by the semantic/file validator."
                 }
             }
         },
@@ -331,7 +336,8 @@
                 },
                 "repeatCooldown": {
                     "type": "integer",
-                    "minimum": 0
+                    "minimum": 0,
+                    "maximum": 2147483647
                 },
                 "weight": {
                     "type": "number",
@@ -456,7 +462,8 @@
         },
         "minimumPlayerCount": {
             "type": "integer",
-            "minimum": 2
+            "minimum": 2,
+            "maximum": 2147483647
         },
         "maximumPlayerCount": {
             "oneOf": [
@@ -485,5 +492,6 @@
                 }
             }
         }
-    }
+    },
+    "$comment": "Deployment validation additionally bounds each rendering to 8192 UTF-8 bytes, each streamed record and the complete header to 16 MiB; catalog length is not capped."
 }

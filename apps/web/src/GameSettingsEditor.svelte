@@ -131,7 +131,11 @@
 </script>
 
 <div class="game-settings-editor">
-    {#if showEligibility}<EligibleCardPreview {settings} {playerCount} />{/if}
+    {#if showEligibility}<EligibleCardPreview
+            {settings}
+            {playerCount}
+            onConfirmAdult={(adultContentConfirmed) => update({ adultContentConfirmed })}
+        />{/if}
     {#if showMode}
         <section class="settings-section-card">
             <h3>{messages.setup.chooseMode}</h3>
@@ -212,16 +216,6 @@
                     </button>
                 {/each}
             </div>
-            {#if profiles.find(({ id }) => id === settings.profileId)?.requiresAdultConfirmation}
-                <label class="adult-confirmation">
-                    <input
-                        type="checkbox"
-                        checked={settings.adultContentConfirmed}
-                        on:change={(event) =>
-                            update({ adultContentConfirmed: event.currentTarget.checked })}
-                    />{messages.room.adultConfirmation}
-                </label>
-            {/if}
         </section>
     {/if}
 

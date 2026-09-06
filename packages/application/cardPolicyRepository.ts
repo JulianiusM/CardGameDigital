@@ -4,6 +4,7 @@ import type {
     CardPolicyRule,
     CardPolicyScope,
     PlayableCard,
+    Card,
 } from "../game-core";
 
 export type CardPolicyOwner = {
@@ -22,6 +23,7 @@ export type StoredExactCardPolicy = {
 };
 export type StoredCardPolicyScope = {
     owner: CardPolicyOwner;
+    revision: number;
     scopeDefault: StoredPolicyDefault;
     rules: readonly StoredPolicyRule[];
     exactCards: readonly StoredExactCardPolicy[];
@@ -60,6 +62,8 @@ export type ManagedCatalogCard = PlayableCard & {
 
 export interface CardPolicyRepository {
     load(owner: CardPolicyOwner): Promise<StoredCardPolicyScope>;
+    loadScopes(owners: readonly CardPolicyOwner[]): Promise<StoredCardPolicyScope[]>;
+    summary(owner: CardPolicyOwner): Promise<Omit<StoredCardPolicyScope, "exactCards">>;
     putDefault(
         owner: CardPolicyOwner,
         directives: CardPolicyDirectives,
@@ -89,6 +93,7 @@ export interface CardPolicyRepository {
     reorderRules(
         owner: CardPolicyOwner,
         ids: readonly string[],
+        expectedScopeRevision: number,
     ): Promise<readonly StoredPolicyRule[]>;
     putExactCard(
         owner: CardPolicyOwner,
@@ -101,19 +106,28 @@ export interface CardPolicyRepository {
         cardId: string,
         expectedRevision: number,
     ): Promise<boolean>;
-    replaceScope(owner: CardPolicyOwner, input: PortableCardPolicyScope): Promise<void>;
+    replaceScope(
+        owner: CardPolicyOwner,
+        input: PortableCardPolicyScope,
+        expectedScopeRevision: number,
+    ): Promise<void>;
     listMatchingCardIds(search: Omit<ManagedCardSearch, "cursor" | "limit">): Promise<string[]>;
     putExactCards(
         owner: CardPolicyOwner,
         cardIds: readonly string[],
         directives: CardPolicyDirectives,
+        expectedScopeRevision: number,
     ): Promise<number>;
     searchCards(search: ManagedCardSearch): Promise<{
         cards: readonly ManagedCatalogCard[];
         total: number;
         nextCursor: string | null;
     }>;
-    listPolicyCards(locale: string): Promise<readonly ManagedCatalogCard[]>;
+    scanPolicyCards(locale: string): AsyncIterable<Card>;
+    policyPreviewSamples(
+        ids: readonly string[],
+        locale: string,
+    ): Promise<readonly ManagedCatalogCard[]>;
     catalogProvenance(): Promise<{
         catalogId: string;
         sequence: number;

@@ -1,14 +1,16 @@
+import { testCatalogAccess, testCardById } from "../support/game";
 import { describe, expect, it } from "vitest";
 import { RoomService } from "../../packages/application/roomService";
 import type {
     RealtimeRoomRepository,
     RoomCreateIdempotencyRecord,
+    RoomRuntimeCommit,
     RoomParticipant,
     RoomState,
 } from "../../packages/application/realtimeRooms";
 import type { GameSessionRuntimeState, PlayerBoundaries } from "../../packages/game-core";
-import type { CardRepository } from "../../packages/application/repositories";
-import { SequenceRandomSource } from "../../packages/game-core";
+import type { TestCardRepository as CardRepository } from "../support/game";
+import { SequenceRandomSource, reconcileSessionMembership } from "../../packages/game-core";
 import { card } from "../support/game";
 import {
     defaultRoomGameSettings,
@@ -121,11 +123,37 @@ class MemoryRooms implements RealtimeRoomRepository {
     async applyLifecycleTransition(
         transition: Parameters<RealtimeRoomRepository["applyLifecycleTransition"]>[0],
     ) {
-        return applyMemoryLifecycleTransition(
+        const current = this.runtimes.get(transition.roomId);
+        if (
+            transition.type === "CLOSE" &&
+            transition.expectedSessionRevision != null &&
+            current?.revision !== transition.expectedSessionRevision
+        ) {
+            throw Object.assign(new Error("stale"), { code: "STALE_SESSION_REVISION" });
+        }
+        const result = applyMemoryLifecycleTransition(
             this.rooms.get(transition.roomId)!,
             this.participants,
             transition,
         );
+        const runtime = this.runtimes.get(transition.roomId);
+        if (runtime) {
+            const ids = new Set(
+                this.participants
+                    .filter(
+                        (p) =>
+                            p.roomId === transition.roomId &&
+                            p.connectionStatus !== "LEFT" &&
+                            p.role !== "DISPLAY",
+                    )
+                    .flatMap((p) => [p.id, ...p.devicePlayers.map(({ id }) => id)]),
+            );
+            this.runtimes.set(
+                transition.roomId,
+                reconcileSessionMembership(runtime, ids, result.roomClosed),
+            );
+        }
+        return result;
     }
     async resetConnectedParticipants(at: number, reconnectDeadline: number) {
         const reset: RoomParticipant[] = [];
@@ -220,20 +248,29 @@ class MemoryRooms implements RealtimeRoomRepository {
         );
         return new Map([...this.boundaries].filter(([id]) => participantIds.has(id)));
     }
-    async selectGroup() {
-        return new Set<never>();
-    }
+    async selectGroup() {}
     async groupHistory() {
         return new Set<never>();
+    }
+    async runtimeRevision(roomId: string) {
+        const runtime = this.runtimes.get(roomId);
+        return runtime ? { id: runtime.id, revision: runtime.revision } : null;
     }
     async loadRuntime(roomId: string) {
         return this.runtimes.get(roomId) ?? null;
     }
-    async commitRuntime(roomId: string, previous: number | null, runtime: GameSessionRuntimeState) {
+    async commitRuntime(
+        roomId: string,
+        previous: number | null,
+        runtime: GameSessionRuntimeState,
+        options: RoomRuntimeCommit = {},
+    ) {
         const stored = this.runtimes.get(roomId);
         if ((stored?.revision ?? null) !== previous)
             throw Object.assign(new Error("stale"), { code: "STALE_SESSION_REVISION" });
         this.commits++;
+        const enrollment = options.enrollment;
+        if (enrollment) this.boundaries.set(enrollment.participantId, enrollment.boundaries);
         this.runtimes.set(roomId, runtime);
     }
     async clearEndedRuntime(roomId: string, sessionId: string, revision: number) {
@@ -258,12 +295,11 @@ const cards: CardRepository = {
     async defaultLocale() {
         return "en-GB";
     },
+    ...testCatalogAccess,
     async listActive() {
         return [card({ id: "room-question" as never })];
     },
-    async getById() {
-        return null;
-    },
+    getById: testCardById,
     async findEligibleCandidates() {
         return [];
     },
@@ -274,6 +310,7 @@ describe("RoomService", () => {
         const repository = new MemoryRooms();
         const intensityCards: CardRepository = {
             ...cards,
+            ...testCatalogAccess,
             async listActive() {
                 return [card({ id: "intensity-question" as never, intensity: 3 })];
             },
@@ -591,7 +628,17 @@ describe("RoomService", () => {
             payload: {},
         });
         const lateJoin = await service.joinRoom(joined.roomCode, "Late", "PLAYER");
-        await service.authenticate(joined.roomCode, lateJoin.participantCredential);
+        const late = (await service.authenticate(joined.roomCode, lateJoin.participantCredential))!;
+        expect((await service.snapshot(joined.roomId, late)).session?.players).toHaveLength(1);
+        await service.execute(joined.roomId, late, {
+            type: "command.setBoundaries",
+            revision: null,
+            payload: {
+                disabledQuestionCategoryIds: [],
+                disabledDareTypeIds: [],
+                blockedOperationalFlags: [],
+            },
+        });
         await service.authenticate(joined.roomCode, lateJoin.participantCredential);
 
         const synchronized = await service.snapshot(joined.roomId, host);
@@ -603,6 +650,7 @@ describe("RoomService", () => {
         const repository = new MemoryRooms();
         const yesNoCards: CardRepository = {
             ...cards,
+            ...testCatalogAccess,
             listActive: async () => [
                 card({ id: "never-question" as never, yesNoAnswerPossible: true }),
             ],
@@ -662,6 +710,7 @@ describe("RoomService", () => {
         const repository = new MemoryRooms();
         const yesNoCards: CardRepository = {
             ...cards,
+            ...testCatalogAccess,
             listActive: async () => [
                 card({ id: "named-never-question" as never, yesNoAnswerPossible: true }),
             ],
@@ -693,7 +742,7 @@ describe("RoomService", () => {
 
         const duringVoting = await service.execute(joined.roomId, host, {
             type: "command.submitVote",
-            revision: 2,
+            revision: 1,
             payload: { playerId: host.id, vote: "YES" },
         });
         expect(duringVoting.session?.neverHaveIEverVoting).toMatchObject({
@@ -724,7 +773,7 @@ describe("RoomService", () => {
 
         const result = await service.execute(joined.roomId, reconnectedPlayer, {
             type: "command.submitVote",
-            revision: 3,
+            revision: 2,
             payload: { playerId: player.id, vote: "NO" },
         });
         expect(result.session?.neverHaveIEverVoting?.result?.namedAnswers).toEqual([
@@ -863,6 +912,7 @@ describe("RoomService", () => {
         let localization: Parameters<CardRepository["listActive"]>[0] | undefined;
         const observingCards: CardRepository = {
             ...cards,
+            ...testCatalogAccess,
             listActive: async (policy) => {
                 localization = policy;
                 return [card({ id: "localized-room-question" as never })];

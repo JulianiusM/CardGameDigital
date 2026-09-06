@@ -133,6 +133,10 @@ Common settings:
 
 All settings and validation rules are defined in
 [`apps/server/src/modules/settings.ts`](./apps/server/src/modules/settings.ts).
+Retention, cache sizes, admission counts, work concurrency, request quotas and realtime
+delivery budgets are also configurable through environment variables or CSV. See the
+[operational settings reference](./docs/contracts/operational-settings.md) for every
+key, default, unit and validation constraint. Changes apply after a server restart.
 
 When `PUBLIC_URL` is omitted in local mode, each browser puts its own current origin in
 the Room QR code. Setting it explicitly overrides that payload. Public mode always
@@ -250,7 +254,7 @@ tests/                          Unit, integration, simulation, E2E, architecture
 
 - [External contract index](./docs/contracts/README.md)
 - [HTTP API v1](./docs/contracts/http-api.md)
-- [WebSocket protocol v2](./docs/contracts/websocket-v2.md)
+- [WebSocket protocol v4](./docs/contracts/websocket-v4.md)
 - [Retired WebSocket protocol v1](./docs/contracts/websocket-v1.md)
 - [Bundled Card catalog](./docs/contracts/card-catalog-v2.md)
 - [Historical immutable Card catalog v1](./docs/contracts/card-catalog-v1.md)

@@ -26,15 +26,17 @@ const repository = {
 function repositoryWithDataSpaceDefault(directives: CardPolicyDirectives): CardPolicyRepository {
     return {
         ...repository,
-        load: async (owner: CardPolicyOwner) => ({
-            owner,
-            scopeDefault: {
-                directives: owner.name === "DataSpace" ? directives : {},
+        loadScopes: async (owners: CardPolicyOwner[]) =>
+            owners.map((owner) => ({
                 revision: owner.name === "DataSpace" ? 1 : 0,
-            },
-            rules: [],
-            exactCards: [],
-        }),
+                owner,
+                scopeDefault: {
+                    directives: owner.name === "DataSpace" ? directives : {},
+                    revision: owner.name === "DataSpace" ? 1 : 0,
+                },
+                rules: [],
+                exactCards: [],
+            })),
     } as unknown as CardPolicyRepository;
 }
 
@@ -130,22 +132,8 @@ describe("Card-policy eligibility preview", () => {
         expect(result.availableAtStart).toBe(2);
     });
 
-    it("keeps a production-size compiled snapshot comfortably below a 1 MiB packet", async () => {
+    it("captures only sparse policy, without catalog entries", async () => {
         const service = new CardPolicyService(repository);
-        const cards = Array.from({ length: 1_940 }, (_, index) =>
-            card({
-                id: `${String(index).padStart(8, "0")}-0000-4000-8000-000000000000` as never,
-                intensity: ((index % 5) + 1) as 1 | 2 | 3 | 4 | 5,
-            }),
-        );
-
-        const compiled = await service.compileSessionCards({
-            cards,
-            profile: profile(),
-            sessionPolicy,
-        });
-
-        expect(Array.isArray(compiled.snapshot.cards)).toBe(true);
-        expect(Buffer.byteLength(JSON.stringify(compiled.snapshot), "utf8")).toBeLessThan(256_000);
+        expect(await service.captureSessionPolicy({})).toEqual({ dataSpace: null, group: null });
     });
 });

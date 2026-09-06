@@ -2,8 +2,8 @@ import fs from "node:fs";
 import path from "node:path";
 import type { DataSource } from "typeorm";
 import {
-    validateCardCatalogArtifact,
-    type ValidatedCardCatalogArtifact,
+    validateCardCatalogFile,
+    type CatalogFileArtifact,
 } from "../../../../../packages/card-catalog-contract";
 import {
     applyCardCatalogSnapshot,
@@ -26,13 +26,13 @@ export function bundledCardCatalogPath(): string {
     return resolveRuntimeAssetPath(path.join("catalog", "card-catalog.json"));
 }
 
-export function bundledCardCatalogArtifact(
+export async function bundledCardCatalogArtifact(
     deploymentMode: "local" | "public",
     allowDevelopmentFixture = false,
-): ValidatedCardCatalogArtifact {
+): Promise<CatalogFileArtifact> {
     const file = bundledCardCatalogPath();
     if (!fs.existsSync(file)) throw new Error(`Bundled Card catalog is missing: ${file}`);
-    const artifact = validateCardCatalogArtifact(fs.readFileSync(file));
+    const artifact = await validateCardCatalogFile(file);
     if (
         deploymentMode === "public" &&
         !allowDevelopmentFixture &&
@@ -45,7 +45,7 @@ export function bundledCardCatalogArtifact(
 
 export async function applyBundledCardCatalog(
     dataSource: DataSource,
-    artifact: ValidatedCardCatalogArtifact,
+    artifact: CatalogFileArtifact,
 ) {
     return applyCardCatalogSnapshot(dataSource, artifact);
 }

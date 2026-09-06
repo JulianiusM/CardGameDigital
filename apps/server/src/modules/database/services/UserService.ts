@@ -1,3 +1,4 @@
+import { collectUnusedSessionInputs } from "../../../../../../packages/persistence/sessionImmutablePayloadStore";
 /*
  * Copyright 2026 Julian Malovanij
  *
@@ -15,7 +16,7 @@
  */
 
 import { createHash } from "node:crypto";
-import { EntityManager, MoreThan, Repository } from "typeorm";
+import { EntityManager, IsNull, MoreThan, Repository } from "typeorm";
 import type { OidcClaims } from "../../../types/UserTypes";
 import { generateUniqueToken } from "../../lib/util";
 import { getAppDataSource } from "../dataSource";
@@ -297,13 +298,20 @@ export async function findOrCreateUserFromOidc(
 
     // 2) If not found: try link-by-email (optional)
     if (!user && linkByEmail && email && email_verified === true) {
-        user = await repo.findOne({ where: { email }, relations: { dataSpaces: true } });
-        if (user) {
-            user.oidcIssuer = oidcIssuer;
-            user.oidcSub = sub;
-            user.isActive = true;
-            await repo.save(user);
+        // Claim only an unlinked account, atomically. A different issuer/subject
+        // already attached to this email must keep ownership of its local account.
+        try {
+            await repo.update(
+                { email, oidcIssuer: IsNull(), oidcSub: IsNull() },
+                { oidcIssuer, oidcSub: sub, isActive: true },
+            );
+        } catch (error) {
+            if (!isUniqueConstraintError(error)) throw error;
         }
+        user = await repo.findOne({
+            where: { oidcIssuer, oidcSub: sub },
+            relations: { dataSpaces: true },
+        });
     }
 
     // 3) If still not found: create a new local user (JIT provisioning)
@@ -477,6 +485,7 @@ export async function deleteUser(userId: number) {
         if (!deleted) return null;
         await manager.getRepository(DataSpace).delete({ user: { id: userId } });
         await users.delete({ id: userId });
+        await collectUnusedSessionInputs(manager);
         return deleted;
     });
 }
@@ -580,6 +589,7 @@ export async function deleteDataSpace(
             selected = await repository.save(selected);
         }
         await repository.delete({ id: target.id, user: { id: userId } });
+        await collectUnusedSessionInputs(manager);
         return { status: "deleted", selectedDataSpaceId: selected.id };
     });
 }

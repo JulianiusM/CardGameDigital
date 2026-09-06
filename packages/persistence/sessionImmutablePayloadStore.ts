@@ -1,284 +1,296 @@
+import { readStoredJson, writeStoredJson } from "./storedJson";
+import { DEFAULT_PERSISTENCE_WORK_LIMITS, persistenceWorkLimits } from "./persistenceWorkLimits";
+import { MESSAGE_KEYS } from "../localization/keys";
 import { createHash } from "node:crypto";
-import { brotliCompressSync, brotliDecompressSync, constants as zlibConstants } from "node:zlib";
+import { createBrotliCompress, brotliDecompress, constants } from "node:zlib";
+import { Readable } from "node:stream";
+import { promisify } from "node:util";
+import { setImmediate } from "node:timers/promises";
 import type { EntityManager } from "typeorm";
-import { SessionImmutablePayloadChunkEntity } from "./entities/game/SessionImmutablePayloadChunkEntity";
+import {
+    emptySessionCardPolicy,
+    type GameSessionRuntimeState,
+    type SessionCardPolicyInput,
+    type SessionPolicySnapshot,
+} from "../game-core";
+import { retainedRuntimeBoundaries } from "./privateBoundaryRetention";
 import { SessionImmutablePayloadEntity } from "./entities/game/SessionImmutablePayloadEntity";
-import type { CardId, CompiledCardPolicySnapshot, GameSessionRuntimeState } from "../game-core";
+import { SessionImmutablePayloadChunkEntity } from "./entities/game/SessionImmutablePayloadChunkEntity";
 
-export type SessionImmutablePayloadKind = "COMPILED_CARD_POLICY" | "GROUP_HISTORY";
-
-/** Base64 stays below MariaDB TEXT and packet limits even with statement overhead. */
 export const SESSION_PAYLOAD_CHUNK_BYTES = 24 * 1024;
-const MAXIMUM_PAYLOAD_BYTES = 256 * 1024 * 1024;
+export const MAXIMUM_POLICY_INPUT_BYTES = DEFAULT_PERSISTENCE_WORK_LIMITS.policyInputMaximumBytes;
+const decompress = promisify(brotliDecompress);
 
-export type EncodedSessionImmutablePayload = {
-    digest: string;
-    payloadKind: SessionImmutablePayloadKind;
-    chunks: readonly string[];
-    uncompressedByteLength: number;
-    compressedByteLength: number;
-};
+type PolicyInputs = SessionPolicySnapshot & { session: SessionCardPolicyInput };
+type LoadedInputs = { snapshot: SessionPolicySnapshot; session: SessionCardPolicyInput };
+const loadedInputs = new WeakMap<
+    object,
+    Map<
+        string,
+        { snapshot: WeakRef<SessionPolicySnapshot>; session: WeakRef<SessionCardPolicyInput> }
+    >
+>();
+const loadingInputs = new WeakMap<object, Map<string, Promise<LoadedInputs>>>();
+let activeInputLoads = 0;
 
-export function encodeSessionImmutablePayload(
-    payloadKind: SessionImmutablePayloadKind,
-    payload: unknown,
-): EncodedSessionImmutablePayload {
-    const uncompressed = Buffer.from(JSON.stringify(payload), "utf8");
-    const compressed = brotliCompressSync(uncompressed, {
-        params: { [zlibConstants.BROTLI_PARAM_QUALITY]: 5 },
+function policyCapacityExceeded(): Error {
+    return Object.assign(new Error(MESSAGE_KEYS.GAME_SESSION_CAPACITY_EXCEEDED), {
+        code: "SESSION_CAPACITY_EXCEEDED",
+        status: 429,
     });
-    const chunks: string[] = [];
-    for (let offset = 0; offset < compressed.length; offset += SESSION_PAYLOAD_CHUNK_BYTES) {
-        chunks.push(
-            compressed.subarray(offset, offset + SESSION_PAYLOAD_CHUNK_BYTES).toString("base64"),
-        );
+}
+
+async function sharedPolicyInputs(manager: EntityManager, digest: string): Promise<LoadedInputs> {
+    const cache = loadedInputs.get(manager.connection) ?? new Map();
+    loadedInputs.set(manager.connection, cache);
+    const cached = cache.get(digest);
+    const snapshot = cached?.snapshot.deref();
+    const session = cached?.session.deref();
+    if (snapshot && session) return { snapshot, session };
+    const pending = loadingInputs.get(manager.connection) ?? new Map();
+    loadingInputs.set(manager.connection, pending);
+    const existing = pending.get(digest);
+    if (existing) return existing;
+    if (activeInputLoads >= persistenceWorkLimits().policyConcurrentDecodes)
+        throw policyCapacityExceeded();
+    activeInputLoads++;
+    const read = decodePolicyInputs(manager, digest).then((inputs) => {
+        cache.delete(digest);
+        if (cache.size >= persistenceWorkLimits().policyInputCacheMaximumEntries)
+            cache.delete(cache.keys().next().value!);
+        cache.set(digest, {
+            snapshot: new WeakRef(inputs.snapshot),
+            session: new WeakRef(inputs.session),
+        });
+        return inputs;
+    });
+    pending.set(digest, read);
+    try {
+        return await read;
+    } finally {
+        activeInputLoads--;
+        pending.delete(digest);
     }
-    const digest = createHash("sha256")
-        .update(payloadKind)
-        .update("\0")
-        .update(uncompressed)
-        .digest("hex");
-    return {
-        digest,
-        payloadKind,
-        chunks,
-        uncompressedByteLength: uncompressed.length,
-        compressedByteLength: compressed.length,
-    };
 }
 
-export function encodeCompiledCardPolicySnapshot(
-    snapshot: CompiledCardPolicySnapshot,
-): EncodedSessionImmutablePayload {
-    return encodeSessionImmutablePayload("COMPILED_CARD_POLICY", snapshot);
-}
-
-type GroupHistoryPayload =
-    | {
-          format: "CARD_ID_BITSET_V1";
-          compiledCardPolicyDigest: string;
-          cardCount: number;
-          bitsBase64: string;
-      }
-    | { format: "CARD_IDS_V1"; cardIds: CardId[] };
-
-function groupHistoryPayload(
-    compiledCardPolicy: CompiledCardPolicySnapshot | null,
-    compiledCardPolicyDigest: string | null,
-    groupHistoryCardIds: readonly CardId[],
-): GroupHistoryPayload {
-    if (!compiledCardPolicy || !compiledCardPolicyDigest) {
-        return {
-            format: "CARD_IDS_V1",
-            cardIds: [...groupHistoryCardIds].sort((left, right) => left.localeCompare(right)),
-        };
+/** Serialize sparse policy one directive/rule at a time. No catalog or text exists here. */
+function* policyPieces(inputs: PolicyInputs): Iterable<string> {
+    yield "{";
+    let firstScope = true;
+    for (const name of ["dataSpace", "group", "session"] as const) {
+        if (!firstScope) yield ",";
+        firstScope = false;
+        yield JSON.stringify(name) + ":";
+        const scope = inputs[name];
+        if (!scope) {
+            yield "null";
+            continue;
+        }
+        yield '{"scopeDefault":' + JSON.stringify(scope.scopeDefault) + ',"conditionalRules":[';
+        for (let i = 0; i < scope.conditionalRules.length; i++) {
+            if (i) yield ",";
+            yield JSON.stringify(scope.conditionalRules[i]);
+        }
+        yield '],"exactCards":[';
+        for (let i = 0; i < scope.exactCards.length; i++) {
+            if (i) yield ",";
+            yield JSON.stringify(scope.exactCards[i]);
+        }
+        yield "]}";
     }
-    const history = new Set(groupHistoryCardIds);
-    const bits = Buffer.alloc(Math.ceil(compiledCardPolicy.cards.length / 8));
-    for (const [index, [cardId]] of compiledCardPolicy.cards.entries()) {
-        if (history.has(cardId)) bits[index >> 3] |= 1 << (index & 7);
+    yield "}";
+}
+
+async function persistPolicyInputs(manager: EntityManager, inputs: PolicyInputs): Promise<string> {
+    const hash = createHash("sha256").update("POLICY_INPUT\0");
+    let bytes = 0;
+    let pieces = 0;
+    for (const piece of policyPieces(inputs)) {
+        bytes += Buffer.byteLength(piece);
+        if (bytes > persistenceWorkLimits().policyInputMaximumBytes) throw policyCapacityExceeded();
+        hash.update(piece);
+        if (++pieces % 256 === 0) await setImmediate();
     }
-    return {
-        format: "CARD_ID_BITSET_V1",
-        compiledCardPolicyDigest,
-        cardCount: compiledCardPolicy.cards.length,
-        bitsBase64: bits.toString("base64"),
-    };
-}
-
-export function encodeGroupHistorySnapshot(
-    compiledCardPolicy: CompiledCardPolicySnapshot,
-    compiledCardPolicyDigest: string,
-    groupHistoryCardIds: readonly CardId[],
-): EncodedSessionImmutablePayload {
-    return encodeSessionImmutablePayload(
-        "GROUP_HISTORY",
-        groupHistoryPayload(compiledCardPolicy, compiledCardPolicyDigest, groupHistoryCardIds),
-    );
-}
-
-async function persistEncodedPayload(
-    manager: EntityManager,
-    encoded: EncodedSessionImmutablePayload,
-): Promise<void> {
+    const digest = hash.digest("hex");
+    const payloads = manager.getRepository(SessionImmutablePayloadEntity);
     await manager
         .createQueryBuilder()
         .insert()
         .into(SessionImmutablePayloadEntity)
         .values({
-            digest: encoded.digest,
-            payloadKind: encoded.payloadKind,
+            digest,
+            payloadKind: "POLICY_INPUT",
             compression: "brotli",
-            chunkCount: encoded.chunks.length,
-            uncompressedByteLength: encoded.uncompressedByteLength,
-            compressedByteLength: encoded.compressedByteLength,
+            chunkCount: 0,
+            uncompressedByteLength: bytes,
+            compressedByteLength: 0,
             createdAt: new Date(),
         })
         .orIgnore()
         .execute();
-    for (const [chunkIndex, payloadBase64] of encoded.chunks.entries()) {
+    // INSERT IGNORE obtains the unique parent-row lock before adopting a digest.
+    // Avoid shared locks on a missing key: concurrent identical starts would otherwise
+    // acquire conflicting gap locks. A current read also sees the winning writer.
+    const stored = payloads
+        .createQueryBuilder("payload")
+        .where("payload.digest = :digest", { digest });
+    if (manager.connection.options.type !== "better-sqlite3") stored.setLock("pessimistic_write");
+    if ((await stored.getOneOrFail()).chunkCount > 0) return digest;
+    let pending = Buffer.alloc(0);
+    let chunkCount = 0;
+    let compressedBytes = 0;
+    const saveChunk = async (chunk: Buffer) => {
+        compressedBytes += chunk.length;
         await manager
             .createQueryBuilder()
             .insert()
             .into(SessionImmutablePayloadChunkEntity)
-            .values({ payloadDigest: encoded.digest, chunkIndex, payloadBase64 })
+            .values({
+                payloadDigest: digest,
+                chunkIndex: chunkCount++,
+                payloadBase64: chunk.toString("base64"),
+            })
             .orIgnore()
             .execute();
+    };
+    const stream = Readable.from(policyPieces(inputs)).pipe(
+        createBrotliCompress({
+            params: { [constants.BROTLI_PARAM_QUALITY]: 4 },
+        }),
+    );
+    for await (const chunk of stream) {
+        pending = Buffer.concat([pending, chunk as Buffer]);
+        while (pending.length >= SESSION_PAYLOAD_CHUNK_BYTES) {
+            await saveChunk(pending.subarray(0, SESSION_PAYLOAD_CHUNK_BYTES));
+            pending = pending.subarray(SESSION_PAYLOAD_CHUNK_BYTES);
+        }
     }
+    if (pending.length) await saveChunk(pending);
+    await payloads.update({ digest }, { chunkCount, compressedByteLength: compressedBytes });
+    return digest;
 }
 
 export async function externalizeSessionImmutableState(
     manager: EntityManager,
     runtime: GameSessionRuntimeState,
-    existingDigests?: {
-        compiledCardPolicyDigest: string | null;
-        groupHistoryDigest: string | null;
-    },
-): Promise<{
-    runtimeStateJson: string;
-    compiledCardPolicyDigest: string | null;
-    groupHistoryDigest: string | null;
-}> {
-    let compiledCardPolicyDigest = existingDigests?.compiledCardPolicyDigest ?? null;
-    if (!compiledCardPolicyDigest && runtime.compiledCardPolicy) {
-        const encoded = encodeCompiledCardPolicySnapshot(runtime.compiledCardPolicy);
-        await persistEncodedPayload(manager, encoded);
-        compiledCardPolicyDigest = encoded.digest;
+    existing?: { policyInputDigest: string | null },
+): Promise<{ runtimeStateJson: string; policyInputDigest: string | null }> {
+    let policyInputDigest = existing?.policyInputDigest ?? null;
+    if (runtime.state === "ENDED") policyInputDigest = null;
+    else if (
+        !policyInputDigest &&
+        (runtime.policySnapshot?.dataSpace ||
+            runtime.policySnapshot?.group ||
+            Object.keys(runtime.sessionCardPolicy.scopeDefault).length ||
+            runtime.sessionCardPolicy.conditionalRules.length ||
+            runtime.sessionCardPolicy.exactCards.length)
+    ) {
+        policyInputDigest = await persistPolicyInputs(manager, {
+            dataSpace: runtime.policySnapshot?.dataSpace ?? null,
+            group: runtime.policySnapshot?.group ?? null,
+            session: runtime.sessionCardPolicy,
+        });
     }
-
-    let groupHistoryDigest = existingDigests?.groupHistoryDigest ?? null;
-    if (!groupHistoryDigest && runtime.groupHistoryCardIds.length > 0) {
-        const payload = groupHistoryPayload(
-            runtime.compiledCardPolicy,
-            compiledCardPolicyDigest,
-            runtime.groupHistoryCardIds,
-        );
-        const encoded = encodeSessionImmutablePayload("GROUP_HISTORY", payload);
-        await persistEncodedPayload(manager, encoded);
-        groupHistoryDigest = encoded.digest;
-    }
-
     return {
-        runtimeStateJson: JSON.stringify({
+        runtimeStateJson: await writeStoredJson({
             ...runtime,
-            compiledCardPolicy: null,
+            boundariesByPlayer: retainedRuntimeBoundaries(runtime),
+            policySnapshot: null,
+            sessionCardPolicy: emptySessionCardPolicy(),
             groupHistoryCardIds: [],
-            sessionHistory: [],
+            historyIndex: [],
         }),
-        compiledCardPolicyDigest,
-        groupHistoryDigest,
+        policyInputDigest,
     };
-}
-
-async function loadImmutablePayload(
-    manager: EntityManager,
-    payloadKind: SessionImmutablePayloadKind,
-    digest: string,
-): Promise<unknown> {
-    const metadata = await manager.getRepository(SessionImmutablePayloadEntity).findOneBy({
-        digest,
-        payloadKind,
-    });
-    if (!metadata) throw new Error(`Stored Session references a missing ${payloadKind} payload`);
-    if (
-        metadata.compression !== "brotli" ||
-        metadata.uncompressedByteLength < 1 ||
-        metadata.uncompressedByteLength > MAXIMUM_PAYLOAD_BYTES ||
-        metadata.compressedByteLength < 1
-    ) {
-        throw new Error(`Stored Session ${payloadKind} metadata is invalid`);
-    }
-    const chunks = await manager.getRepository(SessionImmutablePayloadChunkEntity).find({
-        where: { payloadDigest: digest },
-        order: { chunkIndex: "ASC" },
-    });
-    if (
-        chunks.length !== metadata.chunkCount ||
-        chunks.some(({ chunkIndex }, index) => chunkIndex !== index)
-    ) {
-        throw new Error(`Stored Session ${payloadKind} chunks are incomplete`);
-    }
-    const compressed = Buffer.concat(
-        chunks.map(({ payloadBase64 }) => Buffer.from(payloadBase64, "base64")),
-    );
-    if (compressed.length !== metadata.compressedByteLength) {
-        throw new Error(`Stored Session ${payloadKind} size is inconsistent`);
-    }
-    const uncompressed = brotliDecompressSync(compressed, {
-        maxOutputLength: metadata.uncompressedByteLength,
-    });
-    const actualDigest = createHash("sha256")
-        .update(payloadKind)
-        .update("\0")
-        .update(uncompressed)
-        .digest("hex");
-    if (uncompressed.length !== metadata.uncompressedByteLength || actualDigest !== digest) {
-        throw new Error(`Stored Session ${payloadKind} digest is inconsistent`);
-    }
-    return JSON.parse(uncompressed.toString("utf8")) as unknown;
-}
-
-function parseGroupHistory(
-    payload: unknown,
-    compiledCardPolicy: CompiledCardPolicySnapshot | null,
-    compiledCardPolicyDigest: string | null,
-): CardId[] {
-    if (!payload || typeof payload !== "object" || !("format" in payload)) {
-        throw new Error("Stored Session GROUP_HISTORY payload is invalid");
-    }
-    const candidate = payload as Partial<GroupHistoryPayload>;
-    if (candidate.format === "CARD_IDS_V1") {
-        if (
-            !Array.isArray(candidate.cardIds) ||
-            candidate.cardIds.some((cardId) => typeof cardId !== "string")
-        ) {
-            throw new Error("Stored Session GROUP_HISTORY Card IDs are invalid");
-        }
-        return candidate.cardIds;
-    }
-    if (
-        candidate.format !== "CARD_ID_BITSET_V1" ||
-        !compiledCardPolicy ||
-        !compiledCardPolicyDigest ||
-        candidate.compiledCardPolicyDigest !== compiledCardPolicyDigest ||
-        candidate.cardCount !== compiledCardPolicy.cards.length ||
-        typeof candidate.bitsBase64 !== "string"
-    ) {
-        throw new Error("Stored Session GROUP_HISTORY bitset metadata is invalid");
-    }
-    const bits = Buffer.from(candidate.bitsBase64, "base64");
-    if (bits.length !== Math.ceil(candidate.cardCount / 8)) {
-        throw new Error("Stored Session GROUP_HISTORY bitset size is invalid");
-    }
-    return compiledCardPolicy.cards
-        .filter((_, index) => (bits[index >> 3] & (1 << (index & 7))) !== 0)
-        .map(([cardId]) => cardId);
 }
 
 export async function hydrateSessionImmutableState(
     manager: EntityManager,
     runtimeStateJson: string,
-    digests: {
-        compiledCardPolicyDigest: string | null;
-        groupHistoryDigest: string | null;
-    },
-    normalizedSessionHistory?: GameSessionRuntimeState["sessionHistory"],
+    digests: { policyInputDigest: string | null },
 ): Promise<GameSessionRuntimeState> {
-    const runtime = JSON.parse(runtimeStateJson) as GameSessionRuntimeState;
-    const compiledCardPolicy = digests.compiledCardPolicyDigest
-        ? ((await loadImmutablePayload(
-              manager,
-              "COMPILED_CARD_POLICY",
-              digests.compiledCardPolicyDigest,
-          )) as CompiledCardPolicySnapshot)
-        : runtime.compiledCardPolicy;
-    const groupHistoryCardIds = digests.groupHistoryDigest
-        ? parseGroupHistory(
-              await loadImmutablePayload(manager, "GROUP_HISTORY", digests.groupHistoryDigest),
-              compiledCardPolicy,
-              digests.compiledCardPolicyDigest,
-          )
-        : runtime.groupHistoryCardIds;
-    const sessionHistory = normalizedSessionHistory ?? runtime.sessionHistory;
-    return { ...runtime, compiledCardPolicy, groupHistoryCardIds, sessionHistory };
+    const runtime = await readStoredJson<GameSessionRuntimeState>(runtimeStateJson);
+    if (runtime.version !== 7) throw new Error("Unsupported persisted Session runtime");
+    if (!digests.policyInputDigest || runtime.state === "ENDED") return runtime;
+    const inputs = await sharedPolicyInputs(manager, digests.policyInputDigest);
+    return { ...runtime, policySnapshot: inputs.snapshot, sessionCardPolicy: inputs.session };
+}
+
+async function decodePolicyInputs(manager: EntityManager, digest: string): Promise<LoadedInputs> {
+    const metadata = await manager
+        .getRepository(SessionImmutablePayloadEntity)
+        .findOneBy({ digest: digest, payloadKind: "POLICY_INPUT" });
+    if (
+        !metadata ||
+        metadata.uncompressedByteLength < 1 ||
+        metadata.compressedByteLength < 1 ||
+        metadata.chunkCount !==
+            Math.ceil(metadata.compressedByteLength / SESSION_PAYLOAD_CHUNK_BYTES)
+    )
+        throw new Error("Invalid Session policy payload metadata");
+    if (
+        metadata.uncompressedByteLength > persistenceWorkLimits().policyInputMaximumBytes ||
+        metadata.compressedByteLength > persistenceWorkLimits().policyInputMaximumBytes + 65536
+    )
+        throw policyCapacityExceeded();
+    const chunks: Buffer[] = [];
+    for (let offset = 0; offset < metadata.chunkCount; offset += 16) {
+        const page = await manager
+            .getRepository(SessionImmutablePayloadChunkEntity)
+            .createQueryBuilder("chunk")
+            .where("chunk.payloadDigest = :digest AND chunk.chunkIndex >= :offset", {
+                digest: metadata.digest,
+                offset,
+            })
+            .orderBy("chunk.chunkIndex", "ASC")
+            .take(Math.min(16, metadata.chunkCount - offset))
+            .getMany();
+        if (page.length !== Math.min(16, metadata.chunkCount - offset))
+            throw new Error("Missing Session policy chunk");
+        for (const [index, row] of page.entries()) {
+            if (
+                row.chunkIndex !== offset + index ||
+                row.payloadBase64.length > (SESSION_PAYLOAD_CHUNK_BYTES * 4) / 3
+            )
+                throw new Error("Invalid Session policy chunk");
+            chunks.push(Buffer.from(row.payloadBase64, "base64"));
+        }
+    }
+    const compressed = Buffer.concat(chunks);
+    if (compressed.length !== metadata.compressedByteLength)
+        throw new Error("Invalid Session policy length");
+    const json = await decompress(compressed, { maxOutputLength: metadata.uncompressedByteLength });
+    if (
+        json.length !== metadata.uncompressedByteLength ||
+        createHash("sha256").update("POLICY_INPUT\0").update(json).digest("hex") !== metadata.digest
+    )
+        throw new Error("Invalid Session policy digest");
+    const inputs = JSON.parse(json.toString("utf8")) as PolicyInputs;
+    return {
+        snapshot: { dataSpace: inputs.dataSpace, group: inputs.group },
+        session: inputs.session,
+    };
+}
+
+/** Bounded orphan cleanup; callers detach terminal references first, in the same transaction. */
+export async function collectUnusedSessionInputs(manager: EntityManager): Promise<void> {
+    const unreferenced = `NOT EXISTS (SELECT 1 FROM game_sessions s WHERE s.policy_input_digest = payload.digest)
+        AND NOT EXISTS (SELECT 1 FROM couch_game_sessions s WHERE s.policy_input_digest = payload.digest)`;
+    const candidates = manager
+        .getRepository(SessionImmutablePayloadEntity)
+        .createQueryBuilder("payload")
+        .select(["payload.digest"])
+        .where(unreferenced)
+        .orderBy("payload.createdAt", "ASC")
+        .take(persistenceWorkLimits().immutablePayloadCleanupBatchSize);
+    if (manager.connection.options.type !== "better-sqlite3")
+        candidates.setLock("pessimistic_write");
+    for (const { digest } of await candidates.getMany()) {
+        await manager.query(
+            `DELETE FROM session_immutable_payloads WHERE digest = ?
+            AND NOT EXISTS (SELECT 1 FROM game_sessions s WHERE s.policy_input_digest = ?)
+            AND NOT EXISTS (SELECT 1 FROM couch_game_sessions s WHERE s.policy_input_digest = ?)`,
+            [digest, digest, digest],
+        );
+    }
 }

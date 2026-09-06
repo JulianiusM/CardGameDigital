@@ -1,3 +1,6 @@
+import { catalogSessionLifetimeTests } from "../support/catalogSessions";
+import { gameRetentionTests } from "../support/gameRetention";
+import { policyCommitTests } from "../support/policyCommits";
 import path from "node:path";
 import request, { type Response } from "supertest";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
@@ -16,6 +19,9 @@ import settings from "../../apps/server/src/modules/settings";
 import { getRoomService } from "../../apps/server/src/modules/realtime";
 import { effectiveSettingsFromProfile } from "../../packages/application/roomGameSettings";
 import { GAME_MODES } from "../../packages/game-core";
+import { privateBoundaryRetentionTests } from "../support/privateBoundaryRetention";
+import { correctiveConsentTests } from "../support/correctiveConsent";
+import { authoritativeCommitTests } from "../support/authoritativeCommits";
 import {
     loadMariaTestProfile,
     dropMariaTestDatabase,
@@ -283,8 +289,8 @@ suite("public mode on MariaDB", () => {
             scopeDefault: { socialSensitivity: { mode: "SET", value: "PERSONAL" } },
         });
         await publicRequest("post", "/api/v1/card-policy/import", firstCookie)
-            .send({ ...exported.body, scopeDefault: {} })
-            .expect(200);
+            .send({ policy: { ...exported.body, scopeDefault: {} }, expectedScopeRevision: 1 })
+            .expect(204);
         await publicRequest("get", "/api/v1/card-policy/default", firstCookie)
             .expect(200)
             .expect(({ body }) => expect(body.scopeDefault.directives).toEqual({}));
@@ -588,4 +594,10 @@ suite("public mode on MariaDB", () => {
         ).toBe(0);
         expect(await getAppDataSource().getRepository(AccountSession).count()).toBe(0);
     });
+    privateBoundaryRetentionTests(getAppDataSource);
+    correctiveConsentTests(getAppDataSource);
+    authoritativeCommitTests(getAppDataSource);
+    policyCommitTests(getAppDataSource);
+    catalogSessionLifetimeTests(getAppDataSource);
+    gameRetentionTests(getAppDataSource);
 });
