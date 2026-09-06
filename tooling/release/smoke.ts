@@ -1,127 +1,208 @@
-import { execFileSync } from "node:child_process";
+import { spawn, type ChildProcess } from "node:child_process";
 import fs from "node:fs";
+import net from "node:net";
+import os from "node:os";
 import path from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 import { PROTOCOL_VERSION } from "../../packages/protocol/version";
-import { serverWebReleaseDirectoryName, serverWebReleaseManifestSchema } from "./bundle";
+import { defaultRoomGameSettings } from "../../packages/application/roomGameSettings";
+import { verifyReleaseLayout } from "./verification";
 
-const targetArgument = process.argv[2];
-if (!targetArgument) throw new Error("Usage: tooling/release/smoke.ts <release-directory>");
-const target = path.resolve(targetArgument);
-const required = [
-    "app/dist/apps/server/src/server.js",
-    "app/dist/apps/server/src/modules/runtimeAssets.js",
-    "app/dist/web/index.html",
-    "app/dist/catalog/card-catalog.json",
-    "app/dist/docs/user-guide",
-    "app/package.json",
-    "package.json",
-    "package-lock.json",
-    "LICENSE.md",
-    "SBOM.cdx.json",
-    "release-manifest.json",
-    "protocol-schemas/manifest.json",
-    "protocol-schemas/client-hello.schema.json",
-    "protocol-schemas/room-command.schema.json",
-    "node_modules/better-sqlite3/package.json",
-    "node_modules/argon2/package.json",
-    "config/settings.csv",
-    process.platform === "win32" ? "runtime/node.exe" : "runtime/node",
-    process.platform === "win32" ? "start.cmd" : "start.sh",
-];
-for (const item of required) {
-    if (!fs.existsSync(path.join(target, item)))
-        throw new Error(`Release artifact missing ${item}`);
+async function unusedPort(): Promise<number> {
+    const server = net.createServer();
+    await new Promise<void>((resolve, reject) => {
+        server.once("error", reject);
+        server.listen(0, "127.0.0.1", resolve);
+    });
+    const port = (server.address() as net.AddressInfo).port;
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    return port;
 }
-const sourceCatalog = fs.readFileSync(path.resolve("catalog/card-catalog.json"));
-const packagedCatalog = fs.readFileSync(path.join(target, "app/dist/catalog/card-catalog.json"));
-if (!sourceCatalog.equals(packagedCatalog)) {
-    throw new Error("Packaged card-catalog.json bytes differ from the validated source artifact");
+
+async function stop(child: ChildProcess): Promise<void> {
+    if (!child.pid || child.exitCode !== null || child.signalCode !== null) return;
+    await new Promise<void>((resolve) => {
+        const timeout = setTimeout(() => child.kill("SIGKILL"), 12_000);
+        child.once("exit", () => {
+            clearTimeout(timeout);
+            resolve();
+        });
+        child.kill("SIGTERM");
+    });
 }
-const sbom = JSON.parse(fs.readFileSync(path.join(target, "SBOM.cdx.json"), "utf8"));
-if (sbom.bomFormat !== "CycloneDX") throw new Error("Release SBOM is not CycloneDX JSON");
-const protocolManifest = JSON.parse(
-    fs.readFileSync(path.join(target, "protocol-schemas/manifest.json"), "utf8"),
-);
-if (protocolManifest.protocolVersion !== PROTOCOL_VERSION) {
-    throw new Error("Release protocol schema manifest has the wrong protocol version");
-}
-const releaseManifest = serverWebReleaseManifestSchema.parse(
-    JSON.parse(fs.readFileSync(path.join(target, "release-manifest.json"), "utf8")),
-);
-if (
-    releaseManifest.platform !== process.platform ||
-    releaseManifest.architecture !== process.arch
-) {
-    throw new Error("Release platform does not match the smoke-test platform");
-}
-if (releaseManifest.protocolVersion !== protocolManifest.protocolVersion) {
-    throw new Error("Release and protocol manifests disagree about the protocol version");
-}
-const expectedDirectoryName = serverWebReleaseDirectoryName({
-    version: releaseManifest.version,
-    edition: releaseManifest.edition,
-    platform: releaseManifest.platform,
-    architecture: releaseManifest.architecture,
-});
-if (path.basename(target) !== expectedDirectoryName) {
-    throw new Error("Release directory name does not match the release manifest");
-}
-if (releaseManifest.edition === "portable" && !fs.existsSync(path.join(target, "data"))) {
-    throw new Error("Portable release artifact missing data");
-}
-const settingsTemplate = fs.readFileSync(path.join(target, "config/settings.csv"), "utf8");
-if (
-    !settingsTemplate.includes(
-        `DEPLOYMENT_MODE,${releaseManifest.edition === "portable" ? "local" : "public"}\n`,
-    )
-) {
-    throw new Error("Settings template does not match the release edition");
-}
-const rootPackage = JSON.parse(fs.readFileSync(path.join(target, "package.json"), "utf8"));
-const appPackage = JSON.parse(fs.readFileSync(path.join(target, "app/package.json"), "utf8"));
-if (
-    rootPackage.version !== releaseManifest.version ||
-    appPackage.version !== releaseManifest.version
-) {
-    throw new Error("Packaged application versions do not match the release manifest");
-}
-if (rootPackage.scripts || appPackage.scripts) {
-    throw new Error("Packaged metadata must not expose a launcher requiring external npm or Node");
-}
-const runtime = path.join(target, "runtime", process.platform === "win32" ? "node.exe" : "node");
-const runtimeVersion = execFileSync(runtime, ["--version"], { encoding: "utf8" }).trim();
-if (runtimeVersion !== releaseManifest.runtime.version) {
-    throw new Error("Bundled runtime version does not match the release manifest");
-}
-execFileSync(runtime, ["-e", "require('argon2'); require('better-sqlite3')"], {
-    cwd: path.resolve(target),
-    stdio: "pipe",
-});
-execFileSync(runtime, ["--check", "app/dist/apps/server/src/server.js"], {
-    cwd: path.resolve(target),
-    stdio: "pipe",
-});
-const runtimeAssetsModule = path.join(target, "app/dist/apps/server/src/modules/runtimeAssets.js");
-const runtimeAssets = JSON.parse(
-    execFileSync(
-        runtime,
-        [
-            "-e",
-            `const { resolveRuntimeAssetPath } = require(${JSON.stringify(runtimeAssetsModule)}); process.stdout.write(JSON.stringify({ web: resolveRuntimeAssetPath("web"), docs: resolveRuntimeAssetPath("docs/user-guide"), catalog: resolveRuntimeAssetPath("catalog/card-catalog.json") }));`,
-        ],
-        { cwd: path.resolve(target), encoding: "utf8" },
-    ),
-) as Record<"web" | "docs" | "catalog", string>;
-const expectedRuntimeAssets = {
-    web: path.join(target, "app/dist/web"),
-    docs: path.join(target, "app/dist/docs/user-guide"),
-    catalog: path.join(target, "app/dist/catalog/card-catalog.json"),
-};
-for (const [name, expected] of Object.entries(expectedRuntimeAssets)) {
+
+async function main(): Promise<void> {
+    if (!process.argv[2]) throw new Error("Usage: tooling/release/smoke.ts <release-directory>");
+    const target = path.resolve(process.argv[2]);
+    const manifest = verifyReleaseLayout(target);
+    if (manifest.protocolVersion !== PROTOCOL_VERSION)
+        throw new Error("Unexpected protocol version");
+    const sourceCatalog = fs.readFileSync(path.resolve("catalog/card-catalog.json"));
     if (
-        path.resolve(runtimeAssets[name as keyof typeof runtimeAssets]) !== path.resolve(expected)
+        !sourceCatalog.equals(
+            fs.readFileSync(path.join(target, "app/dist/catalog/card-catalog.json")),
+        )
     ) {
-        throw new Error(`Packaged runtime resolved ${name} outside app/dist`);
+        throw new Error("Packaged catalog bytes differ from the validated source");
+    }
+    if (
+        manifest.edition === "portable" &&
+        (manifest.platform !== process.platform || manifest.architecture !== process.arch)
+    ) {
+        throw new Error("Portable smoke test must run on its target platform");
+    }
+    // A fresh extraction outside the repository prevents accidental access to developer packages,
+    // settings, assets, or data. Spaces also exercise native executable path handling.
+    const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "party game release smoke "));
+    let child: ChildProcess | undefined;
+    try {
+        const installation = path.join(scratch, "installation");
+        const workingDirectory = path.join(scratch, "service-data");
+        fs.cpSync(target, installation, { recursive: true });
+        fs.mkdirSync(workingDirectory);
+        const port = await unusedPort();
+        const environment: NodeJS.ProcessEnv = {};
+        for (const key of ["SystemRoot", "WINDIR", "TEMP", "TMP", "HOME", "USERPROFILE"]) {
+            if (process.env[key]) environment[key] = process.env[key];
+        }
+        Object.assign(environment, {
+            PATH: "",
+            HTTP_PORT: String(port),
+            MDNS_DISCOVERY_ENABLED: "false",
+            LOG_LEVEL: "info",
+        });
+        let command = path.join(installation, manifest.entrypoint);
+        let args: string[] = [];
+        if (manifest.edition === "public") {
+            command = process.execPath;
+            args = [path.join(installation, manifest.entrypoint)];
+            // Simulate infrastructure-owned packages, never add them to the public artifact.
+            environment.NODE_PATH = path.resolve("node_modules");
+            const rejected = spawn(command, args, {
+                cwd: workingDirectory,
+                env: environment,
+                stdio: ["ignore", "pipe", "pipe"],
+            });
+            let rejection = "";
+            rejected.stdout.on("data", (chunk) => {
+                rejection += chunk;
+            });
+            rejected.stderr.on("data", (chunk) => {
+                rejection += chunk;
+            });
+            const code = await new Promise<number | null>((resolve, reject) => {
+                const timeout = setTimeout(() => {
+                    rejected.kill("SIGKILL");
+                    reject(new Error("Unconfigured public release did not fail closed"));
+                }, 15_000);
+                rejected.once("error", (error) => {
+                    clearTimeout(timeout);
+                    reject(error);
+                });
+                rejected.once("exit", (code) => {
+                    clearTimeout(timeout);
+                    resolve(code);
+                });
+            });
+            if (
+                code !== 1 ||
+                !rejection.includes("server.startup_failed") ||
+                rejection.includes("server.listening")
+            ) {
+                throw new Error(
+                    "Unconfigured public release must reject startup through enforced settings validation",
+                );
+            }
+            // The isolated smoke runs without a database service. Public MariaDB/authentication
+            // integration remains a separate CI gate; this explicit override tests launch/assets.
+            Object.assign(environment, {
+                PUBLIC_RUNTIME_SECURITY: "development",
+                PUBLIC_URL: `http://127.0.0.1:${port}`,
+                AUTH_MODE: "none",
+                DB_TYPE: "sqlite",
+                DB_FILE: path.join(workingDirectory, "smoke.sqlite"),
+            });
+        }
+        child = spawn(command, args, {
+            cwd: workingDirectory,
+            env: environment,
+            stdio: ["ignore", "pipe", "pipe"],
+        });
+        let output = "";
+        let spawnError: Error | undefined;
+        child.on("error", (error) => {
+            spawnError = error;
+        });
+        child.stdout?.on("data", (chunk) => {
+            output = (output + chunk).slice(-16_000);
+        });
+        child.stderr?.on("data", (chunk) => {
+            output = (output + chunk).slice(-16_000);
+        });
+        const origin = `http://127.0.0.1:${port}`;
+        const deadline = Date.now() + 120_000;
+        let ready = false;
+        while (Date.now() < deadline) {
+            if (spawnError) throw spawnError;
+            if (child.exitCode !== null)
+                throw new Error(`Release exited before readiness: ${output}`);
+            const response = await fetch(`${origin}/readyz`, {
+                signal: AbortSignal.timeout(2_000),
+            }).catch(() => undefined);
+            if (response?.ok) {
+                ready = true;
+                break;
+            }
+            await delay(250);
+        }
+        if (!ready) throw new Error(`Release did not become ready: ${output}`);
+        const page = await fetch(`${origin}/play/`);
+        const html = await page.text();
+        if (!page.ok || !html.includes("/play/assets/"))
+            throw new Error("Release did not serve the built browser client");
+        const script = html.match(/src="([^"]+\.js)"/)?.[1];
+        if (!script || !(await fetch(new URL(script, origin))).ok)
+            throw new Error("Release browser JavaScript is unavailable");
+        const info = (await (await fetch(`${origin}/api/v1/server-info`)).json()) as {
+            deploymentMode: string;
+            authenticationAvailable: boolean;
+        };
+        const expectedMode = manifest.edition === "portable" ? "local" : "public";
+        if (info.deploymentMode !== expectedMode || info.authenticationAvailable !== false)
+            throw new Error("Release did not load its edition defaults");
+        const created = await fetch(`${origin}/api/v1/couch/sessions`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                ...defaultRoomGameSettings(),
+                mode: "CLASSIC_TRUTH_OR_DARE",
+                players: [{ name: "Alice" }, { name: "Ben" }],
+            }),
+        });
+        if (created.status !== 201)
+            throw new Error(`Release could not create a local game (${created.status})`);
+        const session = (await created.json()) as { id: string; revision: number };
+        const shown = await fetch(`${origin}/api/v1/couch/sessions/${session.id}/choose`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ revision: session.revision, cardType: "QUESTION" }),
+        });
+        if (!shown.ok) throw new Error(`Release could not draw a bundled Card (${shown.status})`);
+        if (
+            manifest.edition === "portable" &&
+            !fs.existsSync(path.join(installation, "data/game.sqlite"))
+        ) {
+            throw new Error("Portable executable did not initialize its own SQLite data");
+        }
+        console.log(`Release layout and isolated startup passed: ${target}`);
+    } finally {
+        if (child) await stop(child);
+        // Only remove the exact scratch directory created above, after its server has exited.
+        fs.rmSync(scratch, { recursive: true, force: true, maxRetries: 8, retryDelay: 250 });
     }
 }
-console.log(`Release smoke layout passed: ${target}`);
+
+void main().catch((error: unknown) => {
+    console.error(error);
+    process.exitCode = 1;
+});

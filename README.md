@@ -183,9 +183,8 @@ newer immutable FULL snapshot transactionally before readiness. Producer UUIDs a
 stored unchanged; missing Cards, locales, and localizations are soft-disabled. See the
 [bundled Card catalog contract](./docs/contracts/card-catalog-v2.md).
 
-The checked-in four-Card catalog is a development fixture. Enforced public startup and
-public release packaging deliberately refuse it; replace it with the producer-approved
-production artifact before deployment.
+Enforced public startup and public release packaging deliberately refuse catalogs marked
+as development fixtures. Deploy a producer-approved production artifact.
 
 ## Testing and quality checks
 
@@ -218,11 +217,25 @@ npm run package:server-web:public
 npm run package:server-web:smoke -- artifacts/<package-directory>
 ```
 
-Server and browser code form one `server-web` release unit with one version. Both
-portable and public archives embed Node and all production packages for their exact
-OS/architecture; an operator does not install Node or npm. Public operation still needs
-the configured database, TLS/proxy, secrets, authentication, and mail services. Manual
-release CI produces Linux, Windows, and macOS archives for x64 and arm64.
+Server and browser code form one `server-web` release unit with one version:
+
+- **Portable:** extract the complete archive into a writable directory and start
+  `party-game.exe` (Windows) or `./party-game` (Linux/macOS), then open
+  <http://localhost:3000/play/>. Node, production modules, SQLite, the catalog, and all
+  browser assets are included. Local games need no setup or internet. Keep `data/`
+  when upgrading. CI builds x64 and arm64 archives on all three platforms.
+- **Public:** deploy the single platform-independent application archive and run
+  `node /absolute/path/to/main.cjs` with the infrastructure's Node 24 process. The
+  archive contains no Node runtime, modules, native bindings, or service infrastructure.
+  Provision the locked production packages on the host and expose them through an
+  ancestor `node_modules` directory or `NODE_PATH`. Configure MariaDB/MySQL, HTTPS
+  proxying, stable secrets, and SMTP. Public/account/MariaDB defaults and enforced
+  security load automatically, with `127.0.0.1:3000` as the default proxy-facing bind.
+
+Both entrypoints apply `config/settings.csv` as edition defaults beneath the operator's
+`SETTINGS_FILE` and environment variables. Public processes keep their service working
+directory; portable data lives beside the executable. Release CI pins every job and tag
+to one source SHA and verifies the complete seven-archive set before publication.
 
 The implemented Kodi client is an independent `kodi-client` release unit with its own
 version, `kodi-client-v{version}` tag, deterministic add-on ZIP, checksum, SBOM, and

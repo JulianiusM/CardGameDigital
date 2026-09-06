@@ -2211,7 +2211,13 @@ test("visually audits Party Screen Truth and Dare action paths", async ({ browse
     forceRoomPoolExhausted = true;
     await phone.locator(".actions").getByRole("button", { name: "Weiter", exact: true }).click();
     await expect.poll(() => forceRoomPoolExhausted).toBe(false);
-    await expect(phone.locator(".exhausted-state")).toBeVisible();
+    // A rejected command leaves the authoritative snapshot intact. The error toast
+    // must coexist with the current Card and its recovery controls.
+    await expect(phone.locator(".notification-toast")).toContainText(
+        "Keine passenden Karten mehr.",
+    );
+    await expect(phone.locator(".game-card[data-type='QUESTION']")).toBeVisible();
+    await expect(phone.locator(".exhausted-state")).toHaveCount(0);
     await expectElementsDoNotIntersect(
         phone.locator(".notification-lane"),
         phone.locator(".app-location"),
@@ -2220,17 +2226,17 @@ test("visually audits Party Screen Truth and Dare action paths", async ({ browse
         phone.locator(".notification-toast"),
         phone.locator(".active-player"),
     );
-    await audit(phone, testInfo, "51a-party-phone-card-pool-exhausted", { fullPage: false });
-    const exhaustedState = phone.locator(".exhausted-state");
+    await audit(phone, testInfo, "51a-party-phone-rejected-advance", { fullPage: false });
+    const recoveryActions = phone.locator(".actions");
     await auditViewportSegment(
         phone,
         testInfo,
-        exhaustedState,
-        "51a1-party-phone-card-pool-exhausted-actions",
+        recoveryActions,
+        "51a1-party-phone-rejected-advance-actions",
         "center",
     );
-    await expectElementsDoNotIntersect(phone.locator(".notification-toast"), exhaustedState);
-    await expectControlTextPaintedWithin(exhaustedState.getByRole("button"));
+    await expectElementsDoNotIntersect(phone.locator(".notification-toast"), recoveryActions);
+    await expectControlTextPaintedWithin(recoveryActions.getByRole("button"));
     await phone.locator(".settings-trigger").click();
     await expect(phone.locator(".notification-lane")).toHaveCount(0);
     await expectModalPaintedAndTopmost(phone);
@@ -2391,7 +2397,14 @@ test("visually audits the English interface on a narrow phone and TV viewport", 
     const zoomedCardPager = page.locator(".game-card .auto-page-text");
     const zoomedCopy = zoomedCardPager.locator(visibleAutoPageCopy);
     const zoomedSource = (await zoomedCopy.getAttribute("aria-label")) ?? "";
-    const zoomedPageCount = await expectCompleteTextPages(zoomedCardPager, zoomedSource, 5, true);
+    // Production Cards vary in length. Every measured page must preserve and paint
+    // its text at 200% zoom; a fixed page-count ceiling cannot describe that catalog.
+    const zoomedPageCount = await expectCompleteTextPages(
+        zoomedCardPager,
+        zoomedSource,
+        undefined,
+        true,
+    );
     await selectMeasuredPage(zoomedCardPager, zoomedPageCount - 1);
     await audit(page, testInfo, "62a-en-game-phone-200-percent-text-zoom-last-page", {
         fullPage: true,

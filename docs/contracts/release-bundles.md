@@ -15,15 +15,24 @@ server rules or the Card catalog.
 
 ## Server-web editions and targets
 
-Each server-web version produces both editions from the same build output:
+Each server-web version produces both editions from the same source SHA and release
+version. Server and browser code are built together in each job:
 
-- `portable` supplies local/LAN defaults and a writable SQLite data directory.
-- `public` supplies enforced-public defaults. It still requires deployment services
-  such as MariaDB, HTTPS proxying, secrets, authentication, and mail configuration, but
-  it does not require Node, npm, build tools, or separately installed JavaScript/native
-  packages.
+- `portable` supplies local/LAN defaults, an application executable, all runtime
+  dependencies, and a writable SQLite data directory. Extract the entire archive into
+  a writable directory and run `party-game.exe` on Windows or `./party-game` on Linux
+  and macOS. Open `http://localhost:3000/play/`. No installation, network download,
+  Node/npm, database service, or configuration is needed. A browser is the game client.
+- `public` supplies only the managed application distributable. Start it with the
+  infrastructure's Node 24 process: `node /absolute/path/to/main.cjs`. The operator
+  provisions the locked production packages (including native Argon2 and better-sqlite3
+  matching the host Node ABI), MariaDB/MySQL, HTTPS proxy, stable secrets, and mail.
+  The artifact never includes Node, `node_modules`, native bindings, or service/container
+  infrastructure. Provision dependencies before deployment using its `package.json` and
+  `package-lock.json`, with an ancestor `node_modules` directory or `NODE_PATH` exposing
+  them to Node. Application startup does not run npm or install anything.
 
-The release matrix builds on each target rather than cross-copying native modules:
+The portable matrix builds on each target rather than cross-copying native modules:
 
 | Runtime platform | Architecture |
 | ---------------- | ------------ |
@@ -31,46 +40,90 @@ The release matrix builds on each target rather than cross-copying native module
 | Windows          | x64, arm64   |
 | macOS            | x64, arm64   |
 
-The directory and archive basename is:
+Portable directory and archive basenames are:
 
 ```text
-party-game-server-web-{version}-{edition}-{node-platform}-{node-architecture}
+party-game-server-web-{version}-portable-{node-platform}-{node-architecture}
 ```
+
+The public directory/archive basename is `party-game-server-web-{version}-public`.
+It is built once and used on every supported host. All seven archives use `.tar.gz`.
 
 Server-web tags use `server-web-v{version}`. The Kodi client uses
 `kodi-client-v{version}`; a future Android-family client uses its own
 `android-tv-client-v{version}` namespace.
 
-## Standalone archive contents
+## Application archive contents
 
 Every server-web edition contains:
 
 - the compiled server and the complete Vite web output;
-- the matching Node runtime and platform-native production dependency graph;
-- a platform launcher and non-secret edition settings template;
+- an edition entrypoint and non-secret defaults in `config/settings.csv`;
 - the exact validated Card catalog and bundled help/media assets;
 - protocol-v4 JSON schemas and manifest;
 - `LICENSE.md`, lockfile, CycloneDX SBOM, and `release-manifest.json`.
 
-The launcher uses only files inside the extracted archive. Settings from the operator's
-environment override the bundled non-secret template. Local runtime data and public
-deployment databases must live outside versioned application files during upgrades.
+Portable archives additionally contain the platform-native production graph and a Node
+single executable application embedding the startup bootstrap. The executable loads the
+adjacent application and dependencies without an installed runtime or shell wrapper.
+`NODE-LICENSE.txt` carries the embedded runtime's notices.
+macOS executables are ad-hoc signed after injection. OS download trust prompts still
+follow the host's policy; release automation does not claim publisher notarization.
 
-## Release manifest v1
+Public archives contain `main.cjs` and deployment documentation. They contain no runtime,
+modules, native binaries, or initial data directory. The operator owns process supervision,
+dependencies, writable service state, and infrastructure upgrades.
 
-`release-manifest.json` uses format `party-game-release/v1` and records:
+Both entrypoints load edition defaults before starting the shared server. Resolution is
+built-in defaults → edition defaults → operator CSV (`SETTINGS_FILE`, or `settings.csv`)
+→ environment. Missing edition defaults abort startup. Custom CSV files do not discard
+the edition defaults. Portable data paths resolve beside the executable even when launched
+from another working directory; an explicit relative `SETTINGS_FILE` still resolves from
+the caller's original directory. Public startup preserves the service working directory,
+which should be persistent, writable, and outside the release. Assets always resolve from
+the application directory. Keep portable `data/` when replacing application files.
+
+Portable defaults select local, no accounts, SQLite, `data/game.sqlite`, dual-stack
+`::`:3000, and local discovery/display bootstrap. Public defaults select public, enforced
+security, accounts, MariaDB, `127.0.0.1`:3000 behind a reverse proxy, and disabled local
+discovery/display bootstrap. Set `HTTP_BIND` for a remote proxy. Public startup refuses
+missing required service configuration; deployment-specific hosts, credentials, secrets,
+and URLs are never invented or bundled. See [infrastructure](infrastructure.md).
+
+## Release manifest v2
+
+`release-manifest.json` uses format `party-game-release/v2` and records:
 
 - `releaseUnit: "server-web"`;
 - one `version` copied to both `components.server` and `components.web`;
-- edition, Node platform, and architecture;
+- edition, entrypoint, and target (public uses `platform: "any"`, `architecture: "any"`);
+- immutable `sourceRevision` (the 40-character Git SHA);
 - protocol version;
-- bundled Node name/version;
-- `productionDependenciesBundled: true`;
-- an empty `externalSoftwareDependencies` array.
+- Node name/version and whether it is bundled;
+- `productionDependenciesBundled` (true only for portable);
+- `externalSoftwareDependencies` (empty for portable; `node` and
+  `production-node-packages` for public). Public Node version is the requirement `24.x`;
+  portable records the exact embedded version.
 
-Packaging and smoke validation reject a server/web version mismatch, a missing embedded
-runtime, missing native dependencies, a platform mismatch, or disagreement with the
-protocol manifest.
+Packaging and verification reject component/version/target/protocol mismatches, missing
+portable dependencies, and infrastructure accidentally included in public output. Smoke
+tests copy the archive contents outside the checkout into paths containing spaces, clear
+PATH and inherited application settings, launch the actual entrypoint from another working
+directory, wait for migrations/catalog readiness, and fetch the browser and its JavaScript.
+Portable must create its SQLite data without any deployment configuration. Public must
+reject unconfigured enforced startup; its isolated asset/startup smoke explicitly uses
+the development override and infrastructure-owned packages. The separate CI MariaDB and
+public-account suites cover production persistence/authentication; that smoke does not
+certify a real managed deployment.
+
+The workflow pins validation, reusable CI, packaging, and publication to the dispatch SHA.
+CI and packages apply the requested version without creating a new commit. Every manifest
+must match that SHA/version, and publication verifies all six portable targets plus the
+single public archive, rejects duplicates, then tags the tested source directly. The branch
+is never advanced by release automation. Rebuilding a tag uses the version from the release
+manifest (apply it with `npm version --no-git-tag-version` and `RELEASE_VERSION`), which
+can differ from the source package's development version.
+Conflicting releases are serialized. Formatting and desktop/phone visual tests are CI gates.
 
 ## Kodi client artifact
 
@@ -113,6 +166,12 @@ order while rejecting any additional runtime extension or development fixture la
 below `tools/`.
 
 ## Compatibility impact
+
+Manifest v2 and the public platform-independent archive replace the former v1 contract
+that embedded infrastructure in both editions. Public deployment automation must provide
+Node/dependencies and invoke `main.cjs`; portable users start `party-game[.exe]` instead of
+`start.cmd`/`start.sh`. Consumers expecting twelve platform/edition archives must accept
+six portable archives and one public archive. HTTP and WebSocket contracts are unchanged.
 
 This contract replaces the old generic `party-game-{version}-...` archive names,
 `v{version}` tag namespace, and `package:portable` / `package:public` commands. Release

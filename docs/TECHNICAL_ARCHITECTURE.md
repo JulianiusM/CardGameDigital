@@ -441,6 +441,7 @@ Resolution order:
 
 ```text id="q4zwko"
 built-in defaults
+→ release edition defaults (packaged entrypoints)
 → config file
 → environment variables
 ```
@@ -490,7 +491,7 @@ Security behavior comes from:
 
 # 16. Server-Web Distribution
 
-Users of a server-web archive must not install:
+Users of a portable server-web archive must not install:
 
 - Node;
 - npm;
@@ -508,18 +509,27 @@ Release archives include:
 - media;
 - migration code.
 
-Portable and public editions are assembled from the same compiled server and Svelte
-output. Both contain the runtime and production dependency graph. Packages are built
-and smoke-tested natively for Linux, Windows, and macOS on x64 and arm64. The public
-edition still requires its configured database, TLS/proxy, secret, authentication, and
-mail services.
+Portable and public editions share the server/Svelte source and release version.
+Portable archives contain a `party-game` (`party-game.exe` on Windows) application
+executable embedding Node and a startup bootstrap, alongside the production dependency
+graph and assets. They load local/no-account/SQLite defaults and are built and smoke-tested
+natively for Linux, Windows, and macOS on x64 and arm64.
+
+The public edition is one platform-independent application archive with `main.cjs`,
+compiled server/browser/assets, dependency metadata, and enforced-public defaults. It
+never includes Node, modules, native bindings, or service infrastructure. Operators own
+the runtime/dependency installation, database, proxy, secrets, and mail services.
 
 ---
 
 # 17. Public Deployment
 
-The same compiled application runs through the Node runtime embedded in its
-platform-specific server-web archive.
+The same compiled application runs through the infrastructure's installed Node 24
+process: `node /absolute/path/to/main.cjs`. Production packages from the release lockfile
+must already be accessible through Node's module resolution (ancestor `node_modules` or
+`NODE_PATH`); native packages must match the host ABI. The entrypoint automatically loads
+public/account/MariaDB defaults and enforced security. The service working directory holds
+persistent writable runtime state outside the versioned application directory.
 
 Requirements:
 
@@ -2047,7 +2057,7 @@ Lockfiles are mandatory.
 CI should produce:
 
 - one coupled server-web build;
-- platform-specific portable and public server-web archives;
+- six platform-specific portable archives and one managed public application archive;
 - protocol schemas;
 - catalog bundle;
 - translation/language bundles where configured;

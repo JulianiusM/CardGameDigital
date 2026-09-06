@@ -47,21 +47,22 @@ Implemented for Phase 9; platform archives remain CI-verified.
 - Server and browser presentation form the indivisible `server-web` release unit. They
   share one version, manifest, tag namespace, archive, and release workflow. No release
   command publishes either component independently.
-- Portable and public artifacts are generated from the same `dist` output and locked
-  production dependency graph. Both include the current Node runtime, native Argon2
-  and SQLite bindings, a launcher for the build platform, and an edition configuration
-  template. Portable output additionally includes a writable data directory. Public
-  output refuses the development Card fixture and still expects separately operated
-  infrastructure services.
+- Portable and public artifacts share one source revision/version and coupled server/web
+  build. Portable includes a Node single executable application, locked production
+  packages with native Argon2/SQLite bindings, and writable local data. Its executable
+  starts directly with local/no-account/SQLite defaults. Public is a platform-independent
+  application-only archive started via the host's installed Node 24 process and production
+  packages, with enforced-public/account/MariaDB defaults. Public never bundles Node,
+  modules, native bindings, or service infrastructure, and refuses development catalogs.
 - Kodi and Android-family clients are separate release units with independent versions,
   manifests, workflows, tag namespaces, and archives. They remain protocol consumers
   and are never folded into the server-web artifact.
-- Release smoke checks assert the server, Svelte bundle, lockfile, native
-  dependencies, license, CycloneDX SBOM, protocol schemas, release manifest, embedded
-  runtime, and edition layout before archives upload. A platform matrix builds Linux,
-  Windows, and macOS x64/arm64 archives on their matching hosts. The namespaced version
-  tag is pushed only after every platform and edition builds, passes its smoke check,
-  and has been archived successfully.
+- Release checks assert edition contents and manifest v2, run actual entrypoints outside
+  the checkout, and verify browser assets/readiness. Portable launches with an empty PATH;
+  public rejects missing managed configuration and excludes infrastructure. Six native
+  portable targets and one public archive carry the same source SHA/version. CI includes
+  format and desktop/phone visual gates. Publication verifies all seven archive manifests
+  and tags that exact tested source; it never advances the branch. Releases are serialized.
 
 ## Remaining platform gate
 

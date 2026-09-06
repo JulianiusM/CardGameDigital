@@ -16,6 +16,8 @@ import {
 import { bundledCardCatalogArtifact } from "../../apps/server/src/modules/database/bundledCardCatalog";
 import {
     createServerWebReleaseManifest,
+    MANAGED_NODE_VERSION,
+    portableExecutableName,
     removeExistingReleaseTarget,
     releaseEditionSchema,
     releaseVersionSchema,
@@ -23,13 +25,14 @@ import {
     serverWebReleaseDirectoryName,
     serverWebPlatformSchema,
 } from "./bundle";
+import { releaseEntrypoint, releaseSettings } from "./entrypoint";
+import { createPortableExecutable } from "./executable";
 
 function releaseReadme(edition: "portable" | "public", platform: NodeJS.Platform): string {
-    const launcher = platform === "win32" ? "start.cmd" : "./start.sh";
     if (edition === "portable") {
-        return `Start with ${launcher}. Open http://localhost:3000/play/. No internet or installed Node.js is required.\n`;
+        return `Extract the whole archive into a writable directory and start ${portableExecutableName(platform)}. Open http://localhost:3000/play/. No installation, internet, Node.js, npm, database service, or configuration is required. Keep the data directory when upgrading. Settings in SETTINGS_FILE and environment variables override config/settings.csv.\n`;
     }
-    return `Start with ${launcher}. The Node runtime, server, and web client are bundled. Configure MariaDB, HTTPS/proxying, PUBLIC_URL, SESSION_SECRET, TRUST_PROXY, authentication, and SMTP before starting.\n`;
+    return `Managed public application: start with your installed Node ${MANAGED_NODE_VERSION} process using node /absolute/path/to/main.cjs. This archive contains no runtime or node_modules. Provision the production dependency graph from package-lock.json in your infrastructure (including native Argon2 and better-sqlite3 for the host Node ABI); expose it through an ancestor node_modules directory or NODE_PATH. No npm command runs at application startup.\n\nPublic/account/MariaDB defaults and enforced security load automatically. Configure DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD, PUBLIC_URL (HTTPS), SESSION_SECRET, ROOM_CREATE_SECRET, TRUST_PROXY and SMTP through SETTINGS_FILE or the service environment. The default bind is 127.0.0.1:3000; override HTTP_BIND for a remote reverse proxy. Use a persistent, writable service working directory outside this release for runtime key files and keep database/backups outside releases. OIDC is optional. See config/settings.csv and docs/contracts/infrastructure.md for configuration requirements.\n`;
 }
 
 async function main(): Promise<void> {
@@ -46,6 +49,22 @@ async function main(): Promise<void> {
     const version = releaseVersionSchema.parse(process.env.RELEASE_VERSION || packageVersion);
     const platform = serverWebPlatformSchema.parse(process.platform);
     const architecture = serverWebArchitectureSchema.parse(process.arch);
+    const sourceRevision = execFileSync("git", ["rev-parse", "HEAD"], {
+        cwd: root,
+        encoding: "utf8",
+    }).trim();
+    if (process.env.RELEASE_SOURCE_SHA && process.env.RELEASE_SOURCE_SHA !== sourceRevision) {
+        throw new Error("Release checkout does not match the selected source revision");
+    }
+    const releaseManifest = createServerWebReleaseManifest({
+        version,
+        edition,
+        platform,
+        architecture,
+        sourceRevision,
+        nodeVersion: process.version,
+        protocolVersion: PROTOCOL_VERSION,
+    });
     const artifactsRoot = path.resolve(root, "artifacts");
     const target = path.resolve(
         artifactsRoot,
@@ -61,13 +80,27 @@ async function main(): Promise<void> {
     }
     removeExistingReleaseTarget(target);
     fs.mkdirSync(path.join(target, "app"), { recursive: true });
-    fs.cpSync(path.join(root, "dist"), path.join(target, "app", "dist"), { recursive: true });
-    fs.copyFileSync(path.join(root, "package-lock.json"), path.join(target, "package-lock.json"));
+    for (const directory of ["apps/server", "packages", "web", "catalog", "docs/user-guide"]) {
+        fs.cpSync(path.join(root, "dist", directory), path.join(target, "app", "dist", directory), {
+            recursive: true,
+            filter: (source) => !source.endsWith(".map"),
+        });
+    }
     fs.copyFileSync(path.join(root, "LICENSE.md"), path.join(target, "LICENSE.md"));
 
     const sourcePackage = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
     delete sourcePackage.devDependencies;
     delete sourcePackage.scripts;
+    sourcePackage.version = version;
+    sourcePackage.main = "main.cjs";
+    sourcePackage.engines = { node: MANAGED_NODE_VERSION };
+    const lockfile = JSON.parse(fs.readFileSync(path.join(root, "package-lock.json"), "utf8"));
+    lockfile.version = version;
+    lockfile.packages[""].version = version;
+    fs.writeFileSync(
+        path.join(target, "package-lock.json"),
+        `${JSON.stringify(lockfile, null, 2)}\n`,
+    );
     fs.writeFileSync(
         path.join(target, "package.json"),
         `${JSON.stringify(sourcePackage, null, 2)}\n`,
@@ -120,64 +153,42 @@ async function main(): Promise<void> {
         )}\n`,
     );
 
-    const productionPaths = execFileSync(
-        process.execPath,
-        [npmCli, "ls", "--omit=dev", "--parseable", "--all"],
-        {
-            cwd: root,
-            encoding: "utf8",
-        },
-    )
-        .trim()
-        .split(/\r?\n/)
-        .filter((entry) => entry && entry !== root);
-    for (const source of productionPaths) {
-        const relative = path.relative(root, source);
-        if (relative.startsWith("..")) continue;
-        fs.mkdirSync(path.dirname(path.join(target, relative)), { recursive: true });
-        fs.cpSync(source, path.join(target, relative), { recursive: true, dereference: false });
-    }
-
-    fs.mkdirSync(path.join(target, "runtime"), { recursive: true });
     fs.mkdirSync(path.join(target, "config"), { recursive: true });
-    const runtimeName = process.platform === "win32" ? "node.exe" : "node";
-    fs.copyFileSync(process.execPath, path.join(target, "runtime", runtimeName));
-    fs.chmodSync(path.join(target, "runtime", runtimeName), 0o755);
-
+    fs.writeFileSync(path.join(target, "config", "settings.csv"), releaseSettings(edition));
     if (edition === "portable") {
+        const productionPaths = execFileSync(
+            process.execPath,
+            [npmCli, "ls", "--omit=dev", "--parseable", "--all"],
+            {
+                cwd: root,
+                encoding: "utf8",
+            },
+        )
+            .trim()
+            .split(/\r?\n/)
+            .filter((entry) => entry && entry !== root);
+        for (const source of productionPaths) {
+            const relative = path.relative(root, source);
+            if (relative.startsWith("..")) continue;
+            fs.mkdirSync(path.dirname(path.join(target, relative)), { recursive: true });
+            fs.cpSync(source, path.join(target, relative), { recursive: true, dereference: false });
+        }
+        createPortableExecutable(target);
         fs.mkdirSync(path.join(target, "data"), { recursive: true });
-        fs.writeFileSync(
-            path.join(target, "config", "settings.csv"),
-            "DEPLOYMENT_MODE,local\nAUTH_MODE,none\nDB_TYPE,sqlite\nDB_FILE,data/game.sqlite\nHTTP_BIND,::\nHTTP_PORT,3000\n",
-        );
     } else {
-        fs.writeFileSync(
-            path.join(target, "config", "settings.csv"),
-            "DEPLOYMENT_MODE,public\nPUBLIC_RUNTIME_SECURITY,enforced\nAUTH_MODE,account\nDB_TYPE,mariadb\nHTTP_BIND,::\nHTTP_PORT,3000\n",
-        );
+        fs.writeFileSync(path.join(target, "main.cjs"), releaseEntrypoint("public"));
+        fs.mkdirSync(path.join(target, "docs/contracts"), { recursive: true });
+        for (const document of [
+            "infrastructure.md",
+            "operational-settings.md",
+            "release-bundles.md",
+        ]) {
+            fs.copyFileSync(
+                path.join(root, "docs/contracts", document),
+                path.join(target, "docs/contracts", document),
+            );
+        }
     }
-
-    if (process.platform === "win32") {
-        fs.writeFileSync(
-            path.join(target, "start.cmd"),
-            "@echo off\r\ncd /d %~dp0\r\nset SETTINGS_FILE=config/settings.csv\r\nruntime\\node.exe app\\dist\\apps\\server\\src\\server.js\r\n",
-        );
-    } else {
-        fs.writeFileSync(
-            path.join(target, "start.sh"),
-            '#!/bin/sh\ncd "$(dirname "$0")"\nexport SETTINGS_FILE=config/settings.csv\nexec runtime/node app/dist/apps/server/src/server.js\n',
-            { mode: 0o755 },
-        );
-    }
-
-    const releaseManifest = createServerWebReleaseManifest({
-        version,
-        edition,
-        platform,
-        architecture,
-        nodeVersion: process.version,
-        protocolVersion: PROTOCOL_VERSION,
-    });
     fs.writeFileSync(
         path.join(target, "release-manifest.json"),
         `${JSON.stringify(releaseManifest, null, 2)}\n`,

@@ -11,106 +11,92 @@ on:
 permissions:
     contents: write
 
+concurrency:
+    group: server-web-release
+    cancel-in-progress: false
+
 jobs:
-    ci:
-        name: Run full CI on selected branch
-        uses: ./.github/workflows/ci.yml
-        secrets: inherit
-
     validate:
-        name: Validate server-web release
-        needs: ci
+        name: Validate the immutable release source
         runs-on: ubuntu-24.04
-
         steps:
-            - name: Checkout selected branch
-              uses: actions/checkout@v4
+            - uses: actions/checkout@v4
               with:
-                  ref: ${{ github.ref }}
+                  ref: ${{ github.sha }}
                   fetch-depth: 0
-
-            - name: Validate requested version and check tag availability
+            - name: Validate requested version and tag availability
               env:
                   RELEASE_VERSION: ${{ inputs.version }}
               run: |
                   set -euo pipefail
-
                   node << 'EOF'
                   const version = process.env.RELEASE_VERSION || '';
-                  const semverLike = /^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?$/;
-
-                  if (!semverLike.test(version)) {
-                    console.error(`ERROR: Version '${version}' is not valid release semver.`);
-                    process.exit(1);
-                  }
-                  if (/dev/i.test(version)) {
-                    console.error("ERROR: 'dev' is not allowed in release versions.");
-                    process.exit(1);
-                  }
-
-                  const prerelease = version.split('-', 2)[1];
-                  if (prerelease && !/^(alpha|beta|rc)(\.|$)/.test(prerelease)) {
-                    console.error(`ERROR: Pre-release identifier must start with alpha, beta, or rc (got '${prerelease}').`);
-                    process.exit(1);
+                  if (!/^\d+\.\d+\.\d+(?:-(?:alpha|beta|rc)(?:\.[0-9A-Za-z.-]+)?)?$/.test(version) || /dev/i.test(version)) {
+                    throw new Error('Invalid release version');
                   }
                   EOF
-
-                  git fetch --tags --quiet
-                  if git tag -l "server-web-v${RELEASE_VERSION}" | grep -q .; then
-                    echo "ERROR: Tag server-web-v${RELEASE_VERSION} already exists."
+                  if git show-ref --verify --quiet "refs/tags/server-web-v${RELEASE_VERSION}"; then
+                    echo "ERROR: Release tag already exists."
                     exit 1
                   fi
 
-    package-server-web:
-        name: Package server + web (${{ matrix.target }})
+    ci:
+        name: Test the selected source and release version
         needs: validate
+        uses: ./.github/workflows/ci.yml
+        with:
+            release_version: ${{ inputs.version }}
+        secrets: inherit
+
+    package-server-web:
+        name: Package ${{ matrix.edition }} (${{ matrix.target }})
+        needs: ci
         strategy:
             fail-fast: false
             matrix:
                 include:
                     - runner: ubuntu-24.04
+                      edition: portable
                       target: linux-x64
                     - runner: ubuntu-24.04-arm
+                      edition: portable
                       target: linux-arm64
                     - runner: windows-2025
+                      edition: portable
                       target: win32-x64
                     - runner: windows-11-arm
+                      edition: portable
                       target: win32-arm64
                     - runner: macos-15-intel
+                      edition: portable
                       target: darwin-x64
                     - runner: macos-15
+                      edition: portable
                       target: darwin-arm64
+                    - runner: ubuntu-24.04
+                      edition: public
+                      target: any
         runs-on: ${{ matrix.runner }}
-
+        env:
+            RELEASE_VERSION: ${{ inputs.version }}
+            RELEASE_SOURCE_SHA: ${{ github.sha }}
         steps:
-            - name: Checkout selected branch
-              uses: actions/checkout@v4
+            - uses: actions/checkout@v4
               with:
-                  ref: ${{ github.ref }}
-
-            - name: Setup Node.js
-              uses: actions/setup-node@v4
+                  ref: ${{ github.sha }}
+            - uses: actions/setup-node@v4
               with:
                   node-version: 24.15.0
                   cache: npm
                   cache-dependency-path: package-lock.json
-
-            - name: Install platform dependencies
+            - name: Install build dependencies
               run: npm ci
-
-            - name: Apply release version without creating a tag
-              env:
-                  RELEASE_VERSION: ${{ inputs.version }}
-              run: npm version "$RELEASE_VERSION" --no-git-tag-version
+            - name: Apply the tested release version
+              run: npm version "$RELEASE_VERSION" --no-git-tag-version --allow-same-version
               shell: bash
-
-            - name: Build coupled server-web editions
-              env:
-                  RELEASE_VERSION: ${{ inputs.version }}
-              run: npm run package:server-web
-              shell: bash
-
-            - name: Smoke-test bundled runtime and layouts
+            - name: Build the server-web edition
+              run: npm run package:server-web:${{ matrix.edition }}
+            - name: Verify layout and isolated application startup
               run: |
                   set -euo pipefail
                   for directory in artifacts/party-game-server-web-*; do
@@ -118,8 +104,7 @@ jobs:
                     npm run package:server-web:smoke -- "$directory"
                   done
               shell: bash
-
-            - name: Create platform archives
+            - name: Archive verified application
               run: |
                   set -euo pipefail
                   for directory in artifacts/party-game-server-web-*; do
@@ -128,109 +113,59 @@ jobs:
                     tar -czf "artifacts/${name}.tar.gz" -C "$directory" .
                   done
               shell: bash
-
-            - name: Upload platform archives
-              uses: actions/upload-artifact@v4
+            - uses: actions/upload-artifact@v4
               with:
-                  name: server-web-${{ matrix.target }}
+                  name: server-web-${{ matrix.edition }}-${{ matrix.target }}
                   path: artifacts/party-game-server-web-*.tar.gz
                   if-no-files-found: error
                   retention-days: 7
 
     release:
-        name: Publish server + web release
+        name: Publish the verified server-web release
         needs: package-server-web
         runs-on: ubuntu-24.04
-
+        env:
+            RELEASE_VERSION: ${{ inputs.version }}
+            RELEASE_SOURCE_SHA: ${{ github.sha }}
         steps:
-            - name: Checkout selected branch
-              uses: actions/checkout@v4
+            - uses: actions/checkout@v4
               with:
-                  ref: ${{ github.ref }}
+                  ref: ${{ github.sha }}
                   fetch-depth: 0
-
-            - name: Setup Node.js
-              uses: actions/setup-node@v4
+            - uses: actions/setup-node@v4
               with:
                   node-version: 24.15.0
                   cache: npm
                   cache-dependency-path: package-lock.json
-
-            - name: Download all platform archives
-              uses: actions/download-artifact@v4
+            - run: npm ci
+            - uses: actions/download-artifact@v4
               with:
                   pattern: server-web-*
                   path: artifacts
                   merge-multiple: true
-
-            - name: Verify complete server-web artifact set
-              run: |
-                  node << 'EOF'
-                  const fs = require('node:fs');
-                  const archives = fs.readdirSync('artifacts').filter((name) => name.endsWith('.tar.gz'));
-                  const expectedTargets = [
-                    'linux-x64',
-                    'linux-arm64',
-                    'win32-x64',
-                    'win32-arm64',
-                    'darwin-x64',
-                    'darwin-arm64',
-                  ];
-                  const missing = expectedTargets.flatMap((target) =>
-                    ['portable', 'public']
-                      .filter((edition) => !archives.some((name) => name.includes(`-${edition}-${target}.tar.gz`)))
-                      .map((edition) => `${edition}-${target}`),
-                  );
-                  if (missing.length > 0 || archives.length !== expectedTargets.length * 2) {
-                    console.error(`ERROR: Incomplete server-web artifacts. Missing: ${missing.join(', ') || 'unknown duplicate'}`);
-                    process.exit(1);
-                  }
-                  EOF
-
-            - name: Commit server-web version and create namespaced tag
-              env:
-                  RELEASE_VERSION: ${{ inputs.version }}
+            - name: Verify all seven archive manifests against the tested source
+              run: npx ts-node --project tsconfig.server.json tooling/release/verify.ts
+            - name: Tag the tested source without moving the branch
               run: |
                   set -euo pipefail
-                  npm version "${RELEASE_VERSION}" --no-git-tag-version
-
                   git config user.name "github-actions[bot]"
                   git config user.email "github-actions[bot]@users.noreply.github.com"
-                  git add package.json package-lock.json
-                  if git diff --cached --quiet; then
-                    echo "No version changes detected; aborting."
-                    exit 1
-                  fi
-
-                  git commit -m "chore: release server-web v${RELEASE_VERSION}"
-                  git tag -a "server-web-v${RELEASE_VERSION}" -m "Server + Web v${RELEASE_VERSION}"
-                  git push origin "HEAD:${GITHUB_REF_NAME}"
-                  git push origin "server-web-v${RELEASE_VERSION}"
-
-            - name: Create GitHub release
+                  git tag -a "server-web-v${RELEASE_VERSION}" "${RELEASE_SOURCE_SHA}" -m "Server + Web v${RELEASE_VERSION}"
+                  git push origin "refs/tags/server-web-v${RELEASE_VERSION}"
+            - name: Create draft with all verified assets
               id: create_release
               uses: softprops/action-gh-release@v2
-              env:
-                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
               with:
                   tag_name: server-web-v${{ inputs.version }}
                   name: Server + Web v${{ inputs.version }}
                   prerelease: ${{ contains(inputs.version, '-') }}
-                  draft: ${{ contains(inputs.version, '-') }}
-                  make_latest: ${{ contains(inputs.version, '-') && 'false' || 'true' }}
+                  draft: true
                   files: artifacts/*.tar.gz
-
-            - name: Publish prerelease after assets upload
-              if: ${{ contains(inputs.version, '-') }}
+                  fail_on_unmatched_files: true
+            - name: Publish after all assets have uploaded
               env:
                   GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
                   RELEASE_ID: ${{ steps.create_release.outputs.id }}
               run: |
                   set -euo pipefail
-                  if [ -z "${RELEASE_ID:-}" ]; then
-                    echo "ERROR: release ID was not returned by the release creation step."
-                    exit 1
-                  fi
-                  gh api -X PATCH "repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}" \
-                    -f draft=false \
-                    -f prerelease=true
+                  gh api -X PATCH "repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}" -F draft=false

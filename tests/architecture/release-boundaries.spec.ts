@@ -22,11 +22,24 @@ describe("release boundaries", () => {
 
         expect(workflow).toContain("package-server-web:");
         expect(workflow).toContain("npm run package:server-web");
+        expect(workflow).not.toContain("ref: ${{ github.ref }}");
+        expect(workflow).toContain("ref: ${{ github.sha }}");
+        expect(workflow).toContain("group: server-web-release");
+        expect(workflow).toContain("tooling/release/verify.ts");
+        expect(workflow).not.toContain('git push origin "HEAD:');
         expect(workflow).toContain("ubuntu-24.04");
         expect(workflow).toContain("windows-2025");
         expect(workflow).toContain("macos-15");
         expect(workflow).not.toMatch(/apps\/(?:kodi|android-tv)/);
         expect(workflow).not.toContain("apps/kodi");
+    });
+
+    it("makes formatting and the desktop/phone visual audit release CI gates", () => {
+        const workflow = fs.readFileSync(".github/workflows/ci.yml", "utf8");
+        expect(workflow).toContain("npm run format:check");
+        expect(workflow).toContain("npm run e2e:visual");
+        expect(workflow).toContain("ref: ${{ github.sha }}");
+        expect(workflow).toContain("inputs.release_version");
     });
 
     it("releases the Kodi client independently with native checks and provenance", () => {

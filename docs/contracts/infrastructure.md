@@ -1,5 +1,20 @@
 # Infrastructure integration contracts
 
+## Packaged deployment entrypoints
+
+Portable releases start through `party-game[.exe]` with local/no-account/SQLite defaults
+and bundled runtime dependencies. Managed public releases start through the operator's
+Node 24 process with `node /absolute/path/to/main.cjs`; Node and the locked production
+packages are infrastructure prerequisites and are never delivered inside public archives.
+The public entrypoint loads enforced-public/account/MariaDB defaults and binds to
+`127.0.0.1:3000` unless overridden for the reverse proxy topology. Supply stable secrets,
+database, canonical HTTPS origin, proxy trust, and SMTP configuration before starting.
+
+Both entrypoints layer edition defaults below operator CSV/environment settings. Missing
+edition defaults abort startup. Public startup preserves the service working directory
+for persistent writable runtime files; portable paths resolve beside its executable.
+See the [release bundle contract](release-bundles.md) for layouts and compatibility impact.
+
 ## Database
 
 Operational numbers below describe the default deployment policy. Retention, caches,

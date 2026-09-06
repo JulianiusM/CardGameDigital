@@ -499,9 +499,16 @@ function loadCsv(file: string): Record<string, unknown> {
 export function resolveSettings(
     environment: NodeJS.ProcessEnv = process.env,
     file?: string,
+    releaseDefaultsFile?: string,
 ): Settings {
     const configFile = file ?? environment.SETTINGS_FILE ?? defaults.file;
-    const fromFile = loadCsv(configFile);
+    if (releaseDefaultsFile && !fs.existsSync(releaseDefaultsFile)) {
+        throw new Error("Release defaults file is missing");
+    }
+    const fromFile = {
+        ...(releaseDefaultsFile ? loadCsv(releaseDefaultsFile) : {}),
+        ...loadCsv(configFile),
+    };
     const fromEnvironment: Record<string, unknown> = {};
     for (const [external, internal] of Object.entries(keyMap)) {
         const e2eValue =
@@ -547,12 +554,18 @@ export function resolveSettings(
 }
 
 export class SettingsStore {
+    private releaseDefaultsFile?: string;
     private settings: Settings = { ...resolveSettings({}, "/dev/null"), initialized: false };
+    setReleaseDefaults(file: string): void {
+        if (this.settings.initialized)
+            throw new Error("Release defaults must be set before startup");
+        this.releaseDefaultsFile = file;
+    }
     get value(): Settings {
         return this.settings;
     }
     async read(file?: string): Promise<void> {
-        this.settings = resolveSettings(process.env, file);
+        this.settings = resolveSettings(process.env, file, this.releaseDefaultsFile);
     }
 }
 

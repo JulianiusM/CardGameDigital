@@ -2,7 +2,8 @@ import fs from "node:fs";
 import { z } from "zod";
 
 export const SERVER_WEB_RELEASE_UNIT = "server-web" as const;
-export const RELEASE_MANIFEST_FORMAT = "party-game-release/v1" as const;
+export const RELEASE_MANIFEST_FORMAT = "party-game-release/v2" as const;
+export const MANAGED_NODE_VERSION = "24.x";
 
 export const releaseEditionSchema = z.enum(["portable", "public"]);
 export type ReleaseEdition = z.infer<typeof releaseEditionSchema>;
@@ -12,30 +13,62 @@ export const releaseVersionSchema = z
     .string()
     .regex(/^\d+\.\d+\.\d+(?:-(?:alpha|beta|rc)(?:\.[0-9A-Za-z.-]+)?)?$/);
 
-const bundledComponentSchema = z.object({
-    server: z.string().min(1),
-    web: z.string().min(1),
-});
+export const sourceRevisionSchema = z.string().regex(/^[a-f0-9]{40}$/);
+
+const commonManifestShape = {
+    format: z.literal(RELEASE_MANIFEST_FORMAT),
+    releaseUnit: z.literal(SERVER_WEB_RELEASE_UNIT),
+    version: releaseVersionSchema,
+    sourceRevision: sourceRevisionSchema,
+    components: z.object({ server: z.string().min(1), web: z.string().min(1) }),
+    protocolVersion: z.number().int().positive(),
+};
 
 export const serverWebReleaseManifestSchema = z
-    .object({
-        format: z.literal(RELEASE_MANIFEST_FORMAT),
-        releaseUnit: z.literal(SERVER_WEB_RELEASE_UNIT),
-        version: releaseVersionSchema,
-        edition: releaseEditionSchema,
-        platform: serverWebPlatformSchema,
-        architecture: serverWebArchitectureSchema,
-        components: bundledComponentSchema,
-        protocolVersion: z.number().int().positive(),
-        runtime: z.object({
-            name: z.literal("node"),
-            version: z.string().min(1),
-            bundled: z.literal(true),
+    .discriminatedUnion("edition", [
+        z.object({
+            ...commonManifestShape,
+            edition: z.literal("portable"),
+            platform: serverWebPlatformSchema,
+            architecture: serverWebArchitectureSchema,
+            entrypoint: z.enum(["party-game", "party-game.exe"]),
+            runtime: z.object({
+                name: z.literal("node"),
+                version: z.string().regex(/^v24\./),
+                bundled: z.literal(true),
+            }),
+            productionDependenciesBundled: z.literal(true),
+            externalSoftwareDependencies: z.tuple([]),
         }),
-        productionDependenciesBundled: z.literal(true),
-        externalSoftwareDependencies: z.array(z.never()).length(0),
-    })
+        z.object({
+            ...commonManifestShape,
+            edition: z.literal("public"),
+            platform: z.literal("any"),
+            architecture: z.literal("any"),
+            entrypoint: z.literal("main.cjs"),
+            runtime: z.object({
+                name: z.literal("node"),
+                version: z.literal(MANAGED_NODE_VERSION),
+                bundled: z.literal(false),
+            }),
+            productionDependenciesBundled: z.literal(false),
+            externalSoftwareDependencies: z.tuple([
+                z.literal("node"),
+                z.literal("production-node-packages"),
+            ]),
+        }),
+    ])
     .superRefine((manifest, context) => {
+        if (
+            manifest.edition === "portable" &&
+            manifest.entrypoint !== portableExecutableName(manifest.platform)
+        ) {
+            context.addIssue({
+                code: "custom",
+                path: ["entrypoint"],
+                message: "Executable must match the platform",
+            });
+        }
         if (manifest.components.server !== manifest.version) {
             context.addIssue({
                 code: "custom",
@@ -53,6 +86,10 @@ export const serverWebReleaseManifestSchema = z
     });
 
 export type ServerWebReleaseManifest = z.infer<typeof serverWebReleaseManifestSchema>;
+
+export function portableExecutableName(platform: NodeJS.Platform): string {
+    return platform === "win32" ? "party-game.exe" : "party-game";
+}
 
 type RemoveReleaseTarget = (target: fs.PathLike, options?: fs.RmOptions) => void;
 
@@ -85,9 +122,11 @@ export function removeExistingReleaseTarget(
 export function serverWebReleaseDirectoryName(input: {
     version: string;
     edition: ReleaseEdition;
-    platform: z.infer<typeof serverWebPlatformSchema>;
-    architecture: z.infer<typeof serverWebArchitectureSchema>;
+    platform: string;
+    architecture: string;
 }): string {
+    if (input.edition === "public")
+        return `party-game-${SERVER_WEB_RELEASE_UNIT}-${input.version}-public`;
     return [
         "party-game",
         SERVER_WEB_RELEASE_UNIT,
@@ -100,24 +139,39 @@ export function serverWebReleaseDirectoryName(input: {
 
 export function createServerWebReleaseManifest(input: {
     version: string;
+    sourceRevision: string;
     edition: ReleaseEdition;
     platform: NodeJS.Platform;
     architecture: NodeJS.Architecture;
     nodeVersion: string;
     protocolVersion: number;
 }): ServerWebReleaseManifest {
-    return serverWebReleaseManifestSchema.parse({
+    const common = {
         format: RELEASE_MANIFEST_FORMAT,
         releaseUnit: SERVER_WEB_RELEASE_UNIT,
         version: input.version,
+        sourceRevision: input.sourceRevision,
+        components: { server: input.version, web: input.version },
+        protocolVersion: input.protocolVersion,
+    };
+    if (input.edition === "public") {
+        return serverWebReleaseManifestSchema.parse({
+            ...common,
+            edition: "public",
+            platform: "any",
+            architecture: "any",
+            entrypoint: "main.cjs",
+            runtime: { name: "node", version: MANAGED_NODE_VERSION, bundled: false },
+            productionDependenciesBundled: false,
+            externalSoftwareDependencies: ["node", "production-node-packages"],
+        });
+    }
+    return serverWebReleaseManifestSchema.parse({
+        ...common,
         edition: input.edition,
         platform: input.platform,
         architecture: input.architecture,
-        components: {
-            server: input.version,
-            web: input.version,
-        },
-        protocolVersion: input.protocolVersion,
+        entrypoint: portableExecutableName(input.platform),
         runtime: {
             name: "node",
             version: input.nodeVersion,
