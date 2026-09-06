@@ -209,6 +209,14 @@ test("edited profiles require adult confirmation before Couch play", async ({ pa
         expect(report.smallTargets).toEqual([]);
         expect(report.overlaps).toEqual([]);
         expect(report.truncations).toEqual([]);
+        const overflowingSettings = await page
+            .locator(".game-settings-editor .setting-row")
+            .evaluateAll((rows) =>
+                rows
+                    .filter((row) => row.scrollWidth > row.clientWidth + 1)
+                    .map((row) => row.textContent?.trim()),
+            );
+        expect(overflowingSettings).toEqual([]);
     }
     await page.getByRole("button", { name: /^Weiter/ }).click();
     await page.getByRole("button", { name: /Nur dieser Bildschirm/ }).click();

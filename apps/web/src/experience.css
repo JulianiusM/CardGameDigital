@@ -3737,9 +3737,14 @@ main.display-role:not(.playing) > .ended-stage {
         align-items: flex-start;
         padding: 0.85rem;
     }
+    .game-settings-editor .setting-row:has(input[type="range"]),
+    .game-settings-editor .setting-row:has(.number-input),
     .progression-setting {
         align-items: stretch;
         flex-direction: column;
+    }
+    .game-settings-editor .setting-row > .number-input {
+        align-self: flex-start;
     }
     .interface-language-setting {
         grid-template-columns: 1fr;

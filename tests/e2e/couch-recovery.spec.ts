@@ -119,7 +119,10 @@ for (const [language, copy] of [
         const next = page.waitForResponse((response) =>
             response.url().endsWith(`${initial.id}/advance`),
         );
-        await page.getByRole("button", { name: copy.common.next, exact: true }).click();
+        await page
+            .locator(".actions")
+            .getByRole("button", { name: copy.common.next, exact: true })
+            .click();
         expect((await next).status()).toBe(200);
         expect((await (await page.request.get(sessionPath(initial.id))).json()).revision).toBe(
             restored.revision + 1,
