@@ -482,7 +482,7 @@ export const en = {
             "Follow this browser automatically, or choose an interface language yourself.",
         useSystemLanguage: "Use system language",
         useSystemLanguageHint: "Always follows the current language preferences of this browser.",
-        searchLanguages: "Language or code …",
+        searchLanguages: "Name or code …",
         languageResults: "available languages",
         noLanguagesFound: "No matching language found.",
         languageFallbacks: "Language fallback order",

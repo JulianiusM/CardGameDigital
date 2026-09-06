@@ -500,7 +500,7 @@ export const de = {
             "Folge automatisch diesem Browser oder wähle die Sprache der Oberfläche selbst.",
         useSystemLanguage: "Systemsprache verwenden",
         useSystemLanguageHint: "Folgt immer den aktuellen Spracheinstellungen dieses Browsers.",
-        searchLanguages: "Sprache oder Kürzel …",
+        searchLanguages: "Name oder Kürzel …",
         languageResults: "verfügbare Sprachen",
         noLanguagesFound: "Keine passende Sprache gefunden.",
         languageFallbacks: "Reihenfolge der Ersatzsprachen",

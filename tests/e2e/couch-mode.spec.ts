@@ -501,7 +501,8 @@ test("Golden Mischief uses warm local surfaces and a motion-aware adaptive backd
                 rect.left + rect.width / 2 > viewport.width * 0.68 &&
                 rect.top + rect.height / 2 > viewport.height * 0.68,
         ).length;
-        const spark = document.querySelector<HTMLElement>(".spark")!.getBoundingClientRect();
+        const sparkElement = document.querySelector<HTMLElement>(".spark")!;
+        const spark = sparkElement.getBoundingClientRect();
         const sparkIcon = document
             .querySelector<SVGElement>(".spark .ui-icon")!
             .getBoundingClientRect();
@@ -514,13 +515,13 @@ test("Golden Mischief uses warm local surfaces and a motion-aware adaptive backd
                 spark.left + spark.width / 2 - (sparkIcon.left + sparkIcon.width / 2),
                 spark.top + spark.height / 2 - (sparkIcon.top + sparkIcon.height / 2),
             ),
-            sparkWidth: spark.width,
+            sparkLayoutWidth: Number.parseFloat(getComputedStyle(sparkElement).width),
         };
     });
     expect(motifGeometry.bottomRight).toBeGreaterThan(0);
     expect(motifGeometry.maximumSymbolSize).toBeLessThan(100);
     expect(motifGeometry.sparkCenterOffset).toBeLessThan(1);
-    expect(motifGeometry.sparkWidth).toBeLessThan(60);
+    expect(motifGeometry.sparkLayoutWidth).toBeLessThan(60);
 
     const persistentTrack = await page.locator(".motif-track").first().elementHandle();
     const persistentGradient = await page.locator(".atmosphere-gradient").elementHandle();
@@ -540,12 +541,20 @@ test("Golden Mischief uses warm local surfaces and a motion-aware adaptive backd
             ];
         });
     const paletteBeforeTransition = await pixelAtCanvasCenter();
-    const beforeTransitionOffset = await persistentTrack!.evaluate(
-        (track) =>
-            new DOMMatrixReadOnly(
-                getComputedStyle(track.querySelector<HTMLElement>(".track-motion")!).transform,
-            ).m41,
-    );
+    const sampleTrackTiming = () =>
+        persistentTrack!.evaluate((track) => {
+            const animation = track
+                .querySelector<HTMLElement>(".track-motion")!
+                .getAnimations()
+                .find(({ id }) => id === "track-flow")!;
+            return {
+                currentTime: Number(animation.currentTime),
+                timelineTime: Number(animation.timeline!.currentTime),
+                playbackRate: animation.playbackRate,
+                keyframes: (animation.effect as KeyframeEffect).getKeyframes(),
+            };
+        });
+    const beforeTransition = await sampleTrackTiming();
     await page.getByRole("button", { name: /Spiel hosten/ }).click();
     await expect(page.locator("html")).toHaveAttribute("data-family", "lobby");
     await expect(page.locator(".outgoing-symbol").first()).toBeAttached();
@@ -557,17 +566,15 @@ test("Golden Mischief uses warm local surfaces and a motion-aware adaptive backd
     await expect(page.locator(".atmosphere-gradient")).toHaveCount(1);
     expect(await persistentTrack!.evaluate((track) => track.isConnected)).toBe(true);
     expect(await persistentGradient!.evaluate((gradient) => gradient.isConnected)).toBe(true);
-    const afterTransitionOffset = await persistentTrack!.evaluate(
-        (track) =>
-            new DOMMatrixReadOnly(
-                getComputedStyle(track.querySelector<HTMLElement>(".track-motion")!).transform,
-            ).m41,
-    );
-    const transitionMovement = Math.abs(afterTransitionOffset - beforeTransitionOffset);
-    const wrappedTransitionMovement = Math.abs(
-        transitionMovement - backdropMetrics.slotCount * backdropMetrics.iconGap,
-    );
-    expect(Math.min(transitionMovement, wrappedTransitionMovement)).toBeLessThan(50);
+    const afterTransition = await sampleTrackTiming();
+    expect(afterTransition.keyframes).toEqual(beforeTransition.keyframes);
+    expect(afterTransition.playbackRate).toBe(beforeTransition.playbackRate);
+    expect(afterTransition.currentTime).toBeGreaterThan(beforeTransition.currentTime);
+    const expectedAnimationTime =
+        beforeTransition.currentTime +
+        (afterTransition.timelineTime - beforeTransition.timelineTime) *
+            beforeTransition.playbackRate;
+    expect(afterTransition.currentTime).toBeCloseTo(expectedAnimationTime, 1);
     const crossfadeAlignment = await page
         .locator(".motif-slot")
         .first()
