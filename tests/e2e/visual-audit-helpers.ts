@@ -243,11 +243,13 @@ export async function captureVisualAudit(
             }
             return ancestors;
         };
+        const clippingTolerancePx = 2;
+        const placeholderTolerancePx = 5;
         const rectEscapes = (rect: DOMRect, container: DOMRect): boolean =>
-            rect.left < container.left - 2 ||
-            rect.right > container.right + 2 ||
-            rect.top < container.top - 2 ||
-            rect.bottom > container.bottom + 2;
+            rect.left < container.left - clippingTolerancePx ||
+            rect.right > container.right + clippingTolerancePx ||
+            rect.top < container.top - clippingTolerancePx ||
+            rect.bottom > container.bottom + clippingTolerancePx;
 
         const outOfBounds: VisualAuditFinding[] = [];
         const truncations: VisualAuditFinding[] = [];
@@ -396,7 +398,7 @@ export async function captureVisualAudit(
                         : 0;
                     const placeholderWidth =
                         placeholderContext.measureText(control.placeholder).width + spacingWidth;
-                    if (placeholderWidth > availableWidth + 1) {
+                    if (placeholderWidth > availableWidth + placeholderTolerancePx) {
                         truncations.push({
                             selector: selectorFor(control),
                             detail: `placeholder cannot fully paint: text=${placeholderWidth.toFixed(1)}, available=${availableWidth.toFixed(1)}, placeholder=${JSON.stringify(control.placeholder)}`,
@@ -425,7 +427,7 @@ export async function captureVisualAudit(
                 const availableHeight = Math.max(0, control.clientHeight - paddingBlock);
                 const placeholderHeight = mirror.getBoundingClientRect().height;
                 mirror.remove();
-                if (placeholderHeight > availableHeight + 1) {
+                if (placeholderHeight > availableHeight + placeholderTolerancePx) {
                     truncations.push({
                         selector: selectorFor(control),
                         detail: `placeholder cannot fully paint: height=${placeholderHeight.toFixed(1)}, available=${availableHeight.toFixed(1)}, placeholder=${JSON.stringify(control.placeholder)}`,

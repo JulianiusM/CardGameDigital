@@ -453,6 +453,10 @@ a.active-dataspace-indicator:focus-visible {
     background: rgb(var(--rgb-warm-paper) / 78%);
     text-decoration: none;
 }
+.settings-action strong {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
 .option-card strong {
     font-size: 1.05rem;
 }
@@ -3626,6 +3630,8 @@ main.display-role:not(.playing) > .ended-stage {
 .public-stage-lobby > .lobby,
 .public-stage-lobby > .join-card {
     min-height: 0;
+}
+.public-stage-lobby > .join-card {
     overflow: hidden;
 }
 .public-stage-lobby > .lobby {
