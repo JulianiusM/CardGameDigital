@@ -11,7 +11,7 @@ export class AddAccountGroupsAndSettings1787335000000 implements MigrationInterf
                     { name: "id", type: "varchar", length: "36", isPrimary: true },
                     { name: "data_space_id", type: "varchar", length: "36" },
                     { name: "name", type: "varchar", length: "80" },
-                    { name: "members_json", type: "text", default: "'[]'" },
+                    { name: "members_json", type: "text" },
                     { name: "created_at", type: "datetime" },
                     { name: "updated_at", type: "datetime" },
                 ],

@@ -2483,7 +2483,11 @@ test("visually audits the English interface on a narrow phone and TV viewport", 
     await helpPage.emulateMedia({ reducedMotion: "reduce" });
     await helpPage.setViewportSize({ width: 320, height: 568 });
     await helpPage.goto("/play/help");
-    await expect(helpPage.getByRole("heading", { name: "Help" })).toBeVisible();
+    await expect(
+        helpPage
+            .locator(".help-content")
+            .getByRole("heading", { name: "Help overview", exact: true }),
+    ).toBeVisible();
     await audit(helpPage, testInfo, "68-en-help-phone", { fullPage: true });
     await helpPage.setViewportSize({ width: 1920, height: 1080 });
     await audit(helpPage, testInfo, "69-en-help-tv", { fullPage: false });

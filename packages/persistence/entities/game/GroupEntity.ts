@@ -6,7 +6,7 @@ export class GroupEntity {
     @PrimaryColumn("varchar", { length: 36 }) id!: string;
     @Column("varchar", { name: "data_space_id", length: 36 }) dataSpaceId!: string;
     @Column("varchar", { length: 80 }) name!: string;
-    @Column("text", { name: "members_json", default: "[]" }) membersJson!: string;
+    @Column("text", { name: "members_json" }) membersJson!: string;
     @Column("datetime", { name: "created_at" }) createdAt!: Date;
     @Column("datetime", { name: "updated_at" }) updatedAt!: Date;
     @Column("datetime", { name: "history_reset_at", nullable: true }) historyResetAt!: Date | null;

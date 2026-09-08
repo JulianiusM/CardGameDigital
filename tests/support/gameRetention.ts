@@ -210,6 +210,7 @@ export function gameRetentionTests(getSource: () => DataSource) {
                 id: groupId,
                 dataSpaceId: owner.id,
                 name: "History",
+                membersJson: "[]",
                 createdAt: new Date(),
                 updatedAt: new Date(),
             });

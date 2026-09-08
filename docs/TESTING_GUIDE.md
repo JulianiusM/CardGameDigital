@@ -35,12 +35,23 @@ npm run e2e:visual
 npm run e2e
 npm run test:mariadb:reset
 npm run test:mariadb:public
+npx vitest run tests/integration/database-text-migrations.spec.ts tests/unit/database-metadata.spec.ts
 npm run test:ci
 npm run kodi:generate:check
 npm run kodi:lint
 npm run kodi:test
 npm run kodi:package
 ```
+
+The text-column migration suite always checks SQLite. Set `MYSQL_MIGRATION_TEST=1`
+to also run against MySQL 8.0, using `MYSQL_TEST_HOST` (default `127.0.0.1`),
+`MYSQL_TEST_PORT` (default `3307`), `MYSQL_TEST_USER` (default `root`), and
+`MYSQL_TEST_PASSWORD` (default empty). It clears only the fixed disposable
+`card_game_migration_test` schema, which must exist first. CI provisions that schema
+and enables the suite alongside both MariaDB suites. It covers the complete migration
+chain, a second startup, existing-Room backfill, preserved Group membership, and the
+Room-settings rollback. Entity metadata checks reject text/JSON/blob defaults for all
+three supported drivers without opening a database connection.
 
 `npm run kodi:check` combines generated-output drift, XML/add-on/static/privacy checks,
 translation parity, and the CPython suite. The fixtures are generated from the same

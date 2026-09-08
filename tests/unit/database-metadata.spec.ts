@@ -8,7 +8,7 @@ class MetadataDataSource extends DataSource {
     }
 }
 
-function metadataOptions(type: "better-sqlite3" | "mariadb"): DataSourceOptions {
+function metadataOptions(type: "better-sqlite3" | "mariadb" | "mysql"): DataSourceOptions {
     if (type === "better-sqlite3") {
         return { type, database: ":memory:", entities };
     }
@@ -22,12 +22,26 @@ function metadataOptions(type: "better-sqlite3" | "mariadb"): DataSourceOptions 
 }
 
 describe("database entity metadata", () => {
-    it.each(["better-sqlite3", "mariadb"] as const)(
+    it.each(["better-sqlite3", "mariadb", "mysql"] as const)(
         "is valid for the %s driver without opening a connection",
         async (type) => {
             const source = new MetadataDataSource(metadataOptions(type));
 
             await expect(source.validateEntityMetadata()).resolves.toBeUndefined();
+            for (const entity of source.entityMetadatas) {
+                for (const column of entity.columns) {
+                    if (
+                        /^(?:tiny|medium|long)?(?:text|blob)$|^(?:json|simple-json|geometry)$/.test(
+                            String(column.type),
+                        )
+                    ) {
+                        expect(
+                            column.default,
+                            `${entity.tableName}.${column.databaseName}`,
+                        ).toBeUndefined();
+                    }
+                }
+            }
         },
     );
 });

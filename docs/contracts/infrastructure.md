@@ -34,8 +34,17 @@ after restart.
 - **Public development runtime:** the explicit `PUBLIC_RUNTIME_SECURITY=development`
   override also permits SQLite for administrator testing. Its DataSpaces follow public
   account ownership and do not use the local singleton-DataSpace invariant.
-- TypeORM migrations run transactionally at startup. The database user needs schema
-  migration privileges during startup.
+- TypeORM runs pending migrations at startup with a transaction requested. MariaDB/MySQL
+  DDL can commit implicitly. The database user needs schema migration privileges during
+  startup.
+- JSON stored in required text columns is supplied by application writes. Migrations
+  introduce populated text columns as nullable, backfill existing rows, then enforce
+  `NOT NULL`, without relying on database text defaults. The Group and Room-settings
+  migrations use this portable schema for SQLite, MariaDB, and MySQL. Already-applied
+  migrations are not rerun; existing records and application/API behavior are unchanged.
+  A startup stopped at `AddAccountGroupsAndSettings1787335000000` because of the
+  `members_json` default can resume with the corrected release, without resetting the
+  database or modifying the migration ledger.
 - Store database files and backups outside release directories. Never share one SQLite
   file between multiple server processes.
 - Local SQLite creates a version-named safe backup before each new schema/catalog target.

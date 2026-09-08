@@ -14,7 +14,7 @@ export class AddAuthoritativeRoomSettings1787338000000 implements MigrationInter
             new TableColumn({
                 name: "game_settings_json",
                 type: "text",
-                default: `'${JSON.stringify(defaultRoomGameSettings())}'`,
+                isNullable: true,
             }),
             new TableColumn({
                 name: "settings_updated_by",
@@ -23,6 +23,16 @@ export class AddAuthoritativeRoomSettings1787338000000 implements MigrationInter
                 isNullable: true,
             }),
         ]);
+        // TEXT defaults are not portable to MySQL. Populate existing Rooms before
+        // enforcing NOT NULL; new Rooms receive their settings from the application.
+        await queryRunner.query("UPDATE rooms SET game_settings_json = ?", [
+            JSON.stringify(defaultRoomGameSettings()),
+        ]);
+        await queryRunner.changeColumn(
+            "rooms",
+            "game_settings_json",
+            new TableColumn({ name: "game_settings_json", type: "text" }),
+        );
     }
 
     async down(queryRunner: QueryRunner): Promise<void> {
