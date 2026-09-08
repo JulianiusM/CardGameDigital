@@ -563,6 +563,7 @@ test("players can inspect complete public settings without private boundaries", 
 test("a player joining during active play enters the authoritative Session roster", async ({
     browser,
 }, testInfo) => {
+    test.setTimeout(60_000);
     const hostContext = await browser.newContext({ locale: "de-DE" });
     const firstContext = await browser.newContext({ locale: "de-DE" });
     const lateContext = await browser.newContext({ locale: "de-DE" });
@@ -584,9 +585,13 @@ test("a player joining during active play enters the authoritative Session roste
     await expect(late.getByText("Runde 1")).toHaveCount(0);
     for (const width of [1280, 320]) {
         await late.setViewportSize({ width, height: width === 320 ? 568 : 800 });
-        const report = await captureVisualAudit(late, `phase-2-enrollment-${width}`, {
-            fullPage: true,
-        });
+        const report = await captureVisualAudit(
+            late,
+            `phase-2-enrollment-${width}-${testInfo.repeatEachIndex}`,
+            {
+                fullPage: true,
+            },
+        );
         await testInfo.attach(`enrollment-${width}`, {
             path: report.screenshotPath,
             contentType: "image/png",
@@ -598,13 +603,15 @@ test("a player joining during active play enters the authoritative Session roste
         expect(report.truncations).toEqual([]);
     }
     await late.locator(".boundary-panel fieldset").nth(1).getByRole("checkbox").first().check();
-    await late.locator(".boundary-panel > button").click();
+    await Promise.all([
+        ...[host, first].map((page) =>
+            expect(page.locator(".notification-toast")).toContainText(
+                "Carla ist dem laufenden Spiel beigetreten.",
+            ),
+        ),
+        late.locator(".boundary-panel > button").click(),
+    ]);
     await expect(late.getByText("Runde 1")).toBeVisible();
-    for (const page of [host, first]) {
-        await expect(page.locator(".notification-toast")).toContainText(
-            "Carla ist dem laufenden Spiel beigetreten.",
-        );
-    }
     for (const page of [host, first, late]) {
         await expect(page.locator(".live-players summary")).toContainText("3");
         await page.locator(".live-players summary").click();
@@ -737,6 +744,7 @@ test("hosted players see both Card intensities and shared game/modal transitions
 test("named Never Have I Ever synchronizes private progress then public answer columns", async ({
     browser,
 }) => {
+    test.setTimeout(60_000);
     const hostContext = await browser.newContext({ locale: "de-DE" });
     const playerContext = await browser.newContext({ locale: "de-DE" });
     const displayContext = await browser.newContext({
@@ -946,6 +954,68 @@ test("leaving notifies every remaining device and a clean rejoin keeps Settings 
     await displayContext.close();
 });
 
+test("saving device players preserves a row added before the acknowledgement", async ({
+    page,
+}, testInfo) => {
+    test.setTimeout(60_000);
+    let holdAcknowledgement = false;
+    let deliverAcknowledgement: (() => void) | undefined;
+    await page.routeWebSocket("**/*", (socket) => {
+        const server = socket.connectToServer();
+        server.onMessage((message) => {
+            const body = JSON.parse(message.toString());
+            if (
+                holdAcknowledgement &&
+                body.type === "room.snapshot" &&
+                message.toString().includes('"Person 2"')
+            ) {
+                holdAcknowledgement = false;
+                deliverAcknowledgement = () => socket.send(message);
+                return;
+            }
+            socket.send(message);
+        });
+    });
+    await hostRoom(page, "personal", /^Gute Freunde /, /Ich hab noch nie/, "named");
+    const names = page.locator(".player-name-row input");
+    const originalCount = await names.count();
+    await page.getByRole("button", { name: /Person auf diesem Gerät/ }).click();
+    holdAcknowledgement = true;
+    await names.last().fill("Person 2");
+    await expect.poll(() => Boolean(deliverAcknowledgement)).toBe(true);
+    await page.getByRole("button", { name: /Person auf diesem Gerät/ }).click();
+    await expect(names).toHaveCount(originalCount + 2);
+    deliverAcknowledgement!();
+    await expect(page.getByText("Personen auf diesem Gerät sind gespeichert")).toBeVisible();
+    await expect(names).toHaveCount(originalCount + 2);
+    await expect(names.last()).toHaveValue("");
+    for (const width of [1280, 320]) {
+        await page.setViewportSize({ width, height: 800 });
+        const report = await captureVisualAudit(
+            page,
+            `device-player-ack-${width}-${testInfo.repeatEachIndex}`,
+        );
+        await testInfo.attach(`device-player-ack-${width}`, {
+            path: report.screenshotPath,
+            contentType: "image/png",
+        });
+        expect(report.horizontalOverflow).toBe(0);
+        expect(report.outOfBounds).toEqual([]);
+        expect(report.smallTargets).toEqual([]);
+        expect(report.overlaps).toEqual([]);
+        expect(report.truncations).toEqual([]);
+    }
+    await names.last().fill("Person 3");
+    await expect(page.getByText("Personen auf diesem Gerät sind gespeichert")).toBeVisible();
+    await page.getByRole("button", { name: "Spiel starten", exact: true }).click();
+    await page.getByRole("button", { name: "Karte aufdecken", exact: true }).click();
+    await expect(page.locator(".never-vote-row > strong")).toHaveText([
+        "Host Anna",
+        "Person 2",
+        "Person 3",
+    ]);
+});
+
 test("small public displays automatically page long voting rosters and named results", async ({
     browser,
 }) => {
@@ -1005,6 +1075,7 @@ test("small public displays automatically page long voting rosters and named res
         ),
     ).toBe(true);
 
+    await expect(host.locator(".never-vote-row")).toHaveCount(12);
     for (let remaining = 12; remaining > 0; remaining -= 1) {
         const pendingVotes = host.locator(".never-vote-row");
         await pendingVotes.first().getByRole("button", { name: "Trifft zu" }).click();

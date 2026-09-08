@@ -136,10 +136,12 @@
         }
 
         const computed = window.getComputedStyle(copy);
+        const measuredWidth = viewport.clientWidth;
+        const measuredHeight = viewport.clientHeight;
         const measurementKey = [
             sourceVersion,
-            viewport.clientWidth,
-            viewport.clientHeight,
+            measuredWidth,
+            measuredHeight,
             computed.fontFamily,
             computed.fontSize,
             computed.fontWeight,
@@ -169,6 +171,13 @@
         pages = nextPages;
         page = Math.min(page, nextPages.length - 1);
         lastMeasurementKey = measurementKey;
+        await tick();
+        // Page controls consume space only after multiple pages have been rendered.
+        // On long-to-long replacement the viewport can return to its previous size
+        // within one frame, so ResizeObserver alone will not report the change.
+        if (viewport.clientWidth !== measuredWidth || viewport.clientHeight !== measuredHeight) {
+            remeasurementRequested = true;
+        }
     }
 
     function requestPage(event: CustomEvent<number | { page: number }>): void {

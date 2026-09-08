@@ -100,7 +100,8 @@
             if (devicePlayersDirty && nextKey === JSON.stringify(normalizedDevicePlayerNames())) {
                 devicePlayersDirty = false;
                 devicePlayersSaving = false;
-                devicePlayerNames = names;
+                // The acknowledgement omits empty draft rows. Keep a row added while
+                // this save was in flight so the next name is not entered into an old row.
             } else if (!devicePlayersDirty) devicePlayerNames = names;
         }
     }

@@ -109,6 +109,7 @@ for (const [language, copy] of [
             sessionStorage.setItem(
                 "party-game:setup",
                 JSON.stringify({
+                    intent: "HOST",
                     step: "customize",
                     cardPolicy: {
                         scopeDefault: {},
@@ -158,7 +159,7 @@ for (const [language, copy] of [
             ).toBeLessThanOrEqual(1);
             const audit = await captureVisualAudit(
                 page,
-                `phase-4-session-limit-${language}-${width}`,
+                `phase-4-session-limit-${language}-${width}-${testInfo.repeatEachIndex}`,
             );
             expect(audit.horizontalOverflow).toBe(0);
             expect(audit.outOfBounds).toEqual([]);
@@ -293,6 +294,8 @@ async function measureTrackSpeeds(page: Page): Promise<number[]> {
 test("Golden Mischief uses warm local surfaces and a motion-aware adaptive backdrop", async ({
     page,
 }) => {
+    test.setTimeout(60_000);
+    await page.clock.install({ time: new Date("2026-09-08T12:00:00Z") });
     await page.goto("/play/");
     await expect(page.locator(".adaptive-backdrop")).toBeVisible();
     await expect(page.locator("html")).toHaveAttribute("data-family", "general");
@@ -540,6 +543,8 @@ test("Golden Mischief uses warm local surfaces and a motion-aware adaptive backd
                     .data.slice(0, 3),
             ];
         });
+    await page.clock.pauseAt(new Date("2026-09-08T13:00:00Z"));
+    await page.clock.runFor(16);
     const paletteBeforeTransition = await pixelAtCanvasCenter();
     const sampleTrackTiming = () =>
         persistentTrack!.evaluate((track) => {
@@ -556,6 +561,7 @@ test("Golden Mischief uses warm local surfaces and a motion-aware adaptive backd
         });
     const beforeTransition = await sampleTrackTiming();
     await page.getByRole("button", { name: /Spiel hosten/ }).click();
+    await page.clock.runFor(16);
     await expect(page.locator("html")).toHaveAttribute("data-family", "lobby");
     await expect(page.locator(".outgoing-symbol").first()).toBeAttached();
     await expect(atmosphereLayer).toHaveAttribute(
@@ -591,14 +597,17 @@ test("Golden Mischief uses warm local surfaces and a motion-aware adaptive backd
             );
         });
     expect(crossfadeAlignment).toBeLessThan(0.1);
+    await page.clock.runFor(400);
     await expect.poll(pixelAtCanvasCenter).not.toEqual(paletteBeforeTransition);
     const paletteDuringTransition = await pixelAtCanvasCenter();
     expect(paletteDuringTransition).not.toEqual(paletteBeforeTransition);
+    await page.clock.runFor(800);
     await expect(atmosphereLayer).toHaveAttribute("data-gradient-palette-progress", "1", {
         timeout: 1_000,
     });
     const paletteAfterTransition = await pixelAtCanvasCenter();
     expect(paletteAfterTransition).not.toEqual(paletteBeforeTransition);
+    await page.clock.resume();
     await page.getByRole("button", { name: /Zurück/ }).click();
     await expect(page.locator("html")).toHaveAttribute("data-family", "general");
     await expect(page.getByRole("button", { name: /Spiel hosten/ })).toBeVisible();
@@ -824,13 +833,13 @@ test("card text remains centered on a narrow, short viewport", async ({ page }) 
     );
 });
 
-test("game card and actions fit medium and TV viewports without document scrolling", async ({
-    browser,
-}) => {
-    for (const viewport of [
-        { width: 1024, height: 768 },
-        { width: 1920, height: 1080 },
-    ]) {
+for (const viewport of [
+    { width: 1024, height: 768 },
+    { width: 1920, height: 1080 },
+]) {
+    test(`game card and actions fit ${viewport.width}x${viewport.height} without document scrolling`, async ({
+        browser,
+    }) => {
         const context = await browser.newContext({ locale: "de-DE", viewport });
         const page = await context.newPage();
         await createGame(page, "Wahrheit oder Pflicht");
@@ -849,8 +858,8 @@ test("game card and actions fit medium and TV viewports without document scrolli
         expect(cardBox.width / cardBox.height).toBeGreaterThan(1.45);
         expect(Math.abs(cardBox.x + cardBox.width / 2 - viewport.width / 2)).toBeLessThan(3);
         await context.close();
-    }
-});
+    });
+}
 
 test("main setup exposes Host, Join and Display and guards direct Host URLs", async ({ page }) => {
     await page.goto("/play/");

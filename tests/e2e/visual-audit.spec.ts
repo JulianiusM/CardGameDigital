@@ -901,6 +901,49 @@ async function hostPartyWithMaximumRoster(
     return { display, displayContext, host, hostContext };
 }
 
+for (const width of [320, 1280]) {
+    test(`Card pagination remeasures when one overflowing Card replaces another at ${width}px`, async ({
+        page,
+    }) => {
+        await page.setViewportSize({ width, height: 568 });
+        const firstText =
+            "Die erste lange Karte bleibt auf jeder Seite vollständig lesbar. ".repeat(20);
+        const nextText =
+            "Diese visuelle Extremfallkarte muss mit vollständigen Zeichen lesbar bleiben. ".repeat(
+                20,
+            );
+        for (const [command, cardText] of [
+            ["choose", firstText],
+            ["skip", nextText],
+        ] as const) {
+            await page.route(`**/api/v1/couch/sessions/*/${command}`, async (route) => {
+                const response = await route.fetch();
+                expect(response.status()).toBe(200);
+                const snapshot = await response.json();
+                await route.fulfill({
+                    response,
+                    json: {
+                        ...snapshot,
+                        currentCard: { ...snapshot.currentCard, cardText },
+                    },
+                });
+            });
+        }
+        await chooseStandardHostSetup(page, /Wahrheit oder Pflicht/);
+        await finishHostSetup(page, "couch");
+        const names = page.locator(".player-name-row input");
+        await names.nth(0).fill("Alice");
+        await names.nth(1).fill("Ben");
+        await page.getByRole("button", { name: /Spiel starten/ }).click();
+        await page.getByRole("button", { name: "Wahrheit", exact: true }).click();
+        const pager = page.locator(".game-card .auto-page-text");
+        await expectCompleteTextPages(pager, firstText);
+        await page.getByRole("button", { name: "Überspringen", exact: true }).click();
+        await expect(pager).toHaveAttribute("data-source-length", String(nextText.length));
+        await expectCompleteTextPages(pager, nextText);
+    });
+}
+
 test("visually audits menu, complete setup, Couch play, settings, and summary", async ({
     page,
 }, testInfo) => {
