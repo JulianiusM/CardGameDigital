@@ -25,7 +25,9 @@ export default defineConfig({
     testMatch: ["couch-mode.spec.ts", "couch-recovery.spec.ts", "party-screen.spec.ts"],
     timeout: 30_000,
     fullyParallel: false,
-    workers: 2,
+    // Specs share one SQLite server and its process-wide policy-work capacity.
+    // Isolate scenarios; multiplayer concurrency is exercised inside each test.
+    workers: 1,
     reporter: reporters,
     use: {
         baseURL: `http://127.0.0.1:${port}`,
