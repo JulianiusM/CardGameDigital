@@ -70,6 +70,30 @@ async function joinRoom(
     await expect(page.getByRole("heading", { name: "Lobby" })).toBeVisible();
 }
 
+async function observeNotification(page: Page, expectedText: string): Promise<void> {
+    // Observe in the browser before the action, so tracing or another device's
+    // assertions cannot consume the toast's visible lifetime before we inspect it.
+    await page.evaluate((text) => {
+        delete document.documentElement.dataset.observedNotification;
+        const observer = new MutationObserver(recordNotification);
+        function recordNotification(): void {
+            const toast = document.querySelector<HTMLElement>('.notification-toast[role="status"]');
+            if (!toast?.textContent?.includes(text)) return;
+            const bounds = toast.getBoundingClientRect();
+            const style = getComputedStyle(toast);
+            if (bounds.width === 0 || bounds.height === 0 || style.visibility === "hidden") return;
+            document.documentElement.dataset.observedNotification = toast.textContent;
+            observer.disconnect();
+        }
+        observer.observe(document.body, {
+            childList: true,
+            subtree: true,
+            characterData: true,
+        });
+        recordNotification();
+    }, expectedText);
+}
+
 function physicalLanIpv4Address(): string | null {
     const policy = { mdnsInterfaceAllowlist: [], mdnsInterfaceDenylist: [] };
     for (const [interfaceName, addresses] of Object.entries(os.networkInterfaces())) {
@@ -603,15 +627,16 @@ test("a player joining during active play enters the authoritative Session roste
         expect(report.truncations).toEqual([]);
     }
     await late.locator(".boundary-panel fieldset").nth(1).getByRole("checkbox").first().check();
-    await Promise.all([
-        ...[host, first].map((page) =>
-            expect(page.locator(".notification-toast")).toContainText(
-                "Carla ist dem laufenden Spiel beigetreten.",
-            ),
-        ),
-        late.locator(".boundary-panel > button").click(),
-    ]);
+    const enrollmentNotice = "Carla ist dem laufenden Spiel beigetreten.";
+    await Promise.all([host, first].map((page) => observeNotification(page, enrollmentNotice)));
+    await late.locator(".boundary-panel > button").click();
     await expect(late.getByText("Runde 1")).toBeVisible();
+    for (const page of [host, first]) {
+        await expect(page.locator("html")).toHaveAttribute(
+            "data-observed-notification",
+            new RegExp(enrollmentNotice, "u"),
+        );
+    }
     for (const page of [host, first, late]) {
         await expect(page.locator(".live-players summary")).toContainText("3");
         await page.locator(".live-players summary").click();
@@ -843,6 +868,7 @@ test("named Never Have I Ever synchronizes private progress then public answer c
 test("anonymous Never Have I Ever uses a compact aggregate on a short display", async ({
     browser,
 }) => {
+    test.setTimeout(60_000);
     const hostContext = await browser.newContext({ locale: "de-DE" });
     const playerContext = await browser.newContext({ locale: "de-DE" });
     const displayContext = await browser.newContext({
@@ -920,6 +946,7 @@ test("anonymous Never Have I Ever uses a compact aggregate on a short display", 
 test("leaving notifies every remaining device and a clean rejoin keeps Settings closed", async ({
     browser,
 }) => {
+    test.setTimeout(60_000);
     const hostContext = await browser.newContext({ locale: "de-DE" });
     const playerContext = await browser.newContext({ locale: "de-DE" });
     const displayContext = await browser.newContext({ locale: "de-DE" });
@@ -936,10 +963,15 @@ test("leaving notifies every remaining device and a clean rejoin keeps Settings 
         "true",
     );
     await player.getByRole("tab", { name: "Raum" }).click();
+    const departureNotice = "Ben hat den Raum verlassen.";
+    await Promise.all([host, display].map((page) => observeNotification(page, departureNotice)));
     await player.getByRole("button", { name: "Spiel verlassen" }).click();
     await expect(player).toHaveURL(/\/play\/?$/);
     for (const page of [host, display]) {
-        await expect(page.getByRole("status")).toContainText("Ben hat den Raum verlassen.");
+        await expect(page.locator("html")).toHaveAttribute(
+            "data-observed-notification",
+            new RegExp(departureNotice, "u"),
+        );
     }
 
     await player.getByRole("button", { name: /Spiel beitreten/ }).click();

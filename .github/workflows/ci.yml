@@ -177,12 +177,12 @@ jobs:
         if: steps.playwright-cache.outputs.cache-hit != 'true'
         run: npx playwright install --with-deps chromium
 
-      - name: Repeat Couch recovery and roster timing regressions without retries
+      - name: Repeat Couch recovery, enrollment and roster timing regressions without retries
         env:
           CI: true
           PLAYWRIGHT_JUNIT_OUTPUT: artifacts/junit-playwright-recovery.xml
           PLAYWRIGHT_HTML_OUTPUT_DIR: artifacts/playwright-report-recovery
-        run: npm run e2e:couch -- --grep "lost committed response|automatically resumes|row added before" --repeat-each=5 --retries=0
+        run: npm run e2e:couch -- --grep "lost committed response|automatically resumes|row added before|player joining during active play|leaving notifies|anonymous Never Have" --repeat-each=5 --retries=0
 
       - name: Repeat paginated Card replacement regressions without retries
         env:

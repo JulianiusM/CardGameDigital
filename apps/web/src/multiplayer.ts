@@ -327,9 +327,6 @@ export class RoomSocket {
 
     private applySnapshot(message: Extract<ServerEnvelope, { type: "room.snapshot" }>) {
         const next = message.payload;
-        const previousParticipantIds = new Set(
-            this.snapshot?.participants.map(({ id }) => id) ?? [],
-        );
         const previousCardId = this.snapshot?.session?.currentCard?.id;
         const nextCardId = next.session?.currentCard?.id;
         const previousRevision = this.snapshot?.settings.revision;
@@ -348,13 +345,23 @@ export class RoomSocket {
         } else if (previousCardId !== nextCardId) {
             this.cardReplacementReason = "";
         }
-        if (this.snapshot?.session && next.session?.state !== "ENDED") {
-            const joinedPlayers = next.participants.filter(
-                ({ id, role }) => role === "PLAYER" && !previousParticipantIds.has(id),
+        const previousSession = this.snapshot?.session;
+        const nextSession = next.session;
+        if (
+            previousSession &&
+            nextSession &&
+            previousSession.id === nextSession.id &&
+            nextSession.state !== "ENDED"
+        ) {
+            // Room presence precedes private enrollment. Announce only the
+            // committed roster change that actually admits players to this game.
+            const previousPlayerIds = new Set(previousSession.players.map(({ id }) => id));
+            const joinedPlayers = nextSession.players.filter(
+                ({ id }) => !previousPlayerIds.has(id),
             );
             if (joinedPlayers.length) {
                 this.roomNotice = messages.room.participantJoined(
-                    joinedPlayers.map(({ displayName }) => displayName).join(", "),
+                    joinedPlayers.map(({ name }) => name).join(", "),
                 );
                 this.roomNoticeId++;
             }

@@ -172,6 +172,7 @@
         page = Math.min(page, nextPages.length - 1);
         lastMeasurementKey = measurementKey;
         await tick();
+        if (!viewport) return;
         // Page controls consume space only after multiple pages have been rendered.
         // On long-to-long replacement the viewport can return to its previous size
         // within one frame, so ResizeObserver alone will not report the change.

@@ -402,7 +402,7 @@ describe("authoritative multiplayer client events", () => {
         connection.dispose();
     });
 
-    it("announces a player added to an already active Session", async () => {
+    it("announces enrollment only when the active Session roster commits and only once", async () => {
         installBrowserGlobals();
         const { RoomSocket } = await import("../../apps/web/src/multiplayer");
         const connection = new RoomSocket(canonicalJoin("HOST"), () => undefined);
@@ -412,25 +412,43 @@ describe("authoritative multiplayer client events", () => {
             role: "HOST",
             displayName: "Anna",
         };
+        const latePlayer = {
+            id: "00000000-0000-4000-8000-000000000012",
+            role: "PLAYER",
+            displayName: "Carla",
+        };
+        const hostPlayer = { id: host.id, name: host.displayName };
+        const activeSession = {
+            state: "WAITING_FOR_PLAYER",
+            currentCard: null,
+            players: [hostPlayer],
+        };
         socket.receive("room.snapshot", {
             participants: [host],
             settings: { revision: 0, updatedByParticipantId: null },
-            session: { state: "WAITING_FOR_PLAYER", currentCard: null },
+            session: activeSession,
         });
         socket.receive("room.snapshot", {
-            participants: [
-                host,
-                {
-                    id: "00000000-0000-4000-8000-000000000012",
-                    role: "PLAYER",
-                    displayName: "Carla",
-                },
-            ],
+            participants: [host, latePlayer],
             settings: { revision: 0, updatedByParticipantId: null },
-            session: { state: "WAITING_FOR_PLAYER", currentCard: null },
+            session: activeSession,
         });
+        expect(connection.roomNotice).toBe("");
+        expect(connection.roomNoticeId).toBe(0);
+
+        const enrolledSnapshot = {
+            participants: [host, latePlayer],
+            session: {
+                ...activeSession,
+                revision: 1,
+                players: [hostPlayer, { id: latePlayer.id, name: latePlayer.displayName }],
+            },
+        };
+        socket.receive("room.snapshot", enrolledSnapshot);
 
         expect(connection.roomNotice).toBe("Carla ist dem laufenden Spiel beigetreten.");
+        expect(connection.roomNoticeId).toBe(1);
+        socket.receive("room.snapshot", enrolledSnapshot);
         expect(connection.roomNoticeId).toBe(1);
         connection.dispose();
     });
