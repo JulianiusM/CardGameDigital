@@ -3,7 +3,7 @@ import { z } from "zod";
 
 export const SERVER_WEB_RELEASE_UNIT = "server-web" as const;
 export const RELEASE_MANIFEST_FORMAT = "party-game-release/v2" as const;
-export const MANAGED_NODE_VERSION = "24.x";
+export const MANAGED_NODE_VERSION = ">=24.7.0 <25.0.0";
 
 export const releaseEditionSchema = z.enum(["portable", "public"]);
 export type ReleaseEdition = z.infer<typeof releaseEditionSchema>;

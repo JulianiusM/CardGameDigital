@@ -25,14 +25,14 @@ import {
     serverWebReleaseDirectoryName,
     serverWebPlatformSchema,
 } from "./bundle";
-import { releaseEntrypoint, releaseSettings } from "./entrypoint";
+import { PUBLIC_NPM_CONFIG, releaseEntrypoint, releaseSettings } from "./entrypoint";
 import { createPortableExecutable } from "./executable";
 
 function releaseReadme(edition: "portable" | "public", platform: NodeJS.Platform): string {
     if (edition === "portable") {
         return `Extract the whole archive into a writable directory and start ${portableExecutableName(platform)}. Open http://localhost:3000/play/. No installation, internet, Node.js, npm, database service, or configuration is required. Keep the data directory when upgrading. Settings in SETTINGS_FILE and environment variables override config/settings.csv.\n`;
     }
-    return `Managed public application: start with your installed Node ${MANAGED_NODE_VERSION} process using node /absolute/path/to/main.cjs. This archive contains no runtime or node_modules. Provision the production dependency graph from package-lock.json in your infrastructure (including native Argon2 and better-sqlite3 for the host Node ABI); expose it through an ancestor node_modules directory or NODE_PATH. No npm command runs at application startup.\n\nPublic/account/MariaDB defaults and enforced security load automatically. Configure DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD, PUBLIC_URL (HTTPS), SESSION_SECRET, ROOM_CREATE_SECRET, TRUST_PROXY and SMTP through SETTINGS_FILE or the service environment. The default bind is 127.0.0.1:3000; override HTTP_BIND for a remote reverse proxy. Use a persistent, writable service working directory outside this release for runtime key files and keep database/backups outside releases. OIDC is optional. See config/settings.csv and docs/contracts/infrastructure.md for configuration requirements.\n`;
+    return `Managed public application: start with your installed Node ${MANAGED_NODE_VERSION} process using node /absolute/path/to/main.cjs. This archive contains no runtime or node_modules. Preserve the hidden .npmrc and run npm ci in the extracted directory before startup. It omits development and optional packages and disables install scripts. For external provisioning use npm ci --omit=dev --omit=optional --ignore-scripts and expose node_modules through an ancestor directory or NODE_PATH. No compiler or native npm binding is required; Node provides Argon2id and catalog SQLite internally. No npm command runs at application startup.\n\nPublic/account/MariaDB defaults and enforced security load automatically. Configure DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD, PUBLIC_URL (HTTPS), SESSION_SECRET, ROOM_CREATE_SECRET, TRUST_PROXY and SMTP through SETTINGS_FILE or the service environment. The default bind is 127.0.0.1:3000; override HTTP_BIND for a remote reverse proxy. Use a persistent, writable service working directory outside this release for runtime key files and keep database/backups outside releases. OIDC is optional. See config/settings.csv and docs/contracts/infrastructure.md for configuration requirements.\n`;
 }
 
 async function main(): Promise<void> {
@@ -94,9 +94,30 @@ async function main(): Promise<void> {
     sourcePackage.version = version;
     sourcePackage.main = "main.cjs";
     sourcePackage.engines = { node: MANAGED_NODE_VERSION };
+    if (edition === "public") delete sourcePackage.dependencies["better-sqlite3"];
     const lockfile = JSON.parse(fs.readFileSync(path.join(root, "package-lock.json"), "utf8"));
     lockfile.version = version;
     lockfile.packages[""].version = version;
+    if (edition === "public") {
+        lockfile.packages[""].dependencies = sourcePackage.dependencies;
+        delete lockfile.packages[""].devDependencies;
+        // Remove omitted tooling before npm resolves optional peers. Otherwise an
+        // orphaned ts-node entry can cause npm to select a new TypeScript compiler.
+        for (const [name, metadata] of Object.entries(lockfile.packages)) {
+            const dependency = metadata as {
+                dev?: boolean;
+                optional?: boolean;
+                devOptional?: boolean;
+            };
+            if (
+                name === "node_modules/better-sqlite3" ||
+                dependency.dev ||
+                dependency.optional ||
+                dependency.devOptional
+            )
+                delete lockfile.packages[name];
+        }
+    }
     fs.writeFileSync(
         path.join(target, "package-lock.json"),
         `${JSON.stringify(lockfile, null, 2)}\n`,
@@ -110,14 +131,51 @@ async function main(): Promise<void> {
         `${JSON.stringify(sourcePackage, null, 2)}\n`,
     );
 
-    // npm already resolved the locked production graph. Copy exactly those packages,
-    // including the platform-specific Argon2 and better-sqlite3 native bindings.
     const npmCli = process.env.npm_execpath;
     if (!npmCli) throw new Error("Release packaging must run through an npm script");
+    if (edition === "public") {
+        fs.writeFileSync(path.join(target, ".npmrc"), PUBLIC_NPM_CONFIG);
+        // Derive the public graph from the source lock without installing packages.
+        // npm prunes local SQLite and build dependencies, retaining locked versions.
+        execFileSync(
+            process.execPath,
+            [
+                npmCli,
+                "install",
+                "--package-lock-only",
+                "--ignore-scripts",
+                "--no-audit",
+                "--no-fund",
+            ],
+            { cwd: target, stdio: "pipe" },
+        );
+        const publicLock = JSON.parse(
+            fs.readFileSync(path.join(target, "package-lock.json"), "utf8"),
+        );
+        for (const [name, metadata] of Object.entries(publicLock.packages)) {
+            if (!name) continue;
+            const locked = metadata as { version?: string; resolved?: string; integrity?: string };
+            const original = lockfile.packages[name];
+            if (
+                !original ||
+                locked.version !== original.version ||
+                locked.resolved !== original.resolved ||
+                locked.integrity !== original.integrity
+            )
+                throw new Error(`Public dependency changed from the source lock: ${name}`);
+        }
+    }
     const sbom = execFileSync(
         process.execPath,
-        [npmCli, "sbom", "--omit=dev", "--sbom-format", "cyclonedx"],
-        { cwd: root, encoding: "utf8" },
+        [
+            npmCli,
+            "sbom",
+            "--omit=dev",
+            ...(edition === "public" ? ["--omit=optional", "--package-lock-only"] : []),
+            "--sbom-format",
+            "cyclonedx",
+        ],
+        { cwd: edition === "public" ? target : root, encoding: "utf8" },
     );
     JSON.parse(sbom);
     fs.writeFileSync(path.join(target, "SBOM.cdx.json"), sbom);

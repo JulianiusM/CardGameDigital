@@ -160,6 +160,19 @@ jobs:
           fi
           npm run package:server-web:smoke -- "${BUNDLE}"
 
+      - name: Install and smoke-test public hosting without native npm packages
+        env:
+          TEST_DB_HOST: 127.0.0.1
+          TEST_DB_PORT: 3306
+          TEST_DB_USER: surveyor
+          TEST_DB_PASSWORD: surveyor
+          TEST_DB_NAME: surveyor_test
+        run: |
+          set -euo pipefail
+          npm exec -- ts-node --project tsconfig.server.json tooling/release/package.ts public
+          BUNDLE=$(find artifacts -maxdepth 1 -type d -name 'party-game-server-web-*-public' | head -n 1)
+          npm run package:server-web:smoke -- "${BUNDLE}"
+
       - name: Type-check tests
         run: npm run typecheck:test
 

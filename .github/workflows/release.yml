@@ -96,7 +96,27 @@ jobs:
               shell: bash
             - name: Build the server-web edition
               run: npm run package:server-web:${{ matrix.edition }}
+            - name: Start disposable MariaDB for public installation smoke
+              if: matrix.edition == 'public'
+              run: |
+                  set -euo pipefail
+                  docker run -d --name public-smoke-db -p 3306:3306 \
+                    -e MARIADB_ROOT_PASSWORD=root -e MARIADB_DATABASE=surveyor_test \
+                    -e MARIADB_USER=surveyor -e MARIADB_PASSWORD=surveyor mariadb:10.11
+                  for i in {1..60}; do
+                    if docker exec public-smoke-db mariadb-admin ping -uroot -proot --silent; then
+                      exit 0
+                    fi
+                    sleep 2
+                  done
+                  exit 1
             - name: Verify layout and isolated application startup
+              env:
+                  TEST_DB_HOST: 127.0.0.1
+                  TEST_DB_PORT: 3306
+                  TEST_DB_USER: surveyor
+                  TEST_DB_PASSWORD: surveyor
+                  TEST_DB_NAME: surveyor_test
               run: |
                   set -euo pipefail
                   for directory in artifacts/party-game-server-web-*; do

@@ -1,6 +1,6 @@
 import { createReadStream } from "node:fs";
 import { createHash } from "node:crypto";
-import Database from "better-sqlite3";
+import { DatabaseSync } from "node:sqlite";
 import {
     cardCatalogHeaderSchema,
     catalogCardSchema,
@@ -179,10 +179,9 @@ export async function validateCardCatalogFile(file: string): Promise<CatalogFile
     let artifactDigest = "";
     // A temporary UUID-only uniqueness index spills to disk with a 2 MiB cache.
     // SQLite deletes its anonymous database on close. No text is copied to it.
-    const ids = new Database("");
+    const ids = new DatabaseSync("");
     try {
-        ids.pragma("cache_size = -2048");
-        ids.pragma("journal_mode = OFF");
+        ids.exec("PRAGMA cache_size = -2048; PRAGMA journal_mode = OFF");
         ids.exec("CREATE TABLE ids (id BLOB PRIMARY KEY) WITHOUT ROWID; BEGIN");
         const insert = ids.prepare("INSERT OR IGNORE INTO ids VALUES (?)");
         for await (const value of readCatalogJson(file)) {

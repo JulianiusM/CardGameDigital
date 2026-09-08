@@ -25,12 +25,16 @@ version. Server and browser code are built together in each job:
   Node/npm, database service, or configuration is needed. A browser is the game client.
 - `public` supplies only the managed application distributable. Start it with the
   infrastructure's Node 24 process: `node /absolute/path/to/main.cjs`. The operator
-  provisions the locked production packages (including native Argon2 and better-sqlite3
-  matching the host Node ABI), MariaDB/MySQL, HTTPS proxy, stable secrets, and mail.
+  provides Node 24.7 or newer within 24.x, the locked JavaScript production packages,
+  MariaDB/MySQL, HTTPS proxy, stable secrets, and mail. No native npm binding or compiler
+  is required; Node provides Argon2id and catalog-validation SQLite internally.
   The artifact never includes Node, `node_modules`, native bindings, or service/container
   infrastructure. Provision dependencies before deployment using its `package.json` and
-  `package-lock.json`, with an ancestor `node_modules` directory or `NODE_PATH` exposing
-  them to Node. Application startup does not run npm or install anything.
+  `package-lock.json`. Preserve the hidden `.npmrc`: plain `npm ci` in the extracted
+  directory omits development and optional dependencies and disables install scripts.
+  Provisioning elsewhere uses `npm ci --omit=dev --omit=optional --ignore-scripts`, with
+  an ancestor `node_modules` directory or `NODE_PATH` exposing them to Node.
+  Application startup does not run npm or install anything.
 
 The portable matrix builds on each target rather than cross-copying native modules:
 
@@ -70,9 +74,12 @@ adjacent application and dependencies without an installed runtime or shell wrap
 macOS executables are ad-hoc signed after injection. OS download trust prompts still
 follow the host's policy; release automation does not claim publisher notarization.
 
-Public archives contain `main.cjs` and deployment documentation. They contain no runtime,
+Public archives contain `main.cjs`, `.npmrc`, and deployment documentation. They contain no runtime,
 modules, native binaries, or initial data directory. The operator owns process supervision,
-dependencies, writable service state, and infrastructure upgrades.
+dependencies, writable service state, and infrastructure upgrades. The public manifest and derived
+lockfile exclude the local `better-sqlite3` driver and build dependencies. Retained
+packages must match the source lock exactly. Public SBOMs describe that public graph;
+source/development and portable packages retain the required SQLite driver.
 
 Both entrypoints load edition defaults before starting the shared server. Resolution is
 built-in defaults → edition defaults → operator CSV (`SETTINGS_FILE`, or `settings.csv`)
@@ -102,7 +109,7 @@ and URLs are never invented or bundled. See [infrastructure](infrastructure.md).
 - Node name/version and whether it is bundled;
 - `productionDependenciesBundled` (true only for portable);
 - `externalSoftwareDependencies` (empty for portable; `node` and
-  `production-node-packages` for public). Public Node version is the requirement `24.x`;
+  `production-node-packages` for public). Public Node version is the requirement `>=24.7.0 <25.0.0`;
   portable records the exact embedded version.
 
 Packaging and verification reject component/version/target/protocol mismatches, missing
@@ -112,9 +119,13 @@ PATH and inherited application settings, launch the actual entrypoint from anoth
 directory, wait for migrations/catalog readiness, and fetch the browser and its JavaScript.
 Portable must create its SQLite data without any deployment configuration. Public must
 reject unconfigured enforced startup; its isolated asset/startup smoke explicitly uses
-the development override and infrastructure-owned packages. The separate CI MariaDB and
-public-account suites cover production persistence/authentication; that smoke does not
-certify a real managed deployment.
+the development override with accounts and MariaDB. It installs the release's locked
+dependencies outside the checkout through plain `npm ci`, rejects native modules, checks
+password hashing, then exercises migrations, catalog startup, assets, and anonymous play.
+It requires a disposable `TEST_DB_*` profile (or `tests/.env.test.local`) and resets that
+exact test schema. CI and the public release job provision MariaDB for this check.
+Separate public-account suites cover enforced production persistence/authentication;
+the smoke does not certify a real managed deployment.
 
 The workflow pins validation, reusable CI, packaging, and publication to the dispatch SHA.
 CI and packages apply the requested version without creating a new commit. Every manifest
@@ -166,6 +177,13 @@ order while rejecting any additional runtime extension or development fixture la
 below `tools/`.
 
 ## Compatibility impact
+
+Public installations now require Node `>=24.7.0 <25.0.0` and omit optional dependencies.
+Upload hidden files so `.npmrc` reaches managed hosting; alternatively pass the documented
+install flags explicitly. Existing Argon2id v19 passwords created by this application's
+19 MiB/two-pass/one-lane profile remain valid without a reset or database migration.
+Local SQLite persistence still requires the `better-sqlite3` package from the source or portable graph. HTTP,
+WebSocket, database schema, and manifest format v2 remain unchanged.
 
 Manifest v2 and the public platform-independent archive replace the former v1 contract
 that embedded infrastructure in both editions. Public deployment automation must provide

@@ -4,8 +4,11 @@
 
 Portable releases start through `party-game[.exe]` with local/no-account/SQLite defaults
 and bundled runtime dependencies. Managed public releases start through the operator's
-Node 24 process with `node /absolute/path/to/main.cjs`; Node and the locked production
+Node 24.7+ (within 24.x) process with `node /absolute/path/to/main.cjs`; Node and the locked production
 packages are infrastructure prerequisites and are never delivered inside public archives.
+Preserve the shipped `.npmrc` and run `npm ci` before startup, or provision with
+`npm ci --omit=dev --omit=optional --ignore-scripts`. Public uses no native npm bindings:
+Argon2id hashing and the temporary catalog SQLite index use Node's built-in APIs.
 The public entrypoint loads enforced-public/account/MariaDB defaults and binds to
 `127.0.0.1:3000` unless overridden for the reverse proxy topology. Supply stable secrets,
 database, canonical HTTPS origin, proxy trust, and SMTP configuration before starting.

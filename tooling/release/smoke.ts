@@ -1,4 +1,5 @@
-import { spawn, type ChildProcess } from "node:child_process";
+import { execFile, spawn, type ChildProcess } from "node:child_process";
+import { promisify } from "node:util";
 import fs from "node:fs";
 import net from "node:net";
 import os from "node:os";
@@ -7,6 +8,40 @@ import { setTimeout as delay } from "node:timers/promises";
 import { PROTOCOL_VERSION } from "../../packages/protocol/version";
 import { defaultRoomGameSettings } from "../../packages/application/roomGameSettings";
 import { verifyReleaseLayout } from "./verification";
+import {
+    loadMariaTestProfile,
+    resetMariaTestDatabase,
+    dropMariaTestDatabase,
+    type MariaTestProfile,
+} from "../../tests/support/mariaDb";
+
+const execute = promisify(execFile);
+
+async function installPublicDependencies(installation: string, scratch: string): Promise<string> {
+    const npmCli = process.env.npm_execpath;
+    if (!npmCli) throw new Error("Release smoke must run through an npm script");
+    const dependencies = path.join(scratch, "dependencies");
+    fs.mkdirSync(dependencies);
+    for (const file of ["package.json", "package-lock.json", ".npmrc"])
+        fs.copyFileSync(path.join(installation, file), path.join(dependencies, file));
+    // Exercise the shipped .npmrc with a plain npm ci, as a managed host would.
+    await execute(process.execPath, [npmCli, "ci", "--no-audit", "--no-fund"], {
+        cwd: dependencies,
+        timeout: 120_000,
+    });
+    const modules = path.join(dependencies, "node_modules");
+    for (const entry of fs.readdirSync(modules, { recursive: true, withFileTypes: true })) {
+        if (
+            (path.basename(entry.parentPath) === "node_modules" &&
+                ["argon2", "better-sqlite3"].includes(entry.name)) ||
+            entry.name.endsWith(".node")
+        )
+            throw new Error(
+                `Public installation contains a native dependency: ${path.join(entry.parentPath, entry.name)}`,
+            );
+    }
+    return modules;
+}
 
 async function unusedPort(): Promise<number> {
     const server = net.createServer();
@@ -55,6 +90,8 @@ async function main(): Promise<void> {
     // settings, assets, or data. Spaces also exercise native executable path handling.
     const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "party game release smoke "));
     let child: ChildProcess | undefined;
+    let publicDatabase: MariaTestProfile | undefined;
+    let passed = false;
     try {
         const installation = path.join(scratch, "installation");
         const workingDirectory = path.join(scratch, "service-data");
@@ -76,8 +113,23 @@ async function main(): Promise<void> {
         if (manifest.edition === "public") {
             command = process.execPath;
             args = [path.join(installation, manifest.entrypoint)];
-            // Simulate infrastructure-owned packages, never add them to the public artifact.
-            environment.NODE_PATH = path.resolve("node_modules");
+            environment.NODE_PATH = await installPublicDependencies(installation, scratch);
+            await execute(
+                command,
+                [
+                    "-e",
+                    `
+                const assert = require("node:assert/strict");
+                const {hashPassword, verifyPasswordHash} = require(${JSON.stringify(path.join(installation, "app/dist/apps/server/src/modules/passwordHash.js"))});
+                (async () => {
+                    const hash = await hashPassword("release smoke password");
+                    assert.equal(await verifyPasswordHash("release smoke password", hash), true);
+                    assert.equal(await verifyPasswordHash("wrong", hash), false);
+                })().catch(() => process.exit(1));
+            `,
+                ],
+                { cwd: workingDirectory, env: environment },
+            );
             const rejected = spawn(command, args, {
                 cwd: workingDirectory,
                 env: environment,
@@ -113,14 +165,26 @@ async function main(): Promise<void> {
                     "Unconfigured public release must reject startup through enforced settings validation",
                 );
             }
-            // The isolated smoke runs without a database service. Public MariaDB/authentication
-            // integration remains a separate CI gate; this explicit override tests launch/assets.
+            const profile = loadMariaTestProfile(
+                process.env.TEST_DOTENV_FILE ?? path.resolve("tests/.env.test.local"),
+                "TEST",
+            );
+            if (!profile)
+                throw new Error(
+                    "Public release smoke requires a disposable TEST_DB_* MariaDB profile",
+                );
+            await resetMariaTestDatabase(profile);
+            publicDatabase = profile;
+            // The HTTP smoke uses the explicit development policy. MariaDB and accounts
+            // stay enabled; enforced deployment and account flows have integration gates.
             Object.assign(environment, {
                 PUBLIC_RUNTIME_SECURITY: "development",
                 PUBLIC_URL: `http://127.0.0.1:${port}`,
-                AUTH_MODE: "none",
-                DB_TYPE: "sqlite",
-                DB_FILE: path.join(workingDirectory, "smoke.sqlite"),
+                DB_HOST: profile.host,
+                DB_PORT: String(profile.port),
+                DB_NAME: profile.database,
+                DB_USER: profile.user,
+                DB_PASSWORD: profile.password,
             });
         }
         child = spawn(command, args, {
@@ -168,7 +232,10 @@ async function main(): Promise<void> {
             authenticationAvailable: boolean;
         };
         const expectedMode = manifest.edition === "portable" ? "local" : "public";
-        if (info.deploymentMode !== expectedMode || info.authenticationAvailable !== false)
+        if (
+            info.deploymentMode !== expectedMode ||
+            info.authenticationAvailable !== (manifest.edition === "public")
+        )
             throw new Error("Release did not load its edition defaults");
         const created = await fetch(`${origin}/api/v1/couch/sessions`, {
             method: "POST",
@@ -195,10 +262,14 @@ async function main(): Promise<void> {
             throw new Error("Portable executable did not initialize its own SQLite data");
         }
         console.log(`Release layout and isolated startup passed: ${target}`);
+        passed = true;
     } finally {
         if (child) await stop(child);
+        if (publicDatabase) await dropMariaTestDatabase(publicDatabase);
         // Only remove the exact scratch directory created above, after its server has exited.
-        fs.rmSync(scratch, { recursive: true, force: true, maxRetries: 8, retryDelay: 250 });
+        if (passed)
+            fs.rmSync(scratch, { recursive: true, force: true, maxRetries: 8, retryDelay: 250 });
+        else console.error(`Failed release smoke evidence retained at: ${scratch}`);
     }
 }
 

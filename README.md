@@ -51,9 +51,11 @@ The look and feel is defined by
 
 ### Requirements
 
-- Node.js 24.x
+- Node.js 24.7 or newer within 24.x
 - npm 10 or newer
-- A C/C++ build toolchain only when a prebuilt native package is unavailable
+- Local/source development only: a C/C++ build toolchain when the SQLite
+  driver's prebuilt package is unavailable. Public MariaDB deployments need no native
+  npm packages or compiler.
 
 ### Local single-machine/LAN deployment
 
@@ -227,8 +229,13 @@ Server and browser code form one `server-web` release unit with one version:
 - **Public:** deploy the single platform-independent application archive and run
   `node /absolute/path/to/main.cjs` with the infrastructure's Node 24 process. The
   archive contains no Node runtime, modules, native bindings, or service infrastructure.
-  Provision the locked production packages on the host and expose them through an
-  ancestor `node_modules` directory or `NODE_PATH`. Configure MariaDB/MySQL, HTTPS
+  Preserve the archive's hidden `.npmrc` and run `npm ci` in the extracted directory
+  before starting it. That configuration omits development and optional packages and
+  disables install scripts. Alternatively provision the packages elsewhere with
+  `npm ci --omit=dev --omit=optional --ignore-scripts`, then expose them through an
+  ancestor `node_modules` directory or `NODE_PATH`. No compiler or native npm binding
+  is needed: password hashing and catalog validation use Node's built-in Argon2id and
+  SQLite APIs. The host must provide Node 24.7 or newer within 24.x. Configure MariaDB/MySQL, HTTPS
   proxying, stable secrets, and SMTP. Public/account/MariaDB defaults and enforced
   security load automatically, with `127.0.0.1:3000` as the default proxy-facing bind.
 

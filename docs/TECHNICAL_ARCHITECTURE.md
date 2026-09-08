@@ -524,10 +524,16 @@ the runtime/dependency installation, database, proxy, secrets, and mail services
 
 # 17. Public Deployment
 
-The same compiled application runs through the infrastructure's installed Node 24
+The same compiled application runs through the infrastructure's installed Node 24.7+
 process: `node /absolute/path/to/main.cjs`. Production packages from the release lockfile
 must already be accessible through Node's module resolution (ancestor `node_modules` or
-`NODE_PATH`); native packages must match the host ABI. The entrypoint automatically loads
+`NODE_PATH`). Public installation omits optional dependencies and disables install scripts
+through its shipped `.npmrc` (`npm ci --omit=dev --omit=optional --ignore-scripts` when
+provisioning elsewhere). It requires no native npm binding: Node's built-in Argon2id
+preserves the deployed password profile, and `node:sqlite` owns the bounded temporary
+catalog UUID index and SQLite backups. The `better-sqlite3` driver remains part
+of portable/local persistence. Node must stay within the supported 24.x major version.
+The entrypoint automatically loads
 public/account/MariaDB defaults and enforced security. The service working directory holds
 persistent writable runtime state outside the versioned application directory.
 

@@ -24,3 +24,4 @@ settings.setReleaseDefaults(path.join(root, "config/settings.csv"));
 appRequire("./app/dist/apps/server/src/server.js");
 `;
 }
+export const PUBLIC_NPM_CONFIG = "omit[]=dev\nomit[]=optional\nignore-scripts=true\n";

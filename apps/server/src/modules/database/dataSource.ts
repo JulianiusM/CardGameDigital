@@ -4,7 +4,7 @@ import { configurePersistenceWorkLimits } from "../../../../../packages/persiste
 
 import fs from "node:fs";
 import path from "node:path";
-import Database from "better-sqlite3";
+import { backup, DatabaseSync } from "node:sqlite";
 import { DataSource, DataSourceOptions } from "typeorm";
 import settings, { isPublicRuntimeSecurityEnforced, Settings } from "../settings";
 import { entities, migrations, subscribers } from "./__index__";
@@ -55,11 +55,11 @@ async function backupSqliteBeforeUpgrade(config: Settings, catalogSequence: numb
     if (!fs.existsSync(database) || fs.statSync(database).size === 0) return;
     const migrationName = migrations.at(-1)?.name ?? "schema";
     const schemaVersion = /\d{13}$/.exec(migrationName)?.[0] ?? "unknown";
-    const backup = `${database}.pre-schema-${schemaVersion}-catalog-${catalogSequence}.bak`;
-    if (fs.existsSync(backup)) return;
-    const connection = new Database(database, { readonly: true });
+    const backupPath = `${database}.pre-schema-${schemaVersion}-catalog-${catalogSequence}.bak`;
+    if (fs.existsSync(backupPath)) return;
+    const connection = new DatabaseSync(database, { readOnly: true });
     try {
-        await connection.backup(backup);
+        await backup(connection, backupPath);
     } finally {
         connection.close();
     }

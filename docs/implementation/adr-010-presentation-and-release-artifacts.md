@@ -49,11 +49,14 @@ Implemented for Phase 9; platform archives remain CI-verified.
   command publishes either component independently.
 - Portable and public artifacts share one source revision/version and coupled server/web
   build. Portable includes a Node single executable application, locked production
-  packages with native Argon2/SQLite bindings, and writable local data. Its executable
+  packages with the native SQLite driver, and writable local data. Its executable
   starts directly with local/no-account/SQLite defaults. Public is a platform-independent
-  application-only archive started via the host's installed Node 24 process and production
+  application-only archive started via the host's installed Node 24.7+ process and production
   packages, with enforced-public/account/MariaDB defaults. Public never bundles Node,
   modules, native bindings, or service infrastructure, and refuses development catalogs.
+  Its manifest and lockfile exclude the local SQLite driver; `.npmrc` omits development/optional dependencies and disables install scripts;
+  Node's built-in Argon2id and SQLite APIs remove native npm builds from public hosting.
+  The public smoke installs that exact graph outside the checkout and exercises MariaDB.
 - Kodi and Android-family clients are separate release units with independent versions,
   manifests, workflows, tag namespaces, and archives. They remain protocol consumers
   and are never folded into the server-web artifact.

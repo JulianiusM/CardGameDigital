@@ -12,6 +12,11 @@ the TAD's lower-dependency scrypt preference for this implementation detail.
 - New and reset passwords use OWASP's minimum Argon2id profile (19 MiB memory,
   two iterations, one lane). This is a fresh product schema, so unsupported hash
   formats are rejected instead of carrying a legacy password verifier.
+- Node's asynchronous built-in Argon2id implementation replaces the native npm binding.
+  PHC v19 encoding keeps the existing 19 MiB/two-pass/one-lane profile, 16-byte random salt,
+  and 32-byte hash. Verification accepts both PHC parameter orders used for that profile,
+  validates canonical Base64 before derivation, and compares hashes in constant time.
+  Existing application passwords need no reset; unsupported profiles remain rejected.
 - Activation and password-reset credentials are generated as high-entropy raw
   values, returned only for email delivery, and stored as SHA-256 hashes. Legacy
   raw token columns are removed from the schema entirely.

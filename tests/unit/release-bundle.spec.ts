@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { verifyReleaseLayout, verifyReleaseSet } from "../../tooling/release/verification";
-import { releaseSettings } from "../../tooling/release/entrypoint";
+import { PUBLIC_NPM_CONFIG, releaseSettings } from "../../tooling/release/entrypoint";
 import { resolveSettings } from "../../apps/server/src/modules/settings";
 import {
     createServerWebReleaseManifest,
@@ -68,7 +68,7 @@ describe("server-web release bundle", () => {
             platform: "any",
             architecture: "any",
             entrypoint: "main.cjs",
-            runtime: { bundled: false, version: "24.x" },
+            runtime: { bundled: false, version: ">=24.7.0 <25.0.0" },
             productionDependenciesBundled: false,
             externalSoftwareDependencies: ["node", "production-node-packages"],
         });
@@ -122,6 +122,7 @@ describe("server-web release bundle", () => {
         const manifest = createServerWebReleaseManifest({ ...releaseInput, edition: "public" });
         const directory = path.join(scratch, serverWebReleaseDirectoryName(manifest));
         const files: Record<string, string> = {
+            ".npmrc": PUBLIC_NPM_CONFIG,
             "release-manifest.json": JSON.stringify(manifest),
             "package.json": JSON.stringify({ version: manifest.version }),
             "app/package.json": JSON.stringify({ version: manifest.version }),
@@ -150,6 +151,16 @@ describe("server-web release bundle", () => {
                 fs.writeFileSync(path.join(directory, file), text);
             }
             expect(() => verifyReleaseLayout(directory)).not.toThrow();
+            const lock = path.join(directory, "package-lock.json");
+            fs.writeFileSync(
+                lock,
+                JSON.stringify({
+                    version: manifest.version,
+                    packages: { "node_modules/better-sqlite3": { version: "12.11.1" } },
+                }),
+            );
+            expect(() => verifyReleaseLayout(directory)).toThrow(/native package/);
+            fs.writeFileSync(lock, files["package-lock.json"]);
             fs.mkdirSync(path.join(directory, "app/node_modules"));
             expect(() => verifyReleaseLayout(directory)).toThrow(/infrastructure/);
         } finally {

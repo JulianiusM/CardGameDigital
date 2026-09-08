@@ -5,7 +5,7 @@ import {
     serverWebReleaseManifestSchema,
     type ServerWebReleaseManifest,
 } from "./bundle";
-import { releaseSettings } from "./entrypoint";
+import { PUBLIC_NPM_CONFIG, releaseSettings } from "./entrypoint";
 
 export function verifyReleaseLayout(target: string): ServerWebReleaseManifest {
     const manifest = serverWebReleaseManifestSchema.parse(
@@ -54,13 +54,29 @@ export function verifyReleaseLayout(target: string): ServerWebReleaseManifest {
         for (const item of [
             "data",
             "NODE-LICENSE.txt",
-            "node_modules/argon2/package.json",
             "node_modules/better-sqlite3/package.json",
         ]) {
             if (!fs.existsSync(path.join(target, item)))
                 throw new Error(`Portable artifact missing ${item}`);
         }
     } else {
+        const packageMetadata = JSON.parse(
+            fs.readFileSync(path.join(target, "package.json"), "utf8"),
+        );
+        const lock = JSON.parse(fs.readFileSync(path.join(target, "package-lock.json"), "utf8"));
+        for (const dependency of ["argon2", "better-sqlite3"]) {
+            if (
+                packageMetadata.dependencies?.[dependency] ||
+                Object.keys(lock.packages ?? {}).some((name) =>
+                    name.endsWith(`node_modules/${dependency}`),
+                )
+            )
+                throw new Error(`Public dependency graph contains a native package: ${dependency}`);
+        }
+        if (fs.readFileSync(path.join(target, ".npmrc"), "utf8") !== PUBLIC_NPM_CONFIG)
+            throw new Error(
+                "Public npm configuration must omit development/optional packages and disable install scripts",
+            );
         const entries = fs.readdirSync(target, { recursive: true, withFileTypes: true });
         for (const entry of entries) {
             if (
