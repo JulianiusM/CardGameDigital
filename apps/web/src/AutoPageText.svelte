@@ -382,7 +382,7 @@
     .auto-page-text-button:focus-visible {
         outline-offset: -4px;
     }
-    @container (max-width: 220px) {
+    @container (max-width: 280px) {
         .auto-page-text-controls {
             grid-template-columns: 44px minmax(0, 1fr) 44px;
             grid-template-rows: 44px 44px;

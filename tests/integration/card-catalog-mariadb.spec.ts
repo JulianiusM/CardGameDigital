@@ -4,22 +4,24 @@ import { entities } from "../../apps/server/src/modules/database/__index__";
 import { CardCatalogVersionEntity } from "../../packages/persistence/entities/card/CardCatalogVersionEntity";
 import { applyCardCatalogSnapshot } from "../../packages/persistence/applyCardCatalogSnapshot";
 import { cardCatalog, catalogArtifact } from "../support/cardCatalog";
+import { loadMariaTestProfile, resetMariaTestDatabase } from "../support/mariaDb";
 
 const enabled = process.env.CARD_CATALOG_MARIADB_TEST === "1";
-const database = process.env.E2E_DB_NAME ?? "";
-if (enabled && !/(?:test|e2e)/i.test(database)) {
-    throw new Error("CARD_CATALOG_MARIADB_TEST requires a disposable test/e2e database name");
+const profile = loadMariaTestProfile("", "E2E");
+if (enabled && !profile) {
+    throw new Error("CARD_CATALOG_MARIADB_TEST requires a disposable E2E_DB_* profile");
 }
 
 const sources: DataSource[] = [];
 function source(): DataSource {
+    if (!profile) throw new Error("The MariaDB catalog suite requires an E2E database profile");
     return new DataSource({
         type: "mariadb",
-        host: process.env.E2E_DB_HOST,
-        port: Number(process.env.E2E_DB_PORT ?? 3306),
-        username: process.env.E2E_DB_USER,
-        password: process.env.E2E_DB_PASSWORD,
-        database,
+        host: profile.host,
+        port: profile.port,
+        username: profile.user,
+        password: profile.password,
+        database: profile.database,
         entities,
         synchronize: false,
     });
@@ -27,6 +29,8 @@ function source(): DataSource {
 
 describe.skipIf(!enabled)("MariaDB Card catalog advisory lock", () => {
     beforeAll(async () => {
+        if (!profile) throw new Error("The MariaDB catalog suite requires an E2E database profile");
+        await resetMariaTestDatabase(profile);
         const schema = source();
         sources.push(schema);
         await schema.initialize();

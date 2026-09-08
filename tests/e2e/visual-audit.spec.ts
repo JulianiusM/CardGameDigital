@@ -168,10 +168,10 @@ async function injectAutoPageSource(copy: Locator, source: string): Promise<void
     }, source);
 }
 
-async function expectMeasuredPages(pager: Locator): Promise<number> {
+async function expectMeasuredPages(pager: Locator, minimumPageCount = 2): Promise<number> {
     await expect
         .poll(async () => Number(await pager.getAttribute("data-page-count")))
-        .toBeGreaterThan(1);
+        .toBeGreaterThanOrEqual(minimumPageCount);
     let previousLayout = "";
     let stableSamples = 0;
     for (let sample = 0; sample < 30 && stableSamples < 3; sample += 1) {
@@ -191,7 +191,7 @@ async function expectMeasuredPages(pager: Locator): Promise<number> {
         3,
     );
     const pageCount = Number(await pager.getAttribute("data-page-count"));
-    expect(pageCount).toBeGreaterThan(1);
+    expect(pageCount).toBeGreaterThanOrEqual(minimumPageCount);
     return pageCount;
 }
 
@@ -234,6 +234,8 @@ async function expectAutoPageCopyPainted(pager: Locator): Promise<void> {
         const bounds = viewport?.getBoundingClientRect();
         return {
             clientHeight: (element as HTMLElement).clientHeight,
+            viewport: bounds?.toJSON(),
+            textRects: textRects.map((rect) => rect.toJSON()),
             text: element.textContent ?? "",
             textRectCount: textRects.length,
             withinViewport:
@@ -250,7 +252,7 @@ async function expectAutoPageCopyPainted(pager: Locator): Promise<void> {
     expect(paint.text.trim()).not.toBe("");
     expect(paint.clientHeight).toBeGreaterThan(0);
     expect(paint.textRectCount).toBeGreaterThan(0);
-    expect(paint.withinViewport).toBe(true);
+    expect(paint.withinViewport, JSON.stringify(paint)).toBe(true);
 }
 
 async function expectDisplayGameplayVisible(page: Page, result = false): Promise<void> {
@@ -602,6 +604,7 @@ async function auditFirstMiddleLastPages(
     pager: Locator,
     namePrefix: string,
     options: VisualAuditOptions = {},
+    minimumPageCount = 2,
 ): Promise<void> {
     const captures = ["first", "middle", "last"] as const;
     for (const capture of captures) {
@@ -613,10 +616,10 @@ async function auditFirstMiddleLastPages(
         ) {
             let selected = false;
             for (let attempt = 0; attempt < 6 && !selected; attempt += 1) {
-                const pageCount = await expectMeasuredPages(pager);
+                const pageCount = await expectMeasuredPages(pager, minimumPageCount);
                 const requestedPage = capturedPageIndex(capture, pageCount);
                 await selectMeasuredPage(pager, requestedPage);
-                const settledPageCount = await expectMeasuredPages(pager);
+                const settledPageCount = await expectMeasuredPages(pager, minimumPageCount);
                 const settledRequestedPage = capturedPageIndex(capture, settledPageCount);
                 selected =
                     settledPageCount === pageCount &&
@@ -642,8 +645,9 @@ async function expectCompleteTextPages(
     expectedSource: string,
     maximumPageCount?: number,
     expectWordBoundaries = false,
+    minimumPageCount = 2,
 ): Promise<number> {
-    const pageCount = await expectMeasuredPages(pager);
+    const pageCount = await expectMeasuredPages(pager, minimumPageCount);
     if (maximumPageCount !== undefined) expect(pageCount).toBeLessThanOrEqual(maximumPageCount);
     const copy = pager.locator(visibleAutoPageCopy);
     let collected = "";
@@ -1462,13 +1466,14 @@ test("visually audits the configured 1000-player ceiling on the production roste
     await expect(initialUrlCopy).toHaveText(/\S/);
     const initialUrlSource = await initialUrlCopy.getAttribute("aria-label");
     if (!initialUrlSource) throw new Error("The display URL pager must expose its full source");
-    await expectCompleteTextPages(initialUrlPager, initialUrlSource);
+    await expectCompleteTextPages(initialUrlPager, initialUrlSource, undefined, false, 1);
     await auditFirstMiddleLastPages(
         display,
         testInfo,
         initialUrlPager,
         "24a0-party-display-urls-800x600",
         { fullPage: false },
+        1,
     );
     const rosterPager = display.locator(".stage-player-roster .auto-page-region");
     await expectMeasuredPages(rosterPager);
@@ -2398,12 +2403,13 @@ test("visually audits the English interface on a narrow phone and TV viewport", 
     const zoomedCopy = zoomedCardPager.locator(visibleAutoPageCopy);
     const zoomedSource = (await zoomedCopy.getAttribute("aria-label")) ?? "";
     // Production Cards vary in length. Every measured page must preserve and paint
-    // its text at 200% zoom; a fixed page-count ceiling cannot describe that catalog.
+    // its text at 200% zoom, including a short Card that fits on one page.
     const zoomedPageCount = await expectCompleteTextPages(
         zoomedCardPager,
         zoomedSource,
         undefined,
         true,
+        1,
     );
     await selectMeasuredPage(zoomedCardPager, zoomedPageCount - 1);
     await audit(page, testInfo, "62a-en-game-phone-200-percent-text-zoom-last-page", {

@@ -1215,11 +1215,15 @@ input[type="search"]::-webkit-search-cancel-button {
 .policy-field,
 .policy-value-field {
     display: grid;
+    grid-template-columns: minmax(0, 1fr);
     min-width: 0;
     gap: 0.35rem;
     color: var(--color-muted-cocoa);
     font-size: 0.82rem;
     font-weight: 760;
+}
+.policy-field > span {
+    overflow-wrap: anywhere;
 }
 .policy-search-control {
     display: grid;
@@ -1506,7 +1510,7 @@ input[type="search"]::-webkit-search-cancel-button {
 }
 .policy-segmented-control {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(min(5rem, 100%), 1fr));
     min-width: 0;
     padding: 0.22rem;
     border: 1px solid var(--color-edge);
@@ -1868,8 +1872,10 @@ input[type="search"]::-webkit-search-cancel-button {
 .policy-filter-section > summary > span,
 .card-filter-drawer > summary > span {
     display: grid;
+    grid-template-columns: minmax(0, 1fr);
     min-width: 0;
     gap: 0.15rem;
+    overflow-wrap: anywhere;
 }
 .policy-filter-section summary small,
 .card-filter-drawer summary small {
@@ -2296,7 +2302,9 @@ input[type="search"]::-webkit-search-cancel-button {
     padding: 0 0.7rem 0.7rem;
 }
 .policy-clear-filters {
+    max-width: calc(100% - 1.4rem);
     margin: 0 0.7rem 0.7rem;
+    overflow-wrap: anywhere;
 }
 .card-result-summary {
     padding-top: 0.15rem;

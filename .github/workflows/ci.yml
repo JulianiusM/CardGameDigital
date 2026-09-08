@@ -215,10 +215,12 @@ jobs:
             artifacts/playwright-report/
             artifacts/playwright-report-couch/
             artifacts/playwright-report-visual/
+            .tmp/visual-audit/
             coverage/lcov.info
             coverage/coverage-final.json
           retention-days: 7
           compression-level: 9
+          include-hidden-files: true # Include the explicitly selected .tmp/visual-audit directory.
           if-no-files-found: warn
 
       - name: Read package version

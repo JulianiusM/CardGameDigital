@@ -79,6 +79,23 @@ Run relevant Playwright tests for perceptible browser behavior. If browser binar
 unavailable, report that environmental limitation rather than claiming the test passed.
 Do not describe a test as executed unless its exact command was run.
 
+### Completion requires verified CI
+
+Before claiming a task complete, verify the entire `.github/workflows/ci.yml` pipeline
+against the delivered commit. A focused test, an older green commit, a queued run, or
+partially completed jobs are not sufficient. Inspect the final workflow conclusion and
+all required steps, and include the commit and successful run URL in the delivery report.
+If remote verification is unavailable, state that CI remains unverified and the task is
+not complete; never predict a passing pipeline as an observed result.
+
+The full gate includes formatting, generated-file checks, Kodi checks, Vitest coverage
+with both MariaDB suites enabled, the application build, portable packaging and its
+smoke test, test type checking, all three Playwright suites (`e2e:couch`, `e2e`, and
+`e2e:visual`), and the remaining workflow checks. Provision the required databases and
+browser binaries. Do not skip tests, weaken assertions, add blanket exclusions, or use
+retries to conceal a failure. Fix its cause and rerun the full gate after the final change.
+Keep failure reports and visual evidence available for diagnosis.
+
 ## Git and delivery
 
 - Keep generated build output, databases, artifacts, secrets, and local settings out of

@@ -633,7 +633,9 @@ main:has(> .enrollment-panel) {
     margin: 0;
 }
 .modal-header h2 {
+    min-width: 0;
     margin: 0.2rem 0;
+    overflow-wrap: anywhere;
 }
 .close {
     display: grid;
@@ -2437,7 +2439,7 @@ body:has(.account-shell) .settings-trigger {
 .language-search-field input {
     width: 100%;
     min-height: 48px;
-    padding: 0.72rem 0.9rem;
+    padding: 0.72rem 0.65rem;
     color: var(--color-espresso);
     border: 1px solid var(--color-edge-strong);
     border-radius: 14px;
@@ -2974,6 +2976,10 @@ body:has(.account-shell) .settings-trigger {
 .settings-action:focus-visible {
     border-color: var(--color-selection-edge);
     background: var(--color-warm-paper);
+}
+.settings-action > strong {
+    min-width: 0;
+    overflow-wrap: anywhere;
 }
 .settings-action-icon {
     display: grid;
@@ -3630,7 +3636,19 @@ main.display-role:not(.playing) > .ended-stage {
 }
 .public-stage-lobby > .lobby {
     display: grid;
+    grid-template-columns: minmax(0, 1fr);
     grid-template-rows: auto auto auto minmax(0, 1fr) auto;
+}
+.public-stage-lobby .room-settings-summary {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 0.8fr);
+}
+.public-stage-lobby .room-settings-actions {
+    min-width: 0;
+    justify-items: stretch;
+}
+.public-stage-lobby .room-settings-actions > * {
+    max-width: 100%;
 }
 .public-stage-lobby > .lobby > h2 {
     grid-row: 1;
@@ -4163,7 +4181,7 @@ main.display-role:not(.playing) > .ended-stage {
     }
 }
 
-@media (min-width: 840px) and (max-height: 760px) {
+@media (min-width: 601px) and (max-height: 760px) {
     main.display-role:not(.playing) {
         padding: clamp(0.45rem, 1.25vw, 0.75rem);
     }
