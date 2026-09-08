@@ -48,7 +48,7 @@ export default defineConfig({
     reporter: reporters,
     use: {
         baseURL: BASE_URL,
-        trace: "on-first-retry",
+        trace: "retain-on-failure",
         screenshot: "only-on-failure",
         video: "off",
     },

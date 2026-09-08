@@ -96,6 +96,11 @@ browser binaries. Do not skip tests, weaken assertions, add blanket exclusions, 
 retries to conceal a failure. Fix its cause and rerun the full gate after the final change.
 Keep failure reports and visual evidence available for diagnosis.
 
+For intermittent failures, establish the cause and make the relevant timing or inputs
+deterministic. Exercise every affected path repeatedly without retries before running
+the full pipeline; one green rerun alone does not establish that a race is fixed. Retain
+browser traces from the first failure even when test retries are disabled.
+
 ## Git and delivery
 
 - Keep generated build output, databases, artifacts, secrets, and local settings out of

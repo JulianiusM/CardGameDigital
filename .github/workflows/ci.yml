@@ -177,6 +177,13 @@ jobs:
         if: steps.playwright-cache.outputs.cache-hit != 'true'
         run: npx playwright install --with-deps chromium
 
+      - name: Repeat timed Couch recovery scenarios without retries
+        env:
+          CI: true
+          PLAYWRIGHT_JUNIT_OUTPUT: artifacts/junit-playwright-recovery.xml
+          PLAYWRIGHT_HTML_OUTPUT_DIR: artifacts/playwright-report-recovery
+        run: npm run e2e:couch -- --grep "lost committed response|automatically resumes" --repeat-each=5 --retries=0
+
       - name: Run local Couch and Party Screen Playwright E2E suite
         env:
           CI: true
@@ -211,9 +218,11 @@ jobs:
             artifacts/junit-vitest.xml
             artifacts/junit-playwright.xml
             artifacts/junit-playwright-couch.xml
+            artifacts/junit-playwright-recovery.xml
             artifacts/junit-playwright-visual.xml
             artifacts/playwright-report/
             artifacts/playwright-report-couch/
+            artifacts/playwright-report-recovery/
             artifacts/playwright-report-visual/
             .tmp/visual-audit/
             coverage/lcov.info

@@ -10,6 +10,8 @@ import { captureVisualAudit } from "./visual-audit-helpers";
 
 const pointerKey = "party-game:couch-session";
 const sessionPath = (id: string) => `/api/v1/couch/sessions/${id}`;
+const clockStart = new Date("2026-09-08T12:00:00Z");
+const clockPaused = new Date("2026-09-08T13:00:00Z");
 
 async function createGame(page: Page): Promise<CouchSessionSnapshot> {
     const response = await page.request.post("/api/v1/couch/sessions", {
@@ -42,7 +44,10 @@ async function auditBothWidths(page: Page, testInfo: TestInfo, name: string): Pr
         expect(
             await panel.evaluate((element) => element.scrollWidth - element.clientWidth),
         ).toBeLessThanOrEqual(1);
-        const audit = await captureVisualAudit(page, `phase-5-${name}-${width}`);
+        const audit = await captureVisualAudit(
+            page,
+            `phase-5-${name}-${width}-repeat-${testInfo.repeatEachIndex}`,
+        );
         expect(audit.horizontalOverflow).toBe(0);
         expect(audit.outOfBounds).toEqual([]);
         expect(audit.smallTargets).toEqual([]);
@@ -62,13 +67,16 @@ for (const [language, copy] of [
         page,
     }, testInfo) => {
         test.setTimeout(60_000);
+        await page.clock.install({ time: clockStart });
         const initial = await createGame(page);
         await openGame(page, initial.id, language);
         await expect(
             page.getByRole("button", { name: copy.common.reveal, exact: true }),
         ).toBeVisible();
+        await page.clock.pauseAt(clockPaused);
         let commands = 0;
         let creations = 0;
+        let reads = 0;
         let failReads = true;
         let committed: CouchSessionSnapshot | undefined;
         page.on("request", (request) => {
@@ -76,6 +84,7 @@ for (const [language, copy] of [
                 creations++;
         });
         await page.route(`**${sessionPath(initial.id)}`, async (route) => {
+            reads++;
             if (failReads)
                 await route.fulfill({ status: 503, json: { error: { code: "UNAVAILABLE" } } });
             else await route.continue();
@@ -89,16 +98,35 @@ for (const [language, copy] of [
         });
         await page.getByRole("button", { name: copy.common.reveal, exact: true }).click();
         const panel = page.locator(".couch-recovery");
+        const retry = panel.getByRole("button", { name: copy.couch.recoveryRetry, exact: true });
         await expect(panel).toContainText(copy.couch.recoveryFailed);
+        await expect(retry).toBeEnabled();
         await expect(panel).toBeFocused();
+        expect(reads).toBe(1);
         expect(await page.evaluate((key) => sessionStorage.getItem(key), pointerKey)).toBe(
             initial.id,
         );
         await expect(page.locator(".game-card, .turn-ready, .player-setup")).toHaveCount(0);
+        // Exhaust the bounded automatic reads before exercising explicit retry. Wall-clock
+        // time spent taking screenshots must never decide which recovery path runs.
+        for (const [delay, expectedReads] of [
+            [2000, 2],
+            [4000, 3],
+        ] as const) {
+            await page.clock.runFor(delay - 1);
+            expect(reads).toBe(expectedReads - 1);
+            await page.clock.runFor(1);
+            await expect.poll(() => reads).toBe(expectedReads);
+            await expect(panel).toContainText(copy.couch.recoveryFailed);
+            await expect(retry).toBeEnabled();
+        }
+        await page.clock.runFor(10_000);
+        expect(reads).toBe(3);
         await auditBothWidths(page, testInfo, `lost-response-${language}`);
         failReads = false;
-        await panel.getByRole("button", { name: copy.couch.recoveryRetry, exact: true }).click();
+        await retry.click();
         await expect(page.locator(".game-card")).toBeVisible();
+        expect(reads).toBe(4);
         const restored = await (await page.request.get(sessionPath(initial.id))).json();
         expect(restored).toEqual(committed);
         expect(restored.revision).toBe(initial.revision + 1);
@@ -218,9 +246,11 @@ for (const [language, copy] of [
 test("Couch automatically resumes after a transient reload and resynchronizes a stale command", async ({
     page,
 }) => {
+    await page.clock.install({ time: clockStart });
     const initial = await createGame(page);
     await openGame(page, initial.id);
     await expect(page.locator(".turn-ready")).toBeVisible();
+    await page.clock.pauseAt(clockPaused);
     let reads = 0;
     await page.route(`**${sessionPath(initial.id)}`, async (route) => {
         reads++;
@@ -231,7 +261,14 @@ test("Couch automatically resumes after a transient reload and resynchronizes a 
     await page.route("**/api/v1/game-profiles", (route) => route.abort("failed"));
     await page.reload();
     await expect(page.locator(".couch-recovery")).toContainText(en.couch.recoveryFailed);
+    await expect(
+        page.getByRole("button", { name: en.couch.recoveryRetry, exact: true }),
+    ).toBeEnabled();
     expect(await page.evaluate((key) => sessionStorage.getItem(key), pointerKey)).toBe(initial.id);
+    await page.clock.runFor(1999);
+    expect(reads).toBe(1);
+    await expect(page.locator(".game-card, .turn-ready, .player-setup")).toHaveCount(0);
+    await page.clock.runFor(1);
     await expect(page.locator(".turn-ready")).toBeVisible();
     expect(reads).toBe(2);
     const ended = await page.request.post(`${sessionPath(initial.id)}/end`, {

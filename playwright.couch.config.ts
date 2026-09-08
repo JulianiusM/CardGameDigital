@@ -30,7 +30,7 @@ export default defineConfig({
     use: {
         baseURL: `http://127.0.0.1:${port}`,
         screenshot: "only-on-failure",
-        trace: "on-first-retry",
+        trace: "retain-on-failure",
     },
     webServer: {
         command: "npm run e2e:couch:init && npm run run",
