@@ -1486,7 +1486,7 @@ test("visually audits the configured 1000-player ceiling on the production roste
         { fullPage: false },
     );
     await expectRenderedRosterItemsContained(display);
-    await expect(display.locator(".stage-player strong")).toContainText(maximumName(1_000));
+    await expect(display.locator(".stage-player strong").last()).toHaveText(maximumName(1_000));
     await display.setViewportSize({ width: 844, height: 390 });
     await selectMeasuredPage(rosterPager, 0);
     await audit(display, testInfo, "24b-party-display-1000-player-roster-844x390", {
